@@ -1,6 +1,6 @@
 package dev.lelonio.square.ui.player
 
-import androidx.activity.compose.BackHandler
+import androidx.activity.compose.PredictiveBackHandler
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
@@ -107,7 +107,32 @@ fun NowPlayingSheet(
             }
         }
 
-        BackHandler(enabled = expandedVisible) { settle(0f) }
+        // The system's back gesture, driving the collapse itself.
+        //
+        // Not a command that plays an animation afterwards: the finger owns the
+        // progress while it is down, so the player leaves at the speed of the
+        // hand and comes back if the hand changes its mind. Only part of the
+        // travel is given to the preview — a gesture that could finish the
+        // journey on its own would leave nothing for the commit to do, and the
+        // release would land on a frame already at rest.
+        //
+        // The preview is worth exactly as much as the animation under it, which
+        // is today a fade and a small rise; when that becomes the continuous
+        // morph out of the pill, this reads the new one without changing.
+        PredictiveBackHandler(enabled = expandedVisible) { events ->
+            try {
+                events.collect { event ->
+                    progress.snapTo(1f - BACK_PREVIEW * event.progress.coerceIn(0f, 1f))
+                }
+                // The flow ended without being cancelled: the gesture was let go
+                // past the point of no return.
+                settle(0f)
+            } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
+                // Taken back. `settle` runs on the screen's own scope, not on
+                // this cancelled one, or the way home would be cancelled too.
+                settle(1f)
+            }
+        }
 
         // The player, full size from the first frame to the last. Nothing about
         // the travel touches measure or layout any more: the growing container
@@ -152,6 +177,15 @@ fun NowPlayingSheet(
         }
     }
 }
+
+/**
+ * How much of the collapse the back gesture may show before it is committed.
+ *
+ * Half: enough that the page behind is unmistakably there and the gesture is
+ * clearly doing something, and not so much that letting go feels like it
+ * changed nothing.
+ */
+private const val BACK_PREVIEW = 0.5f
 
 /** How small the player starts, growing to its own size as it arrives. */
 private const val ENTER_SCALE = 0.92f

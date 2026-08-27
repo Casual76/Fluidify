@@ -8,6 +8,11 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
@@ -934,7 +939,7 @@ fun SquareApp(
                             .fillMaxSize()
                             .layerBackdrop(artBackdrop),
                     ) {
-                        AppBackdrop(playback.artworkUrl)
+                        AppBackdrop(playback.artworkUrl, alive = playback.isPlaying)
                     }
 
                     Box(
@@ -1683,7 +1688,7 @@ fun SquareApp(
                     Box(Modifier.fillMaxSize().graphicsLayer { alpha = chrome }) {
                     NowPlayingSheet(
                         progress = expand,
-                        background = { AppBackdrop(playback.artworkUrl) },
+                        background = { AppBackdrop(playback.artworkUrl, alive = playback.isPlaying) },
                         expandedContent = {
                          dev.lelonio.square.ui.theme.ArtworkAccentTheme(seed = accent) {
                           // The player is the largest glass surface in the app by
@@ -2095,7 +2100,7 @@ fun SquareApp(
  * cover — the palette is built for a dark page.
  */
 @Composable
-private fun AppBackdrop(artworkUrl: String?) {
+private fun AppBackdrop(artworkUrl: String?, alive: Boolean) {
     Box(
         Modifier
             .fillMaxSize()
@@ -2103,7 +2108,7 @@ private fun AppBackdrop(artworkUrl: String?) {
     ) {
         if (artworkUrl == null) {
             // Nothing playing yet: instead of a flat black page, the app's own
-            // light comes from behind — a soft amethyst halo from above, where
+            // light comes from behind - a soft amethyst halo from above, where
             // the artwork's wash will stand once there is one.
             val halo = MaterialTheme.colorScheme.primary
             Box(
@@ -2118,25 +2123,45 @@ private fun AppBackdrop(artworkUrl: String?) {
                     ),
             )
         }
+
         if (artworkUrl != null) {
-            // Blurred at decode time rather than by `Modifier.blur`. That
-            // modifier is a RenderEffect over the whole window, re-run whenever
-            // the layer changes — every frame while the player expands, which is
-            // most of what made it stutter. Stretching a 32px bitmap instead was
-            // free and looked it: bilinear upscaling from that size shows square
-            // blocks, not a wash. This does the blur once per cover, on a small
-            // bitmap, and Coil caches it.
-            AsyncImage(
-                model = ImageRequest.Builder(LocalContext.current)
-                    .data(artworkUrl)
-                    .size(BACKDROP_DECODE_PX)
-                    .transformations(BackdropBlur)
-                    .allowHardware(false)
-                    .crossfade(true)
-                    .build(),
-                contentDescription = null,
-                contentScale = ContentScale.Crop,
-                modifier = Modifier.fillMaxSize(),
+            // The wash that has finished arriving, and is therefore what the
+            // next one has to come out of. Held apart from `artworkUrl` because
+            // the hand-over is not instant: for the length of one fade there are
+            // two covers on the page, the old one whole underneath and the new
+            // one growing over it.
+            var settled by remember { mutableStateOf<String?>(null) }
+            // Whether the incoming cover has actually been decoded. Starting the
+            // fade on the change of the *url* would fade into an empty layer and
+            // then pop when the bitmap landed - the same mistake the Canvas was
+            // making with its first frame, in a different corner of the app.
+            var decoded by remember(artworkUrl) { mutableStateOf(false) }
+            val fade = remember { Animatable(0f) }
+
+            LaunchedEffect(artworkUrl, decoded) {
+                if (artworkUrl == settled || !decoded) return@LaunchedEffect
+                if (settled == null) {
+                    // The first cover of the session has nothing to leave, so it
+                    // has nothing to cross: it is simply there.
+                    fade.snapTo(1f)
+                } else {
+                    fade.animateTo(1f, tween(BACKDROP_FADE_MS, easing = LinearEasing))
+                }
+                settled = artworkUrl
+                fade.snapTo(0f)
+            }
+
+            val drift = rememberBackdropDrift(alive)
+
+            val leaving = settled
+            if (leaving != null && leaving != artworkUrl) {
+                BackdropCover(leaving, drift) { 1f }
+            }
+            BackdropCover(
+                url = artworkUrl,
+                drift = drift,
+                onDecoded = { decoded = true },
+                alpha = { if (artworkUrl == settled) 1f else fade.value },
             )
         }
 
@@ -2153,6 +2178,126 @@ private fun AppBackdrop(artworkUrl: String?) {
         )
     }
 }
+
+/**
+ * One blurred cover, drifting.
+ *
+ * Blurred at decode time rather than by `Modifier.blur`. That modifier is a
+ * RenderEffect over the whole window, re-run whenever the layer changes - every
+ * frame while the player expands, which is most of what made it stutter.
+ * Stretching a 32px bitmap instead was free and looked it: bilinear upscaling
+ * from that size shows square blocks, not a wash. This does the blur once per
+ * cover, on a small bitmap, and Coil caches it.
+ *
+ * [alpha] is a lambda, not a value: read inside the layer block it costs a
+ * redraw per frame of the crossfade instead of a recomposition of the page that
+ * sits behind every screen in the app.
+ */
+@Composable
+private fun BackdropCover(
+    url: String,
+    drift: BackdropDrift,
+    onDecoded: () -> Unit = {},
+    alpha: () -> Float,
+) {
+    AsyncImage(
+        model = ImageRequest.Builder(LocalContext.current)
+            .data(url)
+            .size(BACKDROP_DECODE_PX)
+            .transformations(BackdropBlur)
+            .allowHardware(false)
+            // Coil's own crossfade is the wrong clock: it starts when the
+            // request finishes and knows nothing about the cover it is
+            // replacing, so the two faded past each other and the page dipped
+            // dark in the middle. One fade, driven here, between two layers that
+            // are both already on screen.
+            .crossfade(false)
+            .build(),
+        onSuccess = { onDecoded() },
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer {
+                this.alpha = alpha()
+                val zoom = drift.zoom()
+                scaleX = zoom
+                scaleY = zoom
+                translationX = drift.x() * size.width
+                translationY = drift.y() * size.height
+            },
+    )
+}
+
+/** The three phases of the drift, read at draw time. */
+private class BackdropDrift(
+    val zoom: () -> Float,
+    val x: () -> Float,
+    val y: () -> Float,
+)
+
+/**
+ * The slow life of the page behind the music.
+ *
+ * Three phases with periods that do not divide into one another, so the wash
+ * never visibly returns to a pose it has held before - a single cycle reads as
+ * a loop within a minute of looking at it. The numbers are deliberately below
+ * the threshold of noticing anything move: this is the difference between a
+ * photograph and a room, not an effect.
+ *
+ * Still when the music is still. A backdrop that keeps breathing over a paused
+ * player says the wrong thing, and it says it at sixty frames a second on a
+ * screen the listener has put down.
+ */
+@Composable
+private fun rememberBackdropDrift(alive: Boolean): BackdropDrift {
+    val reducedMotion =
+        dev.antigravity.fluidengine.ui.fluid.LocalFluidMotionPolicy.current.reducedMotion
+    if (!alive || reducedMotion) {
+        // The pose the drift passes through, so that stopping and starting is
+        // never a jump: the middle of every phase.
+        return remember { BackdropDrift({ DRIFT_ZOOM }, { 0f }, { 0f }) }
+    }
+    val clock = rememberInfiniteTransition(label = "backdrop")
+    val zoom by clock.animateFloat(
+        initialValue = DRIFT_ZOOM - DRIFT_ZOOM_SWING,
+        targetValue = DRIFT_ZOOM + DRIFT_ZOOM_SWING,
+        animationSpec = infiniteRepeatable(
+            tween(61_000, easing = LinearEasing),
+            RepeatMode.Reverse,
+        ),
+        label = "zoom",
+    )
+    val x by clock.animateFloat(
+        initialValue = -DRIFT_SHIFT,
+        targetValue = DRIFT_SHIFT,
+        animationSpec = infiniteRepeatable(
+            tween(37_000, easing = LinearEasing),
+            RepeatMode.Reverse,
+        ),
+        label = "x",
+    )
+    val y by clock.animateFloat(
+        initialValue = DRIFT_SHIFT,
+        targetValue = -DRIFT_SHIFT,
+        animationSpec = infiniteRepeatable(
+            tween(53_000, easing = LinearEasing),
+            RepeatMode.Reverse,
+        ),
+        label = "y",
+    )
+    return remember { BackdropDrift({ zoom }, { x }, { y }) }
+}
+
+/** How much larger than the page the wash is drawn, to have room to move in. */
+private const val DRIFT_ZOOM = 1.10f
+private const val DRIFT_ZOOM_SWING = 0.035f
+
+/** How far it wanders, as a fraction of the page. Room, not travel. */
+private const val DRIFT_SHIFT = 0.018f
+
+/** How long one cover takes to become the next. */
+private const val BACKDROP_FADE_MS = 900
 
 @Composable
 private fun BottomBar(
