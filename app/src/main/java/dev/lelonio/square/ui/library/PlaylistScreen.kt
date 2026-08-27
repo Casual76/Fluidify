@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.library
 
+import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
@@ -141,6 +142,9 @@ fun PlaylistScreen(
      * that far up.
      */
     onTrackMenu: (CatalogTrack) -> Unit,
+    /** What a row's menu offers; the row raises it itself, lifted in place. */
+    trackActions: (CatalogTrack) -> List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction> =
+        { emptyList() },
     onOpenItem: (dev.lelonio.square.data.SearchItem) -> Unit = {},
     /** Follows or unfollows the artist this page is about. */
     onToggleFollow: () -> Unit = {},
@@ -459,7 +463,7 @@ fun PlaylistScreen(
                             position = index + 1,
                             isCurrent = track.uri == nowPlayingUri,
                             onClick = { onPlay(visible, index, asContext) },
-                            onMenu = { onTrackMenu(track) },
+                            contextActions = trackActions(track),
                         )
                     }
                 }
@@ -1177,9 +1181,22 @@ private fun TrackRow(
     position: Int,
     isCurrent: Boolean,
     onClick: () -> Unit,
-    onMenu: () -> Unit,
+    contextActions: List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction>,
 ) {
     val shape = RoundedCornerShape(14.dp)
+    // One menu, two ways in: the long press the hand expects, and the dots the
+    // eye does. Both lift this very row; see the library's tiles.
+    val contextMenu = dev.antigravity.fluidengine.ui.fluid.rememberFluidContextMenu(
+        actions = { contextActions },
+    )
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val raiseMenu = {
+        if (contextMenu.open()) {
+            haptics.performHapticFeedback(
+                androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+            )
+        }
+    }
     // Eased rather than snapped: rows change state on every track advance, and
     // a hard cut in the middle of a list draws the eye more than the change
     // deserves.
@@ -1204,7 +1221,13 @@ private fun TrackRow(
                     alpha = MaterialTheme.colorScheme.surface.alpha * highlight,
                 ),
             )
-            .pressable(onClick, shape = shape, pressedScale = 0.985f)
+            .fluidContextMenuAnchor(contextMenu)
+            .pressable(
+                onClick,
+                shape = shape,
+                pressedScale = 0.985f,
+                onLongClick = { raiseMenu() },
+            )
             .padding(horizontal = 12.dp, vertical = 11.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -1268,14 +1291,10 @@ private fun TrackRow(
             )
         }
 
-        IconButton(onClick = onMenu, modifier = Modifier.size(32.dp)) {
-            Icon(
-                PhosphorIcons.Regular.DotsThree,
-                contentDescription = stringResource(R.string.more),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        // No dots at the end of the row any more: the long press is the way
+        // in, and it lifts the row itself — a tap-sized gesture cannot record
+        // the picture the lift needs, and rows read cleaner without the
+        // furniture.
     }
 }
 

@@ -1116,6 +1116,12 @@ fun SquareApp(
                             // Resolved here because the menu is built in a click
                             // lambda, where composable calls are out of reach.
                             val shareLabel = stringResource(R.string.copy_link)
+                            val playLabel = stringResource(R.string.play)
+                            val queueLabel = stringResource(R.string.add_to_queue)
+                            val addToPlaylistLabel = stringResource(R.string.add_to_playlist)
+                            val removeLabel = stringResource(R.string.remove_from_playlist)
+                            val detailClipboard =
+                                androidx.compose.ui.platform.LocalClipboardManager.current
                             val pinLabel = stringResource(R.string.pin)
                             val unpinLabel = stringResource(R.string.unpin)
                             val renameLabel = stringResource(R.string.rename)
@@ -1199,6 +1205,50 @@ fun SquareApp(
                                                 null,
                                             ),
                                         )
+                                    },
+                                    trackActions = { track ->
+                                        buildList {
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = playLabel,
+                                                    icon = PhosphorIcons.Fill.Play,
+                                                ) { onPlay(listOf(track), 0, null, false, "", 0L) },
+                                            )
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = queueLabel,
+                                                    icon = PhosphorIcons.Regular.Queue,
+                                                ) { onEnqueue(track) },
+                                            )
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = addToPlaylistLabel,
+                                                    icon = PhosphorIcons.Regular.Plus,
+                                                ) { viewModel.openAddToPlaylist(track.uri, track.name) },
+                                            )
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = shareLabel,
+                                                    icon = PhosphorIcons.Regular.LinkSimple,
+                                                ) {
+                                                    detailClipboard.setText(
+                                                        AnnotatedString(track.openLink()),
+                                                    )
+                                                },
+                                            )
+                                            // Taking a track out goes through the
+                                            // Spotify Web API, so only a playlist
+                                            // can offer it.
+                                            if (playlist.kind == MainViewModel.DetailKind.PLAYLIST) {
+                                                add(
+                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                        label = removeLabel,
+                                                        icon = PhosphorIcons.Regular.Trash,
+                                                        destructive = true,
+                                                    ) { viewModel.removeFromPlaylist(track) },
+                                                )
+                                            }
+                                        }
                                     },
                                     onMenuAt = menuAt@{ bounds ->
                                         val uri = playlist.uri ?: return@menuAt
