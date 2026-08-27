@@ -1861,6 +1861,7 @@ fun SquareApp(
                                 onOpenDevices = viewModel::openDevices,
                                 connectAvailable = true,
                                 onCloseDevices = viewModel::closeDevices,
+                                ground = groundGlass,
                                 artist = artistInfo,
                                 artistLoading = artistLoading,
                                 onRefreshDevices = viewModel::refreshDevices,

@@ -4,6 +4,8 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -54,6 +56,24 @@ fun CoverGestures(
      * that can move, and it is not ours to place.
      */
     onDrag: (Float) -> Unit = {},
+    /**
+     * A tap on the picture itself, with nothing on top of it.
+     *
+     * Its own pointer handler beside the swipe rather than a `clickable`: a
+     * click modifier claims the press immediately and the horizontal drag then
+     * has to win it back, which cost the first few pixels of every track
+     * change. Two detectors on the same box each wait for the gesture they
+     * recognise, and a tap is the one that ends without moving.
+     */
+    onTap: (() -> Unit)? = null,
+    /**
+     * A downward drag on the picture, when there is somewhere to go back to.
+     *
+     * Consumed here so the sheet underneath does not also read it as "close the
+     * player": while the chrome is hidden, pulling down is how it comes back,
+     * and closing the player as well would be answering twice.
+     */
+    onPullDown: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
     val offsetX = remember { Animatable(0f) }
@@ -81,6 +101,23 @@ fun CoverGestures(
                 scaleX = shrink
                 scaleY = shrink
             }
+            .then(
+                if (onTap == null) Modifier else Modifier.pointerInput(onTap) {
+                    detectTapGestures { onTap() }
+                },
+            )
+            .then(
+                if (onPullDown == null) Modifier else Modifier.pointerInput(onPullDown) {
+                    detectVerticalDragGestures(
+                        onDragEnd = { },
+                    ) { change, drag ->
+                        if (drag > 0f) {
+                            change.consume()
+                            onPullDown()
+                        }
+                    }
+                },
+            )
             .pointerInput(canGoNext, canGoPrevious) {
                 detectHorizontalDragGestures(
                     onDragEnd = {

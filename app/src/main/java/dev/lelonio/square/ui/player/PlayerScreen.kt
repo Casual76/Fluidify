@@ -47,6 +47,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.annotation.StringRes
 import androidx.compose.runtime.saveable.rememberSaveable
+import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.animation.animateColorAsState
@@ -203,6 +204,8 @@ fun PlayerScreen(
     devices: dev.lelonio.square.ui.MainViewModel.DevicesState,
     onOpenDevices: () -> Unit,
     onCloseDevices: () -> Unit,
+    /** The artwork wash on its own, under everything this screen draws. */
+    ground: dev.antigravity.fluidengine.ui.fluid.GlassBackdropState,
     /** Who is playing, for the Info panel's first page. */
     artist: dev.lelonio.square.data.ArtistInfo?,
     artistLoading: Boolean,
@@ -282,6 +285,30 @@ fun PlayerScreen(
     // The one panel whose contents are fetched rather than already here, and
     // the one nobody opens for most songs. Asking on open keeps a request per
     // track from being made for a page most listeners never see.
+    /**
+     * Nothing on screen but the picture, the song's name and where it has got to.
+     *
+     * Not a "hide the controls" flag: the chrome leaves the composition
+     * entirely. A bar faded to zero is still a bar, and it still swallows every
+     * touch that lands on it — which over a full-screen picture is most of them.
+     *
+     * Reset by the player closing, because this is remembered inside a sheet
+     * that leaves the composition with it: coming back to a player with no
+     * controls, having forgotten how they were hidden, is the one way this can
+     * be a trap.
+     */
+    var immersive by remember { mutableStateOf(false) }
+
+    // Out of immersion before out of the player. The sheet's own handler is
+    // registered further out, so this one is asked first, which is the order
+    // the screen is read in.
+    androidx.activity.compose.BackHandler(enabled = immersive) { immersive = false }
+
+    // A panel and immersion are opposite requests: one asks for more on screen,
+    // the other for less. Opening one has to end the other, or the panel would
+    // open behind a screen with no way to see it.
+    LaunchedEffect(panel) { if (panel != PlayerPanel.NONE) immersive = false }
+
     LaunchedEffect(panel, state.mediaId) {
         if (panel != PlayerPanel.INFO) return@LaunchedEffect
         onWantCredits(state.mediaId)
@@ -321,6 +348,25 @@ fun PlayerScreen(
     // empty and the panes would have nothing to sample.
     val canvasBackdrop = rememberLayerBackdrop()
     val glassBackdrop = rememberCombinedBackdrop(backdrop, canvasBackdrop)
+
+    /**
+     * What the engine's own glass refracts inside this screen.
+     *
+     * The app provides `LocalGlassBackdrop` at its root, and what it provides
+     * there is the *page*: the artwork wash with the navigation host standing on
+     * it. That is right for everything floating over a page and wrong for
+     * everything inside this one — the player is a sheet drawn above the host,
+     * so a control here refracting the page shows the home screen through it,
+     * which is a picture that is not on this screen at all.
+     *
+     * So the stage records itself — the clip, the light, the veil, and nothing
+     * of the chrome — and it is paired with the ground for the parts a Canvas
+     * does not cover. An opaque image containing none of the controls that
+     * sample it, which is the only kind this material can be built on.
+     */
+    val stageGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
+    val playerGlass = dev.antigravity.fluidengine.ui.fluid
+        .rememberCombinedGlassBackdrop(ground, stageGlass)
 
     // Lyrics take over the middle of the screen rather than opening a panel at
     // the bottom, and the Canvas goes out of focus behind them: a clip is
@@ -367,7 +413,9 @@ fun PlayerScreen(
                     scaleY = shrink
                     alpha = 1f - travel * 0.5f
                 }
-                .layerBackdrop(canvasBackdrop),
+                .layerBackdrop(canvasBackdrop)
+                // The engine's copy of the same picture; see stageGlass.
+                .glassBackdropSource(stageGlass),
         ) {
             // Inside the recorded layer, and that is the point: the glass above
             // samples this backdrop, so light drawn here is light the buttons
@@ -464,27 +512,39 @@ fun PlayerScreen(
                     animationSpec = tween(420),
                     label = "canvasDim",
                 )
+                // The veil exists for the controls, so with the controls gone
+                // most of it goes too. Not all: a name still has to be legible
+                // over a near-white frame, and the little that is left is
+                // exactly what carries it.
+                val veil by animateFloatAsState(
+                    targetValue = if (immersive) IMMERSIVE_VEIL else 1f,
+                    animationSpec = tween(420),
+                    label = "canvasVeil",
+                )
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                listOf(
-                                    Color.Black.copy(alpha = 0.28f),
-                                    Color.Black.copy(alpha = 0.18f),
-                                    Color.Black.copy(alpha = 0.52f),
-                                ),
-                            ),
-                        )
                         .drawWithContent {
+                            drawRect(
+                                brush = Brush.verticalGradient(
+                                    listOf(
+                                        Color.Black.copy(alpha = 0.28f * veil),
+                                        Color.Black.copy(alpha = 0.18f * veil),
+                                        Color.Black.copy(alpha = 0.52f * veil),
+                                    ),
+                                ),
+                            )
                             drawContent()
-                            drawRect(Color.Black, alpha = dim * PAUSED_DIM)
+                            drawRect(Color.Black, alpha = dim * PAUSED_DIM * veil)
                         },
                 )
             }
         }
 
-        CompositionLocalProvider(LocalContentColor provides GlassInk) {
+        CompositionLocalProvider(
+            LocalContentColor provides GlassInk,
+            dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides playerGlass,
+        ) {
             DismissibleScreen(onDismiss = onCollapse, modifier = Modifier.fillMaxSize()) {
                 Column(
                     Modifier
@@ -492,6 +552,7 @@ fun PlayerScreen(
                         .systemBarsPadding()
                         .padding(horizontal = 20.dp),
                 ) {
+                    if (!immersive) {
                     TopBar(
                         backdrop = glassBackdrop,
                         panel = panel,
@@ -516,6 +577,7 @@ fun PlayerScreen(
                         onWatchVideo = onWatchVideo,
                         videoOn = videoOn,
                     )
+                    }
 
                     // Everything sits at the bottom, as in the reference: the
                     // artwork behind is the subject, and the controls are a
@@ -637,6 +699,8 @@ fun PlayerScreen(
                                         PlayerPanel.NONE,
                                         onNext,
                                         onPrevious,
+                                        { immersive = !immersive },
+                                        { immersive = false }.takeIf { immersive },
                                         // Only for the journey the bar's
                                         // thumbnail makes into this cover.
                                         sharedScope.takeIf { coverShowing },
@@ -777,6 +841,9 @@ fun PlayerScreen(
                                     canGoPrevious = state.hasPrevious,
                                     followFinger = false,
                                     onDrag = { canvasShift.floatValue = it },
+                                    onTap = { immersive = !immersive },
+                                    onPullDown = { immersive = false }
+                                        .takeIf { immersive },
                                     modifier = Modifier.fillMaxSize(),
                                 ) {
                                     Box(Modifier.fillMaxSize())
@@ -869,7 +936,7 @@ fun PlayerScreen(
                                 )
                                 // A station built from this track, the way the
                                 // official client's own radio button does it.
-                                if (onRadio != null) {
+                                if (onRadio != null && !immersive) {
                                     RoundGlassButton(
                                         backdrop = glassBackdrop,
                                         size = 40.dp,
@@ -888,6 +955,7 @@ fun PlayerScreen(
                                 // opens over the player rather than a view of
                                 // it, which is why it sits here and not in the
                                 // segmented switch below.
+                                if (!immersive) {
                                 RoundGlassButton(
                                     backdrop = glassBackdrop,
                                     size = 40.dp,
@@ -910,7 +978,8 @@ fun PlayerScreen(
                                         modifier = Modifier.size(20.dp),
                                     )
                                 }
-                                if (playlistEditAvailable) {
+                                }
+                                if (playlistEditAvailable && !immersive) {
                                 Spacer(Modifier.size(8.dp))
                                 RoundGlassButton(
                                     backdrop = glassBackdrop,
@@ -961,6 +1030,7 @@ fun PlayerScreen(
                         )
                         TimeRow(positionMs, state.durationMs)
 
+                        if (!immersive) {
                         Spacer(Modifier.height(14.dp))
 
                         Controls(
@@ -986,6 +1056,7 @@ fun PlayerScreen(
                             onSeek = onSeek,
                             backdrop = glassBackdrop,
                         )
+                        }
 
                         Spacer(Modifier.height(20.dp))
                     }
@@ -1358,6 +1429,10 @@ private fun Cover(
     panel: PlayerPanel,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
+    /** A tap on the artwork, which is the whole of the empty space here. */
+    onToggleImmersive: () -> Unit,
+    /** Null unless the chrome is already away; see PlayerScreen's `immersive`. */
+    onLeaveImmersive: (() -> Unit)?,
     sharedScope: androidx.compose.animation.SharedTransitionScope? = null,
     animatedScope: androidx.compose.animation.AnimatedVisibilityScope? = null,
 ) {
@@ -1384,6 +1459,8 @@ private fun Cover(
         onPrevious = onPrevious,
         canGoNext = state.hasNext,
         canGoPrevious = state.hasPrevious,
+        onTap = onToggleImmersive,
+        onPullDown = onLeaveImmersive,
         modifier = Modifier
             .fillMaxWidth(coverFraction)
             .aspectRatio(1f)
@@ -1920,8 +1997,10 @@ private fun InfoPanel(
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         ) {
             InfoPage.entries.forEach { entry ->
-                dev.antigravity.fluidengine.ui.fluid.FluidChip(
-                    label = stringResource(entry.label),
+                // The engine's own glass action button, not a chip: a chip is a
+                // filter over a list, and these two are a place to go.
+                dev.antigravity.fluidengine.ui.fluid.FluidGlassButton(
+                    text = stringResource(entry.label),
                     selected = entry == page,
                     onClick = { page = entry },
                 )
@@ -1956,6 +2035,15 @@ private fun InfoPanel(
         }
     }
 }
+
+/**
+ * How much of the veil survives immersion.
+ *
+ * Not zero. The song's name and its progress stay on screen, and a Canvas
+ * graded near-white would take them with it — a fifth of the shade is what a
+ * white frame needs and what a dark one does not notice.
+ */
+private const val IMMERSIVE_VEIL = 0.22f
 
 private enum class InfoPage(@StringRes val label: Int) {
     ARTIST(R.string.artist),
