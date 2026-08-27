@@ -907,7 +907,11 @@ fun PlayerScreen(
                         // in one frame reads as a glitch; arriving reads as an
                         // answer.
                         androidx.compose.animation.AnimatedVisibility(
-                            visible = videoFileId != null,
+                            // Chrome as much as the transport is, so it leaves
+                            // with it: the immersive screen is the picture, the
+                            // song's name and where it has got to, and an offer
+                            // to watch something else is none of those.
+                            visible = videoFileId != null && !immersive,
                             enter = fadeIn(tween(260)) + scaleIn(tween(260), initialScale = 0.9f) +
                                 expandVertically(tween(260)),
                             exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.92f) +
