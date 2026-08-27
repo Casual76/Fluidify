@@ -163,7 +163,12 @@ fun PlayerPanelSection(
         InfoButton(
             selected = panel == PlayerPanel.INFO,
             backdrop = backdrop,
-        ) { onSelect(PlayerPanel.INFO) }
+        ) {
+            // A second press closes it. The button is lit while its page is
+            // showing, so pressing a lit button and having nothing happen is
+            // the one thing a lit button promises will not happen.
+            onSelect(if (panel == PlayerPanel.INFO) PlayerPanel.NONE else PlayerPanel.INFO)
+        }
     }
 }
 

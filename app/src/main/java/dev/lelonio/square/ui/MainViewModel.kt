@@ -1212,7 +1212,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         artistJob?.cancel()
         artistFor = artistUri
-        _artistInfo.value = null
+        // The page that is up stays up while the next one is fetched, so the
+        // change is one crossfade instead of a blank and then an arrival. It is
+        // never the *wrong* page for long: every write below is guarded on the
+        // uri still being the one asked for, and the failure path publishes the
+        // new artist's name rather than leaving the old artist's on screen.
         _artistLoading.value = true
         artistJob = viewModelScope.launch {
             val id = artistUri.substringAfterLast(':')
@@ -1236,15 +1240,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
             val web = fromWebApi.await()
             if (artistFor != artistUri) return@launch
-            val base = _artistInfo.value ?: dev.lelonio.square.data.ArtistInfo(
-                uri = artistUri,
-                name = fallbackName,
-            )
+            // Only what belongs to *this* artist is built on. A page still
+            // showing the previous one is a starting point for the crossfade
+            // and nothing else: taking its portrait or its biography would be
+            // the lyrics bug with a picture attached.
+            val base = _artistInfo.value?.takeIf { it.uri == artistUri }
+                ?: dev.lelonio.square.data.ArtistInfo(uri = artistUri, name = fallbackName)
             _artistInfo.value = base.copy(
-                name = base.name.ifBlank { web?.name.orEmpty() },
+                name = base.name.ifBlank { web?.name.orEmpty().ifBlank { fallbackName } },
                 imageUrl = base.imageUrl ?: web?.images?.firstOrNull()?.url,
                 followers = web?.followers?.total ?: base.followers,
-                genres = web?.genres ?: base.genres,
+                genres = web?.genres?.takeIf { it.isNotEmpty() } ?: base.genres,
             )
             _artistLoading.value = false
         }

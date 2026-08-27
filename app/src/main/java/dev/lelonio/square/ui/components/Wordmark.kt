@@ -1,6 +1,5 @@
 package dev.lelonio.square.ui.components
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.draw.drawBehind
@@ -13,14 +12,19 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
+import androidx.compose.material3.LocalTextStyle
+import androidx.compose.material3.Text
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.text.PlatformTextStyle
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.LineHeightStyle
+import androidx.compose.ui.unit.em
+import dev.antigravity.fluidengine.ui.fluid.FluidDisplayFontFamily
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.StrokeJoin
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -28,20 +32,29 @@ import dev.lelonio.square.R
 import dev.lelonio.square.ui.theme.Ink
 
 /**
- * The name, drawn rather than typeset.
+ * The name, set rather than drawn.
  *
- * The icon is a square wave: one stroke width, right angles only, no curve
- * anywhere. No font shipped with Android says that — a bold sans still has
- * round bowls on D and U and a diagonal on Y — and pulling in a display face
- * for eight letters costs more than the eight letters do.
+ * It used to be a drawing: polylines on a 6x10 grid, orthogonal only, square
+ * caps, on the argument that the icon is a square wave and no font says that.
+ * The argument was wrong twice. The icon's own caps and joins are *round*, so
+ * the drawn name was the harder shape of the two and a third heavier than the
+ * symbol beside it; and the grid could not make three of the eight letters —
+ * the D had no bowl and read as a rectangle, the Y had no diagonals and read as
+ * a U with a tail, the U was a bracket. At the size the collapsed bar asks for,
+ * a 1.3dp stroke, those three simply failed.
  *
- * So the letterforms are the same primitive as the icon: polylines on a 6×10
- * grid, orthogonal segments, square caps and joins. The D's right corners are
- * stepped, which is the one thing that keeps it from reading as a box.
+ * Inter Display is already in the binary, shipped with the engine as the face
+ * its own titles are set in, so this costs no kilobytes. It is an optical cut
+ * for display sizes: tighter fitting and more closed apertures than the text
+ * cut, which is exactly what a logotype wants. The tracking is pulled in
+ * further still, past anything the type scale does, so the word reads as one
+ * object rather than as a heading that happens to say the app's name.
  *
- * Sized by its height: the width follows from the grid, so callers give this a
- * height and let it measure itself. Glyphs carry their own width — an I is a
- * bare stem, and giving it a full box of advance would put a hole in the word.
+ * Sized by its **cap height**, not by its point size. Callers place this beside
+ * a 44dp icon and mean "as tall as that": the ratio below converts, so a caller
+ * asking for 22dp gets a capital 22dp tall. And in dp rather than sp, on
+ * purpose — a logotype that grows with the system's font scale is a logotype
+ * that breaks its own lockup.
  */
 @Composable
 fun FluidifyWordmark(
@@ -49,34 +62,40 @@ fun FluidifyWordmark(
     modifier: Modifier = Modifier,
     color: Color = Ink,
 ) {
-    Canvas(
-        modifier
-            .height(height)
-            .width(height * (GRID_WIDTH / 12f)),
-    ) {
-        val unit = size.height / 12f
-        // The stroke stays near one unit and the gap well over it, or the
-        // counters close up and the word turns into a dark block.
-        val stroke = unit * STROKE
-        val path = Path()
-        var originX = stroke / 2f
-        GLYPHS.forEach { glyph ->
-            glyph.lines.forEach { points ->
-                points.forEachIndexed { at, (gx, gy) ->
-                    val x = originX + gx * unit
-                    val y = gy * unit + stroke / 2f
-                    if (at == 0) path.moveTo(x, y) else path.lineTo(x, y)
-                }
-            }
-            originX += (glyph.width + GAP) * unit
-        }
-        drawPath(
-            path,
-            color = color,
-            style = Stroke(width = stroke, cap = StrokeCap.Square, join = StrokeJoin.Miter),
-        )
-    }
+    val density = LocalDensity.current
+    Text(
+        text = "Fluidify",
+        modifier = modifier,
+        color = color,
+        fontFamily = FluidDisplayFontFamily,
+        fontWeight = FontWeight.Bold,
+        fontSize = with(density) { (height / CapHeightRatio).toSp() },
+        // Explicit, and equal to the size: the default leading would add space
+        // above the letters, and this sits in a Row that centres on the box it
+        // is given rather than on the letters inside it.
+        lineHeight = with(density) { (height / CapHeightRatio).toSp() },
+        letterSpacing = (-0.03).em,
+        maxLines = 1,
+        style = LocalTextStyle.current.merge(
+            TextStyle(
+                platformStyle = PlatformTextStyle(includeFontPadding = false),
+                lineHeightStyle = LineHeightStyle(
+                    alignment = LineHeightStyle.Alignment.Center,
+                    trim = LineHeightStyle.Trim.Both,
+                ),
+            ),
+        ),
+    )
 }
+
+/**
+ * Cap height over em, for Inter.
+ *
+ * The number a caller cares about is how tall the capital F is; the number the
+ * text system takes is the em. Inter's capitals are 0.727 of the em, so a
+ * caller asking for a 22dp letter asks the system for 30.3dp of type.
+ */
+private const val CapHeightRatio = 0.727f
 
 /**
  * The launcher art beside the name.
@@ -231,55 +250,3 @@ fun AppIcon(size: Dp, modifier: Modifier = Modifier) {
 }
 
 /** One letter: its grid width plus the polylines that draw it. */
-private class Glyph(val width: Float, val lines: List<List<Pair<Float, Float>>>)
-
-/** Stroke width and inter-glyph gap, in grid units. */
-private const val STROKE = 1.15f
-private const val GAP = 3.5f
-
-/** F L U I D I F Y, as polylines on the grid described in [FluidifyWordmark]. */
-private val GLYPHS: List<Glyph> = run {
-    // F: an E without its floor.
-    val f = Glyph(
-        6f,
-        listOf(
-            listOf(6f to 0f, 0f to 0f, 0f to 10f),
-            listOf(0f to 5f, 4f to 5f),
-        ),
-    )
-    // I: a bare stem; its advance is its stroke, not a full box.
-    val i = Glyph(0f, listOf(listOf(0f to 0f, 0f to 10f)))
-    listOf(
-        f,
-        // L
-        Glyph(6f, listOf(listOf(0f to 0f, 0f to 10f, 6f to 10f))),
-        // U
-        Glyph(6f, listOf(listOf(0f to 0f, 0f to 10f, 6f to 10f, 6f to 0f))),
-        i,
-        // D: a box whose right corners step in, which is what suggests the
-        // bowl without a single curve or diagonal.
-        Glyph(
-            6f,
-            listOf(
-                listOf(
-                    0f to 0f, 4f to 0f, 4f to 2f, 6f to 2f,
-                    6f to 8f, 4f to 8f, 4f to 10f, 0f to 10f, 0f to 0f,
-                ),
-            ),
-        ),
-        i,
-        f,
-        // Y: two arms meeting a bar, then the stem — orthogonal, like the rest.
-        Glyph(
-            6f,
-            listOf(
-                listOf(0f to 0f, 0f to 5f, 6f to 5f, 6f to 0f),
-                listOf(3f to 5f, 3f to 10f),
-            ),
-        ),
-    )
-}
-
-/** The word's total width in grid units, stroke included. */
-private val GRID_WIDTH: Float =
-    GLYPHS.map { it.width }.sum() + (GLYPHS.size - 1) * GAP + STROKE

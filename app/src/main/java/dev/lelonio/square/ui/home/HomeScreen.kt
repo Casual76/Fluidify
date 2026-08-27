@@ -350,10 +350,24 @@ fun HomeScreen(
                             onLockupPlaced = { top, height ->
                                 // Believed only at the top: everywhere else this
                                 // is the scroll's answer, not the layout's.
+                                // Al netto dell'elastico, sempre.
+                                //
+                                // The measurement arrives through the layer
+                                // `fluidOverscrollContent` translates, so it
+                                // carries the bounce inside it. During a pull
+                                // the list really is at offset zero, so the
+                                // guard below lets it through — and the resting
+                                // place was being rewritten with a position
+                                // that only existed while the page was stretched.
+                                // It stayed there, too: nothing re-positions the
+                                // header when the edge springs back, so the mark
+                                // sat among the chips until something else moved
+                                // it. The resting place is where the mark would
+                                // be with the page still.
                                 if (listState.firstVisibleItemIndex == 0 &&
                                     listState.firstVisibleItemScrollOffset == 0
                                 ) {
-                                    restingTopPx = top
+                                    restingTopPx = top - overscroll.offsetPx
                                     lockupHeightPx = height
                                 }
                             },

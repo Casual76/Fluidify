@@ -409,6 +409,12 @@ fun SettingsScreen(
             title = title,
             collapse = collapse,
             backdrop = barBackdrop,
+            // The app is locked to a dark theme and every page stands on a
+            // blurred cover, so the family's own film — which lightens by
+            // design — made the bar the brightest thing on the screen. This
+            // one darkens toward black, which is what a scrim over a picture
+            // is for. See GlassDefaults.darkBarTint.
+            barTint = dev.antigravity.fluidengine.ui.fluid.GlassDefaults.darkBarTint(),
             modifier = Modifier.align(Alignment.TopCenter),
             onBack = { if (open != null) open = null else onBack() },
             contentTranslation = { overscroll.offsetPx },

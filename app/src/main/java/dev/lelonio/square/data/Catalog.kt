@@ -216,11 +216,63 @@ object Catalog {
                 uri = artistUri,
                 name = root["name"]?.jsonPrimitive?.content.orEmpty(),
                 imageUrl = root["imageUrl"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
-                biography = root["biography"]?.jsonPrimitive?.content.orEmpty(),
+                biography = plainText(root["biography"]?.jsonPrimitive?.content.orEmpty()),
                 popularity = root["popularity"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0,
             )
         }
     }
+
+    /**
+     * A biography as prose rather than as a fragment of a web page.
+     *
+     * Spotify writes these for its own client, so they arrive with anchors in
+     * them: `<a href="spotify:artist:6vWDO...">Beyonce</a>`. Shown raw, the
+     * sentence about who somebody has worked with becomes a wall of hex. The
+     * names inside the anchors are part of the sentence and are kept; the
+     * markup around them is not, and neither are the handful of entities the
+     * same writers use.
+     *
+     * Not a general HTML parser, and it should not become one: the input is one
+     * publisher's prose with three or four tags in it, and a parser would be a
+     * dependency to answer a question that is this size.
+     */
+    internal fun plainText(raw: String): String {
+        if (raw.isEmpty()) return raw
+        val text = StringBuilder(raw.length)
+        var index = 0
+        while (index < raw.length) {
+            val char = raw[index]
+            if (char == '<') {
+                val close = raw.indexOf('>', index)
+                // An unclosed bracket is a bracket the writer meant, not a tag.
+                if (close < 0) {
+                    text.append(char)
+                    index++
+                } else {
+                    index = close + 1
+                }
+            } else {
+                text.append(char)
+                index++
+            }
+        }
+        return ENTITIES.entries
+            .fold(text.toString()) { acc, (name, value) -> acc.replace(name, value) }
+            // Three blank lines where a paragraph was meant is still one break.
+            .replace(Regex("""[ \t]+"""), " ")
+            .replace(Regex("""\n{3,}"""), "\n\n")
+            .trim()
+    }
+
+    private val ENTITIES = mapOf(
+        "&amp;" to "&",
+        "&lt;" to "<",
+        "&gt;" to ">",
+        "&quot;" to "\"",
+        "&#39;" to "'",
+        "&apos;" to "'",
+        "&nbsp;" to " ",
+    )
 
     suspend fun canvas(trackUri: String): Result<CanvasClip?> = withContext(Dispatchers.IO) {
         // Success-with-null and failure are different answers, and collapsing

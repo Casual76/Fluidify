@@ -48,6 +48,10 @@ import androidx.compose.material3.Text
 import androidx.annotation.StringRes
 import androidx.compose.runtime.saveable.rememberSaveable
 import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.ui.draw.drawWithCache
+import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.animation.animateColorAsState
@@ -309,14 +313,28 @@ fun PlayerScreen(
     // open behind a screen with no way to see it.
     LaunchedEffect(panel) { if (panel != PlayerPanel.NONE) immersive = false }
 
+    // The first credited artist, which is the one the title line leads with. A
+    // track credited to three people has one page, not three: the page is about
+    // who is playing, and that is the name at the front.
+    //
+    // Keyed on the artist and not on the track, and that is the whole of why the
+    // page used to sit on the previous singer until the panel was closed and
+    // opened again: the uri of a new track is published before its credits are,
+    // so an effect watching the track ran once with no artist at all — and
+    // nothing woke it when the names arrived a moment later.
+    val leadArtist = state.artists.firstOrNull()
+    LaunchedEffect(panel, leadArtist?.uri) {
+        if (panel != PlayerPanel.INFO) return@LaunchedEffect
+        // Nothing to ask about yet. Deliberately not a request to clear: the
+        // gap between a track starting and its credits arriving is a fraction
+        // of a second, and blanking the page for it makes every skip flash.
+        val uri = leadArtist?.uri ?: return@LaunchedEffect
+        onWantArtist(uri, leadArtist.name)
+    }
+
     LaunchedEffect(panel, state.mediaId) {
         if (panel != PlayerPanel.INFO) return@LaunchedEffect
         onWantCredits(state.mediaId)
-        // The first credited artist, which is the one the title line leads
-        // with. A track credited to three people has one page, not three: the
-        // page is about who is playing, and that is the name at the front.
-        val first = state.artists.firstOrNull()
-        onWantArtist(first?.uri, first?.name ?: state.artist)
     }
 
     // How far the track-change swipe has been dragged, when the clip stands in
@@ -552,7 +570,30 @@ fun PlayerScreen(
                         .systemBarsPadding()
                         .padding(horizontal = 20.dp),
                 ) {
-                    if (!immersive) {
+                    // Leaving, not vanishing.
+                    //
+                    // AnimatedVisibility keeps the chrome composed for exactly
+                    // as long as it is on its way out and then removes it, which
+                    // is the difference that matters: a bar held at alpha zero
+                    // for ever still swallows every touch that lands on it, and
+                    // over a full-screen picture that is most of them.
+                    //
+                    // Upwards for the bar and downwards for the transport,
+                    // because each leaves by the edge it belongs to. The veil
+                    // takes longer to lift than the controls take to go, so the
+                    // picture opens *after* they have left rather than under
+                    // them.
+                    androidx.compose.animation.AnimatedVisibility(
+                        visible = !immersive,
+                        enter = androidx.compose.animation.expandVertically(
+                            animationSpec = tween(CHROME_IN_MS),
+                            expandFrom = Alignment.Bottom,
+                        ) + androidx.compose.animation.fadeIn(tween(CHROME_IN_MS)),
+                        exit = androidx.compose.animation.shrinkVertically(
+                            animationSpec = tween(CHROME_OUT_MS),
+                            shrinkTowards = Alignment.Bottom,
+                        ) + androidx.compose.animation.fadeOut(tween(CHROME_FADE_MS)),
+                    ) {
                     TopBar(
                         backdrop = glassBackdrop,
                         panel = panel,
@@ -934,9 +975,25 @@ fun PlayerScreen(
                                         onOpenUri(uri, name)
                                     },
                                 )
+                                // Together, and sideways: they leave by folding
+                                // into the title's own line rather than by
+                                // fading where they stand, so the name grows
+                                // into the room they were taking.
+                                androidx.compose.animation.AnimatedVisibility(
+                                    visible = !immersive,
+                                    enter = androidx.compose.animation.expandHorizontally(
+                                        animationSpec = tween(CHROME_IN_MS),
+                                        expandFrom = Alignment.Start,
+                                    ) + androidx.compose.animation.fadeIn(tween(CHROME_IN_MS)),
+                                    exit = androidx.compose.animation.shrinkHorizontally(
+                                        animationSpec = tween(CHROME_OUT_MS),
+                                        shrinkTowards = Alignment.Start,
+                                    ) + androidx.compose.animation.fadeOut(tween(CHROME_FADE_MS)),
+                                ) {
+                                Row(verticalAlignment = Alignment.CenterVertically) {
                                 // A station built from this track, the way the
                                 // official client's own radio button does it.
-                                if (onRadio != null && !immersive) {
+                                if (onRadio != null) {
                                     RoundGlassButton(
                                         backdrop = glassBackdrop,
                                         size = 40.dp,
@@ -955,7 +1012,6 @@ fun PlayerScreen(
                                 // opens over the player rather than a view of
                                 // it, which is why it sits here and not in the
                                 // segmented switch below.
-                                if (!immersive) {
                                 RoundGlassButton(
                                     backdrop = glassBackdrop,
                                     size = 40.dp,
@@ -978,8 +1034,7 @@ fun PlayerScreen(
                                         modifier = Modifier.size(20.dp),
                                     )
                                 }
-                                }
-                                if (playlistEditAvailable && !immersive) {
+                                if (playlistEditAvailable) {
                                 Spacer(Modifier.size(8.dp))
                                 RoundGlassButton(
                                     backdrop = glassBackdrop,
@@ -1016,6 +1071,8 @@ fun PlayerScreen(
                                     )
                                 }
                                 }
+                                }
+                                }
                             }
                         }
 
@@ -1030,7 +1087,18 @@ fun PlayerScreen(
                         )
                         TimeRow(positionMs, state.durationMs)
 
-                        if (!immersive) {
+                        androidx.compose.animation.AnimatedVisibility(
+                            visible = !immersive,
+                            enter = androidx.compose.animation.expandVertically(
+                                animationSpec = tween(CHROME_IN_MS),
+                                expandFrom = Alignment.Top,
+                            ) + androidx.compose.animation.fadeIn(tween(CHROME_IN_MS)),
+                            exit = androidx.compose.animation.shrinkVertically(
+                                animationSpec = tween(CHROME_OUT_MS),
+                                shrinkTowards = Alignment.Top,
+                            ) + androidx.compose.animation.fadeOut(tween(CHROME_FADE_MS)),
+                        ) {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Spacer(Modifier.height(14.dp))
 
                         Controls(
@@ -1056,6 +1124,7 @@ fun PlayerScreen(
                             onSeek = onSeek,
                             backdrop = glassBackdrop,
                         )
+                        }
                         }
 
                         Spacer(Modifier.height(20.dp))
@@ -1988,12 +2057,17 @@ private fun InfoPanel(
     modifier: Modifier = Modifier,
 ) {
     var page by rememberSaveable { mutableStateOf(InfoPage.ARTIST) }
+    // One per page, and the active one drives the fade at the foot. Shared, the
+    // credits would open wherever the biography had been left.
+    val artistScroll = rememberScrollState()
+    val creditsScroll = rememberScrollState()
+    val scroll = if (page == InfoPage.ARTIST) artistScroll else creditsScroll
 
     Column(modifier.fillMaxSize()) {
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(top = 12.dp, bottom = 4.dp),
+                .padding(top = 2.dp),
             horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
         ) {
             InfoPage.entries.forEach { entry ->
@@ -2007,6 +2081,28 @@ private fun InfoPanel(
             }
         }
 
+        // Where the panel ends, it ends by fading.
+        //
+        // The scroller clips, so the content used to be sheared off in a
+        // straight line under the buttons — a cut edge, on a screen made of a
+        // material whose whole argument is that edges are soft. The mask runs
+        // on the *outside* of the scroller, so the ramp stays welded to the
+        // viewport instead of scrolling away with the text, and it covers both
+        // pages and the change between them.
+        //
+        // The offscreen layer is not optional. `DstIn` multiplies the alpha of
+        // everything already drawn beneath it, so without a buffer of its own
+        // this would take a rectangular bite out of the cover, the Canvas and
+        // the veil as well.
+        //
+        // The foot retreats when there is nothing left to scroll: a fade held
+        // over the last line for ever is a line permanently dimmed, which reads
+        // as a rendering fault rather than as depth.
+        val tail by animateFloatAsState(
+            targetValue = if (scroll.canScrollForward) 1f else 0.18f,
+            animationSpec = tween(180),
+            label = "infoTail",
+        )
         androidx.compose.animation.AnimatedContent(
             targetState = page,
             transitionSpec = {
@@ -2017,24 +2113,90 @@ private fun InfoPanel(
                     .togetherWith(androidx.compose.animation.fadeOut(tween(110)))
             },
             label = "info page",
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer { compositingStrategy = CompositingStrategy.Offscreen }
+                .drawWithCache {
+                    val head = InfoHeadFade.toPx()
+                    val foot = InfoFootFade.toPx()
+                    // Clamped gradients: above `endY` the brush stays black and
+                    // holds, below `startY` likewise, so two full-size rects are
+                    // the whole mask.
+                    val enter = Brush.verticalGradient(
+                        0f to Color.Transparent,
+                        1f to Color.Black,
+                        startY = 0f,
+                        endY = head,
+                    )
+                    onDrawWithContent {
+                        drawContent()
+                        drawRect(brush = enter, blendMode = BlendMode.DstIn)
+                        drawRect(
+                            brush = Brush.verticalGradient(
+                                0f to Color.Black,
+                                1f to Color.Black.copy(alpha = 1f - tail),
+                                startY = size.height - foot,
+                                endY = size.height,
+                            ),
+                            blendMode = BlendMode.DstIn,
+                        )
+                    }
+                },
         ) { current ->
             when (current) {
-                InfoPage.ARTIST -> ArtistInfoView(
-                    artist = artist,
-                    loading = artistLoading,
+                InfoPage.ARTIST -> androidx.compose.animation.AnimatedContent(
+                    targetState = artist,
+                    // By artist, not by object: the Web API half arrives a beat
+                    // after the access point's and rewrites the same page, and
+                    // animating that would be the page flinching at its own
+                    // follower count.
+                    contentKey = { it?.uri },
+                    transitionSpec = {
+                        (androidx.compose.animation.fadeIn(tween(260)) +
+                            androidx.compose.animation.slideInVertically(tween(300)) { it / 16 })
+                            .togetherWith(androidx.compose.animation.fadeOut(tween(150)))
+                    },
+                    label = "artist",
                     modifier = Modifier.fillMaxSize(),
-                )
+                ) { current ->
+                    ArtistInfoView(
+                        artist = current,
+                        loading = artistLoading,
+                        modifier = Modifier.fillMaxSize(),
+                        scroll = artistScroll,
+                    )
+                }
 
                 InfoPage.CREDITS -> CreditsView(
                     credits = credits,
                     loading = creditsLoading,
                     modifier = Modifier.fillMaxSize(),
+                    scroll = creditsScroll,
                 )
             }
         }
     }
 }
+
+/** How far the panel's content dissolves as it passes under the buttons. */
+private val InfoHeadFade = 28.dp
+
+/** And at the foot, where it has a little further to go before it is gone. */
+private val InfoFootFade = 34.dp
+
+/**
+ * How long the chrome takes to fold away, and to come back.
+ *
+ * Out is quicker than in, and the fade quicker than either: leaving should feel
+ * like getting out of the way, arriving like something placing itself. The veil
+ * lifts over four hundred, so by the time the picture is open the controls have
+ * been gone for a moment rather than dissolving inside it.
+ */
+private const val CHROME_OUT_MS = 240
+
+private const val CHROME_IN_MS = 320
+
+private const val CHROME_FADE_MS = 150
 
 /**
  * How much of the veil survives immersion.

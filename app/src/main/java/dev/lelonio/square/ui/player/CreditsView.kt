@@ -35,6 +35,8 @@ fun CreditsView(
     credits: SpotifyCredits.Credits?,
     loading: Boolean,
     modifier: Modifier = Modifier,
+    /** Held by the panel, so the fade at the foot knows when it is at the end. */
+    scroll: androidx.compose.foundation.ScrollState = rememberScrollState(),
 ) {
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         when {
@@ -54,8 +56,11 @@ fun CreditsView(
             else -> Column(
                 Modifier
                     .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 28.dp, vertical = 12.dp),
+                    .verticalScroll(scroll)
+                    .padding(horizontal = 28.dp)
+                    // The two pages enter and leave the fade at the same
+                    // height, or switching between them looks like a jump.
+                    .padding(top = 14.dp, bottom = 6.dp),
                 verticalArrangement = Arrangement.spacedBy(18.dp),
             ) {
                 credits.roles.forEach { role ->

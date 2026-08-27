@@ -46,6 +46,8 @@ fun ArtistInfoView(
     artist: ArtistInfo?,
     loading: Boolean,
     modifier: Modifier = Modifier,
+    /** Held by the panel, so the fade at the foot knows when it is at the end. */
+    scroll: androidx.compose.foundation.ScrollState = rememberScrollState(),
 ) {
     if (artist == null) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
@@ -67,8 +69,9 @@ fun ArtistInfoView(
     Column(
         modifier
             .fillMaxSize()
-            .verticalScroll(rememberScrollState())
-            .padding(horizontal = 26.dp, vertical = 18.dp),
+            .verticalScroll(scroll)
+            .padding(horizontal = 26.dp)
+            .padding(top = 14.dp, bottom = 6.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(10.dp),
     ) {
@@ -108,10 +111,14 @@ fun ArtistInfoView(
         }
 
         if (artist.biography.isNotBlank()) {
+            // A paragraph, at the size Material gives a paragraph, in the ink
+            // the content of a panel is written in. It was set at the size and
+            // the grey of a caption, which is what a supporting line under a
+            // title wants and what six sentences over a photograph does not.
             Text(
                 artist.biography,
-                style = MaterialTheme.typography.bodyMedium,
-                color = InkDim,
+                style = MaterialTheme.typography.bodyLarge,
+                color = Ink,
                 modifier = Modifier
                     .fillMaxWidth()
                     .padding(top = 6.dp),
