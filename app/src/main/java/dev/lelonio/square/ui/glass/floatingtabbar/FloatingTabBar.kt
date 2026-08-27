@@ -466,18 +466,30 @@ class FloatingTabBarScrollConnection(
                 // drag the same distance back reads as the bar being slow to
                 // return. Coming back is near-immediate, with just enough travel
                 // required that a shaky finger mid-scroll can't oscillate it.
-                // LOCAL CHANGE: scrolling down folds it, scrolling up does not
-                // bring it back. Only arriving at the top of the page does (see
-                // onPostScroll), or tapping a tab.
+                // LOCAL CHANGE: two distances, and they are not the same
+                // distance.
                 //
-                // Upstream is symmetric, and symmetric is what a scrolling reader
-                // feels as the bar flickering: every small correction upwards
-                // pulled the whole thing open over the text again. The top of the
-                // page is a place rather than a direction, so the bar comes back
-                // when you have actually arrived somewhere.
+                // Upstream folds and unfolds at one threshold, and one threshold
+                // is what a scrolling reader feels as flickering: every small
+                // correction upwards pulls the whole bar open over the text.
+                // Folding therefore wants hysteresis, and the distance is free
+                // there — you are already moving away from the bar. Coming back
+                // is the opposite: the bar is what you are reaching for, and
+                // making you drag fifty more pixels to get it reads as the bar
+                // being slow.
+                //
+                // For a while this side was zero — the bar only came back at the
+                // very top of the page. That is defensible for a reader and
+                // wrong for this app: the page is a list you scrub up and down,
+                // and the way back to the music should not be "scroll all the
+                // way to the top first". `expandThresholdPx` has been documented
+                // as the answer to exactly this since the parameter was added;
+                // it had simply never been read.
                 if (accumulatedScroll <= -scrollThresholdPx && !isInline) {
                     isInline = true
                     accumulatedScroll = 0f // Reset after state change
+                } else if (accumulatedScroll >= expandThresholdPx && isInline) {
+                    expand()
                 }
             }
 
