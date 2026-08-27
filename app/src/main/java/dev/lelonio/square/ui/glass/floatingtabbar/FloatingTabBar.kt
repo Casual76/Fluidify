@@ -1380,16 +1380,28 @@ private fun SharedTransitionScope.ExpandedTabs(
     // where it is composed below.
     val tabsTinted = dampedDragAnimation.pressProgress > 0f
 
-    Box(modifier.width(with(density) { totalWidthPx.toDp() })) {
+    Box(
+        modifier
+            .width(with(density) { totalWidthPx.toDp() })
+            // The whole group travels, not just the pane.
+            //
+            // With the shared element on the row alone, the overlay drew that
+            // row above everything in the layout for the length of the unfold —
+            // and the indicator, an ordinary sibling underneath it, was hidden
+            // until the overlay handed the row back. That is the pop: the
+            // selection appeared at the end instead of growing with the bar.
+            // Hoisted here, pane, indicator and icon keep the order they have
+            // at rest and arrive together.
+            .sharedElement(
+                sharedContentState = rememberSharedContentState("tabGroup"),
+                animatedVisibilityScope = animatedVisibilityScope,
+                zIndexInOverlay = 1f
+            ),
+    ) {
         Row(
             Modifier
                 .fillMaxSize()
                 .graphicsLayer { translationX = panelOffset }
-                .sharedElement(
-                    sharedContentState = rememberSharedContentState("tabGroup"),
-                    animatedVisibilityScope = animatedVisibilityScope,
-                    zIndexInOverlay = 1f
-                )
                 .shadow(
                     shape = shapes.tabBarShape,
                     elevation = elevations.expandedElevation
@@ -1600,15 +1612,6 @@ private fun SharedTransitionScope.ExpandedTabs(
         Box(
             Modifier
                 .padding(sizes.tabBarContentPadding)
-                // NOT rendered in the shared transition overlay, though the tab
-                // row above it is, and that is why the indicator only becomes
-                // visible when the unfold ends: for the frames of the transition
-                // the row is drawn in the overlay, over everything else in the
-                // layout, and the puck fades in underneath it. Putting the puck
-                // in the overlay too is the obvious answer and was tried: the
-                // overlay positions it in its own coordinates, so it left the bar
-                // entirely and sat lit up over the mini player. Left as it is,
-                // rather than half-fixed.
                 .graphicsLayer {
                     val enter = puckEnter.value
                     alpha = enter
@@ -1790,7 +1793,12 @@ private fun SharedTransitionScope.ExpandedTabs(
                     // press ramp, so it is fully gone a third of the way into the
                     // gesture instead of lingering over the moving puck. Read in the
                     // draw phase, so it costs no recomposition.
-                    alpha = (1f - dampedDragAnimation.pressProgress * 3f).fastCoerceIn(0f, 1f)
+                    //
+                    // And it rides the indicator's own entrance: arriving at full
+                    // strength over a puck still growing under it read as two
+                    // things appearing at different times.
+                    alpha = (1f - dampedDragAnimation.pressProgress * 3f)
+                        .fastCoerceIn(0f, 1f) * puckEnter.value
                 }
                 .width(sizes.tabWidth)
                 .fillMaxHeight()
