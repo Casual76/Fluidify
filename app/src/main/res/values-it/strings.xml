@@ -317,4 +317,8 @@
     <string name="canvas">Canvas</string>
     <string name="canvas_show">Mostra il Canvas del brano</string>
     <string name="canvas_note">Il breve video che alcuni brani portano al posto della copertina. Spento risparmia dati e batteria.</string>
+    <string name="play_here">Riproduci qui</string>
+    <string name="playing_here">In riproduzione qui</string>
+    <string name="volume">Volume</string>
+    <string name="this_device">Questo dispositivo</string>
 </resources>

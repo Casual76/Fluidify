@@ -56,6 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Fill
+import com.adamglin.phosphoricons.Regular
+import com.adamglin.phosphoricons.regular.Broadcast
 import com.adamglin.phosphoricons.fill.Pause
 import com.adamglin.phosphoricons.fill.Play
 import com.adamglin.phosphoricons.fill.SkipForward
@@ -85,6 +87,16 @@ fun FloatingMiniPlayer(
     contentColor: androidx.compose.ui.graphics.Color = MiniPlayerInk,
     /** Folded: the strip has room for the song and one button, nothing else. */
     inline: Boolean = false,
+    /**
+     * The device the music is coming out of, when it is not this one.
+     *
+     * The pill is the only thing on screen while the listener is anywhere but
+     * the player, so it is the only place this fact can be told in time to be
+     * useful: the buttons here already drive a speaker in another room, and
+     * without a word about it they read as broken — pressed, and nothing
+     * happens in your hand.
+     */
+    playingOn: String? = null,
     onClick: () -> Unit,
     onTogglePlay: () -> Unit,
     onNext: () -> Unit,
@@ -198,17 +210,41 @@ fun FloatingMiniPlayer(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )
-                Text(
-                    text = state.artist,
-                    style = if (inline) {
-                        MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp)
-                    } else {
-                        MaterialTheme.typography.bodySmall
-                    },
-                    color = contentColor.copy(alpha = 0.7f),
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
+                val secondLine = if (inline) {
+                    MaterialTheme.typography.bodySmall.copy(fontSize = 10.sp)
+                } else {
+                    MaterialTheme.typography.bodySmall
+                }
+                if (playingOn != null) {
+                    // The device instead of the artist, in the accent, which is
+                    // the shape every client uses for this and the reason it is
+                    // read without being looked at. The artist has not gone far:
+                    // it is a line up in the player, which is one tap away.
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(
+                            PhosphorIcons.Regular.Broadcast,
+                            contentDescription = null,
+                            tint = MaterialTheme.colorScheme.primary,
+                            modifier = Modifier.size(if (inline) 11.dp else 13.dp),
+                        )
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = playingOn,
+                            style = secondLine,
+                            color = MaterialTheme.colorScheme.primary,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                } else {
+                    Text(
+                        text = state.artist,
+                        style = secondLine,
+                        color = contentColor.copy(alpha = 0.7f),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                    )
+                }
             }
 
             // Skip first and play second, which is the order asked for: the

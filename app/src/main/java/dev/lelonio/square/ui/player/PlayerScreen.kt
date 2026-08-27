@@ -201,6 +201,7 @@ fun PlayerScreen(
     onCloseDevices: () -> Unit,
     onRefreshDevices: () -> Unit,
     onSelectDevice: (String) -> Unit,
+    onSetDeviceVolume: (String, Int) -> Unit,
     /**
      * Opens the "add to playlist" sheet.
      *
@@ -730,6 +731,7 @@ fun PlayerScreen(
                                         state = devices,
                                         onSelect = onSelectDevice,
                                         onRefresh = onRefreshDevices,
+                                        onSetVolume = onSetDeviceVolume,
                                     )
                                 }
 

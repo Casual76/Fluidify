@@ -316,4 +316,8 @@
     <string name="canvas">Canvas</string>
     <string name="canvas_show">Mostrar el Canvas del tema</string>
     <string name="canvas_note">El clip breve que algunos temas traen en lugar de portada. Apagado ahorra datos y batería.</string>
+    <string name="play_here">Reproducir aquí</string>
+    <string name="playing_here">Sonando aquí</string>
+    <string name="volume">Volumen</string>
+    <string name="this_device">Este dispositivo</string>
 </resources>

@@ -331,4 +331,8 @@
     <string name="canvas">Canvas</string>
     <string name="canvas_show">Parçanın Canvas\'ını göster</string>
     <string name="canvas_note">Bazı parçaların kapak yerine getirdiği kısa klip. Kapalıyken veri ve pil harcamaz.</string>
+    <string name="play_here">Burada çal</string>
+    <string name="playing_here">Burada çalıyor</string>
+    <string name="volume">Ses</string>
+    <string name="this_device">Bu cihaz</string>
 </resources>

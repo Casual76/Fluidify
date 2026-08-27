@@ -341,6 +341,23 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val name: String,
         val type: String,
         val isActive: Boolean,
+        /**
+         * librespot's raw 0..65535, as the cluster publishes it, or -1 when
+         * this device does not say.
+         *
+         * Raw rather than a percentage because that is what the endpoint takes
+         * back, and rounding a percentage into 65535 steps and out again is how
+         * a slider ends up drifting a little every time it is touched.
+         */
+        val volume: Int = -1,
+        /**
+         * Whether this row is the phone the app is running on.
+         *
+         * The cluster says so, and it is not the same question as [isActive]:
+         * this phone can be in the list without being the one playing, which is
+         * the whole state Connect exists to describe.
+         */
+        val isThisPhone: Boolean = false,
     )
 
     private val _devices = MutableStateFlow(DevicesState())
@@ -366,6 +383,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                             name = device.name,
                             type = device.type,
                             isActive = device.active,
+                            volume = device.volume,
+                            isThisPhone = device.isThisPhone,
                         )
                     },
                 )
@@ -403,6 +422,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         devicesJob = viewModelScope.launch {
             runCatching { container.api.devices().devices }
                 .onSuccess { list ->
+                    // What the cluster already said about each device, so a
+                    // refresh does not throw away the half the Web API does not
+                    // carry as precisely. Volume comes back from here as a
+                    // percentage, which is 65535 rounded into a hundred steps:
+                    // the cluster's own number is kept when there is one.
+                    val known = _devices.value.devices.associateBy { it.id }
                     _devices.value = _devices.value.copy(
                         loading = false,
                         devices = list.mapNotNull { device ->
@@ -413,6 +438,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                                 name = device.name,
                                 type = device.type,
                                 isActive = device.isActive,
+                                volume = known[device.id]?.volume?.takeIf { it >= 0 }
+                                    ?: device.volumePercent
+                                        ?.let { it * MAX_VOLUME / 100 }
+                                    ?: -1,
+                                isThisPhone = dev.lelonio.square.data.RemoteConnect
+                                    .isThisPhone(device.id.orEmpty()),
                             )
                         },
                     )
@@ -518,6 +549,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
         _resumeHere.emit(ResumeHere(tracks, index, context, remote.positionMs))
+    }
+
+    /**
+     * Moves one device's volume, this phone's included.
+     *
+     * Written straight into the list as well as sent, because the cluster
+     * answers a beat later and a slider that waits for the account to agree
+     * with it springs back under the finger.
+     */
+    fun setDeviceVolume(deviceId: String, raw: Int) {
+        val clamped = raw.coerceIn(0, MAX_VOLUME)
+        _devices.value = _devices.value.copy(
+            devices = _devices.value.devices.map { device ->
+                if (device.id == deviceId) device.copy(volume = clamped) else device
+            },
+        )
+        viewModelScope.launch(Dispatchers.IO) {
+            if (dev.lelonio.square.data.RemoteConnect.isThisPhone(deviceId)) {
+                runCatching { NativeBridge.volume = clamped }
+                    .onFailure { android.util.Log.w(TAG, "own volume: ${describe(it)}") }
+            } else {
+                dev.lelonio.square.data.RemoteConnect.setVolume(deviceId, clamped)
+            }
+        }
     }
 
     fun transferPlayback(deviceId: String, positionMs: Long = 0L) = viewModelScope.launch {
@@ -2505,7 +2560,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * stops a cold start from showing a spurious error. Polling rather than a
      * callback because readiness lives behind a JNI boolean.
      */
-    private suspend fun awaitEngine(): Boolean = withTimeoutOrNull(ENGINE_TIMEOUT_MS) {
+    private suspend fun awaitEngine(): Boolean {
+        if (pollEngine()) return true
+        if (!container.spotifySignedIn) return false
+        // Not unreachable: displaced.
+        //
+        // Another client taking the account's session leaves this one holding a
+        // session that is valid to look at and dead to use, and the app used to
+        // report that as "could not reach Spotify" — a network problem, with a
+        // retry button that did the same nothing again. The session cannot be
+        // revived, so the engine builds another one; that is the same repair a
+        // transport command triggers, brought forward to where the failure is
+        // actually noticed. Nothing is playing here or the wait would not have
+        // failed, so there is no sound to interrupt.
+        android.util.Log.i(TAG, "engine did not answer, rebuilding the session")
+        withContext(Dispatchers.IO) {
+            runCatching { NativeBridge.reconnect() }
+                .onFailure { android.util.Log.w(TAG, "session not rebuilt: ${describe(it)}") }
+        }
+        return pollEngine()
+    }
+
+    private suspend fun pollEngine(): Boolean = withTimeoutOrNull(ENGINE_TIMEOUT_MS) {
         while (!NativeBridge.isConnected) {
             // The service clears the session when Spotify rejects it. Without
             // this check the UI would sit on "connecting" for the full timeout
@@ -2547,6 +2623,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         const val ENGINE_TIMEOUT_MS = 30_000L
         const val POLL_INTERVAL_MS = 250L
+
+        /** librespot's volume scale, which is the one the cluster speaks. */
+        const val MAX_VOLUME = 65_535
 
         /** Each track is its own access-point round trip. */
         /** Tracks resolved per access-point round trip; see loadContextInto. */

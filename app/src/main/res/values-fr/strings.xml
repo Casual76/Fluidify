@@ -316,4 +316,8 @@
     <string name="canvas">Canvas</string>
     <string name="canvas_show">Afficher le Canvas du titre</string>
     <string name="canvas_note">Le court clip que certains titres portent à la place d\'une pochette. Désactivé, il économise données et batterie.</string>
+    <string name="play_here">Écouter ici</string>
+    <string name="playing_here">En cours ici</string>
+    <string name="volume">Volume</string>
+    <string name="this_device">Cet appareil</string>
 </resources>

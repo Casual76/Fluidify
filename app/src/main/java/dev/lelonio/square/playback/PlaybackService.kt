@@ -255,6 +255,28 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
+        // Staying in the account's device list, without being asked.
+        //
+        // A Connect device dies with its session, and a session dies of a
+        // network drop or of another client taking the account over. The repair
+        // used to be lazy — it happened on the next transport command — which
+        // meant the phone was missing from every other client's device list
+        // precisely when someone was looking at that list *because* they did not
+        // have the phone in their hand.
+        //
+        // A poll rather than an event because the engine sets a flag and sends
+        // nothing, and reading one boolean over JNI twice a minute is not worth
+        // a new event, a new name in the protocol and a new way for the two
+        // sides to disagree. The rebuild itself only happens when the flag is
+        // set and nothing is playing here; see LibrespotPlayer.ensureDevice.
+        scope.launch {
+            while (true) {
+                kotlinx.coroutines.delay(DEVICE_WATCH_MS)
+                runCatching { librespot?.ensureDevice() }
+                    .onFailure { android.util.Log.w(TAG, "device watch: $it") }
+            }
+        }
+
         startSpotifyEngineIfActive()
     }
 
@@ -1307,6 +1329,15 @@ class PlaybackService : MediaLibraryService() {
 
     companion object {
         private const val TAG = "PlaybackService"
+
+        /**
+         * How often the Connect device is checked for still being there.
+         *
+         * Half a minute: long enough that the check itself costs nothing, short
+         * enough that a phone which dropped off the account's list is back on it
+         * before anyone has finished walking to the speaker.
+         */
+        private const val DEVICE_WATCH_MS = 30_000L
 
         /** How often the position is written back while playing. */
         private const val SAVE_INTERVAL_MS = 10_000L

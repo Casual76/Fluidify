@@ -316,4 +316,8 @@
     <string name="canvas">Canvas</string>
     <string name="canvas_show">Mostrar o Canvas da faixa</string>
     <string name="canvas_note">O clipe curto que algumas faixas trazem em vez de capa. Desligado poupa dados e bateria.</string>
+    <string name="play_here">Reproduzir aqui</string>
+    <string name="playing_here">A tocar aqui</string>
+    <string name="volume">Volume</string>
+    <string name="this_device">Este dispositivo</string>
 </resources>

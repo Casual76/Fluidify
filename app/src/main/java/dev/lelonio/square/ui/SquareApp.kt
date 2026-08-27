@@ -1482,6 +1482,7 @@ fun SquareApp(
                             FloatingMiniPlayer(
                                 state = playback,
                                 positionMs = positionMs,
+                                playingOn = remote?.deviceName?.takeIf { it.isNotEmpty() },
                                 modifier = accessoryModifier
                                     .fillMaxWidth()
                                     .then(pillGlass)
@@ -1821,6 +1822,7 @@ fun SquareApp(
                                 connectAvailable = true,
                                 onCloseDevices = viewModel::closeDevices,
                                 onRefreshDevices = viewModel::refreshDevices,
+                                onSetDeviceVolume = viewModel::setDeviceVolume,
                                 // The position goes with the request: a
                                 // handover resumes where the listener was, and
                                 // this is the only side that knows to the

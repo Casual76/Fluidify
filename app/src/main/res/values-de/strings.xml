@@ -316,4 +316,8 @@
     <string name="canvas">Canvas</string>
     <string name="canvas_show">Canvas des Titels zeigen</string>
     <string name="canvas_note">Der kurze Clip, den manche Titel statt eines Covers mitbringen. Aus spart Daten und Akku.</string>
+    <string name="play_here">Hier abspielen</string>
+    <string name="playing_here">Läuft hier</string>
+    <string name="volume">Lautstärke</string>
+    <string name="this_device">Dieses Gerät</string>
 </resources>

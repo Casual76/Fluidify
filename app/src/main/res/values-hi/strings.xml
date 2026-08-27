@@ -331,4 +331,8 @@
     <string name="canvas">Canvas</string>
     <string name="canvas_show">ट्रैक का Canvas दिखाएँ</string>
     <string name="canvas_note">कुछ ट्रैक कवर की जगह जो छोटा क्लिप लाते हैं। बंद रखने पर डेटा और बैटरी बचती है।</string>
+    <string name="play_here">यहाँ चलाएँ</string>
+    <string name="playing_here">यहाँ चल रहा है</string>
+    <string name="volume">आवाज़</string>
+    <string name="this_device">यह डिवाइस</string>
 </resources>

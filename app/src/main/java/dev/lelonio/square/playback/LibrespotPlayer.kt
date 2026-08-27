@@ -461,6 +461,27 @@ class LibrespotPlayer(
         }, "square-reconnect").start()
     }
 
+    /**
+     * Rebuilds the Connect device if it has been lost, with no command to carry.
+     *
+     * Being in the account's device list is not a consequence of being used: a
+     * phone that has lost its Connect device stays missing from every other
+     * client's list until somebody presses something *here*, which is exactly
+     * backwards — the reason to look at the list is usually that you are not
+     * holding the phone. So the repair is asked for on a timer as well; see
+     * PlaybackService.
+     *
+     * Never while this phone is making sound. Rebuilding discards the session
+     * and silences the sink, which is the right price for a command the
+     * listener just gave and quite the wrong one for a repair they did not ask
+     * for. A device lost mid-song is repaired when the song ends.
+     */
+    fun ensureDevice() {
+        if (released || !deviceGone) return
+        if (playWhenReady && playbackState == Player.STATE_READY) return
+        withDevice {}
+    }
+
     /** Call after any queue mutation, before [invalidateState]. */
     private fun onQueueChanged() {
         cachedPlaylist = null
