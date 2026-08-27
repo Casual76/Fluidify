@@ -101,11 +101,7 @@ class MainActivity : ComponentActivity() {
      */
     override fun onUserLeaveHint() {
         super.onUserLeaveHint()
-        // Either kind of video: YouTube's, and the music video Spotify has for
-        // a track. Leaving the app while watching one means the same thing in
-        // both cases.
-        val watching = dev.lelonio.square.backend.youtube.YouTubeVideoMode.enabled.value ||
-            dev.lelonio.square.backend.spotify.SpotifyVideoMode.enabled.value
+        val watching = dev.lelonio.square.backend.spotify.SpotifyVideoMode.enabled.value
         if (!watching) return
         runCatching { enterPictureInPictureMode(pipParams()) }
     }
@@ -178,17 +174,13 @@ class MainActivity : ComponentActivity() {
             }
             if (intent?.action != ACTION_LISTEN) return
             val at = controller?.currentPosition ?: 0L
-            if (dev.lelonio.square.backend.spotify.SpotifyVideoMode.enabled.value) {
-                dev.lelonio.square.backend.spotify.SpotifyVideoMode.listen(at)
-            } else {
-                controller?.let(dev.lelonio.square.backend.youtube.YouTubeVideoMode::toggle)
-            }
+            dev.lelonio.square.backend.spotify.SpotifyVideoMode.listen(at)
             // Said before finishing, and this matters: the flag is the app's,
             // not the window's, and finishing from inside a floating window
             // does not always report the window closing. Left set, the next
             // time the app was opened it drew the floating window's layout —
             // a black rectangle with a video surface and nothing else.
-            dev.lelonio.square.backend.youtube.YouTubeVideoMode.setPictureInPicture(false)
+            dev.lelonio.square.backend.spotify.SpotifyVideoMode.setPictureInPicture(false)
 
             // Closing the window rather than going back to a full screen the
             // listener has already left. The music is in the service, and it
@@ -206,7 +198,7 @@ class MainActivity : ComponentActivity() {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         inPictureInPicture = isInPictureInPictureMode
-        dev.lelonio.square.backend.youtube.YouTubeVideoMode.setPictureInPicture(
+        dev.lelonio.square.backend.spotify.SpotifyVideoMode.setPictureInPicture(
             isInPictureInPictureMode,
         )
     }
@@ -328,8 +320,8 @@ class MainActivity : ComponentActivity() {
             .setMediaId(track.uri)
             // The same URI again, as the thing to play. The librespot player
             // ignores it and works off the media id, but ExoPlayer — which is
-            // what the YouTube backend uses — plays the URI and nothing else;
-            // its resolver turns a `ytmusic:` one into a real stream at load.
+            // what the local-files player uses — plays the URI and nothing
+            // else; its resolver turns a `local:` one into a content URI at load.
             .setUri(track.uri)
             .setMediaMetadata(
                 MediaMetadata.Builder()

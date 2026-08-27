@@ -95,7 +95,7 @@ class PlaybackService : MediaLibraryService() {
         quality = container.quality
         crossfade = container.crossfade
 
-        player = buildPlayer(container.preferences.backend.value)
+        player = buildPlayer(PlayerKind.SPOTIFY)
         val browseTree = MediaBrowseTree(this, scope, ::ensurePlayerFor)
         session = MediaLibrarySession.Builder(this, player, browseTree)
             // Without this the notification is inert to a tap: Media3 has no way
@@ -255,32 +255,18 @@ class PlaybackService : MediaLibraryService() {
             }
         }
 
-        // Same reasoning for the source itself: swapping backends is swapping
-        // the player under a live session, which only the service can do.
-        scope.launch {
-            container.preferences.backend.drop(1).collect(::switchBackend)
-        }
-
         startSpotifyEngineIfActive()
     }
 
     /**
-     * Builds the player for [backendId] and wires up whatever is specific to it.
-     *
-     * The Spotify half is everything the native engine needs: the sink it
-     * writes into, the effects chain applied to that sink, and the JNI context.
-     * The YouTube half needs none of it — ExoPlayer owns its own output — so
-     * this is the one place the two genuinely differ.
-     */
-    /**
      * Which player is behind the session.
      *
-     * A backend each, and one more for the music already on the phone: those
-     * files belong to no service, they are listed in both libraries, and
-     * neither backend's player can open them. So what decides this is not only
-     * the setting but what is being played; see [ensurePlayerFor].
+     * The Spotify engine, plus one for the music already on the phone — those
+     * files belong to no service and the engine cannot open them — and one for
+     * the music video Spotify has for a track. So what decides this is not a
+     * setting but what is being played; see [ensurePlayerFor].
      */
-    private enum class PlayerKind { SPOTIFY, YOUTUBE, LOCAL, VIDEO }
+    private enum class PlayerKind { SPOTIFY, LOCAL, VIDEO }
 
     private var playerKind = PlayerKind.SPOTIFY
 
@@ -361,7 +347,7 @@ class PlaybackService : MediaLibraryService() {
             is dev.lelonio.square.backend.spotify.SpotifyVideoMode.Request.Skip -> {
                 dev.lelonio.square.backend.spotify.SpotifyVideoMode.setEnabled(false)
                 dev.lelonio.square.backend.spotify.SpotifyVideoMode.setManifest(null)
-                swapPlayer(kindFor(container.preferences.backend.value), restore = true)
+                swapPlayer(PlayerKind.SPOTIFY, restore = true)
                 if (request.forward) player.seekToNext() else player.seekToPrevious()
                 player.play()
             }
@@ -369,7 +355,7 @@ class PlaybackService : MediaLibraryService() {
             is dev.lelonio.square.backend.spotify.SpotifyVideoMode.Request.Listen -> {
                 dev.lelonio.square.backend.spotify.SpotifyVideoMode.setEnabled(false)
                 dev.lelonio.square.backend.spotify.SpotifyVideoMode.setManifest(null)
-                swapPlayer(kindFor(container.preferences.backend.value), restore = true)
+                swapPlayer(PlayerKind.SPOTIFY, restore = true)
                 player.seekTo(request.positionMs)
                 player.play()
             }
@@ -383,20 +369,6 @@ class PlaybackService : MediaLibraryService() {
     }
 
     /**
-     * Note on starting with the local player, which this deliberately does not
-     * do: the Spotify engine is started by the player that needs it, and
-     * everything the catalogue does needs it too. Coming up with the local
-     * player behind the session left the engine unstarted, so the library sat
-     * on its spinner for ever while a local file played perfectly. A queue of
-     * local files therefore does not survive a restart; it is put back the
-     * moment one is played again.
-     */
-    private fun kindFor(backendId: dev.lelonio.square.backend.BackendId) = when (backendId) {
-        dev.lelonio.square.backend.BackendId.SPOTIFY -> PlayerKind.SPOTIFY
-        dev.lelonio.square.backend.BackendId.YOUTUBE_MUSIC -> PlayerKind.YOUTUBE
-    }
-
-    /**
      * Puts the right player behind the session for what is about to play.
      *
      * Called before a queue is handed over, because a local file arriving at
@@ -406,10 +378,17 @@ class PlaybackService : MediaLibraryService() {
      * last one, which is nothing at all.
      */
     suspend fun ensurePlayerFor(firstUri: String?) {
+        // Note on starting with the local player, which this deliberately does
+        // not do: the Spotify engine is started by the player that needs it,
+        // and everything the catalogue does needs it too. Coming up with the
+        // local player behind the session left the engine unstarted, so the
+        // library sat on its spinner for ever while a local file played
+        // perfectly. A queue of local files therefore does not survive a
+        // restart; it is put back the moment one is played again.
         val wanted = if (firstUri != null && dev.lelonio.square.data.LocalLibrary.isLocal(firstUri)) {
             PlayerKind.LOCAL
         } else {
-            kindFor(container.preferences.backend.value)
+            PlayerKind.SPOTIFY
         }
         if (wanted == playerKind) return
 
@@ -428,10 +407,6 @@ class PlaybackService : MediaLibraryService() {
         // set on the new player by the session itself.
         swapPlayer(wanted, restore = false)
     }
-
-    private fun buildPlayer(
-        backendId: dev.lelonio.square.backend.BackendId,
-    ): androidx.media3.common.Player = buildPlayer(kindFor(backendId))
 
     private fun buildPlayer(
         kind: PlayerKind,
@@ -500,62 +475,42 @@ class PlaybackService : MediaLibraryService() {
                 }
         }
 
-        PlayerKind.SPOTIFY -> buildBackendPlayer(dev.lelonio.square.backend.BackendId.SPOTIFY)
-        PlayerKind.YOUTUBE -> buildBackendPlayer(dev.lelonio.square.backend.BackendId.YOUTUBE_MUSIC)
+        PlayerKind.SPOTIFY -> buildSpotifyPlayer()
     }
-
-    private fun buildBackendPlayer(
-        backendId: dev.lelonio.square.backend.BackendId,
-    ): androidx.media3.common.Player = when (backendId) {
-        dev.lelonio.square.backend.BackendId.SPOTIFY -> {
-            val built = container.spotifyBackend.createPlayer(playbackHost) as LibrespotPlayer
-            librespot = built
-
-            // Another client pointing this device at a track of its own; see
-            // LibrespotPlayer.onUnknownTrack.
-            built.onUnknownTrack = { uri -> scope.launch { adoptPlayingTrack(uri) } }
-
-            // Applied straight to the output rather than waiting for the UI: the
-            // service can be running with no activity attached at all.
-            audioOutput.setSpeedAndPitch(AudioEffects.speed.value, AudioEffects.pitch.value)
-            built.restorePlaybackParameters(AudioEffects.speed.value, AudioEffects.pitch.value)
-
-            NativeBridge.initContext(this)
-            // Before connectEngine: the sink is built as soon as playback starts
-            // and has nowhere to write without it.
-            NativeBridge.setAudioOutput(audioOutput)
-
-            // Reverb is not part of the Player interface, so it arrives here
-            // rather than through the media session.
-            scope.launch {
-                AudioEffects.reverb.collect(audioOutput::setReverbAmount)
-            }
-            built
-        }
-
-        dev.lelonio.square.backend.BackendId.YOUTUBE_MUSIC -> {
-            librespot = null
-            container.youtubeBackend.createPlayer(playbackHost).also { built ->
-                built.playbackParameters = androidx.media3.common.PlaybackParameters(
-                    AudioEffects.speed.value,
-                    AudioEffects.pitch.value,
-                )
-            }
-        }
-    }.also { playerKind = kindFor(backendId) }
 
     /**
-     * Swaps the player under the running session.
-     *
-     * The session itself is kept: rebuilding it would drop the notification and
-     * every controller bound to it, and the media session API exists precisely
-     * so the player behind it can be replaced.
+     * Builds the Spotify player and wires up everything the native engine
+     * needs: the sink it writes into, the effects chain applied to that sink,
+     * and the JNI context.
      */
-    private fun switchBackend(backendId: dev.lelonio.square.backend.BackendId) = scope.launch {
-        swapPlayer(kindFor(backendId))
+    private fun buildSpotifyPlayer(): androidx.media3.common.Player {
+        val built = container.spotifyBackend.createPlayer(playbackHost) as LibrespotPlayer
+        librespot = built
+
+        // Another client pointing this device at a track of its own; see
+        // LibrespotPlayer.onUnknownTrack.
+        built.onUnknownTrack = { uri -> scope.launch { adoptPlayingTrack(uri) } }
+
+        // Applied straight to the output rather than waiting for the UI: the
+        // service can be running with no activity attached at all.
+        audioOutput.setSpeedAndPitch(AudioEffects.speed.value, AudioEffects.pitch.value)
+        built.restorePlaybackParameters(AudioEffects.speed.value, AudioEffects.pitch.value)
+
+        NativeBridge.initContext(this)
+        // Before connectEngine: the sink is built as soon as playback starts
+        // and has nowhere to write without it.
+        NativeBridge.setAudioOutput(audioOutput)
+
+        // Reverb is not part of the Player interface, so it arrives here
+        // rather than through the media session.
+        scope.launch {
+            AudioEffects.reverb.collect(audioOutput::setReverbAmount)
+        }
+        playerKind = PlayerKind.SPOTIFY
+        return built
     }
 
-    /** The swap itself; see [switchBackend] and [ensurePlayerFor]. */
+    /** The swap itself; see [ensurePlayerFor]. */
     private suspend fun swapPlayer(kind: PlayerKind, restore: Boolean = true) {
         // Only a player with something in it has anything to save, and saving
         // an empty one does not write nothing: it clears the store. At startup
@@ -571,15 +526,7 @@ class PlaybackService : MediaLibraryService() {
         // an mp3 left the library unable to answer anything until the listener
         // went back to a Spotify track. It stays up, and the local player takes
         // the speaker for as long as it is in front.
-        if (librespot != null && kind == PlayerKind.YOUTUBE) {
-            // Off the main thread, and this is why the switch is a coroutine at
-            // all: shutting the native engine down means stopping its threads
-            // and closing its session, which took long enough to hang the input
-            // queue — the app was reported as not responding, and the animation
-            // meant to cover the switch never got a frame to draw in.
-            runCatching { withContext(Dispatchers.IO) { NativeBridge.shutdown() } }
-            engineStarted = false
-        }
+        //
         // Going to a local file: the Spotify player is set aside rather than
         // released.
         //
@@ -609,7 +556,7 @@ class PlaybackService : MediaLibraryService() {
             // restored into — leaving it out is what made a local song paused
             // at closing time impossible to start again: the screen had it, the
             // player had nothing.
-            if (restore) restoreTimeline(container.preferences.backend.value)
+            if (restore) restoreTimeline()
             followReverb()
             observeForSaving()
             return
@@ -651,8 +598,6 @@ class PlaybackService : MediaLibraryService() {
             player.clearMediaItems()
         }
         runCatching { player.release() }
-        // Video belongs to the source that was playing it.
-        dev.lelonio.square.backend.youtube.YouTubeVideoMode.reset()
 
         player = buildPlayer(kind)
         session?.player = player
@@ -668,7 +613,7 @@ class PlaybackService : MediaLibraryService() {
         if (librespot != null) {
             connectEngine(restoreQueue = restore)
         } else {
-            if (restore) restoreTimeline(container.preferences.backend.value)
+            if (restore) restoreTimeline()
             observeForSaving()
         }
     }
@@ -684,7 +629,7 @@ class PlaybackService : MediaLibraryService() {
         if (librespot != null) {
             connectEngine()
         } else {
-            restoreTimeline(container.preferences.backend.value)
+            restoreTimeline()
             observeForSaving()
         }
         restoreLocalQueueIfLast()
@@ -1123,7 +1068,7 @@ class PlaybackService : MediaLibraryService() {
      * the timeline exposes just the current sequence.
      */
     private fun savePlayback() {
-        // A backend with no PlayQueue behind it — the YouTube one — is saved off
+        // A player with no PlayQueue behind it — the local one — is saved off
         // the Media3 timeline instead. That loses the pre-shuffle order, which
         // only librespot's queue knows, so a shuffled queue comes back in the
         // order it was actually playing rather than the order it was built in.
@@ -1199,7 +1144,7 @@ class PlaybackService : MediaLibraryService() {
      * to this player, and loading them would fill the screen with tracks that
      * fail one after another.
      */
-    private fun restoreTimeline(backendId: dev.lelonio.square.backend.BackendId) {
+    private fun restoreTimeline() {
         if (player.mediaItemCount > 0) return
         val saved = playbackStore.load() ?: return
         // The phone's own files belong to no backend, so they are matched
@@ -1208,11 +1153,7 @@ class PlaybackService : MediaLibraryService() {
         if (playerKind == PlayerKind.LOCAL) {
             if (saved.tracks.none { dev.lelonio.square.data.LocalLibrary.isLocal(it.uri) }) return
         } else {
-            val backend = when (backendId) {
-                dev.lelonio.square.backend.BackendId.SPOTIFY -> container.spotifyBackend
-                dev.lelonio.square.backend.BackendId.YOUTUBE_MUSIC -> container.youtubeBackend
-            }
-            if (saved.tracks.none { backend.owns(it.uri) }) return
+            if (saved.tracks.none { container.spotifyBackend.owns(it.uri) }) return
         }
 
         player.setMediaItems(

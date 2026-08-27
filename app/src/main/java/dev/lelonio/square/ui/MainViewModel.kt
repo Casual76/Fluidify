@@ -6,9 +6,6 @@ import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.auth.SpotifyOAuth
-import dev.lelonio.square.backend.BackendAuthState
-import dev.lelonio.square.backend.BackendId
-import dev.lelonio.square.backend.HomeRow
 import dev.lelonio.square.backend.SearchLabels
 import dev.lelonio.square.R
 import dev.lelonio.square.data.Catalog
@@ -196,41 +193,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private val _feed = MutableStateFlow(FeedState())
     val feed: StateFlow<FeedState> = _feed.asStateFlow()
     private var feedJob: Job? = null
-
-    /** YouTube Music's own home page, as it laid it out; see [MusicBackend.homeRows]. */
-    data class YouTubeHomeState(
-        val rows: List<HomeRow> = emptyList(),
-        val loading: Boolean = false,
-        val error: String? = null,
-    )
-
-    private val _youtubeHome = MutableStateFlow(YouTubeHomeState())
-    val youtubeHome: StateFlow<YouTubeHomeState> = _youtubeHome.asStateFlow()
-    private var youtubeHomeJob: Job? = null
-
-    /**
-     * Loads it, once per sign-in state.
-     *
-     * Re-read after signing in rather than cached for the session: the page is
-     * a different page once YouTube knows whose it is, and leaving the
-     * signed-out one up would make the login look like it did nothing.
-     */
-    fun loadYouTubeHome(force: Boolean = false) {
-        val backend = container.activeBackend
-        if (backend.id != BackendId.YOUTUBE_MUSIC) return
-        if (youtubeHomeJob?.isActive == true) return
-        if (!force && _youtubeHome.value.rows.isNotEmpty()) return
-
-        _youtubeHome.value = _youtubeHome.value.copy(loading = true, error = null)
-        youtubeHomeJob = viewModelScope.launch {
-            runCatching { backend.homeRows() }
-                .onSuccess { _youtubeHome.value = YouTubeHomeState(rows = it, loading = false) }
-                .onFailure {
-                    android.util.Log.e(TAG, "youtube home failed: ${chain(it)}", it)
-                    _youtubeHome.value = YouTubeHomeState(loading = false, error = describe(it))
-                }
-        }
-    }
 
     /**
      * Loads the feed, quietly.
@@ -996,10 +958,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * is worth an error on the home page.
      */
     fun loadFriends() = viewModelScope.launch {
-        if (container.activeBackend.id != BackendId.SPOTIFY) {
-            _friends.value = emptyList()
-            return@launch
-        }
         if (!awaitEngine()) return@launch
         runCatching { dev.lelonio.square.data.FriendActivity.friends() }
             .onSuccess { _friends.value = it }
@@ -1119,7 +1077,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     val recent: StateFlow<List<CatalogTrack>> =
-        combine(container.recentStore.tracks, container.preferences.backend) { tracks, _ ->
+        container.recentStore.tracks.map { tracks ->
             tracks.filter { container.activeBackend.owns(it.uri) }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -1136,7 +1094,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * offering a row that does nothing.
      */
     val searchHistory: StateFlow<List<CatalogTrack>> =
-        combine(container.searchHistory.tracks, container.preferences.backend) { tracks, _ ->
+        container.searchHistory.tracks.map { tracks ->
             tracks.filter { container.activeBackend.owns(it.uri) }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
@@ -1197,18 +1155,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     init {
-        // Everything on screen belongs to one source, so a change of source
-        // starts the app's data over rather than patching it: the library, the
-        // feed, the search results, the open detail page and the recent list all
-        // describe a catalogue that is no longer the one being used.
-        viewModelScope.launch {
-            container.preferences.backend.drop(1).collect { reload() }
-        }
-
-        if (container.activeBackend.id != BackendId.SPOTIFY) {
-            // No engine to authenticate, so nothing to send the service.
-            refresh()
-        } else if (container.spotifySignedIn) {
+        if (container.spotifySignedIn) {
             PlaybackService.connect(app)
             refresh()
         }
@@ -1255,20 +1202,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _playlist.value = PlaylistState()
         _feed.value = FeedState()
         _search.value = SearchState()
-        _youtubeHome.value = YouTubeHomeState()
         _state.value = UiState.Loading
-        if (container.activeBackend.id == BackendId.SPOTIFY && container.spotifySignedIn) {
+        if (container.spotifySignedIn) {
             PlaybackService.connect(getApplication())
         }
         refresh()
-        if (container.activeBackend.id == BackendId.SPOTIFY) {
-            // The home page's own sections, which nothing else asks for again:
-            // the screen is already composed, so its one-shot load will not run
-            // a second time.
-            loadFeed()
-        } else {
-            loadYouTubeHome(force = true)
-        }
+        // The home page's own sections, which nothing else asks for again: the
+        // screen is already composed, so its one-shot load will not run a
+        // second time.
+        loadFeed()
     }
 
     fun refresh(): Job {
@@ -1277,30 +1219,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private fun launchRefresh() = viewModelScope.launch {
-        val backend = container.activeBackend
-        if (backend.id != BackendId.SPOTIFY) {
-            // No access point to wait for and no Premium account to check: this
-            // backend is usable at once, and signing in only adds the library.
-            _state.value = UiState.Loading
-            val name = (backend.authState.value as? BackendAuthState.LoggedIn)?.displayName
-            runCatching { backend.playlists() }
-                .onSuccess { playlists ->
-                    _state.value = UiState.Ready(
-                        displayName = name.orEmpty(),
-                        playlists = withLocalFiles(playlists),
-                    )
-                }
-                .onFailure {
-                    android.util.Log.w(TAG, "youtube library unavailable: ${describe(it)}")
-                    // Not a failure worth a whole error screen: the library is
-                    // the one part that needs an account, and everything else
-                    // on this backend works without one.
-                    _state.value =
-                        UiState.Ready(displayName = name.orEmpty(), playlists = withLocalFiles(emptyList()))
-                }
-            return@launch
-        }
-
         if (!container.spotifySignedIn) {
             _state.value = UiState.LoggedOut
             return@launch
@@ -1483,11 +1401,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * sent.
      */
     fun openLink(uri: String) = viewModelScope.launch {
-        // A Spotify link is a Spotify page. Arriving on the other backend, it
-        // would resolve against a catalogue that has never heard of it.
-        if (container.activeBackend.id != BackendId.SPOTIFY) {
-            container.preferences.setBackend(BackendId.SPOTIFY)
-        }
         // No name and no picture: the page asks for both itself, and shows the
         // list without waiting for either.
         openContext(uri, "")
@@ -2528,7 +2441,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val savedAlbums: StateFlow<List<CatalogPlaylist>> = _savedAlbums.asStateFlow()
 
     fun loadSavedAlbums() = viewModelScope.launch {
-        if (!container.webApi.isReady || container.activeBackend.id != BackendId.SPOTIFY) {
+        if (!container.webApi.isReady) {
             _savedAlbums.value = emptyList()
             return@launch
         }
@@ -2561,7 +2474,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     val followedArtists: StateFlow<List<SearchItem>> = _followedArtists.asStateFlow()
 
     fun loadFollowedArtists() = viewModelScope.launch {
-        if (!container.webApi.isReady || container.activeBackend.id != BackendId.SPOTIFY) {
+        if (!container.webApi.isReady) {
             _followedArtists.value = emptyList()
             return@launch
         }

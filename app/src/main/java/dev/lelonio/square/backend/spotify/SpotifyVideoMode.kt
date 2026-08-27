@@ -97,4 +97,19 @@ object SpotifyVideoMode {
     fun reset() {
         _enabled.value = false
     }
+
+    private val _pictureInPicture = MutableStateFlow(false)
+
+    /**
+     * Whether the app is currently a floating window.
+     *
+     * The player screen draws only the picture while it is: a window that small
+     * has room for the video and nothing else, and the transport controls are
+     * the system's to draw there.
+     */
+    val pictureInPicture: StateFlow<Boolean> = _pictureInPicture.asStateFlow()
+
+    fun setPictureInPicture(active: Boolean) {
+        _pictureInPicture.value = active
+    }
 }

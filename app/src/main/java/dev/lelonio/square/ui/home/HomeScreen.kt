@@ -60,7 +60,6 @@ import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.SpotifyLogo
-import com.adamglin.phosphoricons.regular.YoutubeLogo
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.ui.platform.LocalDensity
@@ -134,16 +133,6 @@ fun HomeScreen(
     onOpenFriends: () -> Unit = {},
     /** The layer the glass on this page refracts; see the note in SquareApp. */
     backdrop: Backdrop,
-    /**
-     * True when the active source is YouTube Music.
-     *
-     * [state] describes the *Spotify* session, so on YouTube it is permanently
-     * `LoggedOut` and this page would offer a login for an account the user
-     * chose not to use. There is no account to log into here, so the page shows
-     * what it genuinely has instead.
-     */
-    youtubeMode: Boolean = false,
-    youtubeHome: MainViewModel.YouTubeHomeState = MainViewModel.YouTubeHomeState(),
     onPlayTrending: (List<CatalogTrack>, Int) -> Unit = { _, _ -> },
     /**
      * Spotify's own personalised shelves, empty when the gateway said nothing.
@@ -154,21 +143,6 @@ fun HomeScreen(
      */
     shelves: List<dev.lelonio.square.data.HomeShelf> = emptyList(),
 ) {
-    if (youtubeMode) {
-        YouTubeHome(
-            contentPadding = contentPadding,
-            home = youtubeHome,
-            recent = recent,
-            accountName = (state as? MainViewModel.UiState.Ready)?.displayName.orEmpty(),
-            backdrop = backdrop,
-            onPlayRecent = onPlayRecent,
-            onPlayTrending = onPlayTrending,
-            onOpenPlaylist = onOpenPlaylist,
-            onOpenSettings = onOpenSettings,
-        )
-        return
-    }
-
     when (state) {
         MainViewModel.UiState.LoggedOut -> Centered {
             AppIcon(84.dp)
@@ -1062,188 +1036,6 @@ private fun GlassAction(label: String, backdrop: Backdrop, onClick: () -> Unit) 
     ) {
         Text(label, style = MaterialTheme.typography.titleMedium, color = Ink)
     }
-}
-
-/**
- * The home page when the source is YouTube Music.
- *
- * Deliberately thin, and honestly so. Everything the Spotify home page is made
- * of — the playlists, the top artists, what the account played on other
- * devices — is an account's own data, and this backend is anonymous: there is
- * no account to have any of it. What does exist is what was played here, which
- * is kept on the device and works the same for both sources.
- *
- * So it shows that, and otherwise points at search rather than filling the
- * screen with rows invented to look busy.
- */
-@Composable
-private fun YouTubeHome(
-    contentPadding: PaddingValues,
-    home: MainViewModel.YouTubeHomeState,
-    recent: List<CatalogTrack>,
-    accountName: String,
-    backdrop: Backdrop,
-    onPlayRecent: (List<CatalogTrack>, Int) -> Unit,
-    onPlayTrending: (List<CatalogTrack>, Int) -> Unit,
-    onOpenPlaylist: (CatalogPlaylist) -> Unit,
-    onOpenSettings: () -> Unit,
-) {
-    val empty = home.rows.isEmpty() && recent.isEmpty()
-    if (empty) {
-        Box(Modifier.fillMaxSize()) {
-            Centered {
-                if (home.loading) {
-                    CircularProgressIndicator(color = Ink, strokeWidth = 2.dp)
-                } else {
-                    AppIcon(84.dp)
-                    FluidifyWordmark(height = 28.dp)
-                    Text(
-                        stringResource(R.string.youtube_home_empty),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = InkDim,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 40.dp),
-                    )
-                }
-            }
-            // Over the empty state rather than above it: the settings are the
-            // one thing still worth reaching from a page with nothing on it,
-            // and signing in is done from there.
-            YouTubeHeader(
-                accountName = accountName,
-                topPadding = contentPadding.calculateTopPadding(),
-                backdrop = backdrop,
-                // Nothing scrolls under it here, so it stays as it opens.
-                collapse = { 0f },
-                onOpenSettings = onOpenSettings,
-            )
-        }
-        return
-    }
-
-    val listState = rememberLazyListState()
-    // The same collapse the Spotify page has, read the same way; see the note
-    // there. The header is a sibling of the list rather than its first item
-    // precisely so it can shrink while the list scrolls under it.
-    val collapse by remember {
-        derivedStateOf {
-            if (listState.firstVisibleItemIndex > 0) 1f
-            else (listState.firstVisibleItemScrollOffset / COLLAPSE_DISTANCE_PX)
-                .coerceIn(0f, 1f)
-        }
-    }
-
-    Column(Modifier.fillMaxSize()) {
-        YouTubeHeader(
-            accountName = accountName,
-            topPadding = contentPadding.calculateTopPadding(),
-            backdrop = backdrop,
-            collapse = { collapse },
-            onOpenSettings = onOpenSettings,
-        )
-
-        LazyColumn(
-            // The same fade the Spotify list has: the rows dissolve into the
-            // header rather than ending against it. See the note there for why
-            // the mask needs a layer of its own.
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-                .drawWithContent {
-                    drawContent()
-                    drawRect(
-                        brush = Brush.verticalGradient(
-                            0f to Color.Transparent,
-                            FADE_FRACTION to Color.Black,
-                        ),
-                        blendMode = BlendMode.DstIn,
-                    )
-                },
-            state = listState,
-            // The header owns the top of the page; what is left is the room the
-            // player bar needs at the bottom.
-            contentPadding = PaddingValues(
-                bottom = contentPadding.calculateBottomPadding(),
-            ),
-        ) {
-        // Whatever shelves YouTube sent, in its own order and under its own
-        // titles. Not reshaped into a fixed set of rows: the page is different
-        // signed in and signed out, and it changes on its own besides.
-        home.rows.forEach { row ->
-            item(key = "head-${row.title}") { Heading(row.title) }
-
-            if (row.tracks.isNotEmpty()) {
-                item(key = "tracks-${row.title}") {
-                    TrackRow(row.tracks) { index -> onPlayTrending(row.tracks, index) }
-                }
-            }
-
-            if (row.items.isNotEmpty()) {
-                item(key = "items-${row.title}") {
-                    LazyRow(
-                        contentPadding = PaddingValues(horizontal = 20.dp),
-                        horizontalArrangement = Arrangement.spacedBy(12.dp),
-                        modifier = Modifier.padding(top = 14.dp),
-                    ) {
-                        items(row.items, key = { it.uri }) { entry ->
-                            PlaylistTile(entry) { onOpenPlaylist(entry) }
-                        }
-                    }
-                }
-            }
-        }
-
-        // Last: the rows above change on their own, this one only changes
-        // because the user did something.
-        if (recent.isNotEmpty()) {
-            item(key = "recent-head") { Heading(stringResource(R.string.play_again)) }
-            item(key = "recent") {
-                LazyRow(
-                    contentPadding = PaddingValues(horizontal = 20.dp),
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                    modifier = Modifier.padding(top = 14.dp),
-                ) {
-                    itemsIndexed(recent, key = { _, track -> track.uri }) { index, track ->
-                        TrackTile(track) { onPlayRecent(recent, index) }
-                    }
-                }
-            }
-        }
-        }
-    }
-}
-
-/**
- * The YouTube page's header.
- *
- * Far plainer than [Header]: that one carries the feed's filter chips and a
- * collapse driven by the scroll, and neither has anything to act on here —
- * there are no feed sections to filter. What it must keep is the way into the
- * settings, because that is the only one there is; the app has no settings tab.
- */
-@Composable
-private fun YouTubeHeader(
-    accountName: String,
-    topPadding: Dp,
-    backdrop: Backdrop,
-    collapse: () -> Float,
-    onOpenSettings: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    Header(
-        modifier = modifier,
-        name = accountName,
-        avatarUrl = null,
-        service = R.string.backend_youtube,
-        serviceIcon = PhosphorIcons.Regular.YoutubeLogo,
-        collapse = collapse,
-        highlighted = Feed.entries.first(),
-        backdrop = backdrop,
-        topPadding = topPadding,
-        onFilter = {},
-        onOpenSettings = onOpenSettings,
-        showFilters = false,
-    )
 }
 
 @Composable

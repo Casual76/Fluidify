@@ -33,7 +33,6 @@ import kotlinx.coroutines.flow.asStateFlow
 @UnstableApi
 class SpotifyBackend(private val container: SquareApplication) : MusicBackend {
 
-    override val id = BackendId.SPOTIFY
 
     override var searchNeedsSetup: Boolean = false
         private set

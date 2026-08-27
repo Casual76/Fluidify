@@ -81,33 +81,7 @@ class PreferencesStore(context: Context) {
         prefs.edit().putBoolean(KEY_PLAYER_OPEN, value).apply()
     }
 
-    private val _backend = MutableStateFlow(
-        runCatching { dev.lelonio.square.backend.BackendId.valueOf(prefs.getString(KEY_BACKEND, null) ?: "") }
-            .getOrDefault(dev.lelonio.square.backend.BackendId.SPOTIFY),
-    )
-
-    /** Which [dev.lelonio.square.backend.MusicBackend] the app plays through. */
-    val backend: StateFlow<dev.lelonio.square.backend.BackendId> = _backend.asStateFlow()
-
-    fun setBackend(value: dev.lelonio.square.backend.BackendId) {
-        _backend.value = value
-        _backendChosen.value = true
-        prefs.edit().putString(KEY_BACKEND, value.name).apply()
-    }
-
-    private val _backendChosen = MutableStateFlow(prefs.contains(KEY_BACKEND))
-
-    /**
-     * Whether the user has ever picked a source.
-     *
-     * Separate from [backend] having a value: that one defaults to Spotify so
-     * the rest of the app never has to handle "none", while this stays false
-     * until the choice was actually made. It is what puts the picker in front
-     * of a fresh install — and only once.
-     */
-    val backendChosen: StateFlow<Boolean> = _backendChosen.asStateFlow()
-
-    /** When GitHub was last asked about a newer release. See [UpdateChecker]. */
+    /** When the manifest was last asked about a newer release. See [UpdateChecker]. */
     fun lastUpdateCheck(): Long = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
 
     fun setLastUpdateCheck(value: Long) {
@@ -133,7 +107,6 @@ class PreferencesStore(context: Context) {
         const val KEY_DEVICE_ID = "device_id"
         const val KEY_ONBOARDED = "onboarded"
         const val KEY_PLAYER_OPEN = "player_open"
-        const val KEY_BACKEND = "backend"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
         const val KEY_SKIPPED_UPDATE = "skipped_update"
     }

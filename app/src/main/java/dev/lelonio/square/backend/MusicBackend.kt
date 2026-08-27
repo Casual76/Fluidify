@@ -6,9 +6,6 @@ import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.data.SearchResults
 import kotlinx.coroutines.flow.StateFlow
 
-/** Which backend supplies catalogue and playback. */
-enum class BackendId { SPOTIFY, YOUTUBE_MUSIC }
-
 /** Where a [MusicBackend] stands with its own account/session. */
 sealed interface BackendAuthState {
     data object LoggedOut : BackendAuthState
@@ -58,7 +55,6 @@ data class HomeRow(
  */
 interface MusicBackend {
 
-    val id: BackendId
     val authState: StateFlow<BackendAuthState>
 
     /** True once catalogue calls and playback can be expected to work. */

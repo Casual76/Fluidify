@@ -107,7 +107,6 @@ import dev.lelonio.square.data.Catalog
 import dev.lelonio.square.data.CatalogPlaylist
 import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.data.Lyrics
-import dev.lelonio.square.backend.youtube.YouTubeVideoMode
 import dev.lelonio.square.playback.AudioEffects
 import dev.lelonio.square.ui.glass.LiquidBottomTab
 import dev.lelonio.square.ui.glass.LiquidBottomTabs
@@ -148,7 +147,6 @@ import dev.lelonio.square.ui.player.rememberPlaybackState
 import dev.lelonio.square.ui.player.rememberPositionMs
 import dev.lelonio.square.ui.player.rememberQueue
 import dev.lelonio.square.ui.search.SearchScreen
-import dev.lelonio.square.ui.onboarding.BackendChoiceScreen
 import dev.lelonio.square.ui.onboarding.OnboardingScreen
 import dev.lelonio.square.ui.settings.SettingsScreen
 import dev.lelonio.square.ui.theme.Ink
@@ -319,7 +317,6 @@ fun SquareApp(
     val remotePosition = rememberRemotePositionMs(remote)
     val positionMs = if (remote != null) remotePosition else localPosition
     val queueSource = rememberQueue(player)
-    val videoOn by YouTubeVideoMode.enabled.collectAsStateWithLifecycle()
 
     // Video keeps playing when the app leaves the foreground, surface or no
     // surface. Switching back to the audio-only stream would be tidier, but the
@@ -330,7 +327,7 @@ fun SquareApp(
     // Speed and pitch, written to the player only once the slider settles.
     //
     // A drag produces a value every frame, and each one reconfigures the audio
-    // sink: on the ExoPlayer the YouTube source uses, that means a flush every
+    // sink: on the ExoPlayer the local files play through, that is a flush every
     // 8ms, which starves the output — the sound stops and the position falls
     // back to where it stalled. The wait is short enough not to be felt after
     // letting go, and the slider draws its own value meanwhile.
@@ -431,9 +428,6 @@ fun SquareApp(
     // Asked for again from the settings, after it has already been finished.
     var showTutorial by remember { mutableStateOf(false) }
 
-    /** The Google sign-in web view, opened from the settings. */
-    var showYouTubeLogin by remember { mutableStateOf(false) }
-
     // The open track menu, if any. Held here because the menu is drawn above
     // everything the app puts over its screens.
     var trackMenu by remember { mutableStateOf<TrackMenuRequest?>(null) }
@@ -488,15 +482,6 @@ fun SquareApp(
     val preferences = remember(context) {
         (context.applicationContext as dev.lelonio.square.SquareApplication).preferences
     }
-
-    /** False only until the source has been picked once; see BackendChoiceScreen. */
-    val backendChosen by preferences.backendChosen.collectAsStateWithLifecycle()
-    val backend by preferences.backend.collectAsStateWithLifecycle()
-    val youtubeHome by viewModel.youtubeHome.collectAsStateWithLifecycle()
-
-    // Once the source is YouTube Music. Keyed on the backend so switching to it
-    // at runtime fills the page rather than leaving yesterday's empty one.
-    LaunchedEffect(backend) { viewModel.loadYouTubeHome() }
 
     // How far the player is open, 0 to 1. A value rather than a destination:
     // see NowPlayingSheet for why the player stopped being a route.
@@ -571,10 +556,10 @@ fun SquareApp(
     // ordinary answer and the player falls back to the cover.
     // Canvas is Spotify's own, served by its access point: on another source
     // there is nobody to ask.
-    LaunchedEffect(playback.mediaId, backend) {
+    LaunchedEffect(playback.mediaId) {
         val uri = playback.mediaId
         canvas = null
-        if (uri != null && backend == dev.lelonio.square.backend.BackendId.SPOTIFY) {
+        if (uri != null) {
             // After the song, not beside it: a Canvas is a video, and fetching
             // one while the track is still arriving takes the connection the
             // track needs. See awaitAudible.
@@ -653,7 +638,8 @@ fun SquareApp(
     val searchLabel = stringResource(R.string.search)
     val radioLabel = stringResource(R.string.radio)
 
-    val inPip by YouTubeVideoMode.pictureInPicture.collectAsStateWithLifecycle()
+    val inPip by dev.lelonio.square.backend.spotify.SpotifyVideoMode.pictureInPicture
+        .collectAsStateWithLifecycle()
 
     // In a floating window the app is the picture and nothing else.
     //
@@ -691,7 +677,7 @@ fun SquareApp(
     // touches what is playing.
     val landscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation ==
         android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    if (landscape && (videoOn || spotifyVideoOn) && player != null) {
+    if (landscape && spotifyVideoOn && player != null) {
         SquareTheme(seed = accent) {
             dev.lelonio.square.ui.player.FullScreenVideo(
                 player = player,
@@ -818,33 +804,6 @@ fun SquareApp(
                     } else {
                         viewModel.openLink(uri)
                         navController.navigate(Routes.PLAYLIST)
-                    }
-                }
-
-                // Back to the home page when the source changes: an open
-                // playlist, a search or a detail page all belong to the
-                // catalogue that was just swapped out.
-                var lastBackend by remember { mutableStateOf(backend) }
-                // Held up over the switch, so the page changing catalogue
-                // underneath is something that happens behind a curtain rather
-                // than a screen half of one source and half of the other.
-                var switching by remember { mutableStateOf(false) }
-                LaunchedEffect(backend) {
-                    if (backend != lastBackend) {
-                        lastBackend = backend
-                        switching = true
-                        navController.popBackStack(Routes.HOME, inclusive = false)
-                        // Held until the new source has actually answered, so
-                        // what appears behind it is a page rather than a page
-                        // being built — with a floor, so the splash is never a
-                        // flash, and a ceiling, because a cold session can take
-                        // longer than anyone will stare at a logo.
-                        kotlinx.coroutines.withTimeoutOrNull(3_000) {
-                            kotlinx.coroutines.delay(600)
-                            snapshotFlow { state }
-                                .first { it !is MainViewModel.UiState.Loading }
-                        }
-                        switching = false
                     }
                 }
 
@@ -982,9 +941,6 @@ fun SquareApp(
                                     navController.navigate(Routes.PLAYLIST)
                                 },
                                 backdrop = artBackdrop,
-                                youtubeMode =
-                                    backend == dev.lelonio.square.backend.BackendId.YOUTUBE_MUSIC,
-                                youtubeHome = youtubeHome,
                                 shelves = homeShelves,
                                 onPlayTrending = { tracks, index ->
                                     onPlay(tracks, index, null, false, trendingLabel, 0L)
@@ -1074,7 +1030,6 @@ fun SquareApp(
                                 language = language,
                                 onLanguage = setLanguage,
                                 onBack = { navController.popBackStack() },
-                                onYouTubeSignIn = { showYouTubeLogin = true },
                             )
                         }
 
@@ -1135,9 +1090,7 @@ fun SquareApp(
                                             // the Spotify Web API, so only a
                                             // Spotify playlist can offer it.
                                             removable = playlist.kind ==
-                                                MainViewModel.DetailKind.PLAYLIST &&
-                                                backend ==
-                                                dev.lelonio.square.backend.BackendId.SPOTIFY,
+                                                MainViewModel.DetailKind.PLAYLIST,
                                         )
                                     },
                                     storedSort = trackSort,
@@ -1647,10 +1600,7 @@ fun SquareApp(
                                 // can answer: the station is a context on its
                                 // access point and means nothing anywhere else.
                                 onRadio = playback.mediaId
-                                    ?.takeIf {
-                                        it.startsWith("spotify:track:") &&
-                                            backend == dev.lelonio.square.backend.BackendId.SPOTIFY
-                                    }
+                                    ?.takeIf { it.startsWith("spotify:track:") }
                                     ?.let { uri ->
                                         {
                                             scope.launch {
@@ -1663,8 +1613,7 @@ fun SquareApp(
                                         }
                                     },
                                 onOpenDevices = viewModel::openDevices,
-                                connectAvailable =
-                                    backend == dev.lelonio.square.backend.BackendId.SPOTIFY,
+                                connectAvailable = true,
                                 onCloseDevices = viewModel::closeDevices,
                                 onRefreshDevices = viewModel::refreshDevices,
                                 // The position goes with the request: a
@@ -1691,15 +1640,9 @@ fun SquareApp(
                                 },
                                 addToPlaylist = addToPlaylist,
                                 onPickPlaylist = viewModel::addToPlaylist,
-                                playlistEditAvailable =
-                                    backend == dev.lelonio.square.backend.BackendId.SPOTIFY,
-                                onWatchVideo = player
-                                    ?.takeIf {
-                                        playback.mediaId
-                                            ?.startsWith("ytmusic:track:") == true
-                                    }
-                                    ?.let { { YouTubeVideoMode.toggle(it) } },
-                                videoOn = videoOn || spotifyVideoOn,
+                                playlistEditAvailable = true,
+                                onWatchVideo = null,
+                                videoOn = spotifyVideoOn,
                                 videoPlayer = player,
                                 videoAttachKey = spotifyVideoGeneration,
                             )
@@ -1754,20 +1697,6 @@ fun SquareApp(
                         ) {
                             naming = NamingRequest(shownPlaylist)
                             playlistMenu = null
-                        }
-                        // The whole playlist in one link. yt-dlp and the apps
-                        // built on it expand a playlist URL themselves, so this
-                        // is the entire "download an album" feature.
-                        if (backend == dev.lelonio.square.backend.BackendId.YOUTUBE_MUSIC) {
-                            val label = if (downloaderInstalled(context)) {
-                                stringResource(R.string.download_with)
-                            } else {
-                                stringResource(R.string.download_get_app)
-                            }
-                            TrackSheetAction(label, PhosphorIcons.Regular.Download) {
-                                playlistMenu = null
-                                sendForDownload(context, shownPlaylist.openLink())
-                            }
                         }
                         if (editable) TrackSheetAction(
                             stringResource(R.string.delete),
@@ -1842,35 +1771,13 @@ fun SquareApp(
                             trackMenu = null
                             onEnqueue(menu.track)
                         }
-                        // Writing to a playlist is the Spotify Web API's; on
-                        // another source the entry would only ever fail.
-                        if (backend == dev.lelonio.square.backend.BackendId.SPOTIFY) {
-                            TrackSheetAction(stringResource(R.string.add_to_playlist), PhosphorIcons.Regular.Plus) {
-                                trackMenu = null
-                                viewModel.openAddToPlaylist(menu.track.uri, menu.track.name)
-                            }
+                        TrackSheetAction(stringResource(R.string.add_to_playlist), PhosphorIcons.Regular.Plus) {
+                            trackMenu = null
+                            viewModel.openAddToPlaylist(menu.track.uri, menu.track.name)
                         }
                         TrackSheetAction(stringResource(R.string.copy_link), PhosphorIcons.Regular.LinkSimple) {
                             trackMenu = null
                             clipboard.setText(AnnotatedString(menu.track.openLink()))
-                        }
-                        // YouTube only. A Spotify link handed to a downloader
-                        // is a link it cannot do anything with, so offering the
-                        // action there would be offering a failure.
-                        if (backend == dev.lelonio.square.backend.BackendId.YOUTUBE_MUSIC) {
-                            // Says which app it will open, and says the other
-                            // thing when there is no app to open: a row that
-                            // promised a download and delivered a web page
-                            // would be the entry lying about what it does.
-                            val label = if (downloaderInstalled(context)) {
-                                stringResource(R.string.download_with)
-                            } else {
-                                stringResource(R.string.download_get_app)
-                            }
-                            TrackSheetAction(label, PhosphorIcons.Regular.Download) {
-                                trackMenu = null
-                                sendForDownload(context, menu.track.openLink())
-                            }
                         }
                         if (menu.removable) {
                             TrackSheetAction(
@@ -1939,109 +1846,10 @@ fun SquareApp(
                     onDismiss = viewModel::closeAddToPlaylist,
                 )
 
-                // The curtain. Over the whole app, under nothing.
-                androidx.compose.animation.AnimatedVisibility(
-                    visible = switching,
-                    enter = androidx.compose.animation.fadeIn(tween(180)),
-                    exit = androidx.compose.animation.fadeOut(tween(420)),
-                    modifier = Modifier.zIndex(20f),
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            // A colour of its own: the theme's background is
-                            // transparent, because every page in this app is
-                            // drawn over the blurred artwork. A curtain has to
-                            // be opaque or it is not a curtain.
-                            .background(Color(0xFF0A0A0A)),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            verticalArrangement = Arrangement.spacedBy(16.dp),
-                        ) {
-                            dev.lelonio.square.ui.components.AppIcon(84.dp)
-                            dev.lelonio.square.ui.components.FluidifyWordmark(height = 28.dp)
-                            // Which source is being opened, named and marked:
-                            // the whole point of the wait is that the app is
-                            // becoming a different one, and a bare spinner says
-                            // nothing about that.
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                            ) {
-                                Icon(
-                                    when (backend) {
-                                        dev.lelonio.square.backend.BackendId.SPOTIFY ->
-                                            PhosphorIcons.Regular.SpotifyLogo
-                                        dev.lelonio.square.backend.BackendId.YOUTUBE_MUSIC ->
-                                            PhosphorIcons.Regular.YoutubeLogo
-                                    },
-                                    contentDescription = null,
-                                    tint = Ink,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Text(
-                                    stringResource(
-                                        when (backend) {
-                                            dev.lelonio.square.backend.BackendId.SPOTIFY ->
-                                                R.string.backend_spotify
-                                            dev.lelonio.square.backend.BackendId.YOUTUBE_MUSIC ->
-                                                R.string.backend_youtube
-                                        },
-                                    ),
-                                    style = MaterialTheme.typography.titleMedium,
-                                    color = Ink,
-                                )
-                            }
-                        }
-                    }
-                }
-
                 // Above everything, bars and player included: until it is done
                 // there is nothing underneath worth reaching, and on a fresh
                 // install most of what is underneath does not work yet.
-                //
-                // Above the tutorial too, and asked first: everything the
-                // tutorial explains is Spotify's setup, so the source has to be
-                // settled before any of it is worth walking through.
-                // Over everything, like the tutorial: it is Google's own sign-in
-                // page and half-covering it would be the wrong thing to do with
-                // a page someone is typing a password into.
-                if (showYouTubeLogin) {
-                    val account = remember(context) {
-                        (context.applicationContext as dev.lelonio.square.SquareApplication)
-                            .youtubeAccount
-                    }
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .background(androidx.compose.ui.graphics.Color(0xFF101012)),
-                    ) {
-                        dev.lelonio.square.backend.youtube.YouTubeLoginScreen(
-                            account = account,
-                            onDone = {
-                                showYouTubeLogin = false
-                                // The library is the whole point of signing in,
-                                // and it was read as the signed-out account.
-                                viewModel.refresh()
-                            },
-                        )
-                    }
-                }
-
-                if (!backendChosen) {
-                    BackendChoiceScreen(onChoose = preferences::setBackend)
-                } else if (
-                    // Every step of it is Spotify's setup — the Premium
-                    // account, the login, the registered application — so on
-                    // YouTube Music it would be five screens of instructions
-                    // for something the user just chose not to use. Still
-                    // reachable from the settings, which is where someone who
-                    // means to switch to Spotify would go.
-                    showTutorial ||
-                    (!onboarded && backend == dev.lelonio.square.backend.BackendId.SPOTIFY)
-                ) {
+                if (showTutorial || !onboarded) {
                     OnboardingScreen(
                         state = state,
                         webApi = webApi,

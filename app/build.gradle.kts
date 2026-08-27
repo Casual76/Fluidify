@@ -204,8 +204,6 @@ dependencies {
     implementation(libs.okhttp.logging)
     implementation(libs.retrofit)
     implementation(libs.retrofit.serialization)
-    implementation(libs.newpipe.extractor)
-    implementation(project(":innertube"))
     implementation(libs.coil.compose)
     implementation(libs.androidx.palette)
     implementation(libs.androidx.navigation.compose)
