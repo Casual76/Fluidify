@@ -666,26 +666,14 @@ private fun FilterRow(selected: Feed, backdrop: Backdrop, onSelect: (Feed) -> Un
         modifier = Modifier.padding(top = 14.dp, bottom = 10.dp),
     ) {
         items(Feed.entries.toList(), key = { it.name }) { entry ->
-            val isSelected = entry == selected
-            LiquidButton(
+            // The engine's chip: the selected one fills with the app's own
+            // amethyst — legible over any artwork now that the accent no
+            // longer comes from the artwork — and the change is animated.
+            dev.antigravity.fluidengine.ui.fluid.FluidChip(
+                label = stringResource(entry.label),
+                selected = entry == selected,
                 onClick = { onSelect(entry) },
-                backdrop = backdrop,
-                // Scrolls with the page; see LiquidButton's `flat`.
-                flat = true,
-                contentHeight = 38.dp,
-                contentPadding = 18.dp,
-                // The selected chip is the same glass, filled a little harder.
-                // A tinted fill would put the artwork's colour on a control
-                // whose whole job is to be legible over any artwork.
-                surfaceColor = if (isSelected) SelectedFilm else Color.Unspecified,
-                wash = dev.lelonio.square.ui.glass.chipWash(isSelected),
-            ) {
-                Text(
-                    stringResource(entry.label),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isSelected) Ink else InkDim,
-                )
-            }
+            )
         }
     }
 }

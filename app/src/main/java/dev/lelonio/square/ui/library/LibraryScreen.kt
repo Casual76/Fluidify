@@ -1,5 +1,7 @@
 package dev.lelonio.square.ui.library
 
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.togetherWith
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -200,18 +202,19 @@ fun LibraryScreen(
                 }
             }
 
-            // What the chips are asking for, before any sorting.
-            val shown = remember(state.playlists, albums, artistItems, filter) {
-                when (filter) {
-                    Filter.ALL -> state.playlists + albums
-                    Filter.PLAYLISTS -> state.playlists
-                    Filter.ALBUMS -> albums
-                    Filter.ARTISTS -> artistItems
-                }
+            // What the chips are asking for, before any sorting. Computed per
+            // filter *inside* the animated swap below, so the page on its way
+            // out keeps showing its own list instead of the new one.
+            fun shownFor(which: Filter): List<CatalogPlaylist> = when (which) {
+                Filter.ALL -> state.playlists + albums
+                Filter.PLAYLISTS -> state.playlists
+                Filter.ALBUMS -> albums
+                Filter.ARTISTS -> artistItems
             }
 
-            val playlists = remember(shown, playlistOrder, pinned, order, descending) {
-                when (order) {
+            fun sortedFor(which: Filter): List<CatalogPlaylist> {
+                val shown = shownFor(which)
+                return when (order) {
                     Order.RECENT -> shown.sortedByRecentlyOpened(playlistOrder)
                     Order.NAME -> shown.sortedWith(
                         compareBy(String.CASE_INSENSITIVE_ORDER) { it.name },
@@ -233,6 +236,11 @@ fun LibraryScreen(
                     // otherwise sit sixtieth among lists they have.
                     .withLocalFilesFirst()
             }
+
+            val playlists = remember(
+                state.playlists, albums, artistItems, filter,
+                playlistOrder, pinned, order, descending,
+            ) { sortedFor(filter) }
 
             Box(Modifier.fillMaxSize()) {
             Column(Modifier.fillMaxSize()) {
@@ -262,17 +270,35 @@ fun LibraryScreen(
                     bottom = contentPadding.calculateBottomPadding(),
                 )
 
+                // The swap the chips ask for, animated the way the home
+                // page's feed already is: the new list rises in as the old one
+                // fades, instead of the contents snapping under a chip that
+                // did animate.
+                androidx.compose.animation.AnimatedContent(
+                    targetState = filter,
+                    transitionSpec = {
+                        (androidx.compose.animation.fadeIn(tween(220)) +
+                            androidx.compose.animation.slideInVertically(tween(260)) { it / 14 })
+                            .togetherWith(androidx.compose.animation.fadeOut(tween(120)))
+                    },
+                    label = "library filter",
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .layerBackdrop(listBackdrop),
+                ) { shownFilter ->
+                val playlists = remember(
+                    state.playlists, albums, artistItems, shownFilter,
+                    playlistOrder, pinned, order, descending,
+                ) { sortedFor(shownFilter) }
                 when (layout) {
                     Layout.GRID -> LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
                         contentPadding = listPadding,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .layerBackdrop(listBackdrop),
+                        modifier = Modifier.fillMaxSize(),
                     ) {
-                        if (artists.isNotEmpty() && filter == Filter.ALL) {
+                        if (artists.isNotEmpty() && shownFilter == Filter.ALL) {
                             item(span = { GridItemSpan(maxLineSpan) }, key = "artists") {
                                 ArtistShelf(artists, onOpenArtist)
                             }
@@ -295,11 +321,9 @@ fun LibraryScreen(
                     Layout.LIST -> LazyColumn(
                         contentPadding = listPadding,
                         verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .layerBackdrop(listBackdrop),
+                        modifier = Modifier.fillMaxSize(),
                     ) {
-                        if (artists.isNotEmpty() && filter == Filter.ALL) {
+                        if (artists.isNotEmpty() && shownFilter == Filter.ALL) {
                             item(key = "artists") { ArtistShelf(artists, onOpenArtist) }
                         }
 
@@ -316,6 +340,7 @@ fun LibraryScreen(
                             )
                         }
                     }
+                }
                 }
             }
 
@@ -476,23 +501,11 @@ private fun Header(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Filter.entries.forEach { entry ->
-                val selected = entry == filter
-                LiquidButton(
+                dev.antigravity.fluidengine.ui.fluid.FluidChip(
+                    label = stringResource(entry.label),
+                    selected = entry == filter,
                     onClick = { onFilter(entry) },
-                    backdrop = backdrop,
-                    flat = true,
-                    contentHeight = 36.dp,
-                    contentPadding = 14.dp,
-                    surfaceColor = if (selected) SelectedFilm else Color.Unspecified,
-                    wash = dev.lelonio.square.ui.glass.chipWash(selected),
-                ) {
-                    Text(
-                        stringResource(entry.label),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = if (selected) Ink else InkDim,
-                        maxLines = 1,
-                    )
-                }
+                )
             }
 
             Spacer(Modifier.weight(1f))

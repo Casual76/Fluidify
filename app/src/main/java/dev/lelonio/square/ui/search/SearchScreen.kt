@@ -219,22 +219,11 @@ private fun KindRow(selected: Kind, backdrop: Backdrop, onSelect: (Kind) -> Unit
         modifier = Modifier.padding(top = 16.dp, bottom = 4.dp),
     ) {
         items(Kind.entries.toList(), key = { it.name }) { entry ->
-            val isSelected = entry == selected
-            LiquidButton(
+            dev.antigravity.fluidengine.ui.fluid.FluidChip(
+                label = stringResource(entry.label),
+                selected = entry == selected,
                 onClick = { onSelect(entry) },
-                backdrop = backdrop,
-                flat = true,
-                contentHeight = 38.dp,
-                contentPadding = 18.dp,
-                surfaceColor = if (isSelected) SelectedFilm else Color.Unspecified,
-                wash = dev.lelonio.square.ui.glass.chipWash(isSelected),
-            ) {
-                Text(
-                    stringResource(entry.label),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = if (isSelected) Ink else InkDim,
-                )
-            }
+            )
         }
     }
 }
