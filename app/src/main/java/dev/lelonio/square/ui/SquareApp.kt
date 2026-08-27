@@ -1050,6 +1050,7 @@ fun SquareApp(
                         composable(Routes.LIBRARY) {
                             LibraryScreen(
                                 state = state,
+                                ground = groundGlass,
                                 contentPadding = listPadding,
                                 onLogIn = viewModel::logIn,
                                 onRetry = { viewModel.refresh() },

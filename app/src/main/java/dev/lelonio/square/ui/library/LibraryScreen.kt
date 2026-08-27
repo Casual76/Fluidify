@@ -2,6 +2,17 @@ package dev.lelonio.square.ui.library
 
 import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollContent
 import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollEdge
+import dev.antigravity.fluidengine.ui.fluid.FluidCollapsingTitle
+import dev.antigravity.fluidengine.ui.fluid.FluidCollapsingTopBar
+import dev.antigravity.fluidengine.ui.fluid.FluidScreenDefaults
+import dev.antigravity.fluidengine.ui.fluid.FluidTitleCollapse
+import dev.antigravity.fluidengine.ui.fluid.GlassBackdropState
+import dev.antigravity.fluidengine.ui.fluid.fluidTitleCollapseOrigin
+import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
+import dev.antigravity.fluidengine.ui.fluid.rememberCombinedGlassBackdrop
+import dev.antigravity.fluidengine.ui.fluid.rememberFluidCollapseScroll
+import dev.antigravity.fluidengine.ui.fluid.rememberFluidTitleCollapse
+import dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop
 import dev.antigravity.fluidengine.ui.fluid.rememberFluidEdgeOverscroll
 import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
 import androidx.compose.animation.core.tween
@@ -118,6 +129,13 @@ private enum class Filter(@StringRes val label: Int, @StringRes val count: Int) 
 fun LibraryScreen(
     state: MainViewModel.UiState,
     contentPadding: PaddingValues,
+    /**
+     * The artwork wash on its own, for the bar the title docks into.
+     *
+     * Not the page-wide recording: that one contains this bar, and glass
+     * blurring a photograph of itself is the one thing this material cannot do.
+     */
+    ground: GlassBackdropState,
     onLogIn: () -> Unit,
     onRetry: () -> Unit,
     onLogOut: () -> Unit,
@@ -253,33 +271,37 @@ fun LibraryScreen(
                 playlistOrder, pinned, order, descending,
             ) { sortedFor(filter) }
 
-            Box(Modifier.fillMaxSize()) {
-            Column(Modifier.fillMaxSize()) {
-                Header(
-                    count = playlists.size,
-                    layout = layout,
-                    order = order,
-                    filter = filter,
-                    backdrop = backdrop,
-                    topPadding = contentPadding.calculateTopPadding(),
-                    onLayout = {
-                        layout = it
-                        view.grid = it == Layout.GRID
-                    },
-                    onOrder = { onOrderChosen(it) },
-                    onFilter = { filter = it },
-                    onSort = { sortOpen = true },
-                    onSortAnchor = { sortAnchor = it },
-                    canEdit = canEdit,
-                    onCreatePlaylist = onCreatePlaylist,
-                )
+            // Hoisted out of the swap below, so the heading can read the
+            // scroll whichever shape the library is wearing. The copy on its
+            // way out shares the position for the length of a fade, which is
+            // shorter than it takes to notice.
+            val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
+            val rowsState = androidx.compose.foundation.lazy.rememberLazyListState()
+            val gridScroll = rememberFluidCollapseScroll(gridState)
+            val rowsScroll = rememberFluidCollapseScroll(rowsState)
+            val title = stringResource(R.string.library)
+            val collapse = rememberFluidTitleCollapse(
+                title = title,
+                scroll = if (layout == Layout.GRID) gridScroll else rowsScroll,
+            )
+            // This page's own body, recorded on its own; with the ground under
+            // it that is an opaque image with no chrome in it, which is the one
+            // thing the bar is allowed to blur.
+            val bodyGlass = rememberGlassBackdrop()
+            val barBackdrop = rememberCombinedGlassBackdrop(ground, bodyGlass)
 
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .fluidTitleCollapseOrigin(collapse),
+            ) {
+            Column(Modifier.fillMaxSize()) {
                 val overscroll = rememberFluidEdgeOverscroll()
 
             val listPadding = PaddingValues(
                     start = 20.dp,
                     end = 20.dp,
-                    top = 8.dp,
+                    top = FluidScreenDefaults.topBarHeight(),
                     bottom = contentPadding.calculateBottomPadding(),
                 )
 
@@ -297,7 +319,8 @@ fun LibraryScreen(
                     label = "library filter",
                     modifier = Modifier
                         .fillMaxSize()
-                        .layerBackdrop(listBackdrop),
+                        .layerBackdrop(listBackdrop)
+                        .glassBackdropSource(bodyGlass),
                 ) { shownFilter ->
                 val playlists = remember(
                     state.playlists, albums, artistItems, shownFilter,
@@ -306,6 +329,7 @@ fun LibraryScreen(
                 when (layout) {
                     Layout.GRID -> LazyVerticalGrid(
                         columns = GridCells.Fixed(2),
+                        state = gridState,
                         contentPadding = listPadding,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp),
@@ -315,6 +339,25 @@ fun LibraryScreen(
                             .fluidOverscrollContent(overscroll),
                         overscrollEffect = null,
                     ) {
+                        // The heading rides in the grid, spanning it, so it
+                        // scrolls away with what it names. The grid stays a
+                        // grid: only the row above it moved into the page.
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "header") {
+                            Header(
+                                count = playlists.size,
+                                layout = layout,
+                                order = order,
+                                filter = filter,
+                                backdrop = backdrop,
+                                title = title,
+                                collapse = collapse,
+                                onOrder = { onOrderChosen(it) },
+                                onFilter = { filter = it },
+                                onSort = { sortOpen = true },
+                                onSortAnchor = { sortAnchor = it },
+                            )
+                        }
+
                         if (artists.isNotEmpty() && shownFilter == Filter.ALL) {
                             item(span = { GridItemSpan(maxLineSpan) }, key = "artists") {
                                 ArtistShelf(artists, onOpenArtist)
@@ -332,6 +375,7 @@ fun LibraryScreen(
                     }
 
                     Layout.LIST -> LazyColumn(
+                        state = rowsState,
                         contentPadding = listPadding,
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         modifier = Modifier
@@ -340,6 +384,22 @@ fun LibraryScreen(
                             .fluidOverscrollContent(overscroll),
                         overscrollEffect = null,
                     ) {
+                        item(key = "header") {
+                            Header(
+                                count = playlists.size,
+                                layout = layout,
+                                order = order,
+                                filter = filter,
+                                backdrop = backdrop,
+                                title = title,
+                                collapse = collapse,
+                                onOrder = { onOrderChosen(it) },
+                                onFilter = { filter = it },
+                                onSort = { sortOpen = true },
+                                onSortAnchor = { sortAnchor = it },
+                            )
+                        }
+
                         if (artists.isNotEmpty() && shownFilter == Filter.ALL) {
                             item(key = "artists") { ArtistShelf(artists, onOpenArtist) }
                         }
@@ -389,6 +449,43 @@ fun LibraryScreen(
                     view.descending = descending
                 }
             }
+
+            // Last, so it stands over the shelves rather than under them.
+            FluidCollapsingTopBar(
+                title = title,
+                collapse = collapse,
+                backdrop = barBackdrop,
+                modifier = Modifier.align(Alignment.TopCenter),
+            ) {
+                // In the bar rather than in the header, and that is the whole
+                // reason the bar has an actions slot: the heading scrolls away
+                // now, and a control that goes with it is a control you have to
+                // scroll back for. Making a playlist and changing the shelf are
+                // not that kind of control.
+                //
+                // Only where a playlist can actually be made: on a source with
+                // no account signed in, a plus that always failed would be
+                // worse than no plus at all.
+                if (canEdit) {
+                    dev.antigravity.fluidengine.ui.fluid.FluidBarAction(
+                        icon = PhosphorIcons.Regular.Plus,
+                        contentDescription = stringResource(R.string.new_playlist),
+                        onClick = onCreatePlaylist,
+                    )
+                }
+                // One button that swaps between the two arrangements rather
+                // than a pair of them: with two options, a toggle showing the
+                // *other* one is both smaller and unambiguous.
+                dev.antigravity.fluidengine.ui.fluid.FluidBarAction(
+                    icon = if (layout == Layout.GRID) PhosphorIcons.Regular.ListBullets
+                    else PhosphorIcons.Regular.SquaresFour,
+                    contentDescription = stringResource(R.string.change_layout),
+                    onClick = {
+                        layout = if (layout == Layout.GRID) Layout.LIST else Layout.GRID
+                        view.grid = layout == Layout.GRID
+                    },
+                )
+            }
             }
         }
     }
@@ -429,28 +526,21 @@ private fun Header(
     order: Order,
     filter: Filter,
     backdrop: Backdrop,
-    topPadding: Dp,
-    onLayout: (Layout) -> Unit,
+    title: String,
+    /** The heading's handover; the type itself is the engine's to draw. */
+    collapse: FluidTitleCollapse,
     onOrder: (Order) -> Unit,
     onFilter: (Filter) -> Unit,
     onSort: () -> Unit,
     onSortAnchor: (androidx.compose.ui.unit.IntOffset) -> Unit,
-    canEdit: Boolean,
-    onCreatePlaylist: () -> Unit,
 ) {
-    Column(
-        Modifier
-            .fillMaxWidth()
-            .padding(top = topPadding),
-    ) {
+    Column(Modifier.fillMaxWidth()) {
         Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(start = 24.dp, end = 20.dp, top = 16.dp),
+            Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
-                Text(stringResource(R.string.library), style = MaterialTheme.typography.displayLarge)
+                FluidCollapsingTitle(title, collapse)
                 // Counting whatever the chips are showing, and saying so: the
                 // same number labelled "playlists" under the albums chip is a
                 // line that contradicts the screen it sits on.
@@ -461,46 +551,6 @@ private fun Header(
                 )
             }
 
-            // Only where a playlist can actually be made: on a source with no
-            // account signed in, a plus that always failed would be worse than
-            // no plus at all.
-            if (canEdit) {
-                LiquidButton(
-                    onClick = onCreatePlaylist,
-                    backdrop = backdrop,
-                    modifier = Modifier
-                        .padding(end = 8.dp)
-                        .size(42.dp),
-                    contentHeight = 42.dp,
-                    contentPadding = 0.dp,
-                ) {
-                    Icon(
-                        PhosphorIcons.Regular.Plus,
-                        contentDescription = stringResource(R.string.new_playlist),
-                        tint = Ink,
-                        modifier = Modifier.size(20.dp),
-                    )
-                }
-            }
-
-            // One button that swaps between the two arrangements rather than a
-            // pair of them: with two options, a toggle showing the *other* one
-            // is both smaller and unambiguous.
-            LiquidButton(
-                onClick = { onLayout(if (layout == Layout.GRID) Layout.LIST else Layout.GRID) },
-                backdrop = backdrop,
-                modifier = Modifier.size(42.dp),
-                contentHeight = 42.dp,
-                contentPadding = 0.dp,
-            ) {
-                Icon(
-                    if (layout == Layout.GRID) PhosphorIcons.Regular.ListBullets
-                    else PhosphorIcons.Regular.SquaresFour,
-                    contentDescription = stringResource(R.string.change_layout),
-                    tint = Ink,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
         }
 
         // The chips say what is being shown; the sort sits at the end of the
