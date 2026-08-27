@@ -947,7 +947,7 @@ fun PlayerScreen(
                                         tint = when {
                                             panel == PlayerPanel.ADD_TO_PLAYLIST ->
                                                 panelTint(true)
-                                            inLikedSongs || alreadySaved -> SavedInk
+                                            inLikedSongs || alreadySaved -> panelTint(true)
                                             else -> panelTint(false)
                                         },
                                         modifier = Modifier.size(20.dp),
@@ -1351,7 +1351,7 @@ private fun TopBar(
                     // somewhere else, and it has to still say it once the panel
                     // is closed.
                     tint = when {
-                        onAnotherDevice -> ConnectedInk
+                        onAnotherDevice -> panelTint(true)
                         else -> panelTint(panel == PlayerPanel.DEVICES)
                     },
                 )
@@ -1742,11 +1742,6 @@ private fun GlassButton(
 private fun panelTint(active: Boolean) =
     if (active) MaterialTheme.colorScheme.primary else GlassInk
 
-/** Spotify's own green, which already means "playing over there". */
-private val ConnectedInk = androidx.compose.ui.graphics.Color(0xFF1ED760)
-
-/** The same green for "this one is already in a playlist of yours". */
-private val SavedInk = ConnectedInk
 
 @Composable
 private fun ToggleIcon(

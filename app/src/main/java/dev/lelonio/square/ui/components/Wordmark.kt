@@ -132,6 +132,9 @@ fun AppPlate(
     modifier: Modifier = Modifier,
 ) {
     val accent = androidx.compose.material3.MaterialTheme.colorScheme.primary
+    // The light on the plate, tinted by the accent rather than plain white:
+    // what catches the edge is the app's own glow coming from behind.
+    val glint = androidx.compose.ui.graphics.lerp(accent, Color.White, 0.55f)
     dev.lelonio.square.ui.glass.LiquidButton(
         onClick = {},
         backdrop = backdrop,
@@ -145,9 +148,9 @@ fun AppPlate(
             .border(
                 0.8.dp,
                 androidx.compose.ui.graphics.Brush.linearGradient(
-                    0f to Color.White.copy(alpha = 0.62f),
-                    0.5f to Color.White.copy(alpha = 0.20f),
-                    1f to Color.White.copy(alpha = 0.06f),
+                    0f to glint.copy(alpha = 0.62f),
+                    0.5f to glint.copy(alpha = 0.20f),
+                    1f to glint.copy(alpha = 0.06f),
                 ),
                 androidx.compose.foundation.shape.CircleShape,
             ),
@@ -176,7 +179,7 @@ fun AppPlate(
                 // than as a coloured circle.
                 drawCircle(
                     androidx.compose.ui.graphics.Brush.radialGradient(
-                        listOf(Color.White.copy(alpha = 0.34f), Color.Transparent),
+                        listOf(glint.copy(alpha = 0.34f), Color.Transparent),
                         center = androidx.compose.ui.geometry.Offset(
                             this.size.width * 0.30f,
                             this.size.height * 0.20f,

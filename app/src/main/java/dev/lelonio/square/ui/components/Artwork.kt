@@ -118,15 +118,16 @@ private fun LocalFilesCover() {
         Icon(
             PhosphorIcons.Regular.FolderSimple,
             contentDescription = null,
-            tint = LocalFilesGlyph,
+            // The app's accent rather than a colour of its own: the tile is the
+            // one cover the app draws for itself, so it wears the app's colour.
+            tint = androidx.compose.material3.MaterialTheme.colorScheme.primary,
             modifier = Modifier.fillMaxSize(0.44f),
         )
     }
 }
 
-/** The two colours of that tile, deep enough to sit in a grid of covers. */
-private val LocalFilesTile = Color(0xFF20306E)
-private val LocalFilesGlyph = Color(0xFF2ECC57)
+/** The tile's ground, deep enough to sit in a grid of covers. */
+private val LocalFilesTile = Color(0xFF2B2144)
 
 @Composable
 private fun GeneratedCover(title: String, corner: Dp) {

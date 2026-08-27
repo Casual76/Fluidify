@@ -63,16 +63,14 @@ fun LiquidToggle(
     // LOCAL CHANGE: upstream is iOS, so its switches are iOS green. This app is
     // tinted from whatever is playing, and a green switch in a page washed with
     // the cover's colour is the one control that came from somewhere else.
-    // Unspecified keeps the upstream green.
+    // Unspecified takes the theme's own accent.
     accent: Color = Color.Unspecified
 ) {
     val isLightTheme = !isSystemInDarkTheme()
     val accentColor = if (accent.isSpecified) {
         accent
-    } else if (isLightTheme) {
-        Color(0xFF34C759)
     } else {
-        Color(0xFF30D158)
+        androidx.compose.material3.MaterialTheme.colorScheme.primary
     }
     val trackColor =
         if (isLightTheme) Color(0xFF787878).copy(0.2f)

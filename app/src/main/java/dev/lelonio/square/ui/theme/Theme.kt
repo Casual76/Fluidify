@@ -4,9 +4,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Typography
-import androidx.compose.material3.darkColorScheme
-import androidx.compose.material3.lightColorScheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
@@ -17,114 +14,153 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.platform.LocalView
-import androidx.compose.ui.text.TextStyle
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.core.view.WindowCompat
+import dev.antigravity.fluidengine.foundation.AccentMode
+import dev.antigravity.fluidengine.foundation.EngineSettings
+import dev.antigravity.fluidengine.foundation.ThemeMode as EngineThemeMode
+import dev.antigravity.fluidengine.ui.theme.AccentPoles
+import dev.antigravity.fluidengine.ui.theme.AccentPreset
+import dev.antigravity.fluidengine.ui.theme.FluidTheme
 
 /**
- * Glass over the album art.
+ * Fluidify's own colour: amethyst, in a light and a dark cut.
  *
- * The scheme is deliberately one-sided now. The paper version had a light and a
- * dark half because the page was opaque and had to match the system; here the
- * page *is* the artwork under a dark wash, so there is only ever dark glass with
- * light ink on it. Following the system theme would mean two backdrops and two
- * sets of legibility rules for a surface whose contrast does not depend on
- * either.
+ * With poles, and they are not optional here: violet sits next to the palette's
+ * indigo pole, and without them the derived secondary family collapses into the
+ * primary — the exact case the engine's colour tests exercise under this name.
+ */
+private val Amethyst = AccentPreset(
+    name = "amethyst",
+    label = "Ametista",
+    light = Color(0xFF9966CC),
+    dark = Color(0xFFB88CE8),
+    poles = AccentPoles(
+        secondaryLight = Color(0xFF007AFF),
+        secondaryDark = Color(0xFF0A84FF),
+        tertiaryLight = Color(0xFFFF2D55),
+        tertiaryDark = Color(0xFFFF375F),
+        secondaryBlend = 0.45f,
+        tertiaryBlend = 0.40f,
+    ),
+)
+
+/**
+ * Glass over the album art, keyed to amethyst.
  *
- * `background` is transparent on purpose: whatever draws the backdrop sits
- * behind the whole tree, and an opaque page colour would cover it.
+ * The engine's [FluidTheme] provides the ladder — accent scale, continuous
+ * shapes, the motion scheme, the typography — and what this adds on top is the
+ * one thing this app's design insists on: the page *is* the artwork under a
+ * dark wash, so the structural roles stay the translucent films every screen
+ * here is drawn with, and `background` stays transparent for the backdrop to
+ * show through.
  *
- * What follows is the original note, still true of the accent:
- *
- * The neutrals do all the structural work — page, cards, text, borders are a
- * single grey ramp — and the accent seeded from the current cover is spent only
- * where the interface needs to say "this one, right now": the play button, the
- * played part of the waveform, an enabled toggle, the current row. Kept that
- * narrow, colour reads as state rather than as decoration, and the covers stay
- * the most colourful thing on screen.
- *
- * The seed is pushed toward legibility rather than used raw: a cover's dominant
- * colour is as likely to be near-black as near-white, and either one vanishes
- * against the wrong background.
+ * The accent is the app's own. It used to follow the playing artwork
+ * everywhere; now amethyst is the identity — chrome, buttons, the light — and
+ * the artwork's colour lives where the artwork is: pass [seed] and the content
+ * is wrapped in [ArtworkAccentTheme], which the player and the detail pages do.
  */
 @Composable
 fun SquareTheme(
-    /** Dominant colour of the current artwork, or null before anything plays. */
+    /** Dominant colour of the content on screen, or null to stay amethyst. */
     seed: Color? = null,
     darkTheme: Boolean = isSystemInDarkTheme(),
     content: @Composable () -> Unit,
 ) {
-    val base = seed ?: DefaultAccent
-    val accent = if (darkTheme) base.liftFor(DarkBase) else base.deepenFor(LightBase)
+    FluidTheme(
+        settings = EngineSettings(
+            // Dark on purpose, whatever the system says: see the note above —
+            // the backdrop is artwork under a dark wash, and there is no light
+            // half to switch to.
+            themeMode = EngineThemeMode.DARK,
+            accentMode = AccentMode.BRAND,
+            dynamicColorEnabled = false,
+        ),
+        brand = Amethyst,
+    ) {
+        val engine = MaterialTheme.colorScheme
+        // Keyed on the engine scheme: rebuilding a ColorScheme allocates dozens
+        // of colours and invalidates every composable that reads MaterialTheme.
+        val scheme = remember(engine) {
+            engine.copy(
+                onPrimary = Color(0xFF0B0D10),
+                primaryContainer = GlassFill,
+                onPrimaryContainer = Ink,
+                secondary = InkDim,
+                // The backdrop shows through this; an opaque page colour would
+                // cover it.
+                background = Color.Transparent,
+                onBackground = Ink,
+                // Glass, not a card: a translucent white film is what every
+                // surface in this design is made of, and the refraction on top
+                // comes from the backdrop rather than from the colour.
+                surface = GlassFill,
+                onSurface = Ink,
+                surfaceVariant = GlassFillStrong,
+                onSurfaceVariant = InkDim,
+                outlineVariant = Color.White.copy(alpha = 0.16f),
+            )
+        }
 
-    // Animated so a track change slides the accent across instead of snapping,
-    // which otherwise reads as a glitch when artwork loads a beat late.
-    val animatedAccent by animateColorAsState(accent, tween(600), label = "accent")
-
-    // Keyed on the accent: rebuilding a ColorScheme allocates dozens of colours
-    // and invalidates every composable that reads MaterialTheme, so doing it on
-    // each recomposition drags the whole tree along with the seek bar.
-    val scheme = remember(animatedAccent) {
-        darkColorScheme(
-            primary = animatedAccent,
-            onPrimary = Color(0xFF0B0D10),
-            primaryContainer = GlassFill,
-            onPrimaryContainer = Ink,
-            secondary = InkDim,
-            // See the note above: the backdrop shows through this.
-            background = Color.Transparent,
-            onBackground = Ink,
-            // Glass, not a card: a translucent white film is what every surface
-            // in this design is made of, and the refraction on top of it comes
-            // from the backdrop library rather than from the colour.
-            surface = GlassFill,
-            onSurface = Ink,
-            surfaceVariant = GlassFillStrong,
-            onSurfaceVariant = InkDim,
-            outlineVariant = Color.White.copy(alpha = 0.16f),
-        )
-    }
-
-    // System bar icons have to flip with the theme; left alone they are drawn
-    // for the system's own theme and disappear against ours.
-    val view = LocalView.current
-    if (!view.isInEditMode) {
-        SideEffect {
-            val window = (view.context as android.app.Activity).window
-            // Always light icons: the bars sit over the darkened artwork, not
-            // over the system's idea of a background.
-            WindowCompat.getInsetsController(window, view).apply {
-                isAppearanceLightStatusBars = false
-                isAppearanceLightNavigationBars = false
+        // System bar icons have to flip with the theme; left alone they are
+        // drawn for the system's own theme and disappear against ours.
+        val view = LocalView.current
+        if (!view.isInEditMode) {
+            SideEffect {
+                val window = (view.context as android.app.Activity).window
+                // Always light icons: the bars sit over the darkened artwork,
+                // not over the system's idea of a background.
+                WindowCompat.getInsetsController(window, view).apply {
+                    isAppearanceLightStatusBars = false
+                    isAppearanceLightNavigationBars = false
+                }
             }
         }
-    }
 
-    MaterialTheme(colorScheme = scheme, typography = SpotTypography, content = content)
+        MaterialTheme(colorScheme = scheme) {
+            if (seed == null) content() else ArtworkAccentTheme(seed, content)
+        }
+    }
+}
+
+/**
+ * The playing artwork's colour, where the artwork itself is on screen.
+ *
+ * A wrapper rather than a different theme: everything but `primary` stays what
+ * [SquareTheme] built, so the player and the detail pages keep the app's glass
+ * and type while their accent follows the cover — animated, so a track change
+ * slides the colour across instead of snapping, which otherwise reads as a
+ * glitch when artwork loads a beat late.
+ */
+@Composable
+fun ArtworkAccentTheme(
+    /** Null before the artwork has said anything; amethyst holds the fort. */
+    seed: Color?,
+    content: @Composable () -> Unit,
+) {
+    // Pushed toward legibility rather than used raw: a cover's dominant colour
+    // is as likely to be near-black as near-white, and either one vanishes
+    // against the wrong background.
+    val accent = seed?.liftFor(DarkBase) ?: MaterialTheme.colorScheme.primary
+    val animatedAccent by animateColorAsState(accent, tween(600), label = "accent")
+
+    val base = MaterialTheme.colorScheme
+    val scheme = remember(base, animatedAccent) {
+        base.copy(primary = animatedAccent)
+    }
+    MaterialTheme(colorScheme = scheme, content = content)
 }
 
 private val DarkBase = Color(0xFF0D0E11)
-private val LightBase = Color(0xFFF1F2F6)
 
 /** The film every glass surface is tinted with. */
-private val GlassFill = Color.White.copy(alpha = 0.10f)
-private val GlassFillStrong = Color.White.copy(alpha = 0.16f)
+internal val GlassFill = Color.White.copy(alpha = 0.10f)
+internal val GlassFillStrong = Color.White.copy(alpha = 0.16f)
 
 /** Text and icons, fixed light — see the note on [SquareTheme]. */
 val Ink = Color(0xFFF7F8FA)
 val InkDim = Color(0xFFF7F8FA).copy(alpha = 0.66f)
-
-/**
- * Fallback accent, used until artwork provides one.
- *
- * Muted lilac rather than a green: Spotify's brand colour is 0xFF1DB954, and
- * anything near it makes the app read as a clone no matter how the rest is laid
- * out.
- */
-private val DefaultAccent = Color(0xFF7C5CE6)
 
 /** Brighten until the colour reads against a near-black background. */
 private fun Color.liftFor(background: Color): Color {
@@ -135,18 +171,6 @@ private fun Color.liftFor(background: Color): Color {
         red = red + (1f - red) * amount,
         green = green + (1f - green) * amount,
         blue = blue + (1f - blue) * amount,
-    )
-}
-
-/** Darken until the colour reads against a near-white background. */
-private fun Color.deepenFor(background: Color): Color {
-    val ceiling = background.luminance() - 0.42f
-    if (luminance() <= ceiling) return this
-    val amount = ((luminance() - ceiling) * 1.1f).coerceIn(0f, 0.8f)
-    return Color(
-        red = red * (1f - amount),
-        green = green * (1f - amount),
-        blue = blue * (1f - amount),
     )
 }
 
@@ -169,29 +193,4 @@ fun Modifier.softShadow(
     clip = false,
     ambientColor = Color.Black.copy(alpha = ambient),
     spotColor = Color.Black.copy(alpha = spot),
-)
-
-/**
- * Editorial rather than utilitarian: a large, tightly tracked display face
- * against small wide-tracked labels. The contrast between the two is what makes
- * a screen read as designed instead of as a list of controls.
- */
-private val SpotTypography = Typography(
-    displayLarge = TextStyle(
-        fontSize = 34.sp,
-        lineHeight = 38.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = (-1.2).sp,
-    ),
-    headlineLarge = TextStyle(
-        fontSize = 27.sp,
-        lineHeight = 31.sp,
-        fontWeight = FontWeight.Bold,
-        letterSpacing = (-0.8).sp,
-    ),
-    titleLarge = TextStyle(fontSize = 19.sp, fontWeight = FontWeight.SemiBold, letterSpacing = (-0.3).sp),
-    titleMedium = TextStyle(fontSize = 15.5.sp, fontWeight = FontWeight.Medium, letterSpacing = (-0.1).sp),
-    bodyMedium = TextStyle(fontSize = 13.5.sp, fontWeight = FontWeight.Normal),
-    bodySmall = TextStyle(fontSize = 12.sp, fontWeight = FontWeight.Normal),
-    labelLarge = TextStyle(fontSize = 10.5.sp, fontWeight = FontWeight.SemiBold, letterSpacing = 1.2.sp),
 )

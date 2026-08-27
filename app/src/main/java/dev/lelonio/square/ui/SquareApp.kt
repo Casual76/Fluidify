@@ -137,7 +137,6 @@ import dev.lelonio.square.ui.player.asPlaybackState
 import dev.lelonio.square.ui.player.rememberRemotePositionMs
 import kotlinx.coroutines.Dispatchers
 import dev.lelonio.square.ui.player.FloatingMiniPlayer
-import dev.lelonio.square.ui.player.MiniPlayer
 import dev.lelonio.square.ui.player.PlaybackState
 import dev.lelonio.square.ui.player.MiniPlayerHeight
 import dev.lelonio.square.ui.player.NowPlayingSheet
@@ -716,7 +715,7 @@ fun SquareApp(
     androidx.compose.runtime.CompositionLocalProvider(
         dev.lelonio.square.ui.glass.LocalBackdropLuminance provides backdropLuminance,
     ) {
-    SquareTheme(seed = accent) {
+    SquareTheme {
         // Material's default content colour is black, and it used to arrive from
         // the Surface that wrapped this tree. That Surface is gone — it painted
         // an opaque page over the backdrop — so the colour has to be provided
@@ -1246,6 +1245,7 @@ fun SquareApp(
                         androidx.compose.animation.AnimatedVisibilityScope,
                     ) -> Unit)? = if (playback.hasItem) {
                         { accessoryModifier, _ ->
+                          dev.lelonio.square.ui.theme.ArtworkAccentTheme(seed = accent) {
                             FloatingMiniPlayer(
                                 state = playback,
                                 positionMs = positionMs,
@@ -1310,6 +1310,7 @@ fun SquareApp(
                                 },
                                 onSeek = { positionMillis -> player?.seekTo(positionMillis) },
                             )
+                          }
                         }
                     } else {
                         null
@@ -1456,6 +1457,7 @@ fun SquareApp(
                         progress = expand,
                         background = { AppBackdrop(playback.artworkUrl) },
                         expandedContent = {
+                         dev.lelonio.square.ui.theme.ArtworkAccentTheme(seed = accent) {
                           // The player is the largest glass surface in the app by
                           // a wide margin, so the settings' switch for it is the
                           // one that buys the most. Off leaves the film every
@@ -1647,6 +1649,7 @@ fun SquareApp(
                                 videoAttachKey = spotifyVideoGeneration,
                             )
                           }
+                         }
                         },
                     )
                     }
@@ -1886,6 +1889,23 @@ private fun AppBackdrop(artworkUrl: String?) {
             .fillMaxSize()
             .background(Color(0xFF0A0A0C)),
     ) {
+        if (artworkUrl == null) {
+            // Nothing playing yet: instead of a flat black page, the app's own
+            // light comes from behind — a soft amethyst halo from above, where
+            // the artwork's wash will stand once there is one.
+            val halo = MaterialTheme.colorScheme.primary
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .background(
+                        Brush.verticalGradient(
+                            0f to halo.copy(alpha = 0.26f),
+                            0.55f to halo.copy(alpha = 0.06f),
+                            1f to Color.Transparent,
+                        ),
+                    ),
+            )
+        }
         if (artworkUrl != null) {
             // Blurred at decode time rather than by `Modifier.blur`. That
             // modifier is a RenderEffect over the whole window, re-run whenever

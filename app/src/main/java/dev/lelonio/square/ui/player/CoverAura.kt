@@ -86,6 +86,9 @@ fun CoverAura(
     if (playing) frozen.floatValue = phase
     val turn = frozen.floatValue * TAU
 
+    // Read here rather than in the draw pass: the accent is the theme's to
+    // give, and a draw lambda has no composition to ask.
+    val glow = androidx.compose.material3.MaterialTheme.colorScheme.primary
     Canvas(
         modifier
             .fillMaxSize()
@@ -148,10 +151,10 @@ fun CoverAura(
             val radius = size.minDimension * 0.10f
             drawCircle(
                 brush = Brush.radialGradient(
-                    // White at the core rather than more of the same colour: a
-                    // highlight is where the light is, not where the paint is.
+                    // The accent at the core rather than white: the light that
+                    // reaches through from behind is the app's own.
                     colors = listOf(
-                        Color.White.copy(alpha = 0.30f),
+                        glow.copy(alpha = 0.30f),
                         color.copy(alpha = 0.40f),
                         Color.Transparent,
                     ),

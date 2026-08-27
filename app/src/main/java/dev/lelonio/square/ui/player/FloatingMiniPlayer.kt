@@ -271,3 +271,14 @@ fun FloatingMiniPlayer(
         )
     }
 }
+
+/** Whether a position makes sense as a fraction of a duration, and what it is. */
+fun progressOf(positionMs: Long, durationMs: Long): Float =
+    if (durationMs <= 0) 0f else (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
+
+/**
+ * 52dp, measured off the reference: the pill above the tabs is shorter than the
+ * tab capsule under it, and a mini player as tall as the bar made the two read
+ * as one slab.
+ */
+val MiniPlayerHeight = 48.dp
