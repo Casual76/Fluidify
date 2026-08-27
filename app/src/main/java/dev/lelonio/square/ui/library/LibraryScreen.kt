@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.library
 
+import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.annotation.StringRes
@@ -127,6 +128,13 @@ fun LibraryScreen(
     onCreatePlaylist: () -> Unit = {},
     /** Long press: rename and delete live in a sheet, like a track's actions. */
     onPlaylistMenu: (CatalogPlaylist) -> Unit = {},
+    /**
+     * What a long press on a playlist offers. Built by the caller — it owns
+     * the pin store and the rename/delete plumbing — and served here through
+     * the engine's context menu, which lifts the pressed row itself.
+     */
+    playlistActions: (CatalogPlaylist) -> List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction> =
+        { emptyList() },
     /** The artists the account follows; empty leaves the shelf out entirely. */
     artists: List<dev.lelonio.square.data.SearchItem> = emptyList(),
     onOpenArtist: (dev.lelonio.square.data.SearchItem) -> Unit = {},
@@ -309,11 +317,7 @@ fun LibraryScreen(
                                 playlist,
                                 pinned = playlist.uri in pinned,
                                 onClick = { open(playlist, artists, onOpenPlaylist, onOpenArtist) },
-                                onLongClick = if (canEdit) {
-                                    { onPlaylistMenu(playlist) }
-                                } else {
-                                    null
-                                },
+                                contextActions = playlistActions(playlist),
                             )
                         }
                     }
@@ -332,11 +336,7 @@ fun LibraryScreen(
                                 playlist,
                                 pinned = playlist.uri in pinned,
                                 onClick = { open(playlist, artists, onOpenPlaylist, onOpenArtist) },
-                                onLongClick = if (canEdit) {
-                                    { onPlaylistMenu(playlist) }
-                                } else {
-                                    null
-                                },
+                                contextActions = playlistActions(playlist),
                             )
                         }
                     }
@@ -542,10 +542,28 @@ private fun GridTile(
     playlist: CatalogPlaylist,
     pinned: Boolean,
     onClick: () -> Unit,
-    onLongClick: (() -> Unit)?,
+    contextActions: List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction>,
 ) {
+    // The engine's context menu: a long press lifts this very tile in place
+    // and grows the actions from its nearest corner. The anchor form, because
+    // the tile already answers taps of its own.
+    val contextMenu = dev.antigravity.fluidengine.ui.fluid.rememberFluidContextMenu(
+        actions = { contextActions },
+    )
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Column(
-        Modifier.pressable(onClick, onLongClick = onLongClick),
+        Modifier
+            .fluidContextMenuAnchor(contextMenu)
+            .pressable(
+                onClick,
+                onLongClick = {
+                    if (contextMenu.open()) {
+                        haptics.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                        )
+                    }
+                },
+            ),
     ) {
         PlaylistCover(
             playlist = playlist,
@@ -576,17 +594,29 @@ private fun ListRow(
     playlist: CatalogPlaylist,
     pinned: Boolean,
     onClick: () -> Unit,
-    onLongClick: (() -> Unit)?,
+    contextActions: List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction>,
 ) {
+    // See GridTile: the engine lifts the pressed row itself.
+    val contextMenu = dev.antigravity.fluidengine.ui.fluid.rememberFluidContextMenu(
+        actions = { contextActions },
+    )
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
+            .fluidContextMenuAnchor(contextMenu)
             .pressable(
                 onClick,
                 shape = RoundedCornerShape(16.dp),
                 pressedScale = 0.98f,
-                onLongClick = onLongClick,
+                onLongClick = {
+                    if (contextMenu.open()) {
+                        haptics.performHapticFeedback(
+                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
+                        )
+                    }
+                },
             )
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,

@@ -647,6 +647,14 @@ fun SquareApp(
     val searchLabel = stringResource(R.string.search)
     val radioLabel = stringResource(R.string.radio)
 
+    // For the library rows' context menus, whose actions are built in
+    // long-press lambdas where composable calls are out of reach.
+    val rowShareLabel = stringResource(R.string.copy_link)
+    val rowPinLabel = stringResource(R.string.pin)
+    val rowUnpinLabel = stringResource(R.string.unpin)
+    val rowRenameLabel = stringResource(R.string.rename)
+    val rowDeleteLabel = stringResource(R.string.delete)
+
     val inPip by dev.lelonio.square.backend.spotify.SpotifyVideoMode.pictureInPicture
         .collectAsStateWithLifecycle()
 
@@ -1014,6 +1022,58 @@ fun SquareApp(
                                 canEdit = viewModel.canEditPlaylists,
                                 onCreatePlaylist = { naming = NamingRequest(null) },
                                 onPlaylistMenu = { playlistMenu = it },
+                                playlistActions = actions@{ playlist ->
+                                    // The phone's own shelf and Liked Songs are
+                                    // fixtures: pinnable at most, never renamed
+                                    // or deleted, and with no link to share.
+                                    val fixture = playlist.uri.endsWith(":collection") ||
+                                        dev.lelonio.square.data.LocalLibrary.isLocalContext(playlist.uri)
+                                    val isPinned = playlist.uri in pinnedPlaylists
+                                    buildList {
+                                        if (!fixture) add(
+                                            dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                label = rowShareLabel,
+                                                icon = PhosphorIcons.Regular.Export,
+                                            ) {
+                                                context.startActivity(
+                                                    android.content.Intent.createChooser(
+                                                        android.content.Intent(
+                                                            android.content.Intent.ACTION_SEND,
+                                                        )
+                                                            .setType("text/plain")
+                                                            .putExtra(
+                                                                android.content.Intent.EXTRA_TEXT,
+                                                                dev.lelonio.square.ui.library
+                                                                    .openLinkOf(playlist.uri),
+                                                            ),
+                                                        null,
+                                                    ),
+                                                )
+                                            },
+                                        )
+                                        add(
+                                            dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                label = if (isPinned) rowUnpinLabel else rowPinLabel,
+                                                icon = PhosphorIcons.Regular.PushPin,
+                                            ) { viewModel.togglePinned(playlist.uri) },
+                                        )
+                                        if (!fixture && viewModel.canEditPlaylists) {
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = rowRenameLabel,
+                                                    icon = PhosphorIcons.Regular.PencilSimple,
+                                                ) { naming = NamingRequest(playlist) },
+                                            )
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = rowDeleteLabel,
+                                                    icon = PhosphorIcons.Regular.Trash,
+                                                    destructive = true,
+                                                ) { deleting = playlist },
+                                            )
+                                        }
+                                    }
+                                },
                                 artists = followedArtists,
                                 albums = savedAlbums,
                                 onOpenArtist = { artist ->
