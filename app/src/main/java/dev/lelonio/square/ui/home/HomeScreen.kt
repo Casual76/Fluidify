@@ -74,6 +74,7 @@ import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.AppIcon
 import dev.lelonio.square.ui.components.AppLockup
 import dev.lelonio.square.ui.components.Artwork
+import dev.lelonio.square.ui.components.PlaylistCover
 import dev.lelonio.square.ui.components.FluidifyWordmark
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
@@ -840,9 +841,8 @@ private fun PlaylistTile(playlist: CatalogPlaylist, onClick: () -> Unit) {
             .width(152.dp)
             .pressable(onClick),
     ) {
-        Artwork(
-            url = playlist.artworkUrl,
-            title = playlist.name,
+        PlaylistCover(
+            playlist = playlist,
             modifier = Modifier
                 .size(152.dp)
                 .softShadow(RoundedCornerShape(20.dp), elevation = 18.dp),

@@ -290,6 +290,7 @@ fun PlaylistScreen(
                 .layerBackdrop(pageBackdrop),
         ) {
             HeroArt(
+                uri = state.uri,
                 artworkUrl = state.artworkUrl,
                 name = state.name,
                 pageColor = pageColor,
@@ -884,6 +885,7 @@ private fun DetailHeader(
  */
 @Composable
 private fun HeroArt(
+    uri: String?,
     artworkUrl: String?,
     name: String,
     pageColor: Color,
@@ -896,12 +898,24 @@ private fun HeroArt(
             .fillMaxWidth()
             .heroCollapse(heroPx, collapsedPx, collapse),
     ) {
-        Artwork(
-            url = artworkUrl,
-            title = name,
-            modifier = Modifier.fillMaxSize(),
-            corner = 0.dp,
-        )
+        if (uri != null) {
+            dev.lelonio.square.ui.components.PlaylistCover(
+                playlist = dev.lelonio.square.data.CatalogPlaylist(
+                    uri = uri,
+                    name = name,
+                    artworkUrl = artworkUrl,
+                ),
+                modifier = Modifier.fillMaxSize(),
+                corner = 0.dp,
+            )
+        } else {
+            Artwork(
+                url = artworkUrl,
+                title = name,
+                modifier = Modifier.fillMaxSize(),
+                corner = 0.dp,
+            )
+        }
 
         // The bottom stops fade to the page colour itself, not to black. That is
         // what makes the cover run into the page instead of ending on an edge:

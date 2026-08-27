@@ -47,6 +47,7 @@ import dev.lelonio.square.data.withLocalFilesFirst
 import dev.lelonio.square.data.withPinnedFirst
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.Artwork
+import dev.lelonio.square.ui.components.PlaylistCover
 import dev.lelonio.square.ui.glass.LiquidButton
 import dev.lelonio.square.ui.glass.pressable
 import dev.lelonio.square.ui.player.GlassFilm
@@ -533,9 +534,8 @@ private fun GridTile(
     Column(
         Modifier.pressable(onClick, onLongClick = onLongClick),
     ) {
-        Artwork(
-            url = playlist.artworkUrl,
-            title = playlist.name,
+        PlaylistCover(
+            playlist = playlist,
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
@@ -578,9 +578,8 @@ private fun ListRow(
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Artwork(
-            url = playlist.artworkUrl,
-            title = playlist.name,
+        PlaylistCover(
+            playlist = playlist,
             modifier = Modifier
                 .size(52.dp)
                 .softShadow(RoundedCornerShape(14.dp), elevation = 10.dp),

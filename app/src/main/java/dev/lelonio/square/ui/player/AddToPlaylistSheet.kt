@@ -45,6 +45,7 @@ import dev.lelonio.square.R
 import dev.lelonio.square.data.CatalogPlaylist
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.Artwork
+import dev.lelonio.square.ui.components.PlaylistCover
 
 /**
  * Which playlist the playing track should go into.
@@ -285,9 +286,8 @@ private fun PlaylistRow(
             .padding(horizontal = 22.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Artwork(
-            url = playlist.artworkUrl,
-            title = playlist.name,
+        PlaylistCover(
+            playlist = playlist,
             modifier = Modifier.size(44.dp),
             corner = 10.dp,
             decodeSize = 44.dp,

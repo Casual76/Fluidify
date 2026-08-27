@@ -25,9 +25,15 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.produceState
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import coil.size.Scale
+import dev.lelonio.square.data.CatalogPlaylist
 import kotlin.math.absoluteValue
 import kotlin.math.roundToInt
 
@@ -99,6 +105,97 @@ fun Artwork(
  * soft off-centre highlight, and the initial set large and dimmed so it reads as
  * texture rather than as a label.
  */
+/**
+ * A playlist's cover, computed when it has none of its own.
+ *
+ * The order of preference: the artwork the service gave it; a 2×2 mosaic of
+ * its own tracks' covers, the way every shelf of playlists learns to be told
+ * apart; a single track's cover full-bleed when there are fewer than four to
+ * tile with; and the drawn letter only when there is nothing at all to build
+ * from. The tracks come from the same snapshot that fills the playlist page,
+ * so a list that has been opened once has its mosaic for free.
+ */
+@Composable
+fun PlaylistCover(
+    playlist: CatalogPlaylist,
+    modifier: Modifier = Modifier,
+    corner: Dp = 10.dp,
+    decodeSize: Dp = 0.dp,
+) {
+    val url = playlist.artworkUrl
+    if (url != null) {
+        Artwork(url, playlist.name, modifier, corner, decodeSize)
+        return
+    }
+
+    val context = LocalContext.current
+    val cache = remember(context) {
+        (context.applicationContext as dev.lelonio.square.SquareApplication).contextCache
+    }
+    // Null while the snapshot is being read, so the letter never flashes up
+    // for a playlist that is about to show its mosaic.
+    val arts by produceState<List<String>?>(initialValue = null, playlist.uri) {
+        value = cache.read(playlist.uri)?.tracks
+            ?.mapNotNull { it.artworkUrl }
+            ?.distinct()
+            ?.take(4)
+            .orEmpty()
+    }
+
+    val shape = remember(corner) { RoundedCornerShape(corner) }
+    Box(modifier.clip(shape), contentAlignment = Alignment.Center) {
+        val list = arts
+        when {
+            list == null -> Unit
+            list.size >= 4 -> Mosaic(list, decodeSize)
+            list.isNotEmpty() ->
+                Artwork(list.first(), playlist.name, Modifier.fillMaxSize(), 0.dp, decodeSize)
+            else -> GeneratedCover(playlist.name, corner)
+        }
+    }
+}
+
+/** Four covers as one, seam to seam — the tiles are the artwork. */
+@Composable
+private fun Mosaic(urls: List<String>, decodeSize: Dp) {
+    val cell = if (decodeSize > 0.dp) decodeSize / 2 else 0.dp
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.weight(1f).fillMaxWidth()) {
+            MosaicCell(urls[0], cell, Modifier.weight(1f))
+            MosaicCell(urls[1], cell, Modifier.weight(1f))
+        }
+        Row(Modifier.weight(1f).fillMaxWidth()) {
+            MosaicCell(urls[2], cell, Modifier.weight(1f))
+            MosaicCell(urls[3], cell, Modifier.weight(1f))
+        }
+    }
+}
+
+@Composable
+private fun MosaicCell(url: String, decodeSize: Dp, modifier: Modifier) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val request = remember(url, decodeSize) {
+        ImageRequest.Builder(context)
+            .data(url)
+            .scale(Scale.FILL)
+            .apply {
+                if (decodeSize > 0.dp) {
+                    val px = with(density) { decodeSize.toPx() }.roundToInt()
+                    size(px, px)
+                }
+            }
+            .crossfade(false)
+            .build()
+    }
+    AsyncImage(
+        model = request,
+        contentDescription = null,
+        contentScale = ContentScale.Crop,
+        modifier = modifier.fillMaxSize(),
+    )
+}
+
 /**
  * The tile for the phone's own music.
  *
