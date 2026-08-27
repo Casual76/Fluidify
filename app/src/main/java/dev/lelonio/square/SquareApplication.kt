@@ -8,7 +8,6 @@ import dev.lelonio.square.data.LanguageStore
 import dev.lelonio.square.data.PlaylistOrderStore
 import dev.lelonio.square.data.PreferencesStore
 import dev.lelonio.square.data.RecentStore
-import dev.lelonio.square.playback.EffectPresetStore
 import dev.lelonio.square.data.ApiFactory
 import dev.lelonio.square.data.SpotifyApi
 
@@ -28,6 +27,9 @@ class SquareApplication : Application() {
         // exist by then and either can announce a default that would be saved
         // over what the listener had set.
         dev.lelonio.square.playback.AudioEffects.load(this)
+        // The speed/pitch/reverb panel is gone; anything it left behind would
+        // now be permanent and unreachable. See neutraliseOnce.
+        dev.lelonio.square.playback.AudioEffects.neutraliseOnce()
 
         // Not a feature: a line in the log saying whether this install has been
         // compiled ahead of time yet. See reportProfileStatus.
@@ -118,9 +120,6 @@ class SquareApplication : Application() {
     val updater: dev.lelonio.square.update.Updater by lazy {
         dev.lelonio.square.update.Updater(this)
     }
-
-    /** The user's saved speed / pitch / reverb combinations. */
-    val effectPresets: EffectPresetStore by lazy { EffectPresetStore(this) }
 
     /**
      * The Spotify source, behind the common backend interface.

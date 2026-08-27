@@ -25,8 +25,6 @@ import dev.lelonio.square.data.SearchResults
 import dev.lelonio.square.data.toCatalogTrack
 import dev.lelonio.square.data.toResults
 import dev.lelonio.square.nativecore.NativeBridge
-import dev.lelonio.square.playback.BuiltInPresets
-import dev.lelonio.square.playback.EffectPreset
 import dev.lelonio.square.playback.PlaybackService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -911,22 +909,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // giving up the registered application only gives up the fallback.
     }
 
-    /**
-     * Saved effect presets: the built-in ones followed by the user's own.
-     *
-     * Combined here rather than stored together so the built-ins can be changed
-     * or added to in a later version without migrating what the user saved.
-     */
-    val effectPresets: StateFlow<List<EffectPreset>> =
-        container.effectPresets.presets
-            .map { BuiltInPresets + it }
-            .stateIn(viewModelScope, SharingStarted.Eagerly, BuiltInPresets)
-
-    fun saveEffectPreset(name: String, speed: Float, pitch: Float, reverb: Float) {
-        container.effectPresets.save(name, speed, pitch, reverb)
-    }
-
-    fun deleteEffectPreset(id: String) = container.effectPresets.delete(id)
 
     /** Locally recorded listening history; see [dev.lelonio.square.data.RecentStore]. */
     /**

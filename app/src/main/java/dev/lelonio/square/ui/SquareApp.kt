@@ -366,7 +366,6 @@ fun SquareApp(
     val searchHistory by viewModel.searchHistory.collectAsStateWithLifecycle()
     val webApi by viewModel.webApi.collectAsStateWithLifecycle()
     val reverb by AudioEffects.reverb.collectAsStateWithLifecycle()
-    val presets by viewModel.effectPresets.collectAsStateWithLifecycle()
     val feed by viewModel.feed.collectAsStateWithLifecycle()
     val playlistOrder by viewModel.playlistOrder.collectAsStateWithLifecycle()
     val pinnedPlaylists by viewModel.pinnedPlaylists.collectAsStateWithLifecycle()
@@ -1781,36 +1780,6 @@ fun SquareApp(
                                 onWantCredits = viewModel::loadCredits,
                                 onPlayQueueItem = { player?.seekTo(it, 0L) },
                                 onRemoveQueueItem = { player?.removeMediaItem(it) },
-                                reverb = reverb,
-                                // Speed and pitch are set as a pair because
-                                // PlaybackParameters carries both; changing one
-                                // has to carry the other through unchanged.
-                                onSpeed = {
-                                    setPlaybackParameters(
-                                        PlaybackParameters(it, playback.pitch),
-                                    )
-                                },
-                                onPitch = {
-                                    setPlaybackParameters(
-                                        PlaybackParameters(playback.speed, it),
-                                    )
-                                },
-                                onReverb = AudioEffects::setReverb,
-                                presets = presets,
-                                onApplyPreset = { preset ->
-                                    player?.playbackParameters =
-                                        PlaybackParameters(preset.speed, preset.pitch)
-                                    AudioEffects.setReverb(preset.reverbAmount)
-                                },
-                                onSavePreset = {
-                                    viewModel.saveEffectPreset(
-                                        it,
-                                        playback.speed,
-                                        playback.pitch,
-                                        reverb,
-                                    )
-                                },
-                                onDeletePreset = viewModel::deleteEffectPreset,
                                 backdrop = artBackdrop,
                                 canvas = canvas,
                                 devices = devices,

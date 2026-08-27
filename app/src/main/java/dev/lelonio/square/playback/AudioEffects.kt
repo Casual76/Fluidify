@@ -87,6 +87,29 @@ object AudioEffects {
         )
     }
 
+    /**
+     * Puts speed, pitch and reverb back to neutral, once and for ever.
+     *
+     * The panel that set them is gone — nobody asked to slow their music down
+     * permanently, and these persist across launches and are re-applied by the
+     * service at startup, so anyone who had been playing with them would have
+     * been stuck at 0.8x with no control left to say otherwise. Karaoke is
+     * untouched: it belongs to the lyrics view, which is still here.
+     */
+    fun neutraliseOnce() {
+        val store = prefs ?: return
+        if (store.getBoolean(KEY_NEUTRALISED, false)) return
+        _reverb.value = 0f
+        _speed.value = 1f
+        _pitch.value = 1f
+        store.edit()
+            .putFloat(KEY_REVERB, 0f)
+            .putFloat(KEY_SPEED, 1f)
+            .putFloat(KEY_PITCH, 1f)
+            .putBoolean(KEY_NEUTRALISED, true)
+            .commit()
+    }
+
     fun setReverb(amount: Float) {
         val wanted = amount.coerceIn(0f, 1f)
         if (wanted == _reverb.value) return
@@ -121,6 +144,7 @@ object AudioEffects {
     }
 
     private const val FILE_NAME = "spot_audio_effects"
+    private const val KEY_NEUTRALISED = "effects_neutralised_v1"
     private const val KEY_REVERB = "reverb"
     private const val KEY_SPEED = "speed"
     private const val KEY_PITCH = "pitch"

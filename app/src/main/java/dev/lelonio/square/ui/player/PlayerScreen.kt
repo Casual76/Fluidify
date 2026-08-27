@@ -152,7 +152,7 @@ private const val STAGE_FADE_MS = 180
 private const val CLIP_FADE_MS = 460
 
 private enum class Stage {
-    COVER, LYRICS, EFFECTS, INFO, QUEUE, DEVICES, ADD_TO_PLAYLIST, CANVAS, VIDEO
+    COVER, LYRICS, INFO, QUEUE, DEVICES, ADD_TO_PLAYLIST, CANVAS, VIDEO
 }
 
 @UnstableApi
@@ -184,14 +184,6 @@ fun PlayerScreen(
     /** Whether the listener has asked to watch rather than listen. */
     videoMode: Boolean = false,
     onToggleVideo: () -> Unit = {},
-    reverb: Float,
-    onSpeed: (Float) -> Unit,
-    onPitch: (Float) -> Unit,
-    onReverb: (Float) -> Unit,
-    presets: List<dev.lelonio.square.playback.EffectPreset>,
-    onApplyPreset: (dev.lelonio.square.playback.EffectPreset) -> Unit,
-    onSavePreset: (String) -> Unit,
-    onDeletePreset: (String) -> Unit,
     /**
      * The app-wide backdrop, shared rather than built here: this screen covers
      * the same blurred artwork the rest of the app already draws, and recording
@@ -642,7 +634,6 @@ fun PlayerScreen(
                         AnimatedContent(
                             targetState = when (panel) {
                                 PlayerPanel.LYRICS -> Stage.LYRICS
-                                PlayerPanel.EFFECTS -> Stage.EFFECTS
                                 PlayerPanel.INFO -> Stage.INFO
                                 PlayerPanel.QUEUE -> Stage.QUEUE
                                 PlayerPanel.DEVICES -> Stage.DEVICES
@@ -725,25 +716,6 @@ fun PlayerScreen(
                                     loading = creditsLoading,
                                     modifier = Modifier.fillMaxSize(),
                                 )
-
-                                Stage.EFFECTS -> Box(
-                                    Modifier.fillMaxSize(),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    EffectsPanel(
-                                        speed = state.speed,
-                                        pitch = state.pitch,
-                                        reverb = reverb,
-                                        onSpeed = onSpeed,
-                                        onPitch = onPitch,
-                                        onReverb = onReverb,
-                                        presets = presets,
-                                        onApplyPreset = onApplyPreset,
-                                        onSavePreset = onSavePreset,
-                                        onDeletePreset = onDeletePreset,
-                                        backdrop = glassBackdrop,
-                                    )
-                                }
 
                                 Stage.QUEUE -> Box(Modifier.fillMaxSize()) {
                                     QueueList(queue, onPlayQueueItem, onRemoveQueueItem)
@@ -995,16 +967,6 @@ fun PlayerScreen(
                             positionMs = positionMs,
                             onPlayQueueItem = onPlayQueueItem,
                             onSeek = onSeek,
-                            speed = state.speed,
-                            pitch = state.pitch,
-                            reverb = reverb,
-                            onSpeed = onSpeed,
-                            onPitch = onPitch,
-                            onReverb = onReverb,
-                            presets = presets,
-                            onApplyPreset = onApplyPreset,
-                            onSavePreset = onSavePreset,
-                            onDeletePreset = onDeletePreset,
                             backdrop = glassBackdrop,
                         )
 
@@ -1296,7 +1258,6 @@ private fun TopBar(
         Crossfade(
             targetState = when (panel) {
                 PlayerPanel.LYRICS -> stringResource(R.string.lyrics)
-                PlayerPanel.EFFECTS -> stringResource(R.string.effects)
                 PlayerPanel.INFO -> stringResource(R.string.credits)
                 PlayerPanel.QUEUE -> stringResource(R.string.queued)
                 PlayerPanel.DEVICES -> stringResource(R.string.play_on)
