@@ -11,6 +11,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
@@ -68,11 +69,25 @@ fun CanvasSurface(
 
     val exoPlayer = remember(url) {
         ExoPlayer.Builder(context).build().apply {
+            // Canvases ship with an audio track often enough to matter, and it
+            // is not enough to turn it down.
+            //
+            // At volume zero the audio renderer is still selected, still
+            // decoded, and still given an AudioTrack of its own — a second
+            // output opened underneath the one librespot is writing into, on
+            // every song that has a Canvas. That is the moment the log shows
+            // the primary track underrunning, and it is why a song with a
+            // Canvas was slow to start and sometimes did not start. Refusing
+            // the track type means the renderer is never enabled and no output
+            // is ever opened; the volume stays at zero as well, because a
+            // second belt costs nothing.
+            trackSelectionParameters = trackSelectionParameters
+                .buildUpon()
+                .setTrackTypeDisabled(C.TRACK_TYPE_AUDIO, true)
+                .build()
+            volume = 0f
             setMediaItem(MediaItem.fromUri(url))
             repeatMode = Player.REPEAT_MODE_ONE
-            // Canvases ship with an audio track often enough to matter, and
-            // playing it would put a second sound over the music.
-            volume = 0f
             prepare()
         }
     }

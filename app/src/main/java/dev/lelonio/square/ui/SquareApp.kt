@@ -424,8 +424,9 @@ fun SquareApp(
     // Asked once per track: almost no song has a video, and the answer is two
     // catalogue calls rather than something the account volunteers.
     LaunchedEffect(playback.mediaId) {
-        awaitAudible(localState)
-        viewModel.lookUpVideo(playback.mediaId)
+        val uri = playback.mediaId
+        if (!awaitAudible(localState, uri)) return@LaunchedEffect
+        viewModel.lookUpVideo(uri)
     }
     val devices by viewModel.devices.collectAsStateWithLifecycle()
     val addToPlaylist by viewModel.addToPlaylist.collectAsStateWithLifecycle()
@@ -590,12 +591,31 @@ fun SquareApp(
         // Cleared as well as not asked for: turning the setting off while one
         // is on screen has to take it away, not leave the last one behind.
         canvas = null
-        if (uri != null && canvasEnabled) {
-            // After the song, not beside it: a Canvas is a video, and fetching
-            // one while the track is still arriving takes the connection the
-            // track needs. See awaitAudible.
-            awaitAudible(localState)
-            canvas = Catalog.canvas(uri)
+        if (uri == null || !canvasEnabled) return@LaunchedEffect
+
+        // After the song, not beside it: a Canvas is a video, and fetching one
+        // while the track is still arriving takes the connection the track
+        // needs. See awaitAudible — and note that the song is never made to
+        // wait for this, in either direction: it is already playing by the time
+        // anything below runs, and nothing below can stop it.
+        if (!awaitAudible(localState, uri)) return@LaunchedEffect
+        // And a moment more, so the stream has a head start on its own buffer
+        // before a few megabytes of video ask for the same radio.
+        kotlinx.coroutines.delay(CANVAS_SETTLE_MS)
+
+        // Asked again if the asking failed, and only then: most tracks have no
+        // Canvas at all, and "there is none" is an answer, not an error. A
+        // clip that lost a race with a handover of the network used to be lost
+        // for the whole song.
+        repeat(CANVAS_ATTEMPTS) { attempt ->
+            val answer = Catalog.canvas(uri)
+            if (answer.isSuccess) {
+                canvas = answer.getOrNull()
+                return@LaunchedEffect
+            }
+            if (attempt < CANVAS_ATTEMPTS - 1) {
+                kotlinx.coroutines.delay(CANVAS_RETRY_MS * (attempt + 1))
+            }
         }
     }
 
@@ -632,7 +652,7 @@ fun SquareApp(
         }
         // Behind the song as well; see awaitAudible. The panel shows its own
         // spinner meanwhile, so the wait is visible rather than blank.
-        awaitAudible(localState)
+        awaitAudible(localState, uri)
         // And behind the *metadata*, which is a second wait and a real one.
         //
         // The id of the new track is published before its title, its artist and
@@ -2688,11 +2708,36 @@ private fun BarSearchField(
  */
 private suspend fun awaitAudible(
     state: androidx.compose.runtime.State<dev.lelonio.square.ui.player.PlaybackState>,
-) {
-    kotlinx.coroutines.withTimeoutOrNull(AUDIBLE_TIMEOUT_MS) {
-        snapshotFlow { state.value.isBuffering }.first { !it }
-    }
-}
+    /** The track being waited for. Without it this waits for the wrong one. */
+    uri: String?,
+): Boolean = kotlinx.coroutines.withTimeoutOrNull(AUDIBLE_TIMEOUT_MS) {
+    // Both halves matter, and the missing one was the uri.
+    //
+    // "Not buffering" is asked the instant the track changes, and at that
+    // instant the answer is still about the track BEFORE — which was playing
+    // perfectly well, so it is "no". The wait therefore returned immediately
+    // and every extra this gates went out over the wire in the middle of the
+    // new song's own load: the metadata, the key, the first blocks of audio.
+    // On a good connection that is a slow start; on a poor one the song does
+    // not start at all. Naming the track is what makes this a wait.
+    snapshotFlow { state.value }.first { it.mediaId == uri && !it.isBuffering }
+    true
+} ?: false
+
+/**
+ * How long the stream keeps the radio to itself once the song is audible.
+ *
+ * Not a guess about the network: it is the difference between "a note has been
+ * heard" and "there is enough of this song buffered to survive a video being
+ * pulled down beside it".
+ */
+private const val CANVAS_SETTLE_MS = 1_500L
+
+/** How many times a Canvas that could not be asked for is asked for again. */
+private const val CANVAS_ATTEMPTS = 3
+
+/** The first gap between those attempts; each one after waits a multiple more. */
+private const val CANVAS_RETRY_MS = 2_000L
 
 /** How long the extras wait for the song; see [awaitAudible]. */
-private const val AUDIBLE_TIMEOUT_MS = 5_000L
+private const val AUDIBLE_TIMEOUT_MS = 12_000L

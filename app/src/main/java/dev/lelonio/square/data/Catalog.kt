@@ -180,16 +180,23 @@ object Catalog {
      * Most of the catalogue has no canvas, so a null here is an ordinary answer
      * and the player falls back to the cover rather than showing an error.
      */
-    suspend fun canvas(trackUri: String): CanvasClip? = withContext(Dispatchers.IO) {
-        val raw = runCatching { NativeBridge.canvas(trackUri) }.getOrNull() ?: return@withContext null
-        val root = runCatching { json.parseToJsonElement(raw) }.getOrNull() as? JsonObject
-            ?: return@withContext null
-        val url = root["url"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
-            ?: return@withContext null
-        CanvasClip(
-            url = url,
-            isVideo = root["isVideo"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: true,
-        )
+    suspend fun canvas(trackUri: String): Result<CanvasClip?> = withContext(Dispatchers.IO) {
+        // Success-with-null and failure are different answers, and collapsing
+        // them into one null is what made a Canvas that failed to arrive look
+        // exactly like a track that has none: nothing to retry, because nothing
+        // had gone wrong. Most tracks really do have none, so a caller that
+        // retried both would spend three round trips per song asking about a
+        // video that does not exist.
+        runCatching {
+            val raw = NativeBridge.canvas(trackUri)
+            val root = json.parseToJsonElement(raw) as? JsonObject ?: return@runCatching null
+            val url = root["url"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
+                ?: return@runCatching null
+            CanvasClip(
+                url = url,
+                isVideo = root["isVideo"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: true,
+            )
+        }
     }
 
     /**
