@@ -146,7 +146,10 @@
     <string name="see_setup_again">Rivedi la configurazione guidata</string>
     <string name="permissions_asked">Permessi richiesti</string>
     <string name="permissions_note">Un\'applicazione collegata prima di un aggiornamento va ricollegata per concedere i permessi aggiunti dopo: le sezioni che li usano restano vuote finché non lo fai.</string>
-    <string name="developed_by">Sviluppato da</string>
+    <string name="forked_by">Forkato da</string>
+    <string name="based_on">Basato su</string>
+    <string name="engine_licences_title">Licenze del Fluid Engine</string>
+    <string name="engine_licences_footnote">Il Fluid Engine %1$s include queste opere di terze parti. Le licenze complete sono nel repository dell\'engine, in LICENSES/.</string>
     <string name="about">Informazioni</string>
     <string name="version">Versione</string>
     <string name="licences">Licenze</string>
@@ -197,14 +200,14 @@
     <string name="onboarding_welcome_3">Due passaggi e sei pronto. Ci vogliono cinque minuti, una volta sola.</string>
     <string name="onboarding_login_title">1. Accedi a Spotify</string>
     <string name="onboarding_login_1">Si apre il browser sulla pagina di Spotify. Autorizzi e torni qui da solo.</string>
-    <string name="onboarding_login_2">La password la scrivi solo nella pagina di Spotify: Square non la vede.</string>
+    <string name="onboarding_login_2">La password la scrivi solo nella pagina di Spotify: Fluidify non la vede.</string>
     <string name="onboarding_login_done">Accesso completato</string>
     <string name="onboarding_key_title">2. Crea la tua chiave</string>
     <string name="onboarding_key_intro">La ricerca e i consigli passano dalle API di Spotify, che vanno usate con una chiave personale. Si crea in un minuto, è gratis e non serve nessuna carta.</string>
     <string name="onboarding_open_dashboard">Apri il dashboard</string>
     <string name="onboarding_step_login">Accedi con lo stesso account Spotify.</string>
     <string name="onboarding_step_create">In alto a destra premi «Create app».</string>
-    <string name="onboarding_step_names">App name e App description: scrivi quello che vuoi, per esempio Square. Website: lascia vuoto.</string>
+    <string name="onboarding_step_names">App name e App description: scrivi quello che vuoi, per esempio Fluidify. Website: lascia vuoto.</string>
     <string name="onboarding_step_redirect">Redirect URI: incolla la riga qui sotto e premi «Add». Controlla che compaia nell\'elenco sotto al campo, altrimenti non viene salvata.</string>
     <string name="onboarding_step_api">Alla voce «Which API/SDKs are you planning to use?» spunta Web API.</string>
     <string name="onboarding_step_terms">Accetta i termini e premi «Save».</string>
@@ -255,7 +258,7 @@
     <string name="quality_low">Bassa</string>
     <string name="quality_auto_note">Automatica parte dalla stima della connessione e poi segue la musica: un brano che si inceppa o che tarda a partire la fa scendere di un gradino, e diversi brani rapidi di fila la fanno risalire.</string>
     <string name="quality_restarts">Cambiandola, la canzone in corso viene ricaricata.</string>
-    <string name="premium_required">Square richiede Spotify Premium. Un account free riesce ad accedere, ma Spotify non trasmette a un client come questo.</string>
+    <string name="premium_required">Fluidify richiede Spotify Premium. Un account free riesce ad accedere, ma Spotify non trasmette a un client come questo.</string>
     <string name="new_playlist">Nuova playlist</string>
     <string name="rename">Rinomina</string>
     <string name="delete">Elimina</string>
@@ -287,7 +290,7 @@
     <string name="effect_quality_light_note">Se ne occupa il telefono. Più gentile con i dispositivi vecchi, più ruvida sugli attacchi.</string>
     <string name="liked_songs">Brani che ti piacciono</string>
     <string name="local_files">File locali</string>
-    <string name="local_files_needs_permission">Square può vedere la musica su questo telefono se glielo permetti.</string>
+    <string name="local_files_needs_permission">Fluidify può vedere la musica su questo telefono se glielo permetti.</string>
     <string name="local_files_allow">Consenti</string>
     <string name="pinned">Fissata</string>
     <string name="pin">Fissa in alto</string>

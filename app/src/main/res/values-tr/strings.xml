@@ -157,7 +157,10 @@
     <string name="see_setup_again">Kurulumu yeniden gör</string>
     <string name="permissions_asked">İstenen izinler</string>
     <string name="permissions_note">Bir güncellemeden önce bağlanan uygulamanın, sonradan eklenen izinleri vermesi için yeniden bağlanması gerekir: o zamana kadar bu izinleri kullanan bölümler boş kalır.</string>
-    <string name="developed_by">Geliştiren</string>
+    <string name="forked_by">Fork eden</string>
+    <string name="based_on">Temel alınan</string>
+    <string name="engine_licences_title">Fluid Engine lisansları</string>
+    <string name="engine_licences_footnote">Fluid Engine %1$s bu üçüncü taraf çalışmaları içerir. Lisansların tamamı engine deposunda, LICENSES/ altındadır.</string>
     <string name="about">Hakkında</string>
     <string name="version">Sürüm</string>
     <string name="licences">Lisanslar</string>
@@ -210,14 +213,14 @@
     <string name="onboarding_welcome_3">İki adım ve hazırsın. Bir kereliğine beş dakika.</string>
     <string name="onboarding_login_title">1. Spotify\'a giriş yap</string>
     <string name="onboarding_login_1">Tarayıcı Spotify\'ın sayfasında açılır. İzin verirsin ve buraya geri döner.</string>
-    <string name="onboarding_login_2">Şifreni yalnızca Spotify\'ın kendi sayfasına yazarsın: Square onu hiç görmez.</string>
+    <string name="onboarding_login_2">Şifreni yalnızca Spotify\'ın kendi sayfasına yazarsın: Fluidify onu hiç görmez.</string>
     <string name="onboarding_login_done">Giriş yapıldı</string>
     <string name="onboarding_key_title">2. Anahtarını oluştur</string>
     <string name="onboarding_key_intro">Arama ve öneriler, kişisel bir anahtarla kullanılması gereken Spotify API\'sinden geçer. Bir dakika sürer, ücretsizdir ve kart gerekmez.</string>
     <string name="onboarding_open_dashboard">Paneli aç</string>
     <string name="onboarding_step_login">Aynı Spotify hesabıyla giriş yap.</string>
     <string name="onboarding_step_create">Sağ üstte «Create app»e bas.</string>
-    <string name="onboarding_step_names">App name ve App description: istediğin gibi, örneğin Square. Website: boş bırak.</string>
+    <string name="onboarding_step_names">App name ve App description: istediğin gibi, örneğin Fluidify. Website: boş bırak.</string>
     <string name="onboarding_step_redirect">Redirect URI: aşağıdaki satırı yapıştır ve «Add»e bas. Alanın altındaki listede göründüğünü doğrula, yoksa kaydedilmez.</string>
     <string name="onboarding_step_api">«Which API/SDKs are you planning to use?» altında Web API\'yi işaretle.</string>
     <string name="onboarding_step_terms">Koşulları kabul et ve «Save»e bas.</string>
@@ -269,7 +272,7 @@
     <string name="quality_low">Düşük</string>
     <string name="quality_auto_note">Otomatik, bağlantının tahminiyle başlar ve sonra müziği izler: takılan ya da geç başlayan bir parça bir kademe düşürür, arka arkaya birkaç hızlı parça yeniden yükseltir.</string>
     <string name="quality_restarts">Bunu değiştirmek çalan parçayı yeniden yükler.</string>
-    <string name="premium_required">Square, Spotify Premium gerektirir. Ücretsiz hesap giriş yapabilir ama Spotify böyle bir istemciye yayın vermez.</string>
+    <string name="premium_required">Fluidify, Spotify Premium gerektirir. Ücretsiz hesap giriş yapabilir ama Spotify böyle bir istemciye yayın vermez.</string>
     <string name="new_playlist">Yeni çalma listesi</string>
     <string name="rename">Yeniden adlandır</string>
     <string name="delete">Sil</string>
@@ -301,7 +304,7 @@
     <string name="effect_quality_light_note">İşi telefon yapar. Eski cihazlara nazik, vuruşlarda daha kaba.</string>
     <string name="liked_songs">Beğenilen Şarkılar</string>
     <string name="local_files">Yerel dosyalar</string>
-    <string name="local_files_needs_permission">İzin verirsen Square bu telefondaki müziği görebilir.</string>
+    <string name="local_files_needs_permission">İzin verirsen Fluidify bu telefondaki müziği görebilir.</string>
     <string name="local_files_allow">İzin ver</string>
     <string name="pinned">Sabitlendi</string>
     <string name="pin">Yukarı sabitle</string>

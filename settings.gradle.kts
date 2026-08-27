@@ -33,6 +33,21 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "Spot"
+rootProject.name = "Fluidify"
 include(":app")
 include(":innertube")
+
+// --- fluid-engine (inizio) ---
+val engineDir = file("engine")
+if (engineDir.exists()) {
+  listOf(
+  "engine-foundation",
+  "engine-ui",
+  "engine-net",
+  "engine-update"
+  ).forEach { name ->
+    include(":$name")
+    project(":$name").projectDir = engineDir.resolve(name)
+  }
+}
+// --- fluid-engine (fine) ---

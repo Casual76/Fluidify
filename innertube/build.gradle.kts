@@ -7,6 +7,8 @@ plugins {
 android {
     namespace = "com.metrolist.innertube"
     compileSdk = 37
+    // See the app module: API 37 only exists as "android-37.0" in the SDK.
+    compileSdkMinor = 0
 
     defaultConfig {
         minSdk = 26

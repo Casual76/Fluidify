@@ -1,0 +1,3 @@
+[submodule "engine"]
+	path = engine
+	url = C:/VibeCoded Projects/fluid-engine

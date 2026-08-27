@@ -28,7 +28,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.lelonio.square.R
 import dev.lelonio.square.backend.BackendId
-import dev.lelonio.square.ui.components.SquareWordmark
+import dev.lelonio.square.ui.components.FluidifyWordmark
 import dev.lelonio.square.ui.theme.Ink
 import dev.lelonio.square.ui.theme.InkDim
 
@@ -65,7 +65,7 @@ fun BackendChoiceScreen(onChoose: (BackendId) -> Unit) {
                 .padding(horizontal = 24.dp),
             verticalArrangement = Arrangement.Center,
         ) {
-            SquareWordmark(height = 22.dp, modifier = Modifier.padding(bottom = 28.dp))
+            FluidifyWordmark(height = 22.dp, modifier = Modifier.padding(bottom = 28.dp))
 
             Text(
                 stringResource(R.string.backend_choice_title),

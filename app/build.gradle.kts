@@ -43,15 +43,23 @@ val keystoreProperties = Properties().apply {
 android {
     namespace = "dev.lelonio.square"
     compileSdk = 37
+    // The SDK repository only publishes API 37 as the minor-versioned
+    // "android-37.0"; without the minor AGP looks for a plain "android-37"
+    // that no longer exists as a package.
+    compileSdkMinor = 0
     ndkVersion = ndkVersionForCargo
 
     defaultConfig {
-        applicationId = "dev.lelonio.square"
+        // Fluidify's own identity, so it installs beside the original Square.
+        // The namespace above stays dev.lelonio.square on purpose: the JNI
+        // symbols in native/src/ffi.rs are bound to the Java package, not to
+        // the application id.
+        applicationId = "dev.pampa.fluidify"
         // cpal's Android host is AAudio, which the ndk crate gates at API 26.
         minSdk = 26
         targetSdk = 35
-        versionCode = 22
-        versionName = "2.0.0"
+        versionCode = 1
+        versionName = "1.0.0"
 
         ndk {
             abiFilters += nativeAbis
@@ -108,6 +116,9 @@ android {
             initWith(getByName("release"))
             isMinifyEnabled = false
             isShrinkResources = false
+            // The engine modules only declare debug/release; without a fallback
+            // Gradle cannot pick a variant of them for this build type.
+            matchingFallbacks += "release"
             // The real key when there is one: a build signed with a different
             // key than the copy already on the phone cannot replace it, and
             // uninstalling first would take the login and the saved queue with
@@ -202,6 +213,11 @@ dependencies {
     implementation(libs.kyant.shapes)
     implementation(libs.phosphor)
 
+    // Fluid Engine: design system (porta con sé Compose e engine-foundation)
+    // e aggiornamento in-app via Pampa Store.
+    implementation(project(":engine-ui"))
+    implementation(project(":engine-update"))
+
     coreLibraryDesugaring(libs.desugaring)
 }
 
@@ -283,8 +299,10 @@ val cargoBuild by tasks.registering(Exec::class) {
     // A Homebrew rust earlier on PATH has neither the Android targets nor a new
     // enough rustc for the dependency tree, and the failure it produces
     // ("requires rustc 1.88") points at the crates rather than at the toolchain.
-    val cargo = File(System.getProperty("user.home"), ".cargo/bin/cargo")
-        .takeIf { it.canExecute() }?.absolutePath ?: "cargo"
+    // cargo vs cargo.exe: same rustup layout, two spellings of the binary.
+    val cargo = sequenceOf("cargo", "cargo.exe")
+        .map { File(System.getProperty("user.home"), ".cargo/bin/$it") }
+        .firstOrNull { it.canExecute() }?.absolutePath ?: "cargo"
     commandLine(
         listOf(cargo, "ndk") + abiArgs +
             listOf("-P", "26", "-o", outputDir, "build", "--release"),
@@ -305,12 +323,35 @@ val cargoBuild by tasks.registering(Exec::class) {
     // visible to an external process.
     environment("ANDROID_NDK_HOME", ndkDir.absolutePath)
 
+    // dlltool (used by host build scripts on the GNU toolchain) cannot create
+    // import libraries when the .def path contains a space, and this checkout
+    // may live under one. Cargo's scratch moves somewhere unspaced; the .so
+    // still lands in jniLibs via -o above.
+    if (nativeDir.absolutePath.contains(' ')) {
+        environment(
+            "CARGO_TARGET_DIR",
+            File(System.getProperty("user.home"), ".cargo-target/fluidify").absolutePath,
+        )
+    }
+
     // cargo-ndk re-invokes plain `cargo` for each target, so pointing the task
     // at the rustup binary is not enough on its own: the child would still pick
     // up a Homebrew rust earlier on PATH, which has neither the Android targets
     // nor a new enough rustc, and reports it as "requires rustc 1.88".
-    File(System.getProperty("user.home"), ".cargo/bin").takeIf { it.isDirectory }?.let {
-        environment("PATH", "${it.absolutePath}:${System.getenv("PATH")}")
+    val cargoToolDirs = listOf(
+        File(System.getProperty("user.home"), ".cargo/bin"),
+        // Host build scripts pull in windows-sys, which links via raw-dylib
+        // and needs a dlltool. rustup's GNU one ships without the assembler it
+        // spawns, so this directory holds the NDK's llvm-dlltool renamed
+        // dlltool.exe — it writes the import library directly, no assembler.
+        File(System.getProperty("user.home"), ".cargo-shims"),
+    ).filter { it.isDirectory }
+    if (cargoToolDirs.isNotEmpty()) {
+        environment(
+            "PATH",
+            (cargoToolDirs.map { it.absolutePath } + System.getenv("PATH"))
+                .joinToString(File.pathSeparator),
+        )
     }
 }
 

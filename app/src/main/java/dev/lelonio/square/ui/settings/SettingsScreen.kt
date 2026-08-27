@@ -37,6 +37,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import dev.antigravity.fluidengine.ui.fluid.fluidLicensesSection
 import dev.lelonio.square.update.Updater
 import kotlinx.coroutines.launch
 import androidx.compose.ui.text.font.FontWeight
@@ -128,6 +129,14 @@ fun SettingsScreen(
     // The back gesture closes the page first and leaves the settings second,
     // which is the order the screen is read in.
     BackHandler(enabled = open != null) { open = null }
+
+    // Resolved here because fluidLicensesSection is a LazyListScope extension,
+    // where composable calls like stringResource are out of reach.
+    val engineLicencesTitle = stringResource(R.string.engine_licences_title)
+    val engineLicencesFootnote = stringResource(
+        R.string.engine_licences_footnote,
+        dev.antigravity.fluidengine.foundation.EngineBuild.VERSION,
+    )
 
     LazyColumn(
         Modifier.fillMaxSize(),
@@ -330,46 +339,21 @@ fun SettingsScreen(
         }
 
         if (open == SettingsPage.About) item("author") {
-            Section(stringResource(R.string.developed_by)) {
-                val uriHandler = LocalUriHandler.current
-                Row(
-                    Modifier
-                        .fillMaxWidth()
-                        .clickable { uriHandler.openUri(GITHUB_URL) }
-                        .padding(horizontal = 18.dp, vertical = 16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    // GitHub serves the account picture at `<user>.png`, so the
-                    // avatar follows whatever it is set to rather than being a
-                    // copy checked in here.
-                    Artwork(
-                        url = "$GITHUB_URL.png",
-                        title = GITHUB_USER,
-                        modifier = Modifier
-                            .size(54.dp)
-                            .softShadow(CircleShape, elevation = 10.dp),
-                        corner = 27.dp,
-                        decodeSize = 54.dp,
-                    )
-                    Column(
-                        Modifier
-                            .weight(1f)
-                            .padding(start = 14.dp),
-                    ) {
-                        Text(GITHUB_USER, style = MaterialTheme.typography.titleMedium)
-                        Text(
-                            GITHUB_URL.removePrefix("https://"),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = InkDim,
-                        )
-                    }
-                    Icon(
-                        PhosphorIcons.Regular.ArrowUpRight,
-                        contentDescription = null,
-                        tint = InkDim,
-                        modifier = Modifier.size(18.dp),
-                    )
-                }
+            Section(stringResource(R.string.forked_by)) {
+                CreditRow(name = GITHUB_USER, url = GITHUB_URL, avatarUrl = "$GITHUB_URL.png")
+            }
+        }
+
+        // The app this one is forked from, with its author's face on it: the
+        // fork changes the skin and the engine room, but the base is Square
+        // and the credit for that stays with Lelonio.
+        if (open == SettingsPage.About) item("upstream") {
+            Section(stringResource(R.string.based_on)) {
+                CreditRow(
+                    name = "$UPSTREAM_NAME · $UPSTREAM_USER",
+                    url = UPSTREAM_URL,
+                    avatarUrl = "https://github.com/$UPSTREAM_USER.png",
+                )
             }
         }
 
@@ -381,6 +365,15 @@ fun SettingsScreen(
                 RowDivider()
                 Licences()
             }
+        }
+
+        // The engine's own third-party credits. The Apache-2.0 notice for the
+        // glass has to travel with the APK, not sit in a Markdown in the repo.
+        if (open == SettingsPage.About) {
+            fluidLicensesSection(
+                title = engineLicencesTitle,
+                footnote = engineLicencesFootnote,
+            )
         }
 
         if (ready != null && open == SettingsPage.Account) {
@@ -789,6 +782,53 @@ private fun Section(title: String?, content: @Composable () -> Unit) {
     }
 }
 
+/**
+ * A person or project with a face, a name and a link — the shape both credit
+ * blocks share, so the fork's author and the upstream app read as peers.
+ */
+@Composable
+private fun CreditRow(name: String, url: String, avatarUrl: String) {
+    val uriHandler = LocalUriHandler.current
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable { uriHandler.openUri(url) }
+            .padding(horizontal = 18.dp, vertical = 16.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        // GitHub serves the account picture at `<user>.png`, so the avatar
+        // follows whatever it is set to rather than being a copy checked in
+        // here.
+        Artwork(
+            url = avatarUrl,
+            title = name,
+            modifier = Modifier
+                .size(54.dp)
+                .softShadow(CircleShape, elevation = 10.dp),
+            corner = 27.dp,
+            decodeSize = 54.dp,
+        )
+        Column(
+            Modifier
+                .weight(1f)
+                .padding(start = 14.dp),
+        ) {
+            Text(name, style = MaterialTheme.typography.titleMedium)
+            Text(
+                url.removePrefix("https://"),
+                style = MaterialTheme.typography.bodySmall,
+                color = InkDim,
+            )
+        }
+        Icon(
+            PhosphorIcons.Regular.ArrowUpRight,
+            contentDescription = null,
+            tint = InkDim,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
+
 @Composable
 private fun InfoRow(label: String, value: String) {
     Row(
@@ -880,5 +920,10 @@ private val LICENCES = listOf(
     "OkHttp / Retrofit" to "Apache-2.0",
 )
 
-private const val GITHUB_USER = "Lelonio"
-private const val GITHUB_URL = "https://github.com/Lelonio"
+private const val GITHUB_USER = "Casual76"
+private const val GITHUB_URL = "https://github.com/Casual76"
+
+/** The app this one is forked from, credited in full on the About page. */
+private const val UPSTREAM_NAME = "Square"
+private const val UPSTREAM_USER = "Lelonio"
+private const val UPSTREAM_URL = "https://github.com/Lelonio/Square"

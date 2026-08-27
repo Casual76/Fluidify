@@ -58,7 +58,7 @@ import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.R
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.AppIcon
-import dev.lelonio.square.ui.components.SquareWordmark
+import dev.lelonio.square.ui.components.FluidifyWordmark
 import dev.lelonio.square.ui.glass.LiquidButton
 import dev.lelonio.square.ui.settings.WebApiSetupInline
 import dev.lelonio.square.ui.theme.Ink
@@ -218,7 +218,7 @@ private fun Welcome(language: String, onLanguage: (String) -> Unit) {
     Spacer(Modifier.height(24.dp))
     AppIcon(104.dp)
     Spacer(Modifier.height(22.dp))
-    SquareWordmark(height = 34.dp)
+    FluidifyWordmark(height = 34.dp)
     Body(stringResource(R.string.onboarding_welcome_1))
     Note(stringResource(R.string.onboarding_welcome_2))
     Body(stringResource(R.string.onboarding_welcome_3))

@@ -1,0 +1,18 @@
+{
+  "app": {
+    "id": "fluidify",
+    "name": "Fluidify",
+    "description": "Musica in vetro fluido. Un client Spotify con il design system Fluid: vetro che si trasforma con la fisica dei fluidi, tema ametista, download offline e copertine calcolate. Fork di Square di Lelonio, con tutti i crediti del caso.",
+    "packageName": "dev.pampa.fluidify",
+    "iconUrl": "https://raw.githubusercontent.com/Casual76/Fluidify/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+    "category": "Musica",
+    "developer": "Casual76",
+    "screenshots": [],
+    "repository": {
+      "repoOwner": "Casual76",
+      "repoName": "Fluidify",
+      "manifestPath": "manifest.json",
+      "ref": "master"
+    }
+  }
+}

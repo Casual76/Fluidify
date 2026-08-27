@@ -32,18 +32,19 @@ import dev.lelonio.square.ui.theme.Ink
  *
  * The icon is a square wave: one stroke width, right angles only, no curve
  * anywhere. No font shipped with Android says that — a bold sans still has
- * round bowls on S and Q and a diagonal on R — and pulling in a display face
- * for six letters costs more than the six letters do.
+ * round bowls on D and U and a diagonal on Y — and pulling in a display face
+ * for eight letters costs more than the eight letters do.
  *
  * So the letterforms are the same primitive as the icon: polylines on a 6×10
- * grid, orthogonal segments, square caps and joins. The Q's tail drops below
- * the baseline, which is the one thing that keeps it from reading as an O.
+ * grid, orthogonal segments, square caps and joins. The D's right corners are
+ * stepped, which is the one thing that keeps it from reading as a box.
  *
  * Sized by its height: the width follows from the grid, so callers give this a
- * height and let it measure itself.
+ * height and let it measure itself. Glyphs carry their own width — an I is a
+ * bare stem, and giving it a full box of advance would put a hole in the word.
  */
 @Composable
-fun SquareWordmark(
+fun FluidifyWordmark(
     height: Dp,
     modifier: Modifier = Modifier,
     color: Color = Ink,
@@ -51,23 +52,23 @@ fun SquareWordmark(
     Canvas(
         modifier
             .height(height)
-            // 6 glyphs on a 9.5-unit advance, over a 12-unit box.
-            .width(height * (6f * 9.5f / 12f)),
+            .width(height * (GRID_WIDTH / 12f)),
     ) {
         val unit = size.height / 12f
-        // The stroke stays near one unit and the advance well over the glyph
-        // width, or the counters close up and the word turns into a dark block.
-        val stroke = unit * 1.15f
+        // The stroke stays near one unit and the gap well over it, or the
+        // counters close up and the word turns into a dark block.
+        val stroke = unit * STROKE
         val path = Path()
-        GLYPHS.forEachIndexed { index, lines ->
-            val originX = index * 9.5f * unit + stroke / 2f
-            lines.forEach { points ->
+        var originX = stroke / 2f
+        GLYPHS.forEach { glyph ->
+            glyph.lines.forEach { points ->
                 points.forEachIndexed { at, (gx, gy) ->
                     val x = originX + gx * unit
                     val y = gy * unit + stroke / 2f
                     if (at == 0) path.moveTo(x, y) else path.lineTo(x, y)
                 }
             }
+            originX += (glyph.width + GAP) * unit
         }
         drawPath(
             path,
@@ -103,7 +104,7 @@ fun AppLockup(
             AppPlate(iconSize, plate)
         }
         Spacer(Modifier.width(iconSize * 0.32f))
-        SquareWordmark(nameHeight)
+        FluidifyWordmark(nameHeight)
     }
 }
 
@@ -226,30 +227,56 @@ fun AppIcon(size: Dp, modifier: Modifier = Modifier) {
     )
 }
 
-/** S Q U A R E, as polylines on the grid described in [SquareWordmark]. */
-private val GLYPHS: List<List<List<Pair<Float, Float>>>> = listOf(
-    // S
-    listOf(listOf(6f to 0f, 0f to 0f, 0f to 5f, 6f to 5f, 6f to 10f, 0f to 10f)),
-    // Q: a closed box with the tail dropped out of the bottom right.
+/** One letter: its grid width plus the polylines that draw it. */
+private class Glyph(val width: Float, val lines: List<List<Pair<Float, Float>>>)
+
+/** Stroke width and inter-glyph gap, in grid units. */
+private const val STROKE = 1.15f
+private const val GAP = 3.5f
+
+/** F L U I D I F Y, as polylines on the grid described in [FluidifyWordmark]. */
+private val GLYPHS: List<Glyph> = run {
+    // F: an E without its floor.
+    val f = Glyph(
+        6f,
+        listOf(
+            listOf(6f to 0f, 0f to 0f, 0f to 10f),
+            listOf(0f to 5f, 4f to 5f),
+        ),
+    )
+    // I: a bare stem; its advance is its stroke, not a full box.
+    val i = Glyph(0f, listOf(listOf(0f to 0f, 0f to 10f)))
     listOf(
-        listOf(0f to 0f, 6f to 0f, 6f to 10f, 0f to 10f, 0f to 0f),
-        listOf(4f to 8f, 4f to 12f),
-    ),
-    // U
-    listOf(listOf(0f to 0f, 0f to 10f, 6f to 10f, 6f to 0f)),
-    // A: the apex is a corner, not a point.
-    listOf(
-        listOf(0f to 10f, 0f to 0f, 6f to 0f, 6f to 10f),
-        listOf(0f to 6f, 6f to 6f),
-    ),
-    // R: the leg comes straight down instead of splaying.
-    listOf(
-        listOf(0f to 10f, 0f to 0f, 6f to 0f, 6f to 5f, 0f to 5f),
-        listOf(3f to 5f, 3f to 10f),
-    ),
-    // E
-    listOf(
-        listOf(6f to 0f, 0f to 0f, 0f to 10f, 6f to 10f),
-        listOf(0f to 5f, 4f to 5f),
-    ),
-)
+        f,
+        // L
+        Glyph(6f, listOf(listOf(0f to 0f, 0f to 10f, 6f to 10f))),
+        // U
+        Glyph(6f, listOf(listOf(0f to 0f, 0f to 10f, 6f to 10f, 6f to 0f))),
+        i,
+        // D: a box whose right corners step in, which is what suggests the
+        // bowl without a single curve or diagonal.
+        Glyph(
+            6f,
+            listOf(
+                listOf(
+                    0f to 0f, 4f to 0f, 4f to 2f, 6f to 2f,
+                    6f to 8f, 4f to 8f, 4f to 10f, 0f to 10f, 0f to 0f,
+                ),
+            ),
+        ),
+        i,
+        f,
+        // Y: two arms meeting a bar, then the stem — orthogonal, like the rest.
+        Glyph(
+            6f,
+            listOf(
+                listOf(0f to 0f, 0f to 5f, 6f to 5f, 6f to 0f),
+                listOf(3f to 5f, 3f to 10f),
+            ),
+        ),
+    )
+}
+
+/** The word's total width in grid units, stroke included. */
+private val GRID_WIDTH: Float =
+    GLYPHS.map { it.width }.sum() + (GLYPHS.size - 1) * GAP + STROKE

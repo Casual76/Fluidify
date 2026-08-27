@@ -75,7 +75,7 @@ import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.AppIcon
 import dev.lelonio.square.ui.components.AppLockup
 import dev.lelonio.square.ui.components.Artwork
-import dev.lelonio.square.ui.components.SquareWordmark
+import dev.lelonio.square.ui.components.FluidifyWordmark
 import androidx.compose.ui.layout.layout
 import androidx.compose.ui.unit.Constraints
 import dev.lelonio.square.ui.glass.LiquidButton
@@ -172,7 +172,7 @@ fun HomeScreen(
     when (state) {
         MainViewModel.UiState.LoggedOut -> Centered {
             AppIcon(84.dp)
-            SquareWordmark(height = 28.dp)
+            FluidifyWordmark(height = 28.dp)
             Text(
                 stringResource(R.string.unofficial_client),
                 style = MaterialTheme.typography.bodyMedium,
@@ -1096,7 +1096,7 @@ private fun YouTubeHome(
                     CircularProgressIndicator(color = Ink, strokeWidth = 2.dp)
                 } else {
                     AppIcon(84.dp)
-                    SquareWordmark(height = 28.dp)
+                    FluidifyWordmark(height = 28.dp)
                     Text(
                         stringResource(R.string.youtube_home_empty),
                         style = MaterialTheme.typography.bodyMedium,
