@@ -154,6 +154,7 @@ import dev.lelonio.square.ui.settings.SettingsScreen
 import dev.lelonio.square.ui.theme.Ink
 import dev.lelonio.square.ui.theme.SquareTheme
 import dev.lelonio.square.ui.theme.rememberArtworkColor
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import com.adamglin.PhosphorIcons
@@ -611,14 +612,27 @@ fun SquareApp(
         // Behind the song as well; see awaitAudible. The panel shows its own
         // spinner meanwhile, so the wait is visible rather than blank.
         awaitAudible(localState)
+        // And behind the *metadata*, which is a second wait and a real one.
+        //
+        // The id of the new track is published before its title, its artist and
+        // above all its length: for a frame or two the state still reads as the
+        // track before. Two of the three lyrics sources are searched by exactly
+        // those fields, so asking too early asks about the wrong song — and the
+        // answer is filed under this one, which is how a track with no words of
+        // its own ended up showing the words of the one before it.
+        val named = withTimeoutOrNull(2_000L) {
+            snapshotFlow { playback }
+                .first { it.mediaId == uri && it.title.isNotEmpty() && it.durationMs > 0 }
+        } ?: playback
+        if (named.mediaId != uri) return@LaunchedEffect
         lyrics = runCatching {
             (context.applicationContext as dev.lelonio.square.SquareApplication)
                 .activeBackend
                 .lyrics(
                     uri = uri,
-                    title = playback.title,
-                    artist = playback.artist,
-                    durationMs = playback.durationMs,
+                    title = named.title,
+                    artist = named.artist,
+                    durationMs = named.durationMs,
                 )
         }.getOrNull()
         lyricsFor = uri
@@ -1137,33 +1151,55 @@ fun SquareApp(
                                     onBack = { navController.popBackStack() },
                                     onAskLocalPermission = { askLocalPermission() },
                                     onPlay = { tracks, index, asContext ->
-                                        onPlay(
-                                            tracks,
-                                            index,
-                                            playlist.uri,
-                                            asContext,
-                                            source,
-                                            0L,
-                                        )
+                                        // Already this page? Then the button is
+                                        // a play/pause, not a "start over": a
+                                        // list that is playing has nothing to
+                                        // begin. Tapping a row still restarts
+                                        // from that row, because naming a track
+                                        // is a new instruction.
+                                        val here = playlist.uri != null &&
+                                            playback.contextUri == playlist.uri &&
+                                            playback.hasItem
+                                        if (here && index == 0) {
+                                            if (remote != null) {
+                                                val playing = remote?.playing == true
+                                                onRemote { id ->
+                                                    if (playing) RemoteConnect.pause(id)
+                                                    else RemoteConnect.play(id)
+                                                }
+                                            } else {
+                                                player?.togglePlay()
+                                            }
+                                        } else {
+                                            onPlay(
+                                                tracks,
+                                                index,
+                                                playlist.uri,
+                                                asContext,
+                                                source,
+                                                0L,
+                                            )
+                                        }
                                     },
                                     onEnqueue = onEnqueue,
-                                    onShuffle = { tracks ->
-                                        // Order does not matter: the player
-                                        // treats shuffle as a mode and stamps it
-                                        // onto whatever queue arrives next.
-                                        player?.shuffleModeEnabled = true
-                                        // Shuffled: the order on screen is not
-                                        // the one that will play, so this is a
-                                        // selection rather than the context.
-                                        onPlay(
-                                            tracks,
-                                            0,
-                                            playlist.uri,
-                                            false,
-                                            source,
-                                            0L,
-                                        )
+                                    // A mode the page reflects rather than an
+                                    // action it fires: the player owns the
+                                    // truth and stamps it onto whatever queue
+                                    // arrives next (see reapplyShuffle).
+                                    shuffleOn = playback.shuffleEnabled,
+                                    onToggleShuffle = {
+                                        if (remote != null) {
+                                            val wanted = remote?.shuffle != true
+                                            onRemote { id -> RemoteConnect.setShuffle(id, wanted) }
+                                        } else {
+                                            player?.let {
+                                                it.shuffleModeEnabled = !it.shuffleModeEnabled
+                                            }
+                                        }
                                     },
+                                    playingThis = playlist.uri != null &&
+                                        playback.contextUri == playlist.uri &&
+                                        playback.isPlaying,
                                     onAddToPlaylist = { track ->
                                         viewModel.openAddToPlaylist(track.uri, track.name)
                                     },

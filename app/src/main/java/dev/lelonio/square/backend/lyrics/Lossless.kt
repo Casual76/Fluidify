@@ -47,7 +47,7 @@ object Lossless {
                 android.util.Log.i(TAG, "no match for $cleaned / $artist (${durationMs / 1000}s)")
                 return@withContext null
             }
-            val url = pick(results, durationMs) ?: return@withContext null
+            val url = pick(results, cleaned, artist, durationMs) ?: return@withContext null
             val parsed = Ttml.parse(get(url) ?: return@withContext null)
             android.util.Log.i(
                 TAG,
@@ -89,8 +89,19 @@ object Lossless {
      * asked for in the first place, and a line-timed one is no better than what
      * the caller already had.
      */
-    private fun pick(results: List<JSONObject>, durationMs: Long): String? = results
+    private fun pick(
+        results: List<JSONObject>,
+        title: String,
+        artist: String,
+        durationMs: Long,
+    ): String? = results
         .filter { it.optString("lyricsUrl").startsWith("http") }
+        // The index answers a fuzzy question, and it answers it even when it
+        // has nothing: a track with no words of its own was being given the
+        // nearest neighbour — in practice the song played just before, which
+        // shares an artist and a record. Nothing below is a ranking; it is the
+        // check that the answer is about the song that was asked for.
+        .filter { it.isAbout(title, artist, durationMs) }
         .minByOrNull { result ->
             val byWord = if (result.optString("timing_type") == "word") 0 else 1
             val drift = if (durationMs > 0) {
@@ -101,6 +112,58 @@ object Lossless {
             byWord * 1_000_000L + drift
         }
         ?.optString("lyricsUrl")
+
+    /**
+     * Whether one result is plausibly this very track.
+     *
+     * Deliberately forgiving about *what the index calls its fields*: a name it
+     * does not carry cannot be compared, and refusing everything on a missing
+     * key would throw away every legitimate document. What it is strict about
+     * is a field that exists and disagrees.
+     */
+    private fun JSONObject.isAbout(title: String, artist: String, durationMs: Long): Boolean {
+        val theirTitle = firstOf("trackName", "name", "title", "track")
+        if (theirTitle != null && !theirTitle.matchesLoosely(title)) return false
+
+        val theirArtist = firstOf("artistName", "artist", "artists", "albumArtist")
+        if (theirArtist != null && !theirArtist.matchesLoosely(artist)) return false
+
+        // Length is the one field this source is documented to carry, and the
+        // one that tells a single from an album cut. Zero means the player has
+        // not published a duration yet, in which case it says nothing.
+        val theirMs = optLong("duration") * 1000
+        if (durationMs > 0 && theirMs > 0 && abs(theirMs - durationMs) > DURATION_SLACK_MS) {
+            return false
+        }
+        return true
+    }
+
+    private fun JSONObject.firstOf(vararg keys: String): String? = keys
+        .firstNotNullOfOrNull { key -> optString(key).takeIf { it.isNotBlank() } }
+
+    /**
+     * Same song, written by two different hands.
+     *
+     * Neither side is authoritative about punctuation, case, accents or the
+     * list of guests, so both are stripped to letters and digits and one has to
+     * contain the other — which accepts "Song" against "Song (Remastered)" and
+     * an artist line that names three people when we know one.
+     */
+    private fun String.matchesLoosely(other: String): Boolean {
+        val a = simplify()
+        val b = other.simplify()
+        if (a.isEmpty() || b.isEmpty()) return true
+        return a.contains(b) || b.contains(a)
+    }
+
+    private fun String.simplify(): String = java.text.Normalizer
+        .normalize(lowercase(), java.text.Normalizer.Form.NFD)
+        .replace(Regex("""\p{Mn}+"""), "")
+        .replace(Regex("""\bfeat\.?.*$"""), "")
+        .replace(Regex("[^a-z0-9]+"), "")
+
+    /** How far two masters of the same song may drift and still be it. */
+    private const val DURATION_SLACK_MS = 7_000L
 
     /** Null on anything but a 200, which includes the 404 for "no match". */
     private fun get(url: String): String? = runCatching {

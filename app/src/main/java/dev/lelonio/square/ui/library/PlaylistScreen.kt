@@ -95,6 +95,7 @@ import com.adamglin.phosphoricons.Fill
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.fill.Check
 import com.adamglin.phosphoricons.fill.MagnifyingGlass
+import com.adamglin.phosphoricons.fill.Pause
 import com.adamglin.phosphoricons.fill.Play
 import com.adamglin.phosphoricons.fill.Waveform
 import com.adamglin.phosphoricons.regular.ArrowLeft
@@ -131,7 +132,18 @@ fun PlaylistScreen(
      */
     onPlay: (List<CatalogTrack>, Int, Boolean) -> Unit,
     onEnqueue: (CatalogTrack) -> Unit,
-    onShuffle: (List<CatalogTrack>) -> Unit,
+    /**
+     * Whether the queue will be shuffled, and the switch for it.
+     *
+     * A mode rather than an action: the button used to *start* a shuffled
+     * playthrough, so there was no way to turn it off from here and pressing it
+     * always went back to the first track. Now it only says how [onPlay] will
+     * lay the queue out.
+     */
+    shuffleOn: Boolean,
+    onToggleShuffle: () -> Unit,
+    /** True while this very page is the one playing; the play button says Pause. */
+    playingThis: Boolean = false,
     /** Opens the app-wide "add to playlist" sheet for one track. */
     onAddToPlaylist: (CatalogTrack) -> Unit,
     /**
@@ -243,6 +255,18 @@ fun PlaylistScreen(
     var collapsed by remember { mutableFloatStateOf(0f) }
     val collapseFraction = { (collapsed / collapseRange).coerceIn(0f, 1f) }
 
+    /**
+     * Which set of controls owns the touch.
+     *
+     * The floating capsule and the collapsed bar cross over each other, and
+     * `alpha = 0` hides a control without taking its hit target away: an
+     * invisible capsule was still catching the taps meant for the bar's play
+     * and shuffle, and the invisible bar returns the favour over the open
+     * page. Whichever is more than half visible is the one that answers.
+     * Derived, so this flips once per collapse instead of once per frame.
+     */
+    val chromeExpanded by remember { derivedStateOf { collapseFraction() < 0.5f } }
+
     val headerScroll = remember(collapseRange) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -329,11 +353,14 @@ fun PlaylistScreen(
             collapse = collapseFraction,
             collapsedHeight = collapsedHeight,
             topPadding = topPadding,
+            barActive = !chromeExpanded,
             onBack = onBack,
             onPlay = {
                 visible.takeIf { it.isNotEmpty() }?.let { onPlay(it, 0, asContext) }
             },
-            onShuffle = { visible.takeIf { it.isNotEmpty() }?.let(onShuffle) },
+            shuffleOn = shuffleOn,
+            onToggleShuffle = onToggleShuffle,
+            playing = playingThis,
             onToggleSearch = {
                 searching = !searching
                 if (!searching) query = ""
@@ -584,6 +611,7 @@ fun PlaylistScreen(
                 icon = PhosphorIcons.Regular.Export,
                 description = stringResource(R.string.copy_link),
                 onClick = onShare,
+                enabled = chromeExpanded,
             )
             Box(
                 Modifier
@@ -595,6 +623,7 @@ fun PlaylistScreen(
                 icon = PhosphorIcons.Regular.DotsThree,
                 description = stringResource(R.string.more),
                 onClick = { capsuleBounds?.let(onMenuAt) },
+                enabled = chromeExpanded,
             )
         }
 
@@ -702,10 +731,15 @@ private fun DetailHeader(
     collapse: () -> Float,
     collapsedHeight: Dp,
     topPadding: Dp,
+    /** True once the collapsed bar owns the touch; see `chromeExpanded`. */
+    barActive: Boolean,
     searching: Boolean,
     onBack: () -> Unit,
     onPlay: () -> Unit,
-    onShuffle: () -> Unit,
+    shuffleOn: Boolean,
+    onToggleShuffle: () -> Unit,
+    /** True while this page is the one playing; Play becomes Pause. */
+    playing: Boolean,
     onToggleSearch: () -> Unit,
 ) {
     val density = LocalDensity.current
@@ -765,7 +799,8 @@ private fun DetailHeader(
                     description = stringResource(R.string.shuffle),
                     size = 52.dp,
                     backdrop = backdrop,
-                    onClick = onShuffle,
+                    onClick = onToggleShuffle,
+                    active = shuffleOn,
                 )
                 // The one solid control on the screen, and the only one that
                 // says what it does in words. Everything else here is glass, so
@@ -787,13 +822,13 @@ private fun DetailHeader(
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
                     Icon(
-                        PhosphorIcons.Fill.Play,
+                        if (playing) PhosphorIcons.Fill.Pause else PhosphorIcons.Fill.Play,
                         contentDescription = null,
                         tint = pageColor,
                         modifier = Modifier.size(22.dp),
                     )
                     Text(
-                        stringResource(R.string.play),
+                        stringResource(if (playing) R.string.pause else R.string.play),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
                         color = pageColor,
@@ -850,7 +885,7 @@ private fun DetailHeader(
                 .graphicsLayer { alpha = (collapse() * 2f - 1f).coerceIn(0f, 1f) },
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            IconButton(onClick = onBack) {
+            IconButton(onClick = onBack, enabled = barActive) {
                 Icon(
                     PhosphorIcons.Regular.ArrowLeft,
                     contentDescription = stringResource(R.string.back),
@@ -868,7 +903,7 @@ private fun DetailHeader(
                     .weight(1f)
                     .padding(horizontal = 6.dp),
             )
-            IconButton(onClick = onToggleSearch) {
+            IconButton(onClick = onToggleSearch, enabled = barActive) {
                 Icon(
                     if (searching) PhosphorIcons.Regular.X else PhosphorIcons.Fill.MagnifyingGlass,
                     contentDescription = stringResource(R.string.search_in_tracks),
@@ -876,18 +911,18 @@ private fun DetailHeader(
                     modifier = Modifier.size(18.dp),
                 )
             }
-            IconButton(onClick = onShuffle) {
+            IconButton(onClick = onToggleShuffle, enabled = barActive) {
                 Icon(
                     PhosphorIcons.Regular.Shuffle,
                     contentDescription = stringResource(R.string.shuffle),
-                    tint = Color.White,
+                    tint = if (shuffleOn) MaterialTheme.colorScheme.primary else Color.White,
                     modifier = Modifier.size(18.dp),
                 )
             }
-            IconButton(onClick = onPlay) {
+            IconButton(onClick = onPlay, enabled = barActive) {
                 Icon(
-                    PhosphorIcons.Fill.Play,
-                    contentDescription = stringResource(R.string.play),
+                    if (playing) PhosphorIcons.Fill.Pause else PhosphorIcons.Fill.Play,
+                    contentDescription = stringResource(if (playing) R.string.pause else R.string.play),
                     tint = Color.White,
                     modifier = Modifier.size(22.dp),
                 )
@@ -1021,11 +1056,13 @@ private fun CapsuleAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
     onClick: () -> Unit,
+    /** False while the collapsed bar owns the touch; see `chromeExpanded`. */
+    enabled: Boolean = true,
 ) {
     Box(
         Modifier
             .size(width = 46.dp, height = 42.dp)
-            .pressable(onClick, pressedScale = 0.92f),
+            .pressable(onClick, pressedScale = 0.92f, enabled = enabled),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -1044,7 +1081,15 @@ private fun CircleAction(
     size: androidx.compose.ui.unit.Dp,
     backdrop: Backdrop,
     onClick: () -> Unit,
+    /** Lit in the accent when the thing it switches is on. */
+    active: Boolean = false,
 ) {
+    // Animated, because this one is now a switch: a state that changes under
+    // the finger has to be seen changing.
+    val tint by androidx.compose.animation.animateColorAsState(
+        if (active) MaterialTheme.colorScheme.primary else Color.White,
+        label = "circle action",
+    )
     LiquidButton(
         onClick = onClick,
         backdrop = backdrop,
@@ -1059,7 +1104,7 @@ private fun CircleAction(
         Icon(
             icon,
             contentDescription = description,
-            tint = Color.White,
+            tint = tint,
             modifier = Modifier.size(size * 0.44f),
         )
     }
