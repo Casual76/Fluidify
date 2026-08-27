@@ -275,6 +275,9 @@ fun rememberQueue(player: Player?): State<List<QueueEntry>> {
                     uri = player.getMediaItemAt(index).mediaId,
                     title = metadata.title?.toString().orEmpty(),
                     artist = metadata.artist?.toString().orEmpty(),
+                    artworkUrl = metadata.artworkUri?.toString(),
+                    queued = metadata.extras
+                        ?.getBoolean(dev.lelonio.square.ui.EXTRA_PLAY_NEXT) == true,
                     isCurrent = index == current,
                 )
             }

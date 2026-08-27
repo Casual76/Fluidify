@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.player
 
+import com.adamglin.phosphoricons.regular.Queue
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import androidx.compose.animation.AnimatedVisibility
@@ -255,6 +256,9 @@ data class QueueEntry(
     val uri: String,
     val title: String,
     val artist: String,
+    val artworkUrl: String?,
+    /** Put here by hand with "add to queue", rather than by the list. */
+    val queued: Boolean,
     val isCurrent: Boolean,
 )
 
@@ -290,21 +294,56 @@ internal fun QueueList(
                     .padding(horizontal = 18.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Column(Modifier.weight(1f)) {
+                dev.lelonio.square.ui.components.Artwork(
+                    url = entry.artworkUrl,
+                    title = entry.title,
+                    modifier = Modifier.size(44.dp),
+                    corner = 8.dp,
+                    decodeSize = 44.dp,
+                )
+
+                Column(
+                    Modifier
+                        .weight(1f)
+                        .padding(start = 12.dp),
+                ) {
                     Text(
                         entry.title,
                         style = MaterialTheme.typography.titleMedium,
-                        color = if (entry.isCurrent) GlassInk else GlassInk.copy(alpha = 0.85f),
+                        // The accent for the one playing — inside the player
+                        // that is the cover's own colour — because a shade of
+                        // grey was not enough to find it in a long queue.
+                        color = when {
+                            entry.isCurrent -> MaterialTheme.colorScheme.primary
+                            else -> GlassInk.copy(alpha = 0.85f)
+                        },
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
                     )
-                    Text(
-                        entry.artist,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = GlassInkDim,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        // The mark for a track somebody asked for by hand, the
+                        // way every queue that has one draws it: a small glyph
+                        // before the name, in the accent, so the difference
+                        // between "next in the list" and "next because I said
+                        // so" is visible without reading anything.
+                        if (entry.queued) {
+                            Icon(
+                                PhosphorIcons.Regular.Queue,
+                                contentDescription = stringResource(R.string.queued),
+                                tint = MaterialTheme.colorScheme.primary,
+                                modifier = Modifier
+                                    .padding(end = 5.dp)
+                                    .size(13.dp),
+                            )
+                        }
+                        Text(
+                            entry.artist,
+                            style = MaterialTheme.typography.bodySmall,
+                            color = GlassInkDim,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
 
                 // Not on the track being played: taking that one out is a

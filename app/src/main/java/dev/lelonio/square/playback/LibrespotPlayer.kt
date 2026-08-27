@@ -1378,6 +1378,15 @@ class LibrespotPlayer(
                                     queue.contextUri?.let {
                                         putString(dev.lelonio.square.ui.EXTRA_CONTEXT_URI, it)
                                     }
+                                    // Whether the listener put this one here by
+                                    // hand. The queue has always known; the
+                                    // rebuilt item did not carry it back, so
+                                    // nothing above the session could tell a
+                                    // track somebody queued from one the
+                                    // playlist happened to hold.
+                                    if (track.queued) {
+                                        putBoolean(dev.lelonio.square.ui.EXTRA_PLAY_NEXT, true)
+                                    }
                                     track.artistUri?.let {
                                         putString(dev.lelonio.square.ui.EXTRA_ARTIST_URI, it)
                                     }
