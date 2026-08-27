@@ -1,82 +1,88 @@
 package dev.lelonio.square.update
 
-import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
+import dev.antigravity.fluidengine.foundation.AppUpdateInstallState
+import dev.antigravity.fluidengine.foundation.AvailableAppUpdate
+import dev.antigravity.fluidengine.net.EngineHttp
+import dev.antigravity.fluidengine.update.AndroidAppUpdateInstaller
+import dev.antigravity.fluidengine.update.EngineAppUpdater
+import dev.antigravity.fluidengine.update.UpdateSource
 import dev.lelonio.square.BuildConfig
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.json.Json
-import kotlinx.serialization.json.JsonArray
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.jsonPrimitive
-import okhttp3.OkHttpClient
-import okhttp3.Request
-import java.io.File
 
 /**
- * Updates the app from its own GitHub releases.
+ * Updates the app from the Pampa Store's manifest.
  *
- * Square cannot go on the Play Store — it re-implements a protocol whose terms
- * forbid it — so there is nothing to deliver an update but the app itself. The
- * releases page is already the distribution channel; this reads it.
+ * Fluidify cannot go on the Play Store — it re-implements a protocol whose
+ * terms forbid it — so its releases live where the Pampa Store publishes them:
+ * a `manifest.json` in the app's own repository, with the APKs as release
+ * assets. The store and this updater read the same file, so there is no
+ * version of events where the two disagree.
  *
- * Nothing here has to verify what it downloads. Android refuses an update
- * signed with a different key than the installed copy, so an APK that is not
- * the one built with the project's keystore simply fails to install. A hash
- * check on top would look reassuring and add nothing the platform does not
- * already enforce.
+ * The state machine is unchanged from the GitHub era on purpose: the settings
+ * row and the launch prompt read it, and what changed is where releases come
+ * from, not what checking for one looks like.
+ *
+ * Nothing here has to verify signatures by hand. Android refuses an update
+ * signed with a different key than the installed copy, and the engine's
+ * installer additionally refuses an APK whose package or version is not the
+ * one the manifest advertised.
  */
 class Updater(context: Context) {
 
     private val app = context.applicationContext
-    private val json = Json { ignoreUnknownKeys = true }
-    private val client = OkHttpClient()
+
+    private val http = EngineHttp(userAgent = "Fluidify/${BuildConfig.VERSION_NAME}")
+    private val engine = EngineAppUpdater(
+        http = http,
+        source = UpdateSource(
+            manifestUrl = MANIFEST_URL,
+            applicationId = app.packageName,
+        ),
+        installer = AndroidAppUpdateInstaller(app, http),
+    )
 
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
+
+    /** The manifest's own offer, kept so [install] has more than a version string. */
+    private var resolved: AvailableAppUpdate? = null
 
     sealed interface State {
         data object Idle : State
         data object Checking : State
         data object UpToDate : State
         data class Available(val version: String, val url: String, val bytes: Long) : State
-        /** 0f..1f, or null while the server sends no length to measure against. */
+        /** 0f..1f, or null while there is nothing to measure against. */
         data class Downloading(val progress: Float?) : State
         /** Handed to the system installer; the dialog is Android's, not ours. */
         data object Installing : State
         data class Failed(val reason: String) : State
     }
 
-    /**
-     * Asks GitHub what the latest release is.
-     *
-     * Unauthenticated, which allows sixty requests an hour per address — far
-     * more than a button can spend. It is still a request the user did not ask
-     * for, which is why nothing here runs on its own: it is called when the
-     * button is pressed and at no other time.
-     */
+    /** Asks the manifest what the latest release is. */
     suspend fun check() {
         _state.value = State.Checking
-        val result = runCatching { withContext(Dispatchers.IO) { latestRelease() } }
-            .getOrElse {
+        engine.check(BuildConfig.VERSION_NAME).fold(
+            onSuccess = { update ->
+                resolved = update
+                _state.value = if (update == null) {
+                    State.UpToDate
+                } else {
+                    State.Available(update.version, update.downloadUrl, update.sizeBytes)
+                }
+            },
+            onFailure = {
                 android.util.Log.w(TAG, "check failed: $it")
                 _state.value = State.Failed(it.message ?: "network")
-                return
-            }
-
-        if (result == null || !isNewer(result.version, BuildConfig.VERSION_NAME)) {
-            _state.value = State.UpToDate
-            return
-        }
-        _state.value = State.Available(result.version, result.url, result.bytes)
+            },
+        )
     }
 
     /**
@@ -101,114 +107,41 @@ class Updater(context: Context) {
         return null
     }
 
-    private data class Release(val version: String, val url: String, val bytes: Long)
-
-    private fun latestRelease(): Release? {
-        val request = Request.Builder()
-            .url("https://api.github.com/repos/$REPO/releases/latest")
-            .header("Accept", "application/vnd.github+json")
-            .build()
-
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("HTTP ${response.code}")
-            val body = json.parseToJsonElement(response.body?.string().orEmpty()) as? JsonObject
-                ?: return null
-            val tag = body["tag_name"]?.jsonPrimitive?.content?.removePrefix("v") ?: return null
-            val asset = (body["assets"] as? JsonArray)
-                ?.filterIsInstance<JsonObject>()
-                ?.firstOrNull { it["name"]?.jsonPrimitive?.content?.endsWith(".apk") == true }
-                ?: return null
-            val url = asset["browser_download_url"]?.jsonPrimitive?.content ?: return null
-            val size = asset["size"]?.jsonPrimitive?.content?.toLongOrNull() ?: 0L
-            return Release(tag, url, size)
-        }
-    }
-
     /**
      * Downloads the APK and hands it to the system installer.
      *
-     * The confirmation dialog is Android's and cannot be skipped: only a system
-     * app installs silently. That is the right outcome — an app that could
-     * replace itself unattended is one the user has to trust rather more than
-     * this one asks to be trusted.
+     * The engine's flow does the work — download, APK sanity checks, the
+     * PackageInstaller session — and this collapses its states onto the ones
+     * the rows already know how to show.
      */
     suspend fun install(update: State.Available) {
         if (!canInstall()) {
             _state.value = State.Failed(REASON_PERMISSION)
             return
         }
+        val offer = resolved?.takeIf { it.version == update.version } ?: run {
+            // Nothing resolved for this version: the state got here without a
+            // check, which is a caller bug, not a network condition.
+            _state.value = State.Failed("stale")
+            return
+        }
 
-        _state.value = State.Downloading(null)
-        val apk = runCatching { withContext(Dispatchers.IO) { download(update) } }
-            .getOrElse {
-                android.util.Log.w(TAG, "download failed: $it")
-                _state.value = State.Failed(it.message ?: "download")
-                return
-            }
-
-        runCatching { withContext(Dispatchers.IO) { commit(apk) } }
-            .onSuccess { _state.value = State.Installing }
-            .onFailure {
-                android.util.Log.w(TAG, "install failed: $it")
-                apk.delete()
-                _state.value = State.Failed(it.message ?: "install")
-            }
-    }
-
-    private fun download(update: State.Available): File {
-        // cacheDir, not filesDir: once the installer has read it the file is
-        // dead weight, and twenty megabytes is worth letting the system reclaim
-        // if the install never happens.
-        val target = File(app.cacheDir, "update.apk")
-        target.delete()
-
-        val request = Request.Builder().url(update.url).build()
-        client.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) error("HTTP ${response.code}")
-            val body = response.body ?: error("empty body")
-            val total = body.contentLength().takeIf { it > 0 } ?: update.bytes
-            var written = 0L
-
-            body.byteStream().use { input ->
-                target.outputStream().use { output ->
-                    val buffer = ByteArray(64 * 1024)
-                    while (true) {
-                        val read = input.read(buffer)
-                        if (read < 0) break
-                        output.write(buffer, 0, read)
-                        written += read
-                        if (total > 0) {
-                            _state.value = State.Downloading(written.toFloat() / total)
-                        }
-                    }
+        engine.install(offer).collect { step ->
+            _state.value = when (step) {
+                is AppUpdateInstallState.Downloading ->
+                    State.Downloading(step.progress.takeIf { it > 0f })
+                // Pre-download preparation and post-download verification both
+                // read fine as the fetch they bracket.
+                is AppUpdateInstallState.Verifying -> State.Downloading(null)
+                is AppUpdateInstallState.Installing -> State.Installing
+                is AppUpdateInstallState.AwaitingUserAction -> State.Installing
+                is AppUpdateInstallState.Installed -> State.Installing
+                is AppUpdateInstallState.Error -> {
+                    android.util.Log.w(TAG, "install failed: ${step.message}")
+                    State.Failed(step.message)
                 }
             }
         }
-        return target
-    }
-
-    private fun commit(apk: File) {
-        val installer = app.packageManager.packageInstaller
-        val params = PackageInstaller.SessionParams(
-            PackageInstaller.SessionParams.MODE_FULL_INSTALL,
-        )
-        val sessionId = installer.createSession(params)
-        installer.openSession(sessionId).use { session ->
-            session.openWrite("square", 0, apk.length()).use { output ->
-                apk.inputStream().use { it.copyTo(output) }
-                session.fsync(output)
-            }
-            session.commit(
-                PendingIntent.getBroadcast(
-                    app,
-                    0,
-                    Intent(app, InstallReceiver::class.java)
-                        .setPackage(app.packageName),
-                    PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE,
-                ).intentSender,
-            )
-        }
-        apk.delete()
     }
 
     /** Whether the user has allowed this app to install packages at all. */
@@ -233,27 +166,15 @@ class Updater(context: Context) {
     companion object {
         private const val TAG = "Updater"
 
-        const val REPO = "Lelonio/Square"
+        /**
+         * The same file the Pampa Store reads to list the app. One source of
+         * truth: the store and the in-app updater can never offer different
+         * versions.
+         */
+        const val MANIFEST_URL =
+            "https://raw.githubusercontent.com/Casual76/Fluidify/master/manifest.json"
 
         /** Told apart from a network failure so the UI can offer the way out. */
         const val REASON_PERMISSION = "permission"
-
-        /**
-         * Compares two dotted versions numerically.
-         *
-         * String comparison would put 1.10.0 before 1.9.0, which is exactly the
-         * release where a self-updater stops offering updates and nobody
-         * notices for a month.
-         */
-        fun isNewer(candidate: String, installed: String): Boolean {
-            val a = candidate.split('.').map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
-            val b = installed.split('.').map { it.takeWhile(Char::isDigit).toIntOrNull() ?: 0 }
-            for (i in 0 until maxOf(a.size, b.size)) {
-                val left = a.getOrElse(i) { 0 }
-                val right = b.getOrElse(i) { 0 }
-                if (left != right) return left > right
-            }
-            return false
-        }
     }
 }

@@ -100,9 +100,17 @@ class PathfinderKeys(context: Context) {
         /** A sha256 in hex, and a way to notice a file that says something else. */
         const val HASH_LENGTH = 64
 
+        /**
+         * Deliberately upstream, not this fork. The file holds Spotify's
+         * GraphQL hashes, which rot with Spotify's releases and are kept
+         * current by Square's author — pointing the fork at its own copy would
+         * only mean maintaining the same hashes by hand, one release behind.
+         * App updates come from the Pampa Store manifest instead; see Updater.
+         */
+        const val PATHFINDER_REPO = "Lelonio/Square"
+
         const val URL =
-            "https://raw.githubusercontent.com/${dev.lelonio.square.update.Updater.REPO}" +
-                "/master/pathfinder.json"
+            "https://raw.githubusercontent.com/$PATHFINDER_REPO/master/pathfinder.json"
 
         /** What was true when this version was built; see the note above. */
         const val DEFAULT_HOME =
