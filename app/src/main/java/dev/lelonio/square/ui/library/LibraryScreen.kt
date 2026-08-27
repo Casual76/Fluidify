@@ -1,5 +1,8 @@
 package dev.lelonio.square.ui.library
 
+import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollContent
+import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollEdge
+import dev.antigravity.fluidengine.ui.fluid.rememberFluidEdgeOverscroll
 import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
@@ -271,7 +274,9 @@ fun LibraryScreen(
                     onCreatePlaylist = onCreatePlaylist,
                 )
 
-                val listPadding = PaddingValues(
+                val overscroll = rememberFluidEdgeOverscroll()
+
+            val listPadding = PaddingValues(
                     start = 20.dp,
                     end = 20.dp,
                     top = 8.dp,
@@ -304,7 +309,11 @@ fun LibraryScreen(
                         contentPadding = listPadding,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),
                         verticalArrangement = Arrangement.spacedBy(18.dp),
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .fluidOverscrollEdge(overscroll)
+                            .fluidOverscrollContent(overscroll),
+                        overscrollEffect = null,
                     ) {
                         if (artists.isNotEmpty() && shownFilter == Filter.ALL) {
                             item(span = { GridItemSpan(maxLineSpan) }, key = "artists") {
@@ -325,7 +334,11 @@ fun LibraryScreen(
                     Layout.LIST -> LazyColumn(
                         contentPadding = listPadding,
                         verticalArrangement = Arrangement.spacedBy(4.dp),
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .fluidOverscrollEdge(overscroll)
+                            .fluidOverscrollContent(overscroll),
+                        overscrollEffect = null,
                     ) {
                         if (artists.isNotEmpty() && shownFilter == Filter.ALL) {
                             item(key = "artists") { ArtistShelf(artists, onOpenArtist) }

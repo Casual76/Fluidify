@@ -1,5 +1,8 @@
 package dev.lelonio.square.ui.library
 
+import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollContent
+import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollEdge
+import dev.antigravity.fluidengine.ui.fluid.rememberFluidEdgeOverscroll
 import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
@@ -267,6 +270,8 @@ fun PlaylistScreen(
      */
     val chromeExpanded by remember { derivedStateOf { collapseFraction() < 0.5f } }
 
+    val overscroll = rememberFluidEdgeOverscroll()
+
     val headerScroll = remember(collapseRange) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -377,8 +382,13 @@ fun PlaylistScreen(
             // list, so nothing in this layer samples it.
             modifier = Modifier
                 .layerBackdrop(listBackdrop)
-                .nestedScroll(headerScroll),
+                // The hero takes the gesture first and closes; the edge gives
+                // only with what is left, once there is nothing to close.
+                .nestedScroll(headerScroll)
+                .fluidOverscrollEdge(overscroll)
+                .fluidOverscrollContent(overscroll),
             contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()),
+            overscrollEffect = null,
         ) {
             if (state.kind == MainViewModel.DetailKind.ARTIST) {
                 item(contentType = "artistAbout") {
@@ -1025,6 +1035,41 @@ private fun Modifier.heroCollapse(
  * the pane is a shade lighter than what it lies on, and a bright rim where the
  * light would catch it.
  */
+/**
+ * What the page's capsule looks like, with no glass and no gestures.
+ *
+ * The morph menu's travelling surface carries this while the menu is out: the
+ * anchor hides itself, and what stands on its pixel has to be the same picture
+ * or the hand-over shows. Inert by contract — icons and a divider, nothing that
+ * reads state — because it is held in a state object rather than composed here.
+ */
+@Composable
+fun CapsuleFace() {
+    Row(
+        Modifier.height(42.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            PhosphorIcons.Regular.Export,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.padding(horizontal = 13.dp).size(19.dp),
+        )
+        Box(
+            Modifier
+                .height(20.dp)
+                .width(1.dp)
+                .background(Color.White.copy(alpha = 0.22f)),
+        )
+        Icon(
+            PhosphorIcons.Regular.DotsThree,
+            contentDescription = null,
+            tint = Color.White,
+            modifier = Modifier.padding(horizontal = 13.dp).size(19.dp),
+        )
+    }
+}
+
 @Composable
 private fun GlassCapsule(
     backdrop: Backdrop,

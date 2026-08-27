@@ -1,5 +1,8 @@
 package dev.lelonio.square.ui.home
 
+import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollContent
+import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollEdge
+import dev.antigravity.fluidengine.ui.fluid.rememberFluidEdgeOverscroll
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -234,6 +237,8 @@ fun HomeScreen(
                 }
             }
 
+            val overscroll = rememberFluidEdgeOverscroll()
+
             Column(Modifier.fillMaxSize()) {
                 Header(
                     name = state.displayName,
@@ -297,13 +302,19 @@ fun HomeScreen(
                                 ),
                                 blendMode = BlendMode.DstIn,
                             )
-                        },
+                        }
+                        .fluidOverscrollEdge(overscroll)
+                        // After the mask, deliberately: the rows travel, the
+                        // fade under the header does not — it belongs to the
+                        // header, not to what is scrolling past it.
+                        .fluidOverscrollContent(overscroll),
                     state = listState,
                     // The header already covers the status bar, so only the
                     // bottom inset is left for the list.
                     contentPadding = PaddingValues(
                         bottom = contentPadding.calculateBottomPadding(),
                     ),
+                    overscrollEffect = null,
                 ) {
                 // Spotify's own shelves come first, because they are what the
                 // listener recognises as their home and the only rows here that

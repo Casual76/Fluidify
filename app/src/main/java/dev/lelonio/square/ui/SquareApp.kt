@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui
 
+import dev.lelonio.square.ui.library.CapsuleFace
 import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
@@ -1346,8 +1347,15 @@ fun SquareApp(
                                             morphMenu.open(
                                                 bounds,
                                                 null,
-                                                PhosphorIcons.Regular.DotsThree,
+                                                null,
                                                 actions,
+                                                // The capsule's own face, so
+                                                // the last frame of the return
+                                                // journey hands the pixel back
+                                                // to something identical
+                                                // instead of swapping one dots
+                                                // icon for share-and-dots.
+                                                content = { CapsuleFace() },
                                             )
                                         }
                                     },

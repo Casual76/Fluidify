@@ -1,5 +1,8 @@
 package dev.lelonio.square.ui.settings
 
+import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollContent
+import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollEdge
+import dev.antigravity.fluidengine.ui.fluid.rememberFluidEdgeOverscroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -124,12 +127,20 @@ fun SettingsScreen(
         dev.antigravity.fluidengine.foundation.EngineBuild.VERSION,
     )
 
+    // The elastic edge every page in the family has; see the engine's
+    // FluidOverscroll. Two modifiers on purpose: only the content travels.
+    val overscroll = rememberFluidEdgeOverscroll()
+
     LazyColumn(
-        Modifier.fillMaxSize(),
+        Modifier
+            .fillMaxSize()
+            .fluidOverscrollEdge(overscroll)
+            .fluidOverscrollContent(overscroll),
         contentPadding = PaddingValues(
             top = contentPadding.calculateTopPadding(),
             bottom = contentPadding.calculateBottomPadding() + 24.dp,
         ),
+        overscrollEffect = null,
     ) {
         item("top") {
             Row(

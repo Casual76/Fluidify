@@ -1,5 +1,8 @@
 package dev.lelonio.square.ui.search
 
+import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollContent
+import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollEdge
+import dev.antigravity.fluidengine.ui.fluid.rememberFluidEdgeOverscroll
 import androidx.annotation.StringRes
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
@@ -99,7 +102,16 @@ fun SearchScreen(
     val query = state.query
     remember(query) { kind = Kind.ALL }
 
-    LazyColumn(Modifier.fillMaxSize(), contentPadding = contentPadding) {
+    val overscroll = rememberFluidEdgeOverscroll()
+
+    LazyColumn(
+        Modifier
+            .fillMaxSize()
+            .fluidOverscrollEdge(overscroll)
+            .fluidOverscrollContent(overscroll),
+        contentPadding = contentPadding,
+        overscrollEffect = null,
+    ) {
         // No field, and no title over it. Both are in the bottom bar now: the
         // search button there grows into the box you type in, which is the whole
         // point of that control, and a page that answers it by drawing a second
