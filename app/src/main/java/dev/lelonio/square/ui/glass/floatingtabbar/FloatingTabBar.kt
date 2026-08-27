@@ -292,22 +292,32 @@ fun FloatingTabBar(
                 transitionSpec = { fadeIn() togetherWith fadeOut() },
                 contentAlignment = Alignment.BottomCenter
             ) { targetVisual ->
-            // Vendored addition: the accessory is built for the state being
-            // arrived at, and not for the one being left.
+            // The accessory is built for BOTH states, and it has to be.
             //
-            // Both states are composed for the length of a fold, so everything
-            // in them is built twice — and the accessory is by far the heaviest
-            // thing either of them holds: a cover to decode and draw, two lines
-            // of text to lay out, controls, a progress line. It is a shared
-            // element, so only one copy was ever drawn; the other was built,
-            // measured and thrown away sixty times a second. Measured on the
-            // fold, having it at all costs a third of the animation.
-            val leaving = targetVisual != transition.targetState
+            // It used to be built only for the state being arrived at, on the
+            // grounds that both states are composed for the length of a fold
+            // and the accessory is the heaviest thing either of them holds — a
+            // cover to decode, two lines of text, controls, a progress line —
+            // so the other copy was built, measured and thrown away sixty times
+            // a second for nothing.
+            //
+            // Except it was not for nothing. This is a shared element, and a
+            // shared element interpolates between two sets of bounds: with only
+            // the arriving copy composed there is no second set, so nothing
+            // travels. The pill vanished from above the tabs and reappeared
+            // between them, which is exactly how it was described — "arrives
+            // from nothing and disappears into the cosmic void".
+            //
+            // The cost is real and it is the price of this architecture: two
+            // bars cross-faded with shared elements can only be continuous by
+            // composing both. The way out is not to save the composition but to
+            // stop having two bars — one bar and one number, which is what the
+            // engine's FluidFoldingTabBar is and where this is going.
             when (targetVisual) {
                 FloatingTabBarVisual.INLINE -> InlineBar(
                     scope = scope,
                     selectedTabKey = selectedTabKey,
-                    accessory = inlineAccessory.takeIf { !leaving },
+                    accessory = inlineAccessory,
                     isAccessoryShared = isAccessoryShared,
                     onInlineTabClick = { scrollConnection.expand() },
                     colors = colors,
@@ -320,7 +330,7 @@ fun FloatingTabBar(
                 FloatingTabBarVisual.EXPANDED -> ExpandedBar(
                     scope = scope,
                     selectedTabKey = selectedTabKey,
-                    accessory = expandedAccessory.takeIf { !leaving },
+                    accessory = expandedAccessory,
                     isAccessoryShared = isAccessoryShared,
                     colors = colors,
                     shapes = shapes,
@@ -335,7 +345,7 @@ fun FloatingTabBar(
                 FloatingTabBarVisual.SEARCH_EXPANDED -> SearchExpandedBar(
                     scope = scope,
                     selectedTabKey = selectedTabKey,
-                    accessory = expandedAccessory.takeIf { !leaving },
+                    accessory = expandedAccessory,
                     isAccessoryShared = isAccessoryShared,
                     colors = colors,
                     shapes = shapes,
