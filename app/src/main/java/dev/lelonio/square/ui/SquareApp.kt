@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui
 
+import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.ui.graphics.luminance
@@ -127,6 +128,8 @@ import com.adamglin.phosphoricons.regular.Download
 import com.adamglin.phosphoricons.regular.LinkSimple
 import com.adamglin.phosphoricons.regular.PencilSimple
 import com.adamglin.phosphoricons.regular.PushPin
+import com.adamglin.phosphoricons.regular.DotsThree
+import com.adamglin.phosphoricons.regular.Export
 import com.adamglin.phosphoricons.regular.Plus
 import com.adamglin.phosphoricons.regular.Queue
 import com.adamglin.phosphoricons.regular.SpotifyLogo
@@ -464,6 +467,13 @@ fun SquareApp(
     val artBackdrop = rememberLayerBackdrop()
     val pageBackdrop = rememberLayerBackdrop()
 
+    // The engine's own record of the same page, for the surfaces that morph:
+    // the modal host, the morph menu, the lifted context-menu rows. Recorded
+    // beside the vendored layer until the whole glass stack is the engine's.
+    val pageGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
+    val modalHost = dev.antigravity.fluidengine.ui.fluid.rememberFluidGlassModalHostState()
+    val morphMenu = dev.antigravity.fluidengine.ui.fluidphysics.rememberFluidMorphMenuState()
+
     // Everything the modals cover: the screens, the bars *and* the player. The
     // sheets used to sample `pageBackdrop`, which stops at the navigation host,
     // so opening one over the player blurred the home page behind it instead of
@@ -714,6 +724,8 @@ fun SquareApp(
 
     androidx.compose.runtime.CompositionLocalProvider(
         dev.lelonio.square.ui.glass.LocalBackdropLuminance provides backdropLuminance,
+        dev.antigravity.fluidengine.ui.fluid.LocalFluidGlassModalHostState provides modalHost,
+        dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides pageGlass,
     ) {
     SquareTheme {
         // Material's default content colour is black, and it used to arrive from
@@ -887,7 +899,9 @@ fun SquareApp(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .layerBackdrop(pageBackdrop),
+                        .layerBackdrop(pageBackdrop)
+                        // The engine's copy of the same record; see pageGlass.
+                        .glassBackdropSource(pageGlass),
                 ) {
                     Box(
                         Modifier
@@ -1039,6 +1053,13 @@ fun SquareApp(
                             // wrong here: an album page tinted by an unrelated
                             // track reads as belonging to something else.
                             val detailAccent by rememberArtworkColor(playlist.artworkUrl)
+                            // Resolved here because the menu is built in a click
+                            // lambda, where composable calls are out of reach.
+                            val shareLabel = stringResource(R.string.copy_link)
+                            val pinLabel = stringResource(R.string.pin)
+                            val unpinLabel = stringResource(R.string.unpin)
+                            val renameLabel = stringResource(R.string.rename)
+                            val deleteLabel = stringResource(R.string.delete)
                             // Resolved here rather than inside the play
                             // callbacks: those are not composables.
                             val source = playlist.sourceLabel()
@@ -1119,19 +1140,69 @@ fun SquareApp(
                                             ),
                                         )
                                     },
-                                    onMenu = {
-                                        val uri = playlist.uri ?: return@PlaylistScreen
+                                    onMenuAt = menuAt@{ bounds ->
+                                        val uri = playlist.uri ?: return@menuAt
                                         // What the menu is allowed to offer, from
                                         // the page that knows: whose list this is,
                                         // and whether it is in the library at all.
-                                        playlistMenuMine = playlist.mine != false
-                                        playlistMenuSaved = playlist.saved != false
-                                        playlistMenu = CatalogPlaylist(
+                                        val target = CatalogPlaylist(
                                             uri = uri,
                                             name = playlist.name,
                                             artworkUrl = playlist.artworkUrl,
                                         )
+                                        val editable = !uri.endsWith(":collection") &&
+                                            playlist.mine != false
+                                        val actions = buildList {
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = shareLabel,
+                                                    icon = PhosphorIcons.Regular.Export,
+                                                ) {
+                                                    context.startActivity(
+                                                        android.content.Intent.createChooser(
+                                                            android.content.Intent(
+                                                                android.content.Intent.ACTION_SEND,
+                                                            )
+                                                                .setType("text/plain")
+                                                                .putExtra(
+                                                                    android.content.Intent.EXTRA_TEXT,
+                                                                    dev.lelonio.square.ui.library.openLinkOf(uri),
+                                                                ),
+                                                            null,
+                                                        ),
+                                                    )
+                                                },
+                                            )
+                                            if (playlist.saved != false) add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = if (uri in pinnedPlaylists) unpinLabel else pinLabel,
+                                                    icon = PhosphorIcons.Regular.PushPin,
+                                                ) { viewModel.togglePinned(uri) },
+                                            )
+                                            if (editable) add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = renameLabel,
+                                                    icon = PhosphorIcons.Regular.PencilSimple,
+                                                ) { naming = NamingRequest(target) },
+                                            )
+                                            if (editable) add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = deleteLabel,
+                                                    icon = PhosphorIcons.Regular.Trash,
+                                                    destructive = true,
+                                                ) { deleting = target },
+                                            )
+                                        }
+                                        if (actions.isNotEmpty()) {
+                                            morphMenu.open(
+                                                bounds,
+                                                null,
+                                                PhosphorIcons.Regular.DotsThree,
+                                                actions,
+                                            )
+                                        }
                                     },
+                                    menuShown = { morphMenu.isOnScreen },
                                 )
                             }
                         }
@@ -1852,6 +1923,20 @@ fun SquareApp(
                 // Above everything, bars and player included: until it is done
                 // there is nothing underneath worth reaching, and on a fresh
                 // install most of what is underneath does not work yet.
+                // The engine's overlays: every declared modal, every lifted
+                // context-menu row, and the menu a button becomes. In-root and
+                // above the bars and the player — a pop-up a floating capsule
+                // can sit on top of is not a modal — but under the onboarding,
+                // which nothing may cover.
+                dev.antigravity.fluidengine.ui.fluid.FluidGlassModalHost(
+                    state = modalHost,
+                    backdrop = pageGlass,
+                )
+                dev.antigravity.fluidengine.ui.fluidphysics.FluidMorphMenuHost(
+                    state = morphMenu,
+                    backdrop = pageGlass,
+                )
+
                 if (showTutorial || !onboarded) {
                     OnboardingScreen(
                         state = state,

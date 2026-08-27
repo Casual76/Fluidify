@@ -154,7 +154,14 @@ fun PlaylistScreen(
      */
     onAskLocalPermission: () -> Unit = {},
     /** Opens the sheet with everything else this page can do. */
-    onMenu: () -> Unit = {},
+    /**
+     * Opens the page's own menu from the given root-space bounds: the dots
+     * button does not show a sheet any more, it *becomes* the menu, and the
+     * travelling surface needs to know where to start from.
+     */
+    onMenuAt: (androidx.compose.ui.geometry.Rect) -> Unit = {},
+    /** True while that menu is on screen; the anchor hides under it. */
+    menuShown: () -> Boolean = { false },
     /** Keeps the page in the library, or lets it go. */
     onToggleSaved: () -> Unit = {},
     /** The remembered track order, and where a change to it is stored. */
@@ -553,12 +560,21 @@ fun PlaylistScreen(
         // One pane of glass with a line down it, not two buttons side by side.
         // Two would have read as two destinations; one capsule reads as what it
         // is, the place the page's own actions live.
+        var capsuleBounds by remember {
+            androidx.compose.runtime.mutableStateOf<androidx.compose.ui.geometry.Rect?>(null)
+        }
         GlassCapsule(
             backdrop = pageBackdrop,
             modifier = Modifier
                 .padding(top = contentPadding.calculateTopPadding() + 8.dp, end = 14.dp)
                 .align(Alignment.TopEnd)
-                .graphicsLayer { alpha = 1f - collapseFraction() },
+                .onGloballyPositioned { capsuleBounds = it.boundsInRoot() }
+                // The whole capsule is what travels: while the menu is out the
+                // pane on this pixel belongs to the host, and a second copy
+                // underneath would be a ghost.
+                .graphicsLayer {
+                    alpha = (1f - collapseFraction()) * (if (menuShown()) 0f else 1f)
+                },
         ) {
             CapsuleAction(
                 icon = PhosphorIcons.Regular.Export,
@@ -574,7 +590,7 @@ fun PlaylistScreen(
             CapsuleAction(
                 icon = PhosphorIcons.Regular.DotsThree,
                 description = stringResource(R.string.more),
-                onClick = onMenu,
+                onClick = { capsuleBounds?.let(onMenuAt) },
             )
         }
 
