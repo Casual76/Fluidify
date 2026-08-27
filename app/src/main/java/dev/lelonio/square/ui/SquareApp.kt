@@ -759,6 +759,11 @@ fun SquareApp(
                 val currentEntry by navController.currentBackStackEntryAsState()
                 val route = currentEntry?.destination?.route
 
+                // A screen that leaves mid-gesture never delivers its fling,
+                // and the scroll-hold it started would freeze every glass
+                // capture in the app; see FloatingTabBarScrollConnection.settle.
+                LaunchedEffect(route) { tabBarScroll.settle() }
+
                 // Which tab the bar shows as the current one.
                 //
                 // Not the route: a playlist, an album and an artist are pages
@@ -873,21 +878,16 @@ fun SquareApp(
                             else Modifier,
                         ),
                 ) {
-                // Same trade for the page layer: the only things that read it
-                // are the tab bar and the mini player, and a fully open player
-                // covers both. Derived so it flips once at the end of the
-                // animation rather than recomposing on every frame of it.
-                val barsVisible by remember {
-                    derivedStateOf { expand.value < 0.999f }
-                }
+                // Recorded unconditionally, and that is the fix for a real
+                // bug: this modifier used to come and go with the player, and
+                // re-attaching it over Home or the library needed a layout pass
+                // to repopulate — until one came, the page drew from an empty
+                // recording and the content simply was not there. A recording
+                // that never detaches has no stale frame to show.
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .then(
-                            if (barsVisible) Modifier.layerBackdrop(pageBackdrop)
-                            else Modifier,
-                        )
-                        ,
+                        .layerBackdrop(pageBackdrop),
                 ) {
                     Box(
                         Modifier

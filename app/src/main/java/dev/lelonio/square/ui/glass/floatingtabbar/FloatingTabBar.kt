@@ -422,6 +422,19 @@ class FloatingTabBarScrollConnection(
         accumulatedScroll = 0f
     }
 
+    /**
+     * Ends the scroll-hold by decree.
+     *
+     * [scrolling] is set in onPreScroll and cleared only in onPreFling — and a
+     * list disposed mid-gesture (a navigation, a page swap) never delivers its
+     * fling, so the flag stayed up and every glass surface replayed its last
+     * capture for good: the "content is not there when I come back" bug. The
+     * app calls this on every route change.
+     */
+    fun settle() {
+        scrolling = false
+    }
+
     fun inline() {
         isInline = true
         accumulatedScroll = 0f
