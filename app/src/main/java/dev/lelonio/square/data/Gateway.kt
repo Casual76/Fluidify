@@ -31,6 +31,44 @@ class Gateway(private val keys: PathfinderKeys) {
         ),
     )
 
+    /**
+     * How many people listened to this artist in the last month, or null.
+     *
+     * Null is the ordinary answer rather than a fault, and there are three ways
+     * to get it: nobody has published a hash, so nothing is asked; Spotify has
+     * retired the hash, so the gateway answers 200 with `PersistedQueryNotFound`
+     * and no data; or the artist has no figure. The caller shows the follower
+     * count in all three, which is why none of them is logged as a failure.
+     *
+     * This number exists nowhere else. The access point's own metadata — which
+     * serves the portrait and the biography, and outlives every client Spotify
+     * ships — has no field for it, and neither does any of the 195 extension
+     * kinds nor the public Web API. The gateway is the only source, and a
+     * persisted-query hash is the only way in, so this is deliberately the one
+     * thing on the artist page that is allowed to be missing.
+     */
+    suspend fun monthlyListeners(artistUri: String): Int? {
+        val hash = keys.artistOverview ?: return null
+        val id = artistUri.substringAfterLast(':')
+        if (id.isEmpty()) return null
+        return runCatching {
+            val raw = query(
+                operation = "queryArtistOverview",
+                hash = hash,
+                variables = """{"uri":"$artistUri","locale":"","includePrerelease":true}""",
+            )
+            org.json.JSONObject(raw)
+                .optJSONObject("data")
+                ?.optJSONObject("artistUnion")
+                ?.optJSONObject("stats")
+                // Absent rather than zero: a zero here would be printed, and
+                // "0 monthly listeners" under a working artist is worse than
+                // saying nothing at all.
+                ?.let { stats -> if (stats.has("monthlyListeners")) stats.optInt("monthlyListeners") else null }
+                ?.takeIf { it > 0 }
+        }.getOrNull()
+    }
+
     /** One page of a playlist; see [PlaylistContents]. */
     suspend fun playlistTracks(uri: String, offset: Int): GatewayPage? = PlaylistContents.parse(
         query(

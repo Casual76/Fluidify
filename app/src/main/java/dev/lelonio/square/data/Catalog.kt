@@ -103,6 +103,14 @@ data class ArtistInfo(
     val biography: String = "",
     /** Spotify's own 0..100 score, which is not a listener count; see below. */
     val popularity: Int = 0,
+    /**
+     * Last month's listeners, when the gateway will say.
+     *
+     * Null far more often than not, and the page is written for that: see
+     * Gateway.monthlyListeners for why this is the one figure here that has no
+     * durable source.
+     */
+    val monthlyListeners: Int? = null,
     val followers: Int = 0,
     val genres: List<String> = emptyList(),
 )

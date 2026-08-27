@@ -1225,8 +1225,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val fromWebApi = async {
                 if (!container.webApi.isReady) null
                 else runCatching { container.api.artist(id) }
-                    .onFailure { android.util.Log.i(TAG, "artist ${'$'}id: ${'$'}{describe(it)}") }
+                    .onFailure { android.util.Log.i(TAG, "artist $id: ${describe(it)}") }
                     .getOrNull()
+            }
+            // The one figure with no durable source, asked for last and never
+            // waited on: see Gateway.monthlyListeners.
+            val fromGateway = async {
+                runCatching { container.gateway.monthlyListeners(artistUri) }.getOrNull()
             }
 
             val engine = fromEngine.await().getOrNull()
@@ -1253,6 +1258,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 genres = web?.genres?.takeIf { it.isNotEmpty() } ?: base.genres,
             )
             _artistLoading.value = false
+
+            val listeners = fromGateway.await()
+            if (artistFor != artistUri || listeners == null) return@launch
+            _artistInfo.value = _artistInfo.value
+                ?.takeIf { it.uri == artistUri }
+                ?.copy(monthlyListeners = listeners)
         }
     }
 

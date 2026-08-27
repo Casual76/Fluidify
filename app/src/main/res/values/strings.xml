@@ -344,4 +344,5 @@
     <string name="no_artist_info">Nothing to show about this artist.</string>
     <string name="no_biography">No description for this artist.</string>
     <string name="info_panel">Info</string>
+    <string name="monthly_listeners">%1$s monthly listeners</string>
 </resources>

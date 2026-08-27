@@ -46,6 +46,19 @@ class PathfinderKeys(context: Context) {
     /** And for `searchDesktop`, which is what the search box asks. */
     val search: String get() = prefs.getString(KEY_SEARCH, null) ?: DEFAULT_SEARCH
 
+    /**
+     * The hash for `queryArtistOverview`, or null when nobody has published one.
+     *
+     * Nullable on purpose, and with no compiled-in default. Every other key here
+     * ships with the last value known to work, because the pages they serve are
+     * pages the app cannot do without and a stale hash is better than none. This
+     * one serves a single line — the monthly listener count — and the caller has
+     * a follower count to fall back on, so a wrong hash would buy nothing and
+     * cost a request per artist. No hash, no request: the fallback is not an
+     * error path, it is the ordinary one until this file says otherwise.
+     */
+    val artistOverview: String? get() = prefs.getString(KEY_ARTIST, null)
+
     /** The web client version the gateway is told about. */
     val appVersion: String get() = prefs.getString(KEY_VERSION, null) ?: DEFAULT_VERSION
 
@@ -81,6 +94,23 @@ class PathfinderKeys(context: Context) {
                 edit.apply()
             }
         }.onFailure { android.util.Log.i(TAG, "keeping the known query hashes: $it") }
+
+        // The fork's own file, read after upstream's and never instead of it.
+        //
+        // Two files rather than one because they answer to different people.
+        // Upstream stays the authority on the five hashes this app already had
+        // and keeps them fresh for free; this one carries only what upstream
+        // does not have. Merged into one, the five would have to be maintained
+        // here by hand, one release behind, for the sake of a sixth.
+        runCatching {
+            val request = Request.Builder().url(FLUIDIFY_URL).build()
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) error("HTTP ${response.code}")
+                val body = JSONObject(response.body?.string().orEmpty())
+                body.optString("artistOverview").takeIf { it.length == HASH_LENGTH }
+                    ?.let { prefs.edit().putString(KEY_ARTIST, it).apply() }
+            }
+        }.onFailure { android.util.Log.i(TAG, "no fork hashes today: $it") }
     }
 
     private companion object {
@@ -92,6 +122,7 @@ class PathfinderKeys(context: Context) {
         const val KEY_LIBRARY = "library"
         const val KEY_SEARCH = "search"
         const val KEY_VERSION = "app_version"
+        const val KEY_ARTIST = "artist_overview"
         const val KEY_CHECKED = "checked_at"
 
         /** Once a day: these change with Spotify's releases, not with ours. */
@@ -111,6 +142,16 @@ class PathfinderKeys(context: Context) {
 
         const val URL =
             "https://raw.githubusercontent.com/$PATHFINDER_REPO/master/pathfinder.json"
+
+        /**
+         * The fork's own file, for hashes upstream has no reason to carry.
+         *
+         * Empty in the repository until somebody puts a working hash in it, and
+         * that is a complete state rather than a placeholder: see
+         * [artistOverview].
+         */
+        const val FLUIDIFY_URL =
+            "https://raw.githubusercontent.com/Casual76/Fluidify/master/pathfinder-fluidify.json"
 
         /** What was true when this version was built; see the note above. */
         const val DEFAULT_HOME =

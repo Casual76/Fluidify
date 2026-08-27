@@ -29,13 +29,14 @@ import dev.lelonio.square.ui.theme.InkDim
 /**
  * Who is playing, as Spotify's own "About" page tells it.
  *
- * Portrait, name, a number and a description. The number is the follower count
- * rather than the monthly listeners the official client shows, and that is a
- * deliberate limit rather than an oversight: monthly listeners exist only behind
- * the GraphQL gateway, addressed by a persisted-query hash Spotify retires every
- * time it rebuilds its web client. This page is assembled from the access
- * point's own metadata and the account's own Web API application, both of which
- * last as long as playback does.
+ * Portrait, name, a number and a description. The number is last month's
+ * listeners when the gateway will say, and the follower count when it will not
+ * — and the second case is the ordinary one. Monthly listeners exist only
+ * behind a persisted-query hash that Spotify retires whenever it rebuilds its
+ * web client; everything else here comes from the access point's own metadata
+ * and the account's own Web API application, both of which last as long as
+ * playback does. So the page is built to read correctly with the line it can
+ * always get, and to say something better on the days it can get it.
  *
  * Every field may be missing, and the page is still a page without any one of
  * them: an artist with no biography is common, and a portrait that has not
@@ -95,8 +96,10 @@ fun ArtistInfoView(
         // One line of facts rather than a stack of labelled rows: this is a
         // caption under a portrait, and a table would make it a database entry.
         val facts = listOfNotNull(
-            artist.followers.takeIf { it > 0 }
-                ?.let { stringResource(R.string.followers_count, compactCount(it)) },
+            artist.monthlyListeners?.takeIf { it > 0 }
+                ?.let { stringResource(R.string.monthly_listeners, compactCount(it)) }
+                ?: artist.followers.takeIf { it > 0 }
+                    ?.let { stringResource(R.string.followers_count, compactCount(it)) },
             artist.genres.take(2)
                 .joinToString(" · ") { it.replaceFirstChar(Char::uppercase) }
                 .takeIf { it.isNotEmpty() },
