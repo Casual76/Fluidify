@@ -45,6 +45,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.annotation.StringRes
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.animation.animateColorAsState
@@ -176,6 +178,8 @@ fun PlayerScreen(
     creditsLoading: Boolean,
     /** Asked for when the credits panel is opened, and not before. */
     onWantCredits: (String?) -> Unit,
+    /** Asked when the Info panel opens; the name is what to show while it loads. */
+    onWantArtist: (String?, String) -> Unit,
     onPlayQueueItem: (Int) -> Unit,
     /** Drops one track out of the queue, by index. */
     onRemoveQueueItem: (Int) -> Unit,
@@ -199,6 +203,9 @@ fun PlayerScreen(
     devices: dev.lelonio.square.ui.MainViewModel.DevicesState,
     onOpenDevices: () -> Unit,
     onCloseDevices: () -> Unit,
+    /** Who is playing, for the Info panel's first page. */
+    artist: dev.lelonio.square.data.ArtistInfo?,
+    artistLoading: Boolean,
     onRefreshDevices: () -> Unit,
     onSelectDevice: (String) -> Unit,
     onSetDeviceVolume: (String, Int) -> Unit,
@@ -276,7 +283,13 @@ fun PlayerScreen(
     // the one nobody opens for most songs. Asking on open keeps a request per
     // track from being made for a page most listeners never see.
     LaunchedEffect(panel, state.mediaId) {
-        if (panel == PlayerPanel.INFO) onWantCredits(state.mediaId)
+        if (panel != PlayerPanel.INFO) return@LaunchedEffect
+        onWantCredits(state.mediaId)
+        // The first credited artist, which is the one the title line leads
+        // with. A track credited to three people has one page, not three: the
+        // page is about who is playing, and that is the name at the front.
+        val first = state.artists.firstOrNull()
+        onWantArtist(first?.uri, first?.name ?: state.artist)
     }
 
     // How far the track-change swipe has been dragged, when the clip stands in
@@ -712,9 +725,11 @@ fun PlayerScreen(
                                 // controls. A panel that pushed the transport
                                 // around every time it opened was the reason
                                 // this screen never sat still.
-                                Stage.INFO -> CreditsView(
+                                Stage.INFO -> InfoPanel(
+                                    artist = artist,
+                                    artistLoading = artistLoading,
                                     credits = credits,
-                                    loading = creditsLoading,
+                                    creditsLoading = creditsLoading,
                                     modifier = Modifier.fillMaxSize(),
                                 )
 
@@ -1260,7 +1275,7 @@ private fun TopBar(
         Crossfade(
             targetState = when (panel) {
                 PlayerPanel.LYRICS -> stringResource(R.string.lyrics)
-                PlayerPanel.INFO -> stringResource(R.string.credits)
+                PlayerPanel.INFO -> stringResource(R.string.info_panel)
                 PlayerPanel.QUEUE -> stringResource(R.string.queued)
                 PlayerPanel.DEVICES -> stringResource(R.string.play_on)
                 PlayerPanel.ADD_TO_PLAYLIST -> stringResource(R.string.add_to_playlist)
@@ -1872,4 +1887,77 @@ private fun LyricsStage(
                 .padding(end = 6.dp, bottom = 6.dp),
         )
     }
+}
+
+/**
+ * The Info panel: who is playing, and who made the record.
+ *
+ * Two pages rather than one long scroll, because they answer different
+ * questions and only one of them is ever the reason the panel was opened. The
+ * artist comes first: it is the page with a picture in it, and the one a
+ * listener opens out of curiosity rather than to check a name.
+ *
+ * The switch is a pair of chips and not a third tab in the bar below. That bar
+ * is about what fills the *stage* — cover or words — and this is a choice inside
+ * one of its neighbours; putting it there would have made two controls that look
+ * alike mean different things.
+ */
+@Composable
+private fun InfoPanel(
+    artist: dev.lelonio.square.data.ArtistInfo?,
+    artistLoading: Boolean,
+    credits: dev.lelonio.square.backend.spotify.SpotifyCredits.Credits?,
+    creditsLoading: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    var page by rememberSaveable { mutableStateOf(InfoPage.ARTIST) }
+
+    Column(modifier.fillMaxSize()) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(top = 12.dp, bottom = 4.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+        ) {
+            InfoPage.entries.forEach { entry ->
+                dev.antigravity.fluidengine.ui.fluid.FluidChip(
+                    label = stringResource(entry.label),
+                    selected = entry == page,
+                    onClick = { page = entry },
+                )
+            }
+        }
+
+        androidx.compose.animation.AnimatedContent(
+            targetState = page,
+            transitionSpec = {
+                // The same short vertical swap the library's chips make: the
+                // pages are siblings, so nothing about the change is sideways.
+                (androidx.compose.animation.fadeIn(tween(200)) +
+                    androidx.compose.animation.slideInVertically(tween(240)) { it / 14 })
+                    .togetherWith(androidx.compose.animation.fadeOut(tween(110)))
+            },
+            label = "info page",
+            modifier = Modifier.fillMaxSize(),
+        ) { current ->
+            when (current) {
+                InfoPage.ARTIST -> ArtistInfoView(
+                    artist = artist,
+                    loading = artistLoading,
+                    modifier = Modifier.fillMaxSize(),
+                )
+
+                InfoPage.CREDITS -> CreditsView(
+                    credits = credits,
+                    loading = creditsLoading,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        }
+    }
+}
+
+private enum class InfoPage(@StringRes val label: Int) {
+    ARTIST(R.string.artist),
+    CREDITS(R.string.credits),
 }

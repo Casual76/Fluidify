@@ -321,4 +321,7 @@
     <string name="playing_here">In riproduzione qui</string>
     <string name="volume">Volume</string>
     <string name="this_device">Questo dispositivo</string>
+    <string name="no_artist_info">Nessuna informazione su questo artista.</string>
+    <string name="no_biography">Nessuna descrizione per questo artista.</string>
+    <string name="info_panel">Info</string>
 </resources>

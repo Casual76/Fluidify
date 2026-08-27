@@ -394,6 +394,17 @@ object NativeBridge {
     fun canvas(trackUri: String): String = nativeCanvas(trackUri)
 
     /**
+     * What the access point knows about an artist: name, portrait, biography.
+     *
+     * The same metadata the player itself reads, which is why it is asked for
+     * here rather than of the GraphQL gateway. The gateway would add a monthly
+     * listener count and would want a persisted-query hash for it — one that
+     * Spotify retires whenever it rebuilds its web client, taking the page with
+     * it. Throws when the lookup fails; see Catalog.artist.
+     */
+    fun artist(artistUri: String): String = nativeArtist(artistUri)
+
+    /**
      * A playlist's cover URL as a JSON string, or the string `null`.
      *
      * The account's index of its playlists carries a picture only for the ones
@@ -496,4 +507,5 @@ object NativeBridge {
     private external fun nativeLyrics(trackUri: String): String
     private external fun nativeTrackRelatives(trackUri: String): String
     private external fun nativeCanvas(trackUri: String): String
+    private external fun nativeArtist(artistUri: String): String
 }

@@ -320,4 +320,7 @@
     <string name="playing_here">En cours ici</string>
     <string name="volume">Volume</string>
     <string name="this_device">Cet appareil</string>
+    <string name="no_artist_info">Rien à afficher sur cet artiste.</string>
+    <string name="no_biography">Aucune description pour cet artiste.</string>
+    <string name="info_panel">Infos</string>
 </resources>

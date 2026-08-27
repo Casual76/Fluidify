@@ -14,7 +14,7 @@ use crate::engine::{with_session, EngineResult};
 use futures_util::stream::{self, StreamExt};
 use http::Method;
 use librespot_core::{session::Session, spotify_uri::SpotifyUri};
-use librespot_metadata::{image::Images, Metadata, Track};
+use librespot_metadata::{image::Images, Artist, Metadata, Track};
 use librespot_protocol::playlist4_external::SelectedListContent;
 use protobuf::Message;
 use serde_json::{json, Value};
@@ -434,6 +434,53 @@ fn largest_cover(covers: &Images) -> Option<String> {
         .max_by_key(|image| image.width * image.height)
         .and_then(|image| image.id.to_base16().ok())
         .map(|id| format!("{IMAGE_CDN}{id}"))
+}
+
+/// Everything the player's Info panel says about an artist.
+///
+/// From the access point's own metadata rather than from the GraphQL gateway,
+/// and that is the whole point: the gateway would give a monthly-listener count
+/// as well, but only through a persisted-query hash that Spotify retires with
+/// every rebuild of its web client — a page that stops working on a Tuesday for
+/// the sake of one number. What the access point serves is served to the player
+/// itself, so it lasts as long as playback does.
+///
+/// The biography is picked by length rather than by locale: Spotify returns
+/// several, usually one long one and a couple of fragments, and the language of
+/// each is not marked. The longest is the one that reads as a description.
+pub fn artist(artist_uri: &str) -> EngineResult<String> {
+    let uri = SpotifyUri::from_uri(artist_uri).map_err(|e| format!("bad artist uri: {e}"))?;
+    let session = with_session(|s| s.clone())?;
+
+    block_on(async move {
+        let artist = Artist::get(&session, &uri)
+            .await
+            .map_err(|e| format!("artist lookup failed: {e}"))?;
+
+        let biography = artist
+            .biographies
+            .0
+            .iter()
+            .map(|entry| entry.text.trim())
+            .filter(|text| !text.is_empty())
+            .max_by_key(|text| text.len())
+            .unwrap_or_default()
+            .to_string();
+
+        // The portrait group first: it is the one Spotify's own artist page
+        // uses, and it is the only one wide enough not to look like a thumbnail
+        // blown up. `portraits` is the fallback and is often a single square.
+        let portrait = largest_cover(&artist.portrait_group)
+            .or_else(|| largest_cover(&artist.portraits));
+
+        Ok(json!({
+            "name": artist.name,
+            "imageUrl": portrait,
+            "biography": biography,
+            "popularity": artist.popularity,
+        })
+        .to_string())
+    })
 }
 
 /// Run an access-point request on the engine's runtime.

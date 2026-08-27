@@ -27,6 +27,7 @@ import dev.lelonio.square.data.toResults
 import dev.lelonio.square.nativecore.NativeBridge
 import dev.lelonio.square.playback.PlaybackService
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.ensureActive
@@ -1175,6 +1176,77 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 _credits.value = found
                 _creditsLoading.value = false
             }
+        }
+    }
+
+    private val _artistInfo = MutableStateFlow<dev.lelonio.square.data.ArtistInfo?>(null)
+
+    /**
+     * The artist behind the track on screen, once somebody asks.
+     *
+     * Assembled from two sources because neither has everything: the access
+     * point serves the portrait and the biography, the Web API serves the
+     * follower count and the genres. Whichever half answers first is published
+     * at once, and the other fills itself in — a page that waits for both to
+     * arrive before showing either is a page that shows nothing when one of
+     * them is down.
+     */
+    val artistInfo: StateFlow<dev.lelonio.square.data.ArtistInfo?> = _artistInfo.asStateFlow()
+
+    private val _artistLoading = MutableStateFlow(false)
+    val artistLoading: StateFlow<Boolean> = _artistLoading.asStateFlow()
+
+    private var artistFor: String? = null
+    private var artistJob: Job? = null
+
+    /** Asked for the open track's first artist; a repeat for the same one is free. */
+    fun loadArtist(artistUri: String?, fallbackName: String = "") {
+        if (artistUri == null || !artistUri.startsWith("spotify:artist:")) {
+            artistJob?.cancel()
+            artistFor = null
+            _artistInfo.value = null
+            _artistLoading.value = false
+            return
+        }
+        if (artistFor == artistUri && (_artistInfo.value != null || _artistLoading.value)) return
+
+        artistJob?.cancel()
+        artistFor = artistUri
+        _artistInfo.value = null
+        _artistLoading.value = true
+        artistJob = viewModelScope.launch {
+            val id = artistUri.substringAfterLast(':')
+
+            val fromEngine = async { dev.lelonio.square.data.Catalog.artist(artistUri) }
+            val fromWebApi = async {
+                if (!container.webApi.isReady) null
+                else runCatching { container.api.artist(id) }
+                    .onFailure { android.util.Log.i(TAG, "artist ${'$'}id: ${'$'}{describe(it)}") }
+                    .getOrNull()
+            }
+
+            val engine = fromEngine.await().getOrNull()
+            if (artistFor != artistUri) return@launch
+            if (engine != null) {
+                _artistInfo.value = engine.copy(
+                    name = engine.name.ifBlank { fallbackName },
+                )
+                _artistLoading.value = false
+            }
+
+            val web = fromWebApi.await()
+            if (artistFor != artistUri) return@launch
+            val base = _artistInfo.value ?: dev.lelonio.square.data.ArtistInfo(
+                uri = artistUri,
+                name = fallbackName,
+            )
+            _artistInfo.value = base.copy(
+                name = base.name.ifBlank { web?.name.orEmpty() },
+                imageUrl = base.imageUrl ?: web?.images?.firstOrNull()?.url,
+                followers = web?.followers?.total ?: base.followers,
+                genres = web?.genres ?: base.genres,
+            )
+            _artistLoading.value = false
         }
     }
 

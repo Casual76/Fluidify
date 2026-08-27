@@ -9,6 +9,7 @@ import kotlinx.serialization.builtins.serializer
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonPrimitive
 
 /**
@@ -86,6 +87,25 @@ data class Lyrics(val lines: List<LyricLine>, val synced: Boolean)
  *   are shown as a picture rather than handed to a video surface.
  */
 data class CanvasClip(val url: String, val isVideo: Boolean)
+
+/**
+ * What the player's Info panel says about an artist.
+ *
+ * Two sources, and neither is optional in practice: the access point serves the
+ * portrait and the biography, the Web API serves the follower count and the
+ * genres, and no single one of them serves all four. Every field is allowed to
+ * be missing, so a page assembled from whichever half answered is still a page.
+ */
+data class ArtistInfo(
+    val uri: String,
+    val name: String,
+    val imageUrl: String? = null,
+    val biography: String = "",
+    /** Spotify's own 0..100 score, which is not a listener count; see below. */
+    val popularity: Int = 0,
+    val followers: Int = 0,
+    val genres: List<String> = emptyList(),
+)
 
 /** A playlist owned by the logged-in account. */
 @Serializable
@@ -180,6 +200,28 @@ object Catalog {
      * Most of the catalogue has no canvas, so a null here is an ordinary answer
      * and the player falls back to the cover rather than showing an error.
      */
+    /**
+     * An artist as the access point describes them.
+     *
+     * Deliberately not the GraphQL gateway. That one would add the monthly
+     * listener count, and would want a persisted-query hash for it that Spotify
+     * retires with every rebuild of its web client — the number would arrive for
+     * a few weeks and then the whole page would stop, which is a bad trade for
+     * one line. What the access point serves is what the player itself reads.
+     */
+    suspend fun artist(artistUri: String): Result<ArtistInfo> = withContext(Dispatchers.IO) {
+        runCatching {
+            val root = json.parseToJsonElement(NativeBridge.artist(artistUri)) as JsonObject
+            ArtistInfo(
+                uri = artistUri,
+                name = root["name"]?.jsonPrimitive?.content.orEmpty(),
+                imageUrl = root["imageUrl"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotBlank() },
+                biography = root["biography"]?.jsonPrimitive?.content.orEmpty(),
+                popularity = root["popularity"]?.jsonPrimitive?.content?.toIntOrNull() ?: 0,
+            )
+        }
+    }
+
     suspend fun canvas(trackUri: String): Result<CanvasClip?> = withContext(Dispatchers.IO) {
         // Success-with-null and failure are different answers, and collapsing
         // them into one null is what made a Canvas that failed to arrive look

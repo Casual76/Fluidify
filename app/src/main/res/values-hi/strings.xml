@@ -335,4 +335,7 @@
     <string name="playing_here">यहाँ चल रहा है</string>
     <string name="volume">आवाज़</string>
     <string name="this_device">यह डिवाइस</string>
+    <string name="no_artist_info">इस कलाकार के बारे में दिखाने को कुछ नहीं है।</string>
+    <string name="no_biography">इस कलाकार का कोई विवरण नहीं है।</string>
+    <string name="info_panel">जानकारी</string>
 </resources>

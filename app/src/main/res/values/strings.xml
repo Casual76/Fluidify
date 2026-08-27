@@ -341,4 +341,7 @@
     <string name="playing_here">Playing here</string>
     <string name="volume">Volume</string>
     <string name="this_device">This device</string>
+    <string name="no_artist_info">Nothing to show about this artist.</string>
+    <string name="no_biography">No description for this artist.</string>
+    <string name="info_panel">Info</string>
 </resources>

@@ -335,4 +335,7 @@
     <string name="playing_here">Burada çalıyor</string>
     <string name="volume">Ses</string>
     <string name="this_device">Bu cihaz</string>
+    <string name="no_artist_info">Bu sanatçı hakkında gösterilecek bir şey yok.</string>
+    <string name="no_biography">Bu sanatçı için açıklama yok.</string>
+    <string name="info_panel">Bilgi</string>
 </resources>

@@ -320,4 +320,7 @@
     <string name="playing_here">Läuft hier</string>
     <string name="volume">Lautstärke</string>
     <string name="this_device">Dieses Gerät</string>
+    <string name="no_artist_info">Zu diesem Interpreten gibt es nichts zu zeigen.</string>
+    <string name="no_biography">Keine Beschreibung für diesen Interpreten.</string>
+    <string name="info_panel">Info</string>
 </resources>

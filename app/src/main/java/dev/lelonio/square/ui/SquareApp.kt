@@ -621,6 +621,8 @@ fun SquareApp(
 
     val credits by viewModel.credits.collectAsStateWithLifecycle()
     val creditsLoading by viewModel.creditsLoading.collectAsStateWithLifecycle()
+    val artistInfo by viewModel.artistInfo.collectAsStateWithLifecycle()
+    val artistLoading by viewModel.artistLoading.collectAsStateWithLifecycle()
 
     var lyrics by remember { mutableStateOf<Lyrics?>(null) }
 
@@ -1829,6 +1831,7 @@ fun SquareApp(
                                 credits = credits,
                                 creditsLoading = creditsLoading,
                                 onWantCredits = viewModel::loadCredits,
+                                onWantArtist = viewModel::loadArtist,
                                 onPlayQueueItem = { player?.seekTo(it, 0L) },
                                 onRemoveQueueItem = { player?.removeMediaItem(it) },
                                 backdrop = artBackdrop,
@@ -1858,6 +1861,8 @@ fun SquareApp(
                                 onOpenDevices = viewModel::openDevices,
                                 connectAvailable = true,
                                 onCloseDevices = viewModel::closeDevices,
+                                artist = artistInfo,
+                                artistLoading = artistLoading,
                                 onRefreshDevices = viewModel::refreshDevices,
                                 onSetDeviceVolume = viewModel::setDeviceVolume,
                                 // The position goes with the request: a
