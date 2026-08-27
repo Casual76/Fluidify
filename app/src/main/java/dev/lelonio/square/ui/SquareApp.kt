@@ -981,6 +981,7 @@ fun SquareApp(
                             HomeScreen(
                                 state = state,
                                 contentPadding = listPadding,
+                                ground = groundGlass,
                                 onLogIn = viewModel::logIn,
                                 onRetry = { viewModel.refresh() },
                                 onLogOut = viewModel::logOut,

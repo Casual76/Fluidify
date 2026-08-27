@@ -19,6 +19,15 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInWindow
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
+import dev.antigravity.fluidengine.ui.fluid.glassSurface
+import dev.antigravity.fluidengine.ui.fluid.rememberCombinedGlassBackdrop
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.foundation.lazy.LazyRow
@@ -46,11 +55,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
@@ -80,7 +86,6 @@ import dev.lelonio.square.ui.components.Artwork
 import dev.lelonio.square.ui.components.PlaylistCover
 import dev.lelonio.square.ui.components.FluidifyWordmark
 import androidx.compose.ui.layout.layout
-import androidx.compose.ui.unit.Constraints
 import dev.lelonio.square.ui.glass.LiquidButton
 import dev.lelonio.square.ui.glass.pressable
 import dev.lelonio.square.ui.player.GlassFilm
@@ -119,6 +124,13 @@ private enum class Feed(@StringRes val label: Int) {
 fun HomeScreen(
     state: MainViewModel.UiState,
     contentPadding: PaddingValues,
+    /**
+     * The artwork wash on its own, for the bar that takes the mark over.
+     *
+     * Not the page-wide recording: that one contains this bar, and glass
+     * blurring a photograph of itself is the one thing this material cannot do.
+     */
+    ground: dev.antigravity.fluidengine.ui.fluid.GlassBackdropState,
     onLogIn: () -> Unit,
     onRetry: () -> Unit,
     onLogOut: () -> Unit,
@@ -204,21 +216,50 @@ fun HomeScreen(
             }
             val listState = rememberLazyListState()
 
-            // How far the header has collapsed, 0 to 1.
+            // Where the mark rests, and how far it has to go.
+            //
+            // The header is a list item now, so its position is the scroll's to
+            // decide; the only thing measured here is where it starts, and it is
+            // only believed while the list is actually at its top. Everything
+            // else — the travel, the progress, the docked place — falls out of
+            // that one number and the bar's own height.
+            val density = LocalDensity.current
+            val statusBar = contentPadding.calculateTopPadding()
+            val barHeight = statusBar +
+                dev.antigravity.fluidengine.ui.fluid.FluidScreenDefaults.ControlRowHeight
+            var restingTopPx by remember { mutableFloatStateOf(Float.NaN) }
+            var lockupHeightPx by remember { mutableFloatStateOf(0f) }
+            val dockedCentrePx = with(density) {
+                (statusBar + dev.antigravity.fluidengine.ui.fluid.FluidScreenDefaults
+                    .ControlRowHeight / 2).toPx()
+            }
+            // The distance between the mark's two homes, measured centre to
+            // centre. NaN until the header has been laid out once at the top.
+            val travelPx = restingTopPx + lockupHeightPx / 2f - dockedCentrePx
+
+            // How far along that travel the scroll has taken it, 0 to 1.
             //
             // Read from the list rather than driven by a nested-scroll
-            // connection: the header is a sibling of the list, not part of it,
-            // so it never consumes scroll and the list keeps its own fling
-            // untouched. Past the first item the header is simply fully
-            // collapsed — asking for the exact offset of something scrolled far
-            // off screen means measuring items that no longer exist.
-            val collapse by remember {
+            // connection: the list keeps its own fling untouched. Past the first
+            // item the mark is simply docked — asking for the exact offset of
+            // something scrolled far off screen means measuring items that no
+            // longer exist.
+            val collapse by remember(travelPx) {
                 derivedStateOf {
                     if (listState.firstVisibleItemIndex > 0) 1f
-                    else (listState.firstVisibleItemScrollOffset / COLLAPSE_DISTANCE_PX)
-                        .coerceIn(0f, 1f)
+                    else if (!travelPx.isFinite() || travelPx <= 1f) 0f
+                    else (listState.firstVisibleItemScrollOffset / travelPx).coerceIn(0f, 1f)
                 }
             }
+
+            // What this page's own body looks like, on its own. With the ground
+            // under it that is an opaque image containing no chrome, which is
+            // the only thing the bar above is allowed to blur.
+            val bodyGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
+            val barBackdrop = dev.antigravity.fluidengine.ui.fluid.rememberCombinedGlassBackdrop(
+                ground,
+                bodyGlass,
+            )
 
             // Back to the top when the view changes. The lists have nothing in
             // common, so keeping the old offset drops the new one in the middle
@@ -239,27 +280,7 @@ fun HomeScreen(
 
             val overscroll = rememberFluidEdgeOverscroll()
 
-            Column(Modifier.fillMaxSize()) {
-                Header(
-                    name = state.displayName,
-                    avatarUrl = state.avatarUrl,
-                    service = R.string.backend_spotify,
-                    serviceIcon = PhosphorIcons.Regular.SpotifyLogo,
-                    collapse = { collapse },
-                    // The chip that is lit is the one that was tapped. It used
-                    // to follow whichever section the scroll had reached, which
-                    // read as a control changing itself: the chips look like a
-                    // filter, so a lit one has to mean "this is what you are
-                    // looking at because you asked for it".
-                    highlighted = filter,
-                    backdrop = backdrop,
-                    topPadding = contentPadding.calculateTopPadding(),
-                    onFilter = { filterName = it.name },
-                    onOpenSettings = onOpenSettings,
-                    friends = friends,
-                    onOpenFriends = onOpenFriends,
-                )
-
+            Box(Modifier.fillMaxSize()) {
                 AnimatedContent(
                     targetState = filter,
                     transitionSpec = {
@@ -288,34 +309,56 @@ fun HomeScreen(
                 LazyColumn(
                     Modifier
                         .fillMaxSize()
-                        // Fades the first rows out under the header instead of
-                        // cutting them off square. DstIn needs a layer of its
-                        // own, or the mask would erase the page behind the list
-                        // as well.
-                        .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-                        .drawWithContent {
-                            drawContent()
-                            drawRect(
-                                brush = Brush.verticalGradient(
-                                    0f to Color.Transparent,
-                                    FADE_FRACTION to Color.Black,
-                                ),
-                                blendMode = BlendMode.DstIn,
-                            )
-                        }
                         .fluidOverscrollEdge(overscroll)
-                        // After the mask, deliberately: the rows travel, the
-                        // fade under the header does not — it belongs to the
-                        // header, not to what is scrolling past it.
+                        .glassBackdropSource(bodyGlass)
                         .fluidOverscrollContent(overscroll),
                     state = listState,
-                    // The header already covers the status bar, so only the
-                    // bottom inset is left for the list.
+                    // The bar over this list is glass, not a lid: it has to have
+                    // the page's own top under it to refract, so the list starts
+                    // at the top of the screen and the header inside it makes
+                    // the room instead.
                     contentPadding = PaddingValues(
                         bottom = contentPadding.calculateBottomPadding(),
                     ),
                     overscrollEffect = null,
                 ) {
+                    // The header, as the first thing IN the page rather than
+                    // chrome bolted over it. It used to shrink in place and stay
+                    // — which meant the filters were always reachable and the
+                    // top of the page was never the top of the page. Now it goes
+                    // where the page goes, and the mark it carries is picked up
+                    // by the bar on the way past.
+                    item(key = "header", contentType = "header") {
+                        Header(
+                            name = state.displayName,
+                            avatarUrl = state.avatarUrl,
+                            service = R.string.backend_spotify,
+                            serviceIcon = PhosphorIcons.Regular.SpotifyLogo,
+                            // The chip that is lit is the one that was tapped.
+                            // It used to follow whichever section the scroll had
+                            // reached, which read as a control changing itself:
+                            // the chips look like a filter, so a lit one has to
+                            // mean "this is what you are looking at because you
+                            // asked for it".
+                            highlighted = filter,
+                            backdrop = backdrop,
+                            topPadding = barHeight,
+                            onFilter = { filterName = it.name },
+                            onOpenSettings = onOpenSettings,
+                            friends = friends,
+                            onOpenFriends = onOpenFriends,
+                            onLockupPlaced = { top, height ->
+                                // Believed only at the top: everywhere else this
+                                // is the scroll's answer, not the layout's.
+                                if (listState.firstVisibleItemIndex == 0 &&
+                                    listState.firstVisibleItemScrollOffset == 0
+                                ) {
+                                    restingTopPx = top
+                                    lockupHeightPx = height
+                                }
+                            },
+                        )
+                    }
                 // Spotify's own shelves come first, because they are what the
                 // listener recognises as their home and the only rows here that
                 // this app could not have built itself. What the account has
@@ -479,18 +522,125 @@ fun HomeScreen(
                 item(contentType = "tail") { Box(Modifier.height(24.dp)) }
                 }
                 }
+
+                // The bar the mark docks into: clear at the top of the page,
+                // glass once the page has moved under the status bar.
+                HomeTopBar(
+                    backdrop = barBackdrop,
+                    plate = backdrop,
+                    height = barHeight,
+                    statusBar = statusBar,
+                    collapse = { collapse },
+                    restingTopPx = { restingTopPx },
+                    contentTranslation = { overscroll.offsetPx },
+                )
             }
         }
     }
 }
 
 /**
- * Name, picture and filters, always on screen.
+ * The mark, drawn once, on its way between its two homes.
  *
- * It shrinks rather than sliding away: the filter chips are a control, and a
- * control that has to be scrolled back to before it can be used may as well not
- * be there. What collapses is only the part that is decoration — the greeting
- * line and the size of the name.
+ * The copy in the header only reserves the room; this is the one that is seen,
+ * transformed onto the resting place while the page is at its top and onto the
+ * middle of the bar once it has scrolled away. One piece travelling, never two
+ * taking turns — the same handover the engine gives a title, for a mark that is
+ * drawn rather than typed and therefore has no baseline to hang it on.
+ */
+@Composable
+private fun HomeTopBar(
+    backdrop: dev.antigravity.fluidengine.ui.fluid.GlassBackdropState,
+    plate: Backdrop,
+    height: Dp,
+    statusBar: Dp,
+    collapse: () -> Float,
+    restingTopPx: () -> Float,
+    contentTranslation: () -> Float,
+) {
+    val density = LocalDensity.current
+    val restingLeftPx = with(density) { HeaderSidePadding.toPx() }
+    val dockedTopPx = with(density) {
+        (statusBar + (dev.antigravity.fluidengine.ui.fluid.FluidScreenDefaults.ControlRowHeight -
+            LockupHeight * DockedLockupScale) / 2).toPx()
+    }
+
+    Box(
+        Modifier
+            .fillMaxWidth()
+            .height(height + dev.antigravity.fluidengine.ui.fluid.FluidScreenDefaults.GlassFadeTail),
+    ) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .glassSurface(
+                    state = backdrop,
+                    tint = dev.antigravity.fluidengine.ui.fluid.GlassDefaults.barTint(),
+                    edge = dev.antigravity.fluidengine.ui.fluid.GlassEdge.None,
+                    falloff = dev.antigravity.fluidengine.ui.fluid.GlassFalloff.FadeDown,
+                    // A dead zone first: a bar that frosts on the first pixel of
+                    // a scroll frosts on a touch that was going nowhere.
+                    intensity = {
+                        val p = ((collapse() - 0.16f) / 0.84f).coerceIn(0f, 1f)
+                        p * p * (3f - 2f * p)
+                    },
+                ),
+        )
+        // Measured so the docked pose can be centred on the page rather than on
+        // a guess at how wide the mark is.
+        var lockupWidthPx by remember { mutableFloatStateOf(0f) }
+        val fullWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
+        AppLockup(
+            iconSize = 44.dp,
+            nameHeight = 22.dp,
+            plate = plate,
+            modifier = Modifier
+                .onSizeChanged { lockupWidthPx = it.width.toFloat() }
+                .graphicsLayer {
+                    val p = collapse().coerceIn(0f, 1f)
+                    val eased = p * p * (3f - 2f * p)
+                    val scale = 1f - (1f - DockedLockupScale) * eased
+                    transformOrigin = TransformOrigin(0f, 0f)
+                    scaleX = scale
+                    scaleY = scale
+                    val centred = (fullWidthPx - lockupWidthPx * scale) / 2f
+                    translationX = restingLeftPx + (centred - restingLeftPx) * eased
+                    val resting = restingTopPx()
+                    val from = if (resting.isFinite()) resting else dockedTopPx
+                    // Never above the docked place: the mark is content while it
+                    // is in the page, and content may ride the elastic edge, but
+                    // nothing rides it into the status bar.
+                    translationY = (
+                        dockedTopPx + (from - dockedTopPx) * (1f - p) +
+                            contentTranslation() * (1f - eased)
+                        ).coerceAtLeast(dockedTopPx)
+                },
+        )
+    }
+}
+
+/** How much smaller the mark is once it has docked in the bar. */
+private const val DockedLockupScale = 0.62f
+
+/** The mark's own height in the header, icon included. */
+private val LockupHeight = 44.dp
+
+/** Where the header's row starts, which is where the mark rests. */
+private val HeaderSidePadding = 24.dp
+
+/**
+ * Name, picture and filters, at the top of the page.
+ *
+ * It used to shrink in place and stay, on the argument that the filter chips are
+ * a control and a control you have to scroll back to may as well not be there.
+ * The cost was that the top of the page was never the top of the page: three
+ * rows of chrome sat over every list, permanently. It scrolls away now, and the
+ * way back is a flick — the bar below unfolds on the first upward scroll rather
+ * than only at the top, so the chips are one gesture from anywhere.
+ *
+ * What it keeps is the mark's resting place, reported through [onLockupPlaced]:
+ * the copy here only holds the room, and the one that is seen is drawn by the
+ * bar. See [HomeTopBar].
  */
 @Composable
 private fun Header(
@@ -502,16 +652,13 @@ private fun Header(
     /** Its mark, so the source is recognisable before the line is read. */
     serviceIcon: androidx.compose.ui.graphics.vector.ImageVector,
     /**
-     * How far collapsed, as a lambda rather than a value.
+     * Where the mark ended up, in the window's own pixels, and how tall it is.
      *
-     * Deliberate, and the whole reason this scrolls smoothly: a `Float`
-     * parameter is read when the header is composed, so every pixel of scroll
-     * invalidated the composable that produced it — the home page, list content
-     * lambdas included — several dozen times a second. Read inside `layout` and
-     * `graphicsLayer` blocks instead, the same movement costs a measure pass and
-     * no recomposition at all.
+     * Reported rather than computed: the row above it is a line of type whose
+     * height is the font's business, not this file's, and a resting place
+     * guessed from paddings is a resting place that drifts with the text size.
      */
-    collapse: () -> Float,
+    onLockupPlaced: (top: Float, height: Float) -> Unit,
     /** The chip drawn as active: the one that was tapped. */
     highlighted: Feed,
     backdrop: Backdrop,
@@ -547,15 +694,7 @@ private fun Header(
             Modifier
                 .fillMaxWidth()
                 .padding(start = 24.dp, end = 24.dp)
-                // The top padding, as a layout pass: `padding()` takes a Dp,
-                // which would have to be computed while composing.
-                .layout { measurable, constraints ->
-                    val top = lerp(18.dp, 2.dp, collapse()).roundToPx()
-                    val placeable = measurable.measure(constraints)
-                    layout(placeable.width, placeable.height + top) {
-                        placeable.place(0, top)
-                    }
-                },
+                .padding(top = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Column(Modifier.weight(1f)) {
@@ -570,20 +709,7 @@ private fun Header(
                 //
                 // Height goes with the alpha, so the collapsed header is a bar
                 // rather than a bar with a blank line in it.
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier
-                        .layout { measurable, constraints ->
-                            val placeable = measurable.measure(constraints)
-                            val height = ((1f - collapse()) * placeable.height).toInt()
-                            layout(placeable.width, height) { placeable.place(0, 0) }
-                        }
-                        .graphicsLayer {
-                            clip = true
-                            alpha = (1f - collapse() * 1.6f).coerceIn(0f, 1f)
-                            transformOrigin = TransformOrigin(0f, 0f)
-                        },
-                ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Icon(
                         serviceIcon,
                         contentDescription = stringResource(service),
@@ -608,6 +734,10 @@ private fun Header(
                 // reading at a glance; it shrinks a little as the header
                 // collapses rather than leaving, because a bar with nothing in
                 // it says nothing about where you are.
+                // The room the mark needs, and nothing else: the visible copy
+                // is the bar's, transformed onto exactly this place while the
+                // page is at its top. Two copies drawn at once is the flicker
+                // this arrangement exists to avoid.
                 AppLockup(
                     // Larger than the bare mark was: the glass around it is
                     // part of the shape now, and the drawing inside has to stay
@@ -617,12 +747,13 @@ private fun Header(
                     plate = backdrop,
                     modifier = Modifier
                         .padding(top = 4.dp)
-                        .graphicsLayer {
-                            val scale = 1f - 0.22f * collapse()
-                            scaleX = scale
-                            scaleY = scale
-                            transformOrigin = TransformOrigin(0f, 0.5f)
-                        },
+                        .onGloballyPositioned {
+                            onLockupPlaced(
+                                it.positionInWindow().y,
+                                it.size.height.toFloat(),
+                            )
+                        }
+                        .graphicsLayer { alpha = 0f },
                 )
             }
 
@@ -650,11 +781,7 @@ private fun Header(
                     .padding(start = 14.dp)
                     // Measured from the scroll rather than sized in
                     // composition; see the note on `collapse`.
-                    .layout { measurable, _ ->
-                        val side = lerp(46.dp, 36.dp, collapse()).roundToPx()
-                        val placeable = measurable.measure(Constraints.fixed(side, side))
-                        layout(side, side) { placeable.place(0, 0) }
-                    }
+                    .size(46.dp)
                     .clip(CircleShape)
                     .pressable(onOpenSettings, pressedScale = 0.90f)
                     .softShadow(CircleShape, elevation = 10.dp),
@@ -1057,21 +1184,8 @@ private fun greeting(): Int = when (Calendar.getInstance().get(Calendar.HOUR_OF_
 /** A harder film for the chip that is on; see the note at the call site. */
 private val SelectedFilm = Color.White.copy(alpha = 0.26f)
 
-/**
- * How far the list scrolls before the header is fully collapsed, in pixels.
- *
- * Pixels rather than dp because it is compared against a scroll offset, which
- * the list reports in pixels; converting per frame to compare two numbers would
- * be work for nothing.
- */
-private const val COLLAPSE_DISTANCE_PX = 140f
-
-
 /** Comfortably under the 640px Spotify serves, so it is never upscaled. */
 private val COVER_SIZE = 210.dp
-
-/** How much of the list's height the fade under the header covers. */
-private const val FADE_FRACTION = 0.045f
 
 private const val FEED_SIZE = 6
 private const val CAROUSEL_SIZE = 8
