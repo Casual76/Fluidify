@@ -37,6 +37,13 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.activity.compose.BackHandler
+import androidx.compose.foundation.lazy.rememberLazyListState
+import dev.antigravity.fluidengine.ui.fluid.FluidCollapsingTitle
+import dev.antigravity.fluidengine.ui.fluid.FluidCollapsingTopBar
+import dev.antigravity.fluidengine.ui.fluid.fluidTitleCollapseOrigin
+import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
+import dev.antigravity.fluidengine.ui.fluid.rememberFluidTitleCollapse
+import dev.antigravity.fluidengine.ui.fluid.rememberFluidTitleSnapFling
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -88,6 +95,14 @@ fun SettingsScreen(
     webApi: MainViewModel.WebApiState,
     contentPadding: PaddingValues,
     backdrop: Backdrop,
+    /**
+     * The artwork wash on its own.
+     *
+     * Combined here with a recording of this page's own list, which is what the
+     * docked title's bar refracts. It cannot be the app's page-wide recording:
+     * that one contains this bar.
+     */
+    ground: dev.antigravity.fluidengine.ui.fluid.GlassBackdropState,
     deviceName: String,
     onClientIdChange: (String) -> Unit,
     onConnectWebApi: () -> Unit,
@@ -131,36 +146,46 @@ fun SettingsScreen(
     // FluidOverscroll. Two modifiers on purpose: only the content travels.
     val overscroll = rememberFluidEdgeOverscroll()
 
+    // The heading belongs to the page, not to the window.
+    //
+    // It used to be a row inside the list that simply scrolled away and left
+    // nothing behind, so a page scrolled down had no name at all. Now it is the
+    // list's first item and the bar takes it over as it goes: one piece of type
+    // travelling from one home to the other, which is the engine's own handover
+    // rather than an imitation of it.
+    val listState = rememberLazyListState()
+    val title = stringResource(open?.title ?: R.string.settings)
+    val collapse = rememberFluidTitleCollapse(title, listState)
+    // What this page's own body looks like, recorded on its own. Combined with
+    // the ground it makes an opaque image with no chrome in it, which is the
+    // one thing the bar above is allowed to blur.
+    val bodyGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
+    val barBackdrop = dev.antigravity.fluidengine.ui.fluid.rememberCombinedGlassBackdrop(
+        ground,
+        bodyGlass,
+    )
+
+    Box(
+        Modifier
+            .fillMaxSize()
+            .fluidTitleCollapseOrigin(collapse),
+    ) {
     LazyColumn(
         Modifier
             .fillMaxSize()
             .fluidOverscrollEdge(overscroll)
+            .glassBackdropSource(bodyGlass)
             .fluidOverscrollContent(overscroll),
+        state = listState,
+        flingBehavior = rememberFluidTitleSnapFling(collapse),
         contentPadding = PaddingValues(
-            top = contentPadding.calculateTopPadding(),
+            top = dev.antigravity.fluidengine.ui.fluid.FluidScreenDefaults.topBarHeight(),
             bottom = contentPadding.calculateBottomPadding() + 24.dp,
         ),
         overscrollEffect = null,
     ) {
         item("top") {
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .padding(start = 16.dp, end = 24.dp, top = 8.dp, bottom = 4.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                LiquidButton(
-                    onClick = { if (open != null) open = null else onBack() },
-                    backdrop = backdrop,
-                ) {
-                    Icon(PhosphorIcons.Regular.ArrowLeft, contentDescription = stringResource(R.string.back))
-                }
-                Text(
-                    stringResource(open?.title ?: R.string.settings),
-                    style = MaterialTheme.typography.displayLarge,
-                    modifier = Modifier.padding(start = 14.dp),
-                )
-            }
+            FluidCollapsingTitle(title, collapse)
         }
 
         if (open == null) item("pages") {
@@ -375,6 +400,19 @@ fun SettingsScreen(
                 }
             }
         }
+    }
+
+        // Last, so it stands over the list rather than under it. Clear until
+        // the heading reaches it: a bar that is already glass at the top of a
+        // page is a bar the page has no reason to have.
+        FluidCollapsingTopBar(
+            title = title,
+            collapse = collapse,
+            backdrop = barBackdrop,
+            modifier = Modifier.align(Alignment.TopCenter),
+            onBack = { if (open != null) open = null else onBack() },
+            contentTranslation = { overscroll.offsetPx },
+        )
     }
 }
 

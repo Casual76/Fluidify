@@ -477,6 +477,18 @@ fun SquareApp(
     // the modal host, the morph menu, the lifted context-menu rows. Recorded
     // beside the vendored layer until the whole glass stack is the engine's.
     val pageGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
+
+    /**
+     * The artwork wash on its own, with nothing of the pages on top of it.
+     *
+     * `pageGlass` records the ground *and* the screen standing on it, which is
+     * what every surface floating over a page wants — and exactly what a bar
+     * belonging to a page cannot have: that bar is inside the recording, so it
+     * would be blurring a picture of itself. A page's own chrome combines this
+     * with a recording of that page's list instead, which is a pair that adds
+     * up to an opaque image and contains no chrome at all.
+     */
+    val groundGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
     val modalHost = dev.antigravity.fluidengine.ui.fluid.rememberFluidGlassModalHostState()
     val morphMenu = dev.antigravity.fluidengine.ui.fluidphysics.rememberFluidMorphMenuState()
 
@@ -937,7 +949,9 @@ fun SquareApp(
                     Box(
                         Modifier
                             .fillMaxSize()
-                            .layerBackdrop(artBackdrop),
+                            .layerBackdrop(artBackdrop)
+                            // The engine's copy of the same ground; see groundGlass.
+                            .glassBackdropSource(groundGlass),
                     ) {
                         AppBackdrop(playback.artworkUrl, alive = playback.isPlaying)
                     }
@@ -1117,6 +1131,7 @@ fun SquareApp(
                                 webApi = webApi,
                                 contentPadding = settingsPadding,
                                 backdrop = artBackdrop,
+                                ground = groundGlass,
                                 deviceName = android.os.Build.MODEL ?: "Android",
                                 onClientIdChange = viewModel::onWebApiClientIdChange,
                                 onConnectWebApi = viewModel::connectWebApi,
