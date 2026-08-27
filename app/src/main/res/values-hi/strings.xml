@@ -328,4 +328,7 @@
     <string name="quality_link">कनेक्शन</string>
     <string name="quality_link_value">%1$d kbps, इसलिए %2$d kbps ऑडियो</string>
     <string name="quality_link_unknown">अज्ञात, इसलिए %1$d kbps ऑडियो</string>
+    <string name="canvas">Canvas</string>
+    <string name="canvas_show">ट्रैक का Canvas दिखाएँ</string>
+    <string name="canvas_note">कुछ ट्रैक कवर की जगह जो छोटा क्लिप लाते हैं। बंद रखने पर डेटा और बैटरी बचती है।</string>
 </resources>

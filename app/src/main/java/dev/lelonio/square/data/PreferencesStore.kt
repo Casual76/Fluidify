@@ -81,6 +81,22 @@ class PreferencesStore(context: Context) {
         prefs.edit().putBoolean(KEY_PLAYER_OPEN, value).apply()
     }
 
+    private val _canvasEnabled = MutableStateFlow(prefs.getBoolean(KEY_CANVAS, true))
+
+    /**
+     * Whether a track's Canvas is fetched and shown behind the player.
+     *
+     * On by default — it is the one thing the player has that a list of songs
+     * does not. Off is for data, for battery, and for anyone who would rather
+     * look at the cover.
+     */
+    val canvasEnabled: StateFlow<Boolean> = _canvasEnabled.asStateFlow()
+
+    fun setCanvasEnabled(value: Boolean) {
+        _canvasEnabled.value = value
+        prefs.edit().putBoolean(KEY_CANVAS, value).apply()
+    }
+
     /** When the manifest was last asked about a newer release. See [UpdateChecker]. */
     fun lastUpdateCheck(): Long = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
 
@@ -102,6 +118,7 @@ class PreferencesStore(context: Context) {
 
     private companion object {
         const val FILE_NAME = "square_preferences"
+        const val KEY_CANVAS = "canvas"
         const val KEY_TRACK_SORT = "track_sort"
         const val KEY_TRACK_DESC = "track_sort_descending"
         const val KEY_DEVICE_ID = "device_id"

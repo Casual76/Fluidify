@@ -1,5 +1,8 @@
 package dev.lelonio.square.ui.player
 
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -56,6 +59,13 @@ fun CanvasSurface(
 ) {
     val context = LocalContext.current
 
+    // Whether this clip has ever put a picture on screen. Until it has, the
+    // player is allowed to run whatever the music is doing: a decoder asked to
+    // stay paused from the first frame never renders one, so opening the player
+    // on a paused track showed nothing at all. Muted from the start, so the
+    // moment of motion this costs is silent and lasts one frame.
+    var shown by remember(url) { mutableStateOf(false) }
+
     val exoPlayer = remember(url) {
         ExoPlayer.Builder(context).build().apply {
             setMediaItem(MediaItem.fromUri(url))
@@ -67,14 +77,21 @@ fun CanvasSurface(
         }
     }
 
-    LaunchedEffect(exoPlayer, isPlaying) {
-        exoPlayer.playWhenReady = isPlaying
+    LaunchedEffect(exoPlayer, isPlaying, shown) {
+        exoPlayer.playWhenReady = isPlaying || !shown
     }
 
     val ready = rememberUpdatedState(onFirstFrame)
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
             override fun onRenderedFirstFrame() {
+                // The picture exists now, so the clip goes back to following
+                // the music — and rewinds, since what it played to get here is
+                // a moment nobody asked to watch.
+                if (!shown) {
+                    shown = true
+                    exoPlayer.seekTo(0L)
+                }
                 ready.value()
             }
         }

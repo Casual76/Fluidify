@@ -444,7 +444,11 @@ fun PlayerScreen(
             // no different from a playing one held on a slow shot, so pausing
             // read as the video having stalled rather than as playback having
             // stopped. Dimming it says the same thing the picture cannot.
-            if (canvas != null) {
+            // And only once there is a picture to darken. Drawn on `canvas`
+            // alone, this painted 55% black over a clip that had not rendered
+            // a single frame yet — which is the whole of why opening the player
+            // on a paused track showed a black screen.
+            if (canvas != null && canvasReady) {
                 // Darkened for a paused track and for an open panel alike. Both
                 // are the same statement — the clip is not what you are looking
                 // at right now — and the blur alone left a bright moving picture

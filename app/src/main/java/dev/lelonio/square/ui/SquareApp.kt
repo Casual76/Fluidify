@@ -566,10 +566,14 @@ fun SquareApp(
     // ordinary answer and the player falls back to the cover.
     // Canvas is Spotify's own, served by its access point: on another source
     // there is nobody to ask.
-    LaunchedEffect(playback.mediaId) {
+    val canvasEnabled by preferences.canvasEnabled.collectAsStateWithLifecycle()
+
+    LaunchedEffect(playback.mediaId, canvasEnabled) {
         val uri = playback.mediaId
+        // Cleared as well as not asked for: turning the setting off while one
+        // is on screen has to take it away, not leave the last one behind.
         canvas = null
-        if (uri != null) {
+        if (uri != null && canvasEnabled) {
             // After the song, not beside it: a Canvas is a video, and fetching
             // one while the track is still arriving takes the connection the
             // track needs. See awaitAudible.

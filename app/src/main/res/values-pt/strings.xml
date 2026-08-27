@@ -313,4 +313,7 @@
     <string name="quality_link">Ligação</string>
     <string name="quality_link_value">%1$d kbps, portanto áudio a %2$d kbps</string>
     <string name="quality_link_unknown">desconhecida, portanto áudio a %1$d kbps</string>
+    <string name="canvas">Canvas</string>
+    <string name="canvas_show">Mostrar o Canvas da faixa</string>
+    <string name="canvas_note">O clipe curto que algumas faixas trazem em vez de capa. Desligado poupa dados e bateria.</string>
 </resources>

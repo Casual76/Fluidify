@@ -334,4 +334,7 @@
     <string name="quality_link">Connection</string>
     <string name="quality_link_value">%1$d kbps, so %2$d kbps audio</string>
     <string name="quality_link_unknown">unknown, so %1$d kbps audio</string>
+    <string name="canvas">Canvas</string>
+    <string name="canvas_show">Show a track\'s Canvas</string>
+    <string name="canvas_note">The short looping clip some tracks ship instead of a cover. Off saves data and battery.</string>
 </resources>

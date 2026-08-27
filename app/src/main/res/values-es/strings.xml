@@ -313,4 +313,7 @@
     <string name="quality_link">Conexión</string>
     <string name="quality_link_value">%1$d kbps, así que audio a %2$d kbps</string>
     <string name="quality_link_unknown">desconocida, así que audio a %1$d kbps</string>
+    <string name="canvas">Canvas</string>
+    <string name="canvas_show">Mostrar el Canvas del tema</string>
+    <string name="canvas_note">El clip breve que algunos temas traen en lugar de portada. Apagado ahorra datos y batería.</string>
 </resources>

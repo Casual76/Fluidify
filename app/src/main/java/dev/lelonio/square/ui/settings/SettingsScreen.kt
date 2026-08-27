@@ -245,6 +245,10 @@ fun SettingsScreen(
             CrossfadeSection()
         }
 
+        if (open == SettingsPage.Playback) item("canvas") {
+            CanvasSection()
+        }
+
         // The effects run on our own output, so this one holds for both backends.
         if (open == SettingsPage.Playback) item("effect-quality") {
             EffectQualitySection()
@@ -420,6 +424,48 @@ private fun PageRow(title: String, summary: String, onClick: () -> Unit) {
  * fourth: this client is served Ogg Vorbis at 320 kbps and below, never a
  * lossless file, so a "lossless" row would be a promise nothing can keep.
  */
+/**
+ * Whether the player shows a track's Canvas.
+ *
+ * Under playback rather than under the app's appearance: a Canvas is a piece
+ * of the record, fetched over the network and decoded like audio, not a
+ * decoration this app draws.
+ */
+@Composable
+private fun CanvasSection() {
+    val context = LocalContext.current
+    val store = remember(context) {
+        (context.applicationContext as dev.lelonio.square.SquareApplication).preferences
+    }
+    val enabled by store.canvasEnabled.collectAsStateWithLifecycle()
+
+    Section(stringResource(R.string.canvas)) {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 18.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                stringResource(R.string.canvas_show),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+            dev.antigravity.fluidengine.ui.fluid.FluidSwitch(
+                checked = enabled,
+                onCheckedChange = store::setCanvasEnabled,
+            )
+        }
+        RowDivider()
+        Text(
+            stringResource(R.string.canvas_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = InkDim,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+        )
+    }
+}
+
 @Composable
 private fun EffectQualitySection() {
     val context = LocalContext.current

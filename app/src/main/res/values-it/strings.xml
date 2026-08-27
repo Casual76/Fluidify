@@ -314,4 +314,7 @@
     <string name="quality_link">Connessione</string>
     <string name="quality_link_value">%1$d kbps, quindi audio a %2$d kbps</string>
     <string name="quality_link_unknown">sconosciuta, quindi audio a %1$d kbps</string>
+    <string name="canvas">Canvas</string>
+    <string name="canvas_show">Mostra il Canvas del brano</string>
+    <string name="canvas_note">Il breve video che alcuni brani portano al posto della copertina. Spento risparmia dati e batteria.</string>
 </resources>

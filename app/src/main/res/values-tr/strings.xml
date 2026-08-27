@@ -328,4 +328,7 @@
     <string name="quality_link">Bağlantı</string>
     <string name="quality_link_value">%1$d kbps, yani %2$d kbps ses</string>
     <string name="quality_link_unknown">bilinmiyor, yani %1$d kbps ses</string>
+    <string name="canvas">Canvas</string>
+    <string name="canvas_show">Parçanın Canvas\'ını göster</string>
+    <string name="canvas_note">Bazı parçaların kapak yerine getirdiği kısa klip. Kapalıyken veri ve pil harcamaz.</string>
 </resources>

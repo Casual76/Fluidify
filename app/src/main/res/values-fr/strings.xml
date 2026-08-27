@@ -313,4 +313,7 @@
     <string name="quality_link">Connexion</string>
     <string name="quality_link_value">%1$d kbps, donc audio à %2$d kbps</string>
     <string name="quality_link_unknown">inconnue, donc audio à %1$d kbps</string>
+    <string name="canvas">Canvas</string>
+    <string name="canvas_show">Afficher le Canvas du titre</string>
+    <string name="canvas_note">Le court clip que certains titres portent à la place d\'une pochette. Désactivé, il économise données et batterie.</string>
 </resources>
