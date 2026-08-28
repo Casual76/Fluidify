@@ -55,6 +55,8 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.layout.width
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -640,10 +642,12 @@ private fun Header(
             // Scrollable, because there are five of them now and "Scaricati"
             // does not fit across a phone beside the other four. The sort
             // button stays put at the end of the row, where it has always been.
+            val chipScroll = rememberScrollState()
             Row(
                 Modifier
                     .weight(1f)
-                    .horizontalScroll(rememberScrollState()),
+                    .fadingSides(chipScroll)
+                    .horizontalScroll(chipScroll),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -683,6 +687,54 @@ private fun Header(
         }
     }
 }
+
+/**
+ * Softens whichever end of a scrolling row still has something past it.
+ *
+ * `horizontalScroll` clips at its own bounds, and here that bound is the sort
+ * button rather than the edge of the screen — so a chip running past it was cut
+ * clean down the middle, in the middle of the page. A hard edge there reads as a
+ * mistake; a soft one reads as what it is, which is more to come.
+ *
+ * Keyed on the scroll position rather than always on: at either end there is
+ * nothing past it to suggest, and fading the last chip there would only make it
+ * look dim for no reason.
+ */
+private fun Modifier.fadingSides(state: androidx.compose.foundation.ScrollState, width: Dp = 28.dp) =
+    this
+        // The mask is a blend against what this row has already drawn, so the
+        // row needs a buffer of its own to blend into. Without it the DstIn
+        // would punch through everything underneath as well.
+        .graphicsLayer {
+            compositingStrategy = androidx.compose.ui.graphics.CompositingStrategy.Offscreen
+        }
+        .drawWithContent {
+            drawContent()
+            val edge = width.toPx()
+            if (state.value > 0) {
+                drawRect(
+                    brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        listOf(Color.Transparent, Color.Black),
+                        startX = 0f,
+                        endX = edge,
+                    ),
+                    size = androidx.compose.ui.geometry.Size(edge, size.height),
+                    blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
+                )
+            }
+            if (state.value < state.maxValue) {
+                drawRect(
+                    brush = androidx.compose.ui.graphics.Brush.horizontalGradient(
+                        listOf(Color.Black, Color.Transparent),
+                        startX = size.width - edge,
+                        endX = size.width,
+                    ),
+                    topLeft = androidx.compose.ui.geometry.Offset(size.width - edge, 0f),
+                    size = androidx.compose.ui.geometry.Size(edge, size.height),
+                    blendMode = androidx.compose.ui.graphics.BlendMode.DstIn,
+                )
+            }
+        }
 
 @Composable
 private fun GridTile(
