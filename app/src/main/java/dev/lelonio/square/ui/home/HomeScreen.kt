@@ -126,6 +126,15 @@ private enum class Feed(@StringRes val label: Int) {
  * The same number as the library page, deliberately: they are the same gesture
  * on two screens and a listener moving between them should not feel a seam.
  */
+/**
+ * What the header is seated on: the darkest point of the wash under it.
+ *
+ * Named because two places have to agree on it — the header's own gradient, and
+ * the strip an overscroll opens above the page, which is filled with this so the
+ * two meet without a seam.
+ */
+private val HEADER_SEAT = Color.Black.copy(alpha = 0.45f)
+
 private const val FILTER_FADE_MS = 180
 
 @Composable
@@ -289,6 +298,34 @@ fun HomeScreen(
             val overscroll = rememberFluidEdgeOverscroll()
 
             Box(Modifier.fillMaxSize()) {
+                // The strip a pull opens above the page, filled to match it.
+                //
+                // The header carries its own seating — a wash of black fading
+                // down into nothing, so it sits on the page rather than floating
+                // over whatever has scrolled under it — and the header is the
+                // first item *in* the list. `fluidOverscrollContent` translates
+                // the list, so that wash travels with it, and a pull uncovers a
+                // strip of unwashed backdrop with a hard edge along the top of
+                // the header. Caught by holding the gesture rather than flinging
+                // it: `input swipe` lets go, and the strip is only there while
+                // the finger is down.
+                //
+                // Nothing the list draws can reach up there — the translation
+                // moves its clip along with everything else — so the strip is
+                // filled here, outside the layer that travels, which is exactly
+                // where the engine's `fluidOverscrollContent` says an opaque
+                // background belongs. Zero-height at rest, so nothing is drawn
+                // twice.
+                androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
+                    val band = overscroll.offsetPx
+                    if (band > 0f) {
+                        drawRect(
+                            color = HEADER_SEAT,
+                            size = androidx.compose.ui.geometry.Size(size.width, band),
+                        )
+                    }
+                }
+
                 AnimatedContent(
                     targetState = filter,
                     transitionSpec = {
@@ -722,7 +759,7 @@ private fun Header(
             // whatever the list has scrolled underneath it.
             .background(
                 Brush.verticalGradient(
-                    0f to Color.Black.copy(alpha = 0.45f),
+                    0f to HEADER_SEAT,
                     1f to Color.Transparent,
                 ),
             )
