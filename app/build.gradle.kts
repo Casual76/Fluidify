@@ -87,6 +87,13 @@ android {
                 storePassword = keystoreProperties.getProperty("storePassword")
                 keyAlias = keystoreProperties.getProperty("keyAlias")
                 keyPassword = keystoreProperties.getProperty("keyPassword")
+                // Also the old JAR signature, which nothing on a modern phone
+                // needs: v2 and v3 are what Android verifies, and they live in
+                // the zip's trailer rather than inside it. The Pampa Store's
+                // publisher decides whether an APK is signed by looking for
+                // META-INF/MANIFEST.MF, so without this the release is refused
+                // as unsigned before anyone looks at it.
+                enableV1Signing = true
             }
         }
     }
