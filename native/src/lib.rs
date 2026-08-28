@@ -6,6 +6,9 @@
 //! ownership to reason about.
 
 mod catalog;
+mod collection;
+mod downloads;
+mod playlists;
 mod engine;
 mod events;
 mod ffi;

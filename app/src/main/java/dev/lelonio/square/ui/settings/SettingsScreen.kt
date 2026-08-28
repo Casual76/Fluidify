@@ -49,7 +49,9 @@ import androidx.compose.ui.platform.LocalUriHandler
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.antigravity.fluidengine.ui.fluid.fluidLicensesSection
 import dev.lelonio.square.update.Updater
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -64,6 +66,7 @@ import com.adamglin.phosphoricons.regular.CaretUp
 import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.BuildConfig
 import dev.lelonio.square.R
+import dev.lelonio.square.ui.components.ConfirmDialog
 import dev.lelonio.square.data.AppLanguages
 import dev.lelonio.square.data.CrossfadeSteps
 import dev.lelonio.square.data.EffectQuality
@@ -112,6 +115,9 @@ fun SettingsScreen(
     /** The chosen language tag, empty for the phone's own. */
     language: String,
     onLanguage: (String) -> Unit,
+    /** Whether the phone's own music gets a shelf in the library. */
+    showLocalFiles: Boolean,
+    onShowLocalFiles: (Boolean) -> Unit,
     onBack: () -> Unit,
 ) {
     val ready = state as? MainViewModel.UiState.Ready
@@ -253,6 +259,23 @@ fun SettingsScreen(
                         stringResource(R.string.client_id),
                         webApi.clientId.take(8) + if (webApi.clientId.length > 8) "…" else "",
                     )
+                    // Only when there is something to gain by it. Offering a
+                    // sign-in to someone whose application already has every
+                    // permission is an invitation to break what works.
+                    if (webApi.incomplete) {
+                        RowDivider()
+                        ActionRow(
+                            stringResource(R.string.web_api_regrant),
+                            destructive = false,
+                            onClick = onConnectWebApi,
+                        )
+                        Text(
+                            stringResource(R.string.web_api_regrant_why),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = InkDim,
+                            modifier = Modifier.padding(horizontal = 18.dp).padding(bottom = 12.dp),
+                        )
+                    }
                     RowDivider()
                     ActionRow(stringResource(R.string.disconnect), destructive = true, onClick = onDisconnectWebApi)
                 } else {
@@ -274,6 +297,8 @@ fun SettingsScreen(
 
         if (open == SettingsPage.Playback) item("quality") {
             QualitySection()
+
+            DownloadsSection()
         }
 
         // Also librespot's: the crossfade is mixed by the engine's own player.
@@ -294,6 +319,20 @@ fun SettingsScreen(
         // under playback: nothing here touches a note of audio.
         if (open == SettingsPage.App) item("glass") {
             GlassSection(backdrop)
+        }
+
+        // Under the app rather than under playback for the same reason: this
+        // adds a shelf to the library, it does not change what anything sounds
+        // like.
+        if (open == SettingsPage.App) item("local-files") {
+            Section(stringResource(R.string.local_files)) {
+                SwitchRow(
+                    label = stringResource(R.string.show_local_files),
+                    note = stringResource(R.string.show_local_files_note),
+                    checked = showLocalFiles,
+                    onCheckedChange = onShowLocalFiles,
+                )
+            }
         }
 
         if (open == SettingsPage.App) item("language") {
@@ -627,6 +666,172 @@ private fun QualitySection() {
  * rather than theirs, and nothing here needs it badly enough to make it
  * automatic.
  */
+/**
+ * Everything about music kept on the phone.
+ *
+ * Sits under the streaming quality because the two are read together and are
+ * deliberately different: that one follows the connection minute by minute,
+ * this one is chosen once and lives on the phone until it is deleted.
+ */
+@Composable
+private fun DownloadsSection() {
+    val context = LocalContext.current
+    val app = remember(context) {
+        context.applicationContext as dev.lelonio.square.SquareApplication
+    }
+    val store = app.downloads
+    val settings = app.downloadSettings
+
+    val files by store.files.collectAsStateWithLifecycle()
+    val failures by store.failures.collectAsStateWithLifecycle()
+    val quality by settings.quality.collectAsStateWithLifecycle()
+    val wifiOnly by settings.wifiOnly.collectAsStateWithLifecycle()
+    val likedSongs by settings.downloadLikedSongs.collectAsStateWithLifecycle()
+    val offline by settings.offlineMode.collectAsStateWithLifecycle()
+
+    var confirmingClear by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    Section(stringResource(R.string.downloads)) {
+        // The audio plus everything kept beside it. Counted rather than
+        // summed from the index, because the Canvases are video and a library
+        // of them is not a rounding error next to the music.
+        val extrasBytes by androidx.compose.runtime.produceState(0L, files.size) {
+            value = withContext(Dispatchers.IO) {
+                dev.lelonio.square.download.DownloadExtras.bytes()
+            }
+        }
+        InfoRow(
+            stringResource(R.string.download_storage),
+            stringResource(
+                R.string.download_storage_used,
+                android.text.format.Formatter.formatShortFileSize(
+                    context,
+                    files.values.sumOf { it.bytes } + extrasBytes,
+                ),
+            ),
+        )
+        RowDivider()
+        InfoRow(stringResource(R.string.downloaded_tracks), files.size.toString())
+
+        RowDivider()
+        Text(
+            stringResource(R.string.download_quality),
+            style = MaterialTheme.typography.labelLarge,
+            color = InkDim,
+            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 14.dp),
+        )
+        dev.lelonio.square.data.DownloadQuality.entries.forEach { entry ->
+            ChoiceRow(
+                label = stringResource(entry.label),
+                selected = entry == quality,
+            ) { settings.setQuality(entry) }
+        }
+        Text(
+            stringResource(R.string.download_quality_note),
+            style = MaterialTheme.typography.bodySmall,
+            color = InkDim,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
+        )
+
+        RowDivider()
+        SwitchRow(
+            label = stringResource(R.string.download_wifi_only),
+            note = stringResource(R.string.download_wifi_only_note),
+            checked = wifiOnly,
+            onCheckedChange = settings::setWifiOnly,
+        )
+
+        RowDivider()
+        SwitchRow(
+            label = stringResource(R.string.download_liked_songs),
+            note = stringResource(R.string.download_liked_songs_note),
+            checked = likedSongs,
+            onCheckedChange = settings::setDownloadLikedSongs,
+        )
+
+        RowDivider()
+        SwitchRow(
+            label = stringResource(R.string.offline_mode),
+            note = stringResource(R.string.offline_mode_note),
+            checked = offline,
+            onCheckedChange = settings::setOfflineMode,
+        )
+
+        // Only when there is something to say. A row reporting zero failures is
+        // a row about nothing, on a screen that is already long.
+        val givenUp = failures.count { it.value.attempts >= dev.lelonio.square.data.DownloadStore.MAX_ATTEMPTS }
+        if (givenUp > 0) {
+            RowDivider()
+            InfoRow(
+                stringResource(R.string.downloads),
+                stringResource(R.string.download_failed_count, givenUp),
+            )
+            ActionRow(stringResource(R.string.download_retry_failed), destructive = false) {
+                scope.launch {
+                    store.retryFailed()
+                    dev.lelonio.square.download.DownloadService.start(context)
+                }
+            }
+        }
+
+        if (files.isNotEmpty()) {
+            RowDivider()
+            ActionRow(stringResource(R.string.remove_all_downloads), destructive = true) {
+                confirmingClear = true
+            }
+        }
+    }
+
+    if (confirmingClear) {
+        ConfirmDialog(
+            title = stringResource(R.string.remove_all_downloads),
+            message = stringResource(R.string.remove_all_downloads_confirm),
+            confirmLabel = stringResource(R.string.remove_all_downloads),
+            onConfirm = {
+                confirmingClear = false
+                scope.launch { store.clearAll() }
+            },
+            onDismiss = { confirmingClear = false },
+        )
+    }
+}
+
+/**
+ * A label, a line of explanation and a switch.
+ *
+ * The canvas setting grew its own copy of this inline; three more would have
+ * been four.
+ */
+@Composable
+private fun SwitchRow(
+    label: String,
+    note: String,
+    checked: Boolean,
+    onCheckedChange: (Boolean) -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Column(Modifier.weight(1f).padding(end = 12.dp)) {
+            Text(label, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                note,
+                style = MaterialTheme.typography.bodySmall,
+                color = InkDim,
+                modifier = Modifier.padding(top = 2.dp),
+            )
+        }
+        dev.antigravity.fluidengine.ui.fluid.FluidSwitch(
+            checked = checked,
+            onCheckedChange = onCheckedChange,
+        )
+    }
+}
+
 @Composable
 private fun UpdateRow() {
     val context = LocalContext.current

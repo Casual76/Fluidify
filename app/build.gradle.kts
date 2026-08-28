@@ -40,6 +40,20 @@ val keystoreProperties = Properties().apply {
     if (file.exists()) file.inputStream().use(::load)
 }
 
+// Said out loud rather than left to be noticed, because the mistake it heads
+// off cannot be taken back. Android refuses an update signed with a key other
+// than the installed copy's, so a release published with the debug key can only
+// ever be replaced by another debug-signed build — everyone who installed it
+// from the Pampa Store has to uninstall by hand, losing the login and the saved
+// queue. The store cannot catch this either: its publisher only checks that an
+// APK is signed, not by whom. See docs/pampa-store-release.md.
+if (keystoreProperties.isEmpty()) {
+    logger.warn(
+        "Fluidify: keystore.properties is missing, so release builds are signed with the " +
+            "debug key and must not be published.",
+    )
+}
+
 android {
     namespace = "dev.lelonio.square"
     compileSdk = 37

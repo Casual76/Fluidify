@@ -125,6 +125,7 @@
     <string name="connect_app_in_settings">सेटिंग में अपना ऐप्लिकेशन कनेक्ट करें।</string>
     <string name="add_failed">%1$s में नहीं जोड़ा जा सका। अगर प्लेलिस्ट आपकी नहीं है तो आप उसे बदल नहीं सकते।</string>
     <string name="remove_failed">%1$s को बदला नहीं जा सका। थोड़ी देर बाद फिर कोशिश करें।</string>
+    <string name="add_failed_permission">आपकी एप्लिकेशन को प्लेलिस्ट बदलने की अनुमति नहीं है। सेटिंग्स → Web API में इसे फिर से जोड़ें।</string>
 
     <!-- Player -->
     <string name="play_on">यहाँ चलाएँ</string>
@@ -198,6 +199,8 @@
     <string name="web_api_expired_title">सत्र समाप्त हो गया</string>
     <string name="web_api_expired_body">खोज और होम वापस पाने के लिए अपने Spotify ऐप्लिकेशन में फिर से साइन इन करें।</string>
     <string name="web_api_expired_action">फिर से साइन इन करें</string>
+    <string name="web_api_regrant">गायब अनुमतियाँ दें</string>
+    <string name="web_api_regrant_why">Fluidify अब उससे ज्यादा माँगता है जितना इस एप्लिकेशन को जोड़ते समय माँगा था। फिर से साइन इन करना एक टैप है और कुछ भी दोबारा रजिस्टर नहीं करना पड़ता।</string>
     <string name="later">बाद में</string>
     <string name="needs_your_app">आपका अपना Spotify ऐप्लिकेशन चाहिए: इसे खोज में सेट करें।</string>
 
@@ -276,7 +279,7 @@
     <string name="page_playback">प्लेबैक</string>
     <string name="page_app">ऐप</string>
     <string name="page_account_summary">आपका खाता, Web API ऐप्लिकेशन और साइन आउट</string>
-    <string name="page_playback_summary">संगीत का स्रोत, गुणवत्ता और क्रॉसफ़ेड</string>
+    <string name="page_playback_summary">संगीत कहाँ से आता है, क्वालिटी, डाउनलोड और क्रॉसफ़ेड</string>
     <string name="page_app_summary">भाषा, काँच और नीचे की पट्टी</string>
     <string name="page_about_summary">संस्करण, अनुमतियाँ, लाइसेंस और डेवलपर</string>
     <string name="playing_on">%1$s पर चल रहा है</string>
@@ -289,6 +292,8 @@
     <string name="effect_quality_light_note">काम फ़ोन करता है। पुराने डिवाइस के लिए आसान, तेज़ आघातों पर थोड़ा खुरदरा।</string>
     <string name="liked_songs">पसंद किए गए गाने</string>
     <string name="local_files">स्थानीय फ़ाइलें</string>
+    <string name="show_local_files">लोकल फ़ाइलें दिखाएँ</string>
+    <string name="show_local_files_note">इस फ़ोन में रखे संगीत के लिए आपकी लाइब्रेरी के ऊपर एक शेल्फ जोड़ता है।</string>
     <string name="local_files_needs_permission">अनुमति देने पर Fluidify इस फ़ोन का संगीत देख सकता है।</string>
     <string name="local_files_allow">अनुमति दें</string>
     <string name="pinned">पिन किया</string>
@@ -339,4 +344,37 @@
     <string name="no_biography">इस कलाकार का कोई विवरण नहीं है।</string>
     <string name="info_panel">जानकारी</string>
     <string name="monthly_listeners">%1$s मासिक श्रोता</string>
+
+    <!-- Downloads -->
+    <string name="download">डाउनलोड</string>
+    <string name="remove_download">डाउनलोड हटाएँ</string>
+    <string name="downloaded">डाउनलोड किया</string>
+    <string name="downloading">डाउनलोड हो रहा है</string>
+    <string name="downloads">डाउनलोड</string>
+    <string name="download_count">%1$d डाउनलोड</string>
+    <string name="download_progress_count">%2$d में से %1$d</string>
+    <string name="download_partial">%2$d में से %1$d उपलब्ध</string>
+    <string name="download_waiting_wifi">Wi‑Fi का इंतज़ार</string>
+    <string name="download_waiting_network">कनेक्शन का इंतज़ार</string>
+    <string name="download_waiting_engine">Spotify का इंतज़ार</string>
+    <string name="download_quality">डाउनलोड क्वालिटी</string>
+    <string name="download_quality_note">डाउनलोड किस क्वालिटी में रखा जाएगा। यहाँ ऑटोमैटिक नहीं है: डाउनलोड एक बार होता है और रह जाता है।</string>
+    <string name="download_wifi_only">केवल Wi‑Fi पर डाउनलोड करें</string>
+    <string name="download_wifi_only_note">मोबाइल डेटा पर डाउनलोड रुके रहते हैं और Wi‑Fi आते ही खुद शुरू हो जाते हैं।</string>
+    <string name="download_liked_songs">पसंद किए गीत ऑफ़लाइन रखें</string>
+    <string name="download_liked_songs_note">जो भी आपने पसंद किया है सब डाउनलोड करता है।</string>
+    <string name="download_storage">स्टोरेज</string>
+    <string name="download_storage_used">डाउनलोड ने %1$s लिया</string>
+    <string name="remove_all_downloads">सभी डाउनलोड हटाएँ</string>
+    <string name="remove_all_downloads_confirm">डाउनलोड किया सब कुछ मिट जाएगा। आपकी प्लेलिस्ट वैसी ही रहेंगी।</string>
+    <string name="download_artist_confirm">%2$s के %1$d गाने डाउनलोड करें? लगभग %3$s।</string>
+    <string name="download_failed_count">%1$d डाउनलोड नहीं हो सके</string>
+    <string name="download_retry_failed">फिर कोशिश करें</string>
+    <string name="downloaded_tracks">डाउनलोड किए गीत</string>
+    <string name="offline_mode">ऑफ़लाइन मोड</string>
+    <string name="offline_mode_note">केवल डाउनलोड किया हुआ चलाएँ, Spotify से कुछ न मांगें।</string>
+    <string name="offline_unavailable">ऑफ़लाइन उपलब्ध नहीं</string>
+    <string name="offline_banner_no_network">ऑफ़लाइन — कोई कनेक्शन नहीं</string>
+    <string name="offline_banner_slow">ऑफ़लाइन — कनेक्शन डाउनलोड से ख़राब है</string>
+    <string name="offline_banner_manual">ऑफ़लाइन — आपने चालू किया</string>
 </resources>

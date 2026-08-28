@@ -179,7 +179,15 @@ object Catalog {
      * response into a null instead of an error.
      */
     suspend fun lyrics(trackUri: String): Lyrics? = withContext(Dispatchers.IO) {
-        val raw = NativeBridge.lyrics(trackUri)
+        // Kept on the way past for a downloaded track, and read back only when
+        // the request cannot be made. See DownloadExtras: online the fresh
+        // answer always wins, because lyrics get corrected.
+        val raw = runCatching { NativeBridge.lyrics(trackUri) }
+            .onSuccess { dev.lelonio.square.download.DownloadExtras.rememberLyrics(trackUri, it) }
+            .getOrElse {
+                dev.lelonio.square.download.DownloadExtras.lyrics(trackUri)
+                    ?: return@withContext null
+            }
         val root = runCatching { json.parseToJsonElement(raw) }.getOrNull() ?: return@withContext null
         val body = root as? JsonObject ?: return@withContext null
         val lyrics = body["lyrics"] as? JsonObject ?: return@withContext null
@@ -219,7 +227,15 @@ object Catalog {
      */
     suspend fun artist(artistUri: String): Result<ArtistInfo> = withContext(Dispatchers.IO) {
         runCatching {
-            val root = json.parseToJsonElement(NativeBridge.artist(artistUri)) as JsonObject
+            val answer = runCatching { NativeBridge.artist(artistUri) }
+                .onSuccess {
+                    dev.lelonio.square.download.DownloadExtras.rememberArtist(artistUri, it)
+                }
+                .getOrElse {
+                    dev.lelonio.square.download.DownloadExtras.artist(artistUri)
+                        ?: throw it
+                }
+            val root = json.parseToJsonElement(answer) as JsonObject
             ArtistInfo(
                 uri = artistUri,
                 name = root["name"]?.jsonPrimitive?.content.orEmpty(),
@@ -290,13 +306,27 @@ object Catalog {
         // retried both would spend three round trips per song asking about a
         // video that does not exist.
         runCatching {
-            val raw = NativeBridge.canvas(trackUri)
+            val raw = runCatching { NativeBridge.canvas(trackUri) }
+                .onSuccess {
+                    dev.lelonio.square.download.DownloadExtras.rememberCanvas(trackUri, it)
+                }
+                .getOrElse {
+                    dev.lelonio.square.download.DownloadExtras.canvas(trackUri)
+                        ?: return@runCatching null
+                }
             val root = json.parseToJsonElement(raw) as? JsonObject ?: return@runCatching null
             val url = root["url"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
                 ?: return@runCatching null
+            val isVideo = root["isVideo"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: true
             CanvasClip(
-                url = url,
-                isVideo = root["isVideo"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: true,
+                // The copy kept beside the download, if there is one. Rewritten
+                // here rather than at the player: the URL is what every caller
+                // passes on, and offline the CDN one resolves to nothing.
+                url = dev.lelonio.square.download.DownloadExtras
+                    .fileOf(url, if (isVideo) "video" else "art")
+                    ?.toURI()?.toString()
+                    ?: url,
+                isVideo = isVideo,
             )
         }
     }

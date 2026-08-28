@@ -17,6 +17,7 @@ import dev.lelonio.square.data.HomeShelf
 import dev.lelonio.square.data.SpotifyHome
 import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.data.ContextCacheStore
+import dev.lelonio.square.data.DownloadStore
 import dev.lelonio.square.data.GatewayPage
 import dev.lelonio.square.data.LocalLibrary
 import dev.lelonio.square.data.SearchItem
@@ -25,6 +26,7 @@ import dev.lelonio.square.data.SearchResults
 import dev.lelonio.square.data.toCatalogTrack
 import dev.lelonio.square.data.toResults
 import dev.lelonio.square.nativecore.NativeBridge
+import dev.lelonio.square.download.DownloadService
 import dev.lelonio.square.playback.PlaybackService
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.async
@@ -685,7 +687,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             open = asSheet,
             trackUri = trackUri,
             trackTitle = trackTitle,
-            playlists = (_state.value as? UiState.Ready)?.playlists.orEmpty(),
+            // Only what an account can actually be written to. The library
+            // list also carries File locali, which is the phone's own music and
+            // has no playlist behind it anywhere: offered here it is a row that
+            // can only ever fail, and it looks exactly like the ones that work.
+            playlists = (_state.value as? UiState.Ready)?.playlists.orEmpty()
+                .filter { it.uri.startsWith("spotify:") },
             liked = trackUri != null && trackUri in _liked.value,
             error = when {
                 trackUri?.startsWith("spotify:track:") != true ->
@@ -713,8 +720,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val current = _addToPlaylist.value
         val trackUri = current.trackUri ?: return
         if (current.busy != null) return
-        val id = playlist.uri.substringAfterLast(':')
-
         // Liked Songs is in this list like any other, and is the one entry that
         // is not a playlist: it is the account's library, saved to by its own
         // endpoint. Picking it is what puts the heart on the track, and picking
@@ -730,9 +735,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             runCatching {
                 when {
-                    unsaving -> container.api.removeSavedTracks(trackUri.substringAfterLast(':'))
-                    toLibrary -> container.api.saveTracks(trackUri.substringAfterLast(':'))
-                    else -> container.api.addToPlaylist(id, AddTracksRequestDto(listOf(trackUri)))
+                    // Both through the access point, for the same reason the
+                    // playlist write is; see native/src/collection.rs.
+                    unsaving -> withContext(Dispatchers.IO) {
+                        NativeBridge.setLiked(trackUri, false)
+                    }
+                    toLibrary -> withContext(Dispatchers.IO) {
+                        NativeBridge.setLiked(trackUri, true)
+                    }
+                    // Through the access point, not the Web API, which cannot
+                    // do this at all: the listener's own registered application
+                    // is refused it outright and the shared client id is out of
+                    // quota. See native/src/playlists.rs for the measurements.
+                    else -> withContext(Dispatchers.IO) {
+                        NativeBridge.addToPlaylist(playlist.uri, trackUri)
+                    }
                 }
             }
                 .onSuccess {
@@ -754,17 +771,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     invalidateContext(playlist.uri)
                     if (_playlist.value.uri == playlist.uri) openPlaylist(playlist)
                 }
-                .onFailure {
-                    android.util.Log.e(TAG, "add to playlist failed: ${chain(it)}", it)
+                .onFailure { failure ->
+                    val said = spotifySays(failure)
+                    android.util.Log.e(TAG, "add to playlist failed: ${chain(failure)} / $said", failure)
                     _addToPlaylist.value = _addToPlaylist.value.copy(
                         busy = null,
-                        // A playlist the account follows but does not own is the
-                        // one failure worth naming: it looks identical to the
-                        // user's own in every list the app draws.
-                        error = if (unsaving) {
-                            string(R.string.remove_failed, playlist.name)
-                        } else {
-                            string(R.string.add_failed, playlist.name)
+                        error = when {
+                            unsaving -> string(R.string.remove_failed, playlist.name)
+                            (failure as? retrofit2.HttpException)?.code() == 403 ->
+                                whyForbidden(said)
+                            else -> string(R.string.add_failed, playlist.name)
                         },
                     )
                 }
@@ -865,12 +881,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
          * time.
          */
         val expired: Boolean = false,
+        /**
+         * Set when the connected application was granted less than the app now
+         * asks for.
+         *
+         * A permission that was added after someone signed in is never asked
+         * for again on its own: the token goes on working for everything else,
+         * and the one feature that needed it fails alone, with a 403 that says
+         * nothing. That is exactly how "add to playlist" came to be broken for
+         * a year. Noticing it here turns an unexplainable failure into one tap.
+         */
+        val incomplete: Boolean = false,
     )
+
+    /** Whether the stored grant covers everything the app now asks for. */
+    private fun grantIsComplete(): Boolean {
+        val granted = container.webApi.tokens.granted
+        // Not recorded: an application connected before the grant was written
+        // down. Treated as incomplete, because it predates this being noticed
+        // and so predates at least the permissions added since.
+        if (granted.isEmpty()) return false
+        return granted.containsAll(SpotifyOAuth.WEB_API_SCOPES)
+    }
 
     private val _webApi = MutableStateFlow(
         WebApiState(
             clientId = container.webApi.clientId.value.orEmpty(),
             connected = container.webApi.isReady,
+            incomplete = container.webApi.isReady && !grantIsComplete(),
         ),
     )
     val webApi: StateFlow<WebApiState> = _webApi.asStateFlow()
@@ -922,30 +960,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             SpotifyOAuth.authorize(
                 getApplication(),
                 clientId = clientId,
-                scopes = listOf(
-                    // The home feed's "artisti che ascolti".
-                    "user-top-read",
-                    // Reading what the account has actually played, which is a
-                    // different permission from the top artists above.
-                    "user-read-recently-played",
-                    // The Connect device picker: one to list them, one to move
-                    // playback.
-                    "user-read-playback-state",
-                    "user-modify-playback-state",
-                    // The player's "add to playlist". Which of the two
-                    // applies is the playlist's own visibility, not the
-                    // caller's, so both are asked for.
-                    "playlist-modify-private",
-                    "playlist-modify-public",
-                    // Following artists, and the list of the ones followed.
-                    "user-follow-read",
-                    "user-follow-modify",
-                ),
+                scopes = SpotifyOAuth.WEB_API_SCOPES,
             )
         }
             .onSuccess {
                 container.webApi.tokens.save(it)
-                _webApi.value = _webApi.value.copy(connecting = false, connected = true)
+                _webApi.value = _webApi.value.copy(
+                    connecting = false,
+                    connected = true,
+                    incomplete = !grantIsComplete(),
+                )
                 _search.value = _search.value.copy(needsSetup = false)
                 // The feed could not have loaded before this point.
                 loadFeed()
@@ -1285,6 +1309,32 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             PlaybackService.connect(app)
             refresh()
         }
+
+        // Going offline, or coming back, changes what the library is made of:
+        // the downloaded shelf on the way in, the account's own list on the way
+        // out. Collected rather than left to the screens, because the state
+        // this rebuilds is the one they all read.
+        viewModelScope.launch {
+            dev.lelonio.square.playback.OfflineMode.reason.collect {
+                if (!container.spotifySignedIn) return@collect
+                inFlight?.cancel()
+                inFlight = launchRefresh()
+            }
+        }
+
+        // Turning "keep Liked Songs offline" on should download them now, not
+        // at the next launch. The first value is dropped because the launch
+        // itself already synced; see resumeDownloads.
+        viewModelScope.launch {
+            container.downloadSettings.downloadLikedSongs
+                .drop(1)
+                .collect {
+                    syncLikedSongs()
+                    if (container.downloads.pending().isNotEmpty()) {
+                        DownloadService.start(getApplication())
+                    }
+                }
+        }
     }
 
     fun logIn() = viewModelScope.launch {
@@ -1352,6 +1402,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         _state.value = UiState.Connecting
         if (!awaitEngine()) {
+            // A library with no session is not an empty library. Everything
+            // that was downloaded is still here and still playable, and the
+            // shelf for it is the one thing the listener came for.
+            offlineLibrary()?.let {
+                _state.value = it
+                return@launch
+            }
             _state.value = if (container.spotifySignedIn) {
                 UiState.Failed(string(R.string.cannot_connect))
             } else {
@@ -1374,8 +1431,48 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             .onFailure {
                 android.util.Log.e(TAG, "library load failed: ${chain(it)}", it)
-                _state.value = UiState.Failed(describe(it))
+                // The same fallback: the session came up but the catalogue
+                // could not be read, and the downloads are unaffected by that.
+                _state.value = offlineLibrary() ?: UiState.Failed(describe(it))
             }
+    }
+
+    /**
+     * The library as the download index knows it, for when Spotify cannot be
+     * asked.
+     *
+     * Built from the labels stored beside every download — name, cover, kind —
+     * rather than from [ContextCacheStore], which expires after a week and
+     * holds only the last forty things opened. A download is meant to outlive
+     * both, and a phone in a tunnel should find its playlists exactly where it
+     * left them.
+     *
+     * Null when there is nothing downloaded, which is the one case where an
+     * error really is the honest answer.
+     */
+    private suspend fun offlineLibrary(): UiState.Ready? {
+        container.downloads.load()
+        val owners = container.downloads.owners.value
+        val labelled = owners.keys.mapNotNull { uri ->
+            container.downloads.labelOf(uri)?.let {
+                CatalogPlaylist(uri = uri, name = it.name, artworkUrl = it.artworkUrl)
+            }
+        }
+        val singles = owners[DownloadStore.SINGLES].orEmpty()
+        val shelf = singles.takeIf { it.isNotEmpty() }?.let {
+            CatalogPlaylist(
+                uri = DownloadStore.SINGLES,
+                name = string(R.string.downloaded_tracks),
+                artworkUrl = dev.lelonio.square.ui.components.DOWNLOADS_COVER,
+            )
+        }
+        val everything = listOfNotNull(shelf) + labelled
+        if (everything.isEmpty()) return null
+
+        android.util.Log.i(TAG, "offline library: ${everything.size} downloaded")
+        // The account name is not worth a request that cannot be made, and the
+        // phone's own files belong here as much as they do online.
+        return UiState.Ready("", withLocalFiles(everything))
     }
 
     /**
@@ -1404,18 +1501,38 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Spotify's own client, so it belongs in both libraries rather than behind
      * a setting that swaps one for the other.
      *
-     * Shown whether or not the permission has been given. Hiding it until then
-     * would leave the listener nowhere to say yes: the shelf is where the
-     * asking happens.
+     * Shown whether or not the permission has been given, once it is switched
+     * on at all: hiding it until then would leave the listener nowhere to say
+     * yes, because the shelf is where the asking happens.
+     *
+     * Off by default — see PreferencesStore.showLocalFiles.
      */
-    private fun withLocalFiles(playlists: List<CatalogPlaylist>): List<CatalogPlaylist> =
-        listOf(
+    private fun withLocalFiles(playlists: List<CatalogPlaylist>): List<CatalogPlaylist> {
+        val rest = playlists.filterNot { it.uri == LocalLibrary.CONTEXT_URI }
+        if (!container.preferences.showLocalFiles.value) return rest
+        return listOf(
             CatalogPlaylist(
                 uri = LocalLibrary.CONTEXT_URI,
                 name = string(R.string.local_files),
                 artworkUrl = LocalLibrary.COVER,
             ),
-        ) + playlists.filterNot { it.uri == LocalLibrary.CONTEXT_URI }
+        ) + rest
+    }
+
+    /** Whether the phone's own music has a shelf; off until asked for. */
+    val showLocalFiles: StateFlow<Boolean> get() = container.preferences.showLocalFiles
+
+    /**
+     * Turns that shelf on or off, and puts the library right at once.
+     *
+     * Rebuilt from what is already on screen rather than refetched: the shelf is
+     * made here, not by the service, so nothing has to be asked for it again.
+     */
+    fun setShowLocalFiles(value: Boolean) {
+        container.preferences.setShowLocalFiles(value)
+        val ready = _state.value as? UiState.Ready ?: return
+        _state.value = ready.copy(playlists = withLocalFiles(ready.playlists))
+    }
 
     /** Covers already looked up, so a second visit to the home page is free. */
     private val coverCache = mutableMapOf<String, String>()
@@ -1903,6 +2020,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
+        // The songs downloaded on their own. Answered from the index, which is
+        // the point of it: this shelf has to open with no connection, and there
+        // is no context on Spotify's side that corresponds to it.
+        if (playlist.uri == DownloadStore.SINGLES) {
+            openDownloadedSongs(playlist)
+            return
+        }
+
+        // Offline, a downloaded playlist is answered from the index too. Not a
+        // fallback after a failed request but instead of one: with no session
+        // the request cannot even be attempted, and the whole list is already
+        // here — in the order the playlist had when it was downloaded, which is
+        // the order it should still be in.
+        if (dev.lelonio.square.playback.OfflineMode.active.value) {
+            val wanted = container.downloads.owners.value[playlist.uri]
+            if (wanted != null) {
+                openDownloadedContext(playlist, wanted)
+                return
+            }
+        }
+
         val kind = kindOf(playlist.uri)
         playlistJob?.cancel()
         // Reassigned when the picture arrives late; every state published below
@@ -2032,6 +2170,53 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * it is the only case in the app where an empty list is something to act
      * on rather than to report.
      */
+    /**
+     * The shelf of songs kept on their own.
+     *
+     * Built entirely from the download index — no request, no cache, no
+     * snapshot — because the one thing this page must do is open when nothing
+     * else can. The order is the order they were added, newest last, which is
+     * the order the index keeps them in.
+     */
+    private fun openDownloadedSongs(playlist: CatalogPlaylist) {
+        playlistJob?.cancel()
+        val singles = container.downloads.owners.value[DownloadStore.SINGLES].orEmpty()
+        publishPlaylist(
+            PlaylistState(
+                uri = playlist.uri,
+                name = playlist.name,
+                artworkUrl = playlist.artworkUrl,
+                kind = DetailKind.PLAYLIST,
+                tracks = singles.mapNotNull(container.downloads::trackOf),
+                // Nothing here belongs to an account, so none of what a
+                // playlist page offers applies.
+                mine = false,
+            ),
+        )
+    }
+
+    /** A downloaded playlist or album, drawn entirely from the index. */
+    private fun openDownloadedContext(playlist: CatalogPlaylist, wanted: List<String>) {
+        playlistJob?.cancel()
+        val label = container.downloads.labelOf(playlist.uri)
+        publishPlaylist(
+            PlaylistState(
+                uri = playlist.uri,
+                name = playlist.name.ifEmpty { label?.name.orEmpty() },
+                artworkUrl = playlist.artworkUrl ?: label?.artworkUrl,
+                kind = when (label?.kind) {
+                    DownloadStore.KIND_ALBUM -> DetailKind.ALBUM
+                    DownloadStore.KIND_ARTIST -> DetailKind.ARTIST
+                    else -> DetailKind.PLAYLIST
+                },
+                tracks = wanted.mapNotNull(container.downloads::trackOf),
+                // Nothing here can be edited without a connection, and a button
+                // that can only fail is worse than no button.
+                mine = false,
+            ),
+        )
+    }
+
     private fun openLocalFiles(playlist: CatalogPlaylist) {
         playlistJob?.cancel()
         val base = PlaylistState(
@@ -2057,6 +2242,306 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 ),
             )
         }
+    }
+
+    // ------------------------------------------------------------- downloads
+
+    /**
+     * What is downloaded, for the screens to read straight from.
+     *
+     * Not mirrored into [PlaylistState]. The same track shows up in a playlist,
+     * in search, in the queue and in the player, and copying the answer into
+     * each of those would be four copies to keep in step with a queue that
+     * moves several times a second.
+     */
+    val downloads: DownloadStore get() = container.downloads
+
+    /** Download quality, Wi-Fi only, and the listener's own offline switch. */
+    val downloadSettings get() = container.downloadSettings
+
+    /**
+     * Downloads a whole page, or gives its download back.
+     *
+     * The page is the owner — see [DownloadStore] — so this never asks whether
+     * the individual tracks are already here. A playlist sharing every one of
+     * its songs with another downloaded playlist still becomes a download of
+     * its own, instantly and at no cost in bytes, which is exactly what the
+     * listener asked for.
+     */
+    fun toggleDownload(page: PlaylistState) {
+        val uri = page.uri ?: return
+        if (page.tracks.isEmpty()) return
+        viewModelScope.launch {
+            if (container.downloads.owners.value.containsKey(uri)) {
+                removeDownload(uri)
+            } else if (page.kind == DetailKind.ARTIST) {
+                askAboutArtist(page)
+            } else {
+                container.downloads.setOwner(
+                    ownerUri = uri,
+                    tracks = page.tracks,
+                    label = DownloadStore.OwnerLabel(
+                        name = page.name,
+                        artworkUrl = page.artworkUrl,
+                        kind = when (page.kind) {
+                            DetailKind.ALBUM -> DownloadStore.KIND_ALBUM
+                            DetailKind.ARTIST -> DownloadStore.KIND_ARTIST
+                            DetailKind.PLAYLIST -> DownloadStore.KIND_PLAYLIST
+                        },
+                    ),
+                )
+                DownloadService.start(getApplication())
+            }
+        }
+    }
+
+    /**
+     * What a whole artist would cost, before anything is fetched.
+     *
+     * Held here rather than passed around: the dialog belongs to the app rather
+     * than to the artist page, which is inside a screen that scrolls away.
+     */
+    data class ArtistDownload(
+        val uri: String,
+        val name: String,
+        val artworkUrl: String?,
+        val tracks: List<CatalogTrack>,
+        /** Bytes, near enough to say out loud. */
+        val estimate: Long,
+    )
+
+    private val _artistDownload = MutableStateFlow<ArtistDownload?>(null)
+    val artistDownload: StateFlow<ArtistDownload?> = _artistDownload.asStateFlow()
+
+    fun dismissArtistDownload() {
+        _artistDownload.value = null
+    }
+
+    /** Accepts the estimate and starts the whole discography downloading. */
+    fun confirmArtistDownload() {
+        val asked = _artistDownload.value ?: return
+        _artistDownload.value = null
+        viewModelScope.launch {
+            container.downloads.setOwner(
+                ownerUri = asked.uri,
+                tracks = asked.tracks,
+                label = DownloadStore.OwnerLabel(
+                    name = asked.name,
+                    artworkUrl = asked.artworkUrl,
+                    kind = DownloadStore.KIND_ARTIST,
+                ),
+            )
+            DownloadService.start(getApplication())
+        }
+    }
+
+    /**
+     * Works out what an artist actually is, and asks before fetching it.
+     *
+     * An artist page shows ten top tracks and a shelf of records; downloading
+     * "the artist" means the records, which is the one button in this app that
+     * can cost several gigabytes from a single tap. So the albums are resolved
+     * first — a handful of requests — and the listener is shown a real number
+     * rather than a guess.
+     *
+     * The estimate is the track count times a typical Ogg 320 file. It is not
+     * exact and does not need to be: it exists to tell four hundred megabytes
+     * apart from four, which any honest average does.
+     */
+    private suspend fun askAboutArtist(page: PlaylistState) {
+        val uri = page.uri ?: return
+        val records = (page.albums + page.singles).map { it.uri }.distinct()
+
+        val tracks = LinkedHashMap<String, CatalogTrack>()
+        // Their best-known songs count too: some of them are on records this
+        // page does not list, and those would otherwise be the only songs a
+        // listener could see and not keep.
+        page.tracks.forEach { tracks[it.uri] = it }
+
+        for (record in records) {
+            val fetched = runCatching { container.activeBackend.tracksOf(record) }
+                .onFailure { android.util.Log.i(TAG, "cannot read ${'$'}record: ${'$'}{describe(it)}") }
+                .getOrNull()
+                ?: continue
+            fetched.forEach { tracks[it.uri] = it }
+        }
+
+        if (tracks.isEmpty()) return
+        _artistDownload.value = ArtistDownload(
+            uri = uri,
+            name = page.name,
+            artworkUrl = page.artworkUrl,
+            tracks = tracks.values.toList(),
+            estimate = tracks.size * TYPICAL_TRACK_BYTES,
+        )
+    }
+
+    /** Gives back the download of a page, from anywhere it can be asked for. */
+    fun removeDownload(ownerUri: String) {
+        viewModelScope.launch {
+            val inFlight = container.downloads.progress.value.keys
+            container.downloads.removeOwner(ownerUri)
+            // Only what is actually being fetched. Cancelling every track of
+            // the playlist would work — the engine clears the mark before each
+            // download — but it would also be several hundred JNI calls to stop
+            // the one or two that are running.
+            inFlight.forEach { runCatching { NativeBridge.cancelDownload(it) } }
+            sweepOrphans()
+        }
+    }
+
+    /** One song, from the row menu or the player. */
+    fun toggleTrackDownload(track: CatalogTrack) {
+        viewModelScope.launch {
+            val singles = container.downloads.owners.value[DownloadStore.SINGLES].orEmpty()
+            if (singles.contains(track.uri)) {
+                container.downloads.removeSingle(track.uri)
+                runCatching { NativeBridge.cancelDownload(track.uri) }
+                sweepOrphans()
+            } else {
+                container.downloads.addSingle(track)
+                DownloadService.start(getApplication())
+            }
+        }
+    }
+
+    /**
+     * Deletes the audio nothing claims any more.
+     *
+     * The only place the two halves meet: the store works out what is orphaned
+     * and forgets it, and the engine is what actually unlinks the file and its
+     * sidecar. Split so that forgetting an owner can never leave bytes on the
+     * phone that nothing in the app can see, which is exactly what happens if
+     * the index is pruned without anybody holding the list.
+     */
+    private suspend fun sweepOrphans() {
+        container.downloads.pruneOrphans().forEach {
+            runCatching { NativeBridge.removeDownload(it) }
+            dev.lelonio.square.download.DownloadExtras.forget(it)
+        }
+        // And whatever is left in the extras that no surviving track can
+        // explain. Cheap, and the only thing that reaches the Canvas videos of
+        // songs removed by an earlier version — or by a crash between the two
+        // halves of a removal.
+        withContext(Dispatchers.IO) {
+            val tracks = container.downloads.files.value.keys
+            dev.lelonio.square.download.DownloadExtras.sweep(
+                trackUris = tracks,
+                coverUrls = tracks.mapNotNull { container.downloads.trackOf(it)?.artworkUrl },
+            )
+        }
+    }
+
+    /** Picks the queue back up: after a start, and after the listener retries. */
+    fun resumeDownloads(retryFailed: Boolean = false) {
+        viewModelScope.launch {
+            container.downloads.load()
+            container.downloads.reconcile()
+            // Anything a previous run forgot the owner of but never got round
+            // to deleting — an app killed between the two.
+            sweepOrphans()
+            if (retryFailed) container.downloads.retryFailed()
+            // Something to fetch, or something already fetched that arrived
+            // without its cover — a track downloaded by a build of this app
+            // that had no extras yet. Both are the queue's work; see
+            // DownloadQueue.backfillExtras.
+            val owed = container.downloads.pending().isNotEmpty() ||
+                withContext(Dispatchers.IO) { missingExtras() }
+            if (owed) DownloadService.start(getApplication())
+            syncDownloads()
+        }
+    }
+
+    /** Whether any downloaded track is missing the cover kept beside it. */
+    private fun missingExtras(): Boolean =
+        container.downloads.files.value.keys.any { uri ->
+            val cover = container.downloads.trackOf(uri)?.artworkUrl
+            cover != null &&
+                dev.lelonio.square.download.DownloadExtras.fileOf(cover, "art") == null
+        }
+
+    /**
+     * Brings every downloaded playlist back into step with its source.
+     *
+     * Without this a download is a photograph. A playlist the listener keeps
+     * offline goes on being the version it was the day they downloaded it:
+     * songs they have added since are not there, songs they have removed still
+     * are, and the phone is quietly full of music that is no longer in the
+     * list it belongs to.
+     *
+     * Albums are skipped — a record does not gain tracks — and so is anything
+     * that cannot be re-read right now. Failing quietly is the right answer:
+     * the copy already on the phone is still perfectly playable, and it will be
+     * checked again next time.
+     */
+    private suspend fun syncDownloads() {
+        if (dev.lelonio.square.playback.OfflineMode.active.value) return
+
+        syncLikedSongs()
+
+        val owners = container.downloads.owners.value.keys
+            .filter { it.startsWith("spotify:playlist:") }
+        if (owners.isEmpty()) return
+
+        var changed = false
+        for (uri in owners) {
+            val known = container.downloads.owners.value[uri].orEmpty()
+            val fresh = runCatching { container.activeBackend.tracksOf(uri) }
+                .onFailure { android.util.Log.i(TAG, "cannot sync ${'$'}uri: ${'$'}{describe(it)}") }
+                .getOrNull()
+                ?: continue
+            // An empty answer is far more likely to be a request that half
+            // failed than a playlist somebody emptied, and acting on it would
+            // delete the whole download.
+            if (fresh.isEmpty()) continue
+            if (fresh.map { it.uri } == known) continue
+
+            android.util.Log.i(TAG, "playlist ${'$'}uri changed: ${'$'}{known.size} -> ${'$'}{fresh.size}")
+            container.downloads.setOwner(uri, fresh, container.downloads.labelOf(uri))
+            changed = true
+        }
+
+        if (changed) {
+            sweepOrphans()
+            if (container.downloads.pending().isNotEmpty()) {
+                DownloadService.start(getApplication())
+            }
+        }
+    }
+
+    /**
+     * Keeps the whole of Liked Songs offline, when the listener asked for that.
+     *
+     * Its own owner rather than a playlist like the rest, because it is not one:
+     * there is no snapshot to compare and no list to open, and the answer
+     * changes every time a heart is tapped.
+     */
+    private suspend fun syncLikedSongs() {
+        val wanted = container.downloadSettings.downloadLikedSongs.value
+        if (!wanted) {
+            if (container.downloads.owners.value.containsKey(DownloadStore.LIKED)) {
+                container.downloads.removeOwner(DownloadStore.LIKED)
+                sweepOrphans()
+            }
+            return
+        }
+        val collection = runCatching { NativeBridge.collectionUri() }
+            .getOrNull()
+            ?.takeIf { it.isNotEmpty() }
+            ?: return
+        val tracks = runCatching { container.activeBackend.tracksOf(collection) }
+            .onFailure { android.util.Log.i(TAG, "cannot sync liked songs: ${'$'}{describe(it)}") }
+            .getOrNull()
+            ?: return
+        if (tracks.isEmpty()) return
+        if (tracks.map { it.uri } == container.downloads.owners.value[DownloadStore.LIKED]) return
+
+        container.downloads.setOwner(
+            DownloadStore.LIKED,
+            tracks,
+            DownloadStore.OwnerLabel(name = string(R.string.liked_songs)),
+        )
+        sweepOrphans()
     }
 
     /** Called once the listener has answered the system's permission dialog. */
@@ -2133,23 +2618,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Optimistic, unlike adding: the row disappearing *is* the confirmation, and
      * putting it back is a possible outcome the user can see, whereas a row that
      * sits there for a round trip before vanishing reads as a tap that missed.
-     * Every occurrence goes, which matters only on a playlist holding the same
-     * track twice; see SpotifyApi.removeFromPlaylist.
+     *
+     * One occurrence, the one tapped. A playlist can hold the same song twice —
+     * and one of ours did, three times, through a bug of this app's own making —
+     * so "remove that row" is the only instruction that means anything there.
      */
-    fun removeFromPlaylist(track: CatalogTrack) {
+    fun removeFromPlaylist(track: CatalogTrack, index: Int = -1) {
         val uri = _playlist.value.uri ?: return
         if (!uri.startsWith("spotify:playlist:")) return
 
         val before = _playlist.value.tracks
-        _playlist.value = _playlist.value.copy(tracks = before.filterNot { it.uri == track.uri })
+        val at = if (index >= 0 && before.getOrNull(index)?.uri == track.uri) {
+            index
+        } else {
+            before.indexOfFirst { it.uri == track.uri }
+        }
+        if (at < 0) return
+
+        _playlist.value = _playlist.value.copy(
+            tracks = before.filterIndexed { position, _ -> position != at },
+        )
         invalidateContext(uri)
 
         viewModelScope.launch {
             runCatching {
-                container.api.removeFromPlaylist(
-                    uri.substringAfterLast(':'),
-                    RemoveTracksRequestDto(listOf(TrackUriDto(track.uri))),
-                )
+                // Through the access point; see native/src/playlists.rs for why
+                // the Web API cannot write to a playlist at all.
+                withContext(Dispatchers.IO) {
+                    NativeBridge.removeFromPlaylist(uri, track.uri, at)
+                }
             }.onFailure {
                 android.util.Log.e(TAG, "remove from playlist failed: ${chain(it)}", it)
                 // Only if the screen is still showing the same playlist.
@@ -2265,6 +2762,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         contextCache[uri] = ContextCacheStore.Entry(tracks, snapshotId)
         rememberMembership(uri, tracks)
         container.contextCache.write(uri, tracks, snapshotId)
+        followDownload(uri, tracks)
+    }
+
+    /**
+     * Keeps a downloaded playlist in step with the list that was just read.
+     *
+     * The other half of [syncDownloads], and the half that matters day to day:
+     * opening a playlist is when the app finds out it has changed, so that is
+     * when a song added to it should start downloading — rather than at some
+     * next launch, which is where the listener would notice the absence first.
+     *
+     * Does nothing for a playlist nobody asked to keep, which is almost all of
+     * them.
+     */
+    private suspend fun followDownload(uri: String, tracks: List<CatalogTrack>) {
+        val known = container.downloads.owners.value[uri] ?: return
+        if (tracks.isEmpty()) return
+        if (tracks.map { it.uri } == known) return
+
+        android.util.Log.i(TAG, "downloaded playlist changed: ${known.size} -> ${tracks.size}")
+        container.downloads.setOwner(uri, tracks, container.downloads.labelOf(uri))
+        sweepOrphans()
+        if (container.downloads.pending().isNotEmpty()) {
+            DownloadService.start(getApplication())
+        }
     }
 
     /** The playlist's current version stamp, or null if it has none to give. */
@@ -2650,7 +3172,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * callback because readiness lives behind a JNI boolean.
      */
     private suspend fun awaitEngine(): Boolean {
+        // An engine that came up with no session is not one that is still
+        // coming up. Waiting the full timeout and then rebuilding would be two
+        // handshakes against the same missing network, and the listener would
+        // watch a spinner for both of them before being shown a library that
+        // was ready the whole time.
+        if (engineIsOffline()) return false
         if (pollEngine()) return true
+        if (engineIsOffline()) return false
         if (!container.spotifySignedIn) return false
         // Not unreachable: displaced.
         //
@@ -2677,12 +3206,58 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // and then report a connection problem, when the real answer is
             // that the user has to log in again.
             if (!container.spotifySignedIn) return@withTimeoutOrNull false
+            // The engine answered while this was waiting, and the answer was
+            // "there is no session". Nothing to go on waiting for.
+            if (engineIsOffline()) return@withTimeoutOrNull false
             delay(POLL_INTERVAL_MS)
         }
         true
     } ?: false
 
+    private fun engineIsOffline(): Boolean =
+        runCatching { NativeBridge.isOffline }.getOrDefault(false)
+
     /** Full `Class: message` chain, for the log. */
+    /**
+     * What to say when the account's own library refuses a write.
+     *
+     * Only Liked Songs reaches this now: adding to a playlist goes through the
+     * access point, where none of this can happen. `PUT /v1/me/tracks` still
+     * goes through whichever application the listener registered, and a
+     * registration in Development Mode — which every individual's is — can be
+     * refused it outright, with a 403 whose whole message is "Forbidden".
+     *
+     * Two things can produce that, and they call for opposite things from the
+     * reader. The default is "reconnect", because it is the one they can act on.
+     */
+    private fun whyForbidden(said: String?): String {
+        val granted = container.webApi.tokens.granted
+        android.util.Log.w(TAG, "library write forbidden: said=$said granted=$granted")
+        return string(R.string.add_failed_permission)
+    }
+
+
+    /**
+     * What the server said, as opposed to what Retrofit made of it.
+     *
+     * An `HttpException` carries the status and nothing else; the sentence
+     * explaining it is in the body, which is read once and then gone. Worth the
+     * few lines: "Insufficient client scope" and "You cannot add tracks to a
+     * playlist you don't own" arrive as the same exception.
+     */
+    private fun spotifySays(error: Throwable): String? = runCatching {
+        val response = (error as? retrofit2.HttpException)?.response()
+        val body = response?.errorBody()?.string()
+        android.util.Log.w(
+            TAG,
+            "raw 403: body=<$body> headers=${response?.headers()}" +
+                " request=${response?.raw()?.request?.headers}",
+        )
+        org.json.JSONObject(body.orEmpty()).optJSONObject("error")?.optString("message")
+            ?.takeIf(String::isNotBlank)
+            ?: body?.takeIf(String::isNotBlank)
+    }.getOrNull()
+
     private fun chain(error: Throwable): String =
         generateSequence(error, Throwable::cause)
             .joinToString(" <- ") { "${it::class.java.name}: ${it.message}" }
@@ -2700,6 +3275,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private companion object {
         const val TAG = "SquareUi"
+
+        /**
+         * What one downloaded song weighs, near enough to warn with.
+         *
+         * Measured across a mixed playlist at Ogg Vorbis 320: files ran from
+         * five to nine megabytes and averaged a little over seven. The number
+         * exists to tell four gigabytes from four hundred megabytes, which any
+         * honest average does; a precise one would mean fetching the size of
+         * every file before asking the question.
+         */
+        const val TYPICAL_TRACK_BYTES = 7_300_000L
 
         /** Artists asked for new records on the home page; one request each. */
         const val FRESH_ARTISTS = 6

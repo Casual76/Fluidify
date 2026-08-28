@@ -10,6 +10,8 @@ import dev.lelonio.square.data.PreferencesStore
 import dev.lelonio.square.data.RecentStore
 import dev.lelonio.square.data.ApiFactory
 import dev.lelonio.square.data.SpotifyApi
+import kotlinx.coroutines.launch
+import dev.lelonio.square.nativecore.NativeBridge
 
 /**
  * Manual dependency container.
@@ -30,6 +32,25 @@ class SquareApplication : Application() {
         // The speed/pitch/reverb panel is gone; anything it left behind would
         // now be permanent and unreachable. See neutraliseOnce.
         dev.lelonio.square.playback.AudioEffects.neutraliseOnce()
+
+        // Where the extras live, and which tracks are worth keeping them for.
+        // Attached here rather than in the service: Catalog reaches for it on
+        // any thread and long before anything has started playing.
+        dev.lelonio.square.download.DownloadExtras.attach(downloads.root) {
+            downloads.isDownloaded(it)
+        }
+
+        // The listener's own offline switch is persisted, so it has to be put
+        // back before anything reads it. Collected rather than read once: it is
+        // the one input to OfflineMode that can change without the service
+        // being involved.
+        kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default,
+        ).launch {
+            downloadSettings.offlineMode.collect(
+                dev.lelonio.square.playback.OfflineMode::setManual,
+            )
+        }
 
         // Not a feature: a line in the log saying whether this install has been
         // compiled ahead of time yet. See reportProfileStatus.
@@ -109,12 +130,42 @@ class SquareApplication : Application() {
     val contextCache: ContextCacheStore by lazy { ContextCacheStore(this) }
 
     /**
+     * What is downloaded and who asked for it.
+     *
+     * One instance, like the token store and for the same reason: the index is
+     * a file, and two of these would write over each other. The audio it points
+     * at belongs to the engine, which finds it without going through here.
+     */
+    val downloads: dev.lelonio.square.data.DownloadStore by lazy {
+        dev.lelonio.square.data.DownloadStore(this)
+    }
+
+    /** Download quality, Wi-Fi only, the offline switch. */
+    val downloadSettings: dev.lelonio.square.data.DownloadSettingsStore by lazy {
+        dev.lelonio.square.data.DownloadSettingsStore(this)
+    }
+
+    /** Works through what [downloads] says is still owed. */
+    val downloadQueue: dev.lelonio.square.download.DownloadQueue by lazy {
+        dev.lelonio.square.download.DownloadQueue(this, downloads, downloadSettings)
+    }
+
+    /**
      * The user's own Spotify application. Web API calls go through it so they
      * are metered against a quota nobody else shares — see [WebApiAccount].
      */
     val webApi: WebApiAccount by lazy { WebApiAccount(this) }
 
-    val api: SpotifyApi by lazy { ApiFactory.create(webApi.tokens, debug = BuildConfig.DEBUG) }
+    val api: SpotifyApi by lazy {
+        ApiFactory.create(
+            webApi.tokens,
+            // Only the calls that ask for it; see ApiFactory.SESSION_AUTH. Off
+            // the main thread by construction — this runs inside an OkHttp
+            // interceptor — and null whenever the engine is not up.
+            sessionToken = { scopes -> NativeBridge.webToken(scopes) },
+            debug = BuildConfig.DEBUG,
+        )
+    }
 
     /** Checks the project's own releases; there is no store to do it. */
     val updater: dev.lelonio.square.update.Updater by lazy {

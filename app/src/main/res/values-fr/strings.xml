@@ -116,6 +116,7 @@
     <string name="connect_app_in_settings">Connectez votre application dans les réglages.</string>
     <string name="add_failed">Impossible d\'ajouter à %1$s. Si la playlist n\'est pas la vôtre, vous ne pouvez pas la modifier.</string>
     <string name="remove_failed">Impossible de modifier %1$s. Réessayez dans un instant.</string>
+    <string name="add_failed_permission">Ton application n’a pas le droit de modifier les playlists. Reconnecte-la dans Réglages → Web API.</string>
 
     <string name="play_on">Lire sur</string>
     <string name="no_devices">Aucun appareil disponible</string>
@@ -186,6 +187,8 @@
     <string name="web_api_expired_title">Session expirée</string>
     <string name="web_api_expired_body">Reconnectez-vous à votre application Spotify pour retrouver la recherche et l’accueil.</string>
     <string name="web_api_expired_action">Se reconnecter</string>
+    <string name="web_api_regrant">Accorder les autorisations manquantes</string>
+    <string name="web_api_regrant_why">Fluidify demande désormais plus qu’au moment où tu as connecté cette application. Se reconnecter prend une touche et rien n’est à enregistrer une seconde fois.</string>
     <string name="later">Plus tard</string>
     <string name="needs_your_app">Votre propre application Spotify est nécessaire : configurez-la dans Rechercher.</string>
 
@@ -261,7 +264,7 @@
     <string name="page_playback">Lecture</string>
     <string name="page_app">Application</string>
     <string name="page_account_summary">Votre compte, l’application Web API et la déconnexion</string>
-    <string name="page_playback_summary">D’où vient la musique, qualité et fondu enchaîné</string>
+    <string name="page_playback_summary">D\'où vient la musique, qualité, téléchargements et fondu</string>
     <string name="page_app_summary">Langue, verre et barre du bas</string>
     <string name="page_about_summary">Version, autorisations, licences et développeur</string>
     <string name="playing_on">Lecture sur %1$s</string>
@@ -274,6 +277,8 @@
     <string name="effect_quality_light_note">Le téléphone s’en charge. Plus douce pour les appareils anciens, plus rêche sur les attaques.</string>
     <string name="liked_songs">Titres likés</string>
     <string name="local_files">Fichiers locaux</string>
+    <string name="show_local_files">Afficher les fichiers locaux</string>
+    <string name="show_local_files_note">Ajoute en haut de ta bibliothèque une étagère avec la musique stockée sur ce téléphone.</string>
     <string name="local_files_needs_permission">Fluidify peut voir la musique de ce téléphone si vous l\'autorisez.</string>
     <string name="local_files_allow">Autoriser</string>
     <string name="pinned">Épinglée</string>
@@ -324,4 +329,37 @@
     <string name="no_biography">Aucune description pour cet artiste.</string>
     <string name="info_panel">Infos</string>
     <string name="monthly_listeners">%1$s auditeurs par mois</string>
+
+    <!-- Downloads -->
+    <string name="download">Télécharger</string>
+    <string name="remove_download">Retirer le téléchargement</string>
+    <string name="downloaded">Téléchargé</string>
+    <string name="downloading">Téléchargement</string>
+    <string name="downloads">Téléchargements</string>
+    <string name="download_count">%1$d téléchargés</string>
+    <string name="download_progress_count">%1$d sur %2$d</string>
+    <string name="download_partial">%1$d sur %2$d disponibles</string>
+    <string name="download_waiting_wifi">En attente du Wi‑Fi</string>
+    <string name="download_waiting_network">En attente d\'une connexion</string>
+    <string name="download_waiting_engine">En attente de Spotify</string>
+    <string name="download_quality">Qualité des téléchargements</string>
+    <string name="download_quality_note">La qualité à laquelle un téléchargement est gardé. Pas d\'automatique ici : un téléchargement se fait une fois et reste, il ne devrait donc pas être la copie que la connexion permettait à cette minute.</string>
+    <string name="download_wifi_only">Télécharger uniquement en Wi‑Fi</string>
+    <string name="download_wifi_only_note">En données mobiles les téléchargements patientent, et repartent seuls dès que le Wi‑Fi revient.</string>
+    <string name="download_liked_songs">Garder les Titres likés hors connexion</string>
+    <string name="download_liked_songs_note">Télécharge tout ce que vous avez liké, et suit chaque cœur ajouté ou retiré.</string>
+    <string name="download_storage">Stockage</string>
+    <string name="download_storage_used">%1$s occupés par les téléchargements</string>
+    <string name="remove_all_downloads">Retirer tous les téléchargements</string>
+    <string name="remove_all_downloads_confirm">Tout ce qui est téléchargé sera supprimé. Vos playlists ne sont pas touchées.</string>
+    <string name="download_artist_confirm">Télécharger %1$d titres de %2$s ? Cela représente environ %3$s.</string>
+    <string name="download_failed_count">%1$d n\'ont pas pu être téléchargés</string>
+    <string name="download_retry_failed">Réessayer</string>
+    <string name="downloaded_tracks">Titres téléchargés</string>
+    <string name="offline_mode">Mode hors connexion</string>
+    <string name="offline_mode_note">Ne lire que ce qui est téléchargé, sans rien demander à Spotify.</string>
+    <string name="offline_unavailable">Indisponible hors connexion</string>
+    <string name="offline_banner_no_network">Hors connexion — aucune connexion</string>
+    <string name="offline_banner_slow">Hors connexion — le réseau est moins bon que vos téléchargements</string>
+    <string name="offline_banner_manual">Hors connexion — vous l\'avez activé</string>
 </resources>

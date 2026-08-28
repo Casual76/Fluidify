@@ -1420,6 +1420,22 @@ impl SpircTask {
             ContextType::Default
         };
 
+        // LOCAL PATCH: the account's shuffle and repeat, announced now that they
+        // are this device's own.
+        //
+        // `handle_activate` above emits them too, and on a handover what it
+        // emits is the answer from before the transfer — the options this device
+        // happened to be left with when it last played, which is exactly the
+        // stale one. The transfer carries the account's, and they are only in
+        // the state after `handle_initial_transfer`, so this is the first moment
+        // there is anything true to say.
+        self.player
+            .emit_shuffle_changed_event(self.connect_state.shuffling_context());
+        self.player.emit_repeat_changed_event(
+            self.connect_state.repeat_context(),
+            self.connect_state.repeat_track(),
+        );
+
         // update position if the track continued playing
         let transfer_timestamp = transfer.playback.timestamp.unwrap_or_default();
         let position = match transfer.playback.position_as_of_timestamp {
@@ -1514,13 +1530,18 @@ impl SpircTask {
         self.player
             .emit_filter_explicit_content_changed_event(self.session.filter_explicit_content());
 
-        self.player
-            .emit_shuffle_changed_event(self.connect_state.shuffling_context());
-
-        self.player.emit_repeat_changed_event(
-            self.connect_state.repeat_context(),
-            self.connect_state.repeat_track(),
-        );
+        // LOCAL PATCH: shuffle and repeat are not announced here.
+        //
+        // Waking up is not news about them. What this emitted was the state this
+        // device was left with the last time it played, which on a fresh session
+        // is the protocol's default of everything off — and activating is the
+        // first thing a load does, so the owner of the handle was told "shuffle
+        // off" a moment before it handed over a queue it had shuffled itself,
+        // and the listener watched the button turn itself off on launch.
+        //
+        // The two are announced where they actually change: `handle_shuffle`,
+        // `handle_repeat_context`, `handle_repeat_track`, and the transfer,
+        // which is the one moment a device really does learn them from outside.
     }
 
     async fn handle_load(
@@ -1795,9 +1816,24 @@ impl SpircTask {
         };
     }
 
+    /// LOCAL PATCH: the flag alone, without the reordering upstream does with it.
+    ///
+    /// Shuffle is two things that arrive together: a flag the account keeps, and
+    /// a permutation of the tracks. Only the flag belongs to this device. The
+    /// owner of the handle draws its own order — it has to, since it also has
+    /// tracks the account never sent it — and hands the result over with
+    /// [`Spirc::set_queue_tracks`], so a device that shuffled as well produced
+    /// two orders for one queue: the screen followed one, the decoder the other,
+    /// and a skip landed on a song nobody could see.
+    ///
+    /// So the permutation is dropped and the flag is kept, which is what makes
+    /// shuffle an account setting rather than a device one: turned on here it
+    /// shows up on every other client, turned on there it arrives as a
+    /// `SetShufflingContext` and reaches the owner as a shuffle event to obey.
     fn handle_shuffle(&mut self, shuffle: bool) -> Result<(), Error> {
         self.player.emit_shuffle_changed_event(shuffle);
-        self.connect_state.handle_shuffle(shuffle)
+        self.connect_state.set_shuffle(shuffle);
+        Ok(())
     }
 
     fn handle_repeat_context(&mut self, repeat: bool) -> Result<(), Error> {

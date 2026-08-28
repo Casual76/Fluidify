@@ -170,6 +170,12 @@ class Updater(context: Context) {
          * The same file the Pampa Store reads to list the app. One source of
          * truth: the store and the in-app updater can never offer different
          * versions.
+         *
+         * Pinned to `master` because a raw URL has to name a ref, and the one
+         * named here is baked into every copy already installed: renaming the
+         * default branch would end updates for all of them at once, with no
+         * release able to reach them to say so. Publishing writes the release
+         * sections of this file — docs/pampa-store-release.md is how.
          */
         const val MANIFEST_URL =
             "https://raw.githubusercontent.com/Casual76/Fluidify/master/manifest.json"

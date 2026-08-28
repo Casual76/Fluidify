@@ -125,6 +125,7 @@
     <string name="connect_app_in_settings">Uygulamanı ayarlardan bağla.</string>
     <string name="add_failed">%1$s listesine eklenemedi. Liste senin değilse değiştiremezsin.</string>
     <string name="remove_failed">%1$s değiştirilemedi. Birazdan tekrar dene.</string>
+    <string name="add_failed_permission">Uygulamanın çalma listelerini değiştirme izni yok. Ayarlar → Web API bölümünden yeniden bağla.</string>
 
     <!-- Player -->
     <string name="play_on">Şurada çal</string>
@@ -198,6 +199,8 @@
     <string name="web_api_expired_title">Oturum sona erdi</string>
     <string name="web_api_expired_body">Arama ve ana sayfanın geri gelmesi için Spotify uygulamana yeniden giriş yap.</string>
     <string name="web_api_expired_action">Yeniden giriş yap</string>
+    <string name="web_api_regrant">Eksik izinleri ver</string>
+    <string name="web_api_regrant_why">Fluidify artık bu uygulamayı bağladığında istediklerinden fazlasını istiyor. Yeniden giriş tek dokunuş, hiçbir şeyi tekrar kaydetmen gerekmez.</string>
     <string name="later">Sonra</string>
     <string name="needs_your_app">Kendi Spotify uygulaman gerekiyor: Ara bölümünden ayarla.</string>
 
@@ -276,7 +279,7 @@
     <string name="page_playback">Çalma</string>
     <string name="page_app">Uygulama</string>
     <string name="page_account_summary">Hesabın, Web API uygulaması ve çıkış</string>
-    <string name="page_playback_summary">Müziğin kaynağı, kalite ve çapraz geçiş</string>
+    <string name="page_playback_summary">Müziğin nereden geldiği, kalite, indirmeler ve geçiş</string>
     <string name="page_app_summary">Dil, cam ve alt çubuk</string>
     <string name="page_about_summary">Sürüm, izinler, lisanslar ve geliştirici</string>
     <string name="playing_on">%1$s cihazında çalıyor</string>
@@ -289,6 +292,8 @@
     <string name="effect_quality_light_note">İşi telefon yapar. Eski cihazlara nazik, vuruşlarda daha kaba.</string>
     <string name="liked_songs">Beğenilen Şarkılar</string>
     <string name="local_files">Yerel dosyalar</string>
+    <string name="show_local_files">Yerel dosyaları göster</string>
+    <string name="show_local_files_note">Kitaplığının üstüne bu telefondaki müzikler için bir raf ekler.</string>
     <string name="local_files_needs_permission">İzin verirsen Fluidify bu telefondaki müziği görebilir.</string>
     <string name="local_files_allow">İzin ver</string>
     <string name="pinned">Sabitlendi</string>
@@ -339,4 +344,37 @@
     <string name="no_biography">Bu sanatçı için açıklama yok.</string>
     <string name="info_panel">Bilgi</string>
     <string name="monthly_listeners">aylik %1$s dinleyici</string>
+
+    <!-- Downloads -->
+    <string name="download">İndir</string>
+    <string name="remove_download">İndirmeyi kaldır</string>
+    <string name="downloaded">İndirildi</string>
+    <string name="downloading">İndiriliyor</string>
+    <string name="downloads">İndirilenler</string>
+    <string name="download_count">%1$d indirildi</string>
+    <string name="download_progress_count">%2$d içinden %1$d</string>
+    <string name="download_partial">%2$d içinden %1$d mevcut</string>
+    <string name="download_waiting_wifi">Wi‑Fi bekleniyor</string>
+    <string name="download_waiting_network">Bağlantı bekleniyor</string>
+    <string name="download_waiting_engine">Spotify bekleniyor</string>
+    <string name="download_quality">İndirme kalitesi</string>
+    <string name="download_quality_note">Bir indirmenin hangi kalitede saklanacağı. Burada otomatik yok: indirme bir kez yapılır ve kalır, o yüzden bağlantının o dakika izin verdiği kopya olmamalı.</string>
+    <string name="download_wifi_only">Yalnızca Wi‑Fi ile indir</string>
+    <string name="download_wifi_only_note">Mobil veride indirmeler bekler ve Wi‑Fi geldiğinde kendiliğinden devam eder.</string>
+    <string name="download_liked_songs">Beğenilen Şarkıları çevrimdışı tut</string>
+    <string name="download_liked_songs_note">Beğendiğin her şeyi indirir ve eklediğin ya da kaldırdığın her kalbi takip eder.</string>
+    <string name="download_storage">Depolama</string>
+    <string name="download_storage_used">İndirmeler %1$s kullanıyor</string>
+    <string name="remove_all_downloads">Tüm indirmeleri kaldır</string>
+    <string name="remove_all_downloads_confirm">İndirilen her şey silinecek. Çalma listelerine dokunulmaz.</string>
+    <string name="download_artist_confirm">%2$s sanatçısından %1$d parça indirilsin mi? Yaklaşık %3$s.</string>
+    <string name="download_failed_count">%1$d tanesi indirilemedi</string>
+    <string name="download_retry_failed">Yeniden dene</string>
+    <string name="downloaded_tracks">İndirilen şarkılar</string>
+    <string name="offline_mode">Çevrimdışı mod</string>
+    <string name="offline_mode_note">Yalnızca indirilenleri çal, Spotify\'dan hiçbir şey isteme.</string>
+    <string name="offline_unavailable">Çevrimdışı kullanılamıyor</string>
+    <string name="offline_banner_no_network">Çevrimdışı — bağlantı yok</string>
+    <string name="offline_banner_slow">Çevrimdışı — bağlantı indirmelerinden kötü</string>
+    <string name="offline_banner_manual">Çevrimdışı — sen açtın</string>
 </resources>

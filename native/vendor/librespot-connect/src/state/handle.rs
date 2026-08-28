@@ -1,39 +1,21 @@
 use crate::{
     core::{Error, dealer::protocol::SetQueueCommand},
-    state::{
-        ConnectState,
-        context::{ContextType, ResetContext},
-        metadata::Metadata,
-    },
+    state::{ConnectState, context::ContextType},
 };
-use protobuf::MessageField;
 
+// LOCAL PATCH: `handle_shuffle` is gone from here.
+//
+// It was the half of shuffling that reorders the context, and this device does
+// not do that half any more: the app owns the running order and hands it over
+// with `Spirc::set_queue_tracks`, so a device that shuffled as well made two
+// orders for one queue. What is left of shuffle is the flag, which
+// `SpircTask::handle_shuffle` writes straight into the published state.
+//
+// Deleted rather than left unused so the next person reading this file is not
+// told there are two ways to shuffle. `shuffle_new` and `shuffle_restore` in
+// `options.rs` are untouched: a transfer still arrives with the account's own
+// permutation, and that one is not this device's to redraw.
 impl ConnectState {
-    pub fn handle_shuffle(&mut self, shuffle: bool) -> Result<(), Error> {
-        self.set_shuffle(shuffle);
-
-        if shuffle {
-            return self.shuffle_new();
-        }
-
-        self.reset_context(ResetContext::DefaultIndex);
-
-        if self.current_track(MessageField::is_none) {
-            return Ok(());
-        }
-
-        match self.current_track(|t| t.get_context_index()) {
-            Some(current_index) => self.reset_playback_to_position(Some(current_index)),
-            None => {
-                let ctx = self.get_context(ContextType::Default)?;
-                let current_index = ConnectState::find_index_in_context(ctx, |c| {
-                    self.current_track(|t| c.uri == t.uri)
-                })?;
-                self.reset_playback_to_position(Some(current_index))
-            }
-        }
-    }
-
     pub fn handle_set_queue(&mut self, set_queue: SetQueueCommand) {
         self.set_next_tracks(set_queue.next_tracks);
         self.set_prev_tracks(set_queue.prev_tracks);

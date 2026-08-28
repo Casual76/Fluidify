@@ -91,6 +91,11 @@ fun dev.lelonio.square.data.RemotePlayback.asPlaybackState(on: String) = Playbac
     artist = artist,
     artworkUrl = coverUrl.ifEmpty { null },
     isPlaying = playing,
+    // The one the buttons read. `isPlaying` drives the Canvas, which is why a
+    // track playing in the next room animated here while both play/pause
+    // buttons still showed Play: the screen was being told the music was going
+    // and, in the same breath, that nobody had asked for it.
+    wantsPlay = playing,
     durationMs = durationMs,
     hasNext = true,
     hasPrevious = true,

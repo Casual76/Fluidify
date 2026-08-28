@@ -8,6 +8,8 @@
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- Downloads keep running with the app in the background; see DownloadService. -->
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Required from API 33 for the playback notification to be visible. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
     <!--
@@ -113,6 +115,16 @@
                 <action android:name="android.media.browse.MediaBrowserService" />
             </intent-filter>
         </service>
+
+        <!--
+          Its own service, not a second job for the one above: a playlist can be
+          downloading with nothing playing, and music can play with nothing left
+          to fetch. Not exported — only this app ever starts it.
+        -->
+        <service
+            android:name=".download.DownloadService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <meta-data
             android:name="com.google.android.gms.car.application"

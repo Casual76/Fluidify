@@ -38,6 +38,16 @@ static CONTEXT_INITIALIZED: AtomicBool = AtomicBool::new(false);
 /// something acted on here.
 static SPIRC_LOST: AtomicBool = AtomicBool::new(false);
 
+/// Set while the engine is running with no session at all.
+///
+/// Different from [`SPIRC_LOST`], which means "there was a device and it went".
+/// This means there was never one, because the handshake could not be made —
+/// and the app went on anyway, playing what is already on the phone. Kept
+/// apart because the Kotlin side answers a lost device by rebuilding the
+/// session, which offline would be a repair attempt every thirty seconds for a
+/// network that is not there.
+static OFFLINE: AtomicBool = AtomicBool::new(false);
+
 /// Whether the sink may make sound.
 ///
 /// Every load shuts it, and the track that load asked for opens it again.
@@ -219,7 +229,27 @@ struct Bundle {
     session: Session,
     player: Arc<Player>,
     /// The Connect device. Every transport command goes through it; see [`load`].
-    spirc: Spirc,
+    ///
+    /// `None` for an offline bundle: with no connection there is no device to
+    /// register, no account to publish state to, and nothing on the other end
+    /// of a command. The player is still there, and a downloaded track still
+    /// plays through it — which is the whole of what offline means here.
+    spirc: Option<Spirc>,
+}
+
+impl Bundle {
+    /// The Connect device, or the error a command on a missing one becomes.
+    ///
+    /// Every transport call goes through this rather than testing for offline
+    /// first: the callers already handle a Spirc that refuses — that is what a
+    /// lost device looks like — and refusing is exactly the right answer when
+    /// there is no device at all. See [`transport`], which then goes straight
+    /// to the player.
+    fn spirc(&self) -> Result<&Spirc, librespot_core::Error> {
+        self.spirc
+            .as_ref()
+            .ok_or_else(|| librespot_core::Error::unavailable("no connect device: offline"))
+    }
 }
 
 /// The inputs to a [`Bundle`], all of them cheap to clone.
@@ -246,6 +276,19 @@ enum Pump {
     Session(Session),
     /// Something changed on another of the account's devices; see `remote`.
     Cluster,
+    /// Something the app wants said to Kotlin that did not come from the
+    /// player — download progress, so far.
+    ///
+    /// Carried on this channel rather than one of its own because the listener
+    /// and the permanent JVM attachment are both here. A second thread saying
+    /// the same kind of thing would be a second attachment to make, a second
+    /// reference to keep alive and a second thing to shut down, for messages
+    /// that arrive a few times a second at most.
+    App {
+        kind: String,
+        uri: String,
+        value: i64,
+    },
 }
 
 /// Errors are flattened to a string because they cross the JNI boundary and the
@@ -280,6 +323,87 @@ pub fn with_session<T>(f: impl FnOnce(&Session) -> T) -> EngineResult<T> {
 /// Returned by value so callers can release the engine lock before blocking on
 /// a request; holding it across an await would serialise playback commands
 /// behind network I/O.
+/// A Web API access token minted for the session that is playing.
+///
+/// The listener's own Web API application is a registration they make in
+/// Spotify's dashboard, and such an application lives in Development Mode.
+/// Spotify refuses some endpoints to applications in that mode outright, and
+/// `POST /v1/playlists/{id}/tracks` is one of them. That was measured rather
+/// than guessed: with the account owning the playlist and both
+/// `playlist-modify-*` scopes provably granted, a body of `{"uris":[]}` was
+/// refused exactly like a real one, while `PUT /v1/playlists/{id}/followers` on
+/// the same playlist with the same token succeeded. Nothing about the payload,
+/// the scopes or the ownership explains it; the application does.
+///
+/// The session is authenticated as the official client, which is under no such
+/// restriction, and Spotify hands out Web API tokens for it on request. So the
+/// app writes to the account through the same credential it plays with, and the
+/// dashboard registration goes back to being what it was meant to be — a way to
+/// have one's own search quota, not a thing the app depends on.
+///
+/// `scopes` is comma-separated, which is what librespot's provider expects and
+/// is *not* the space-separated spelling the OAuth endpoints use.
+pub fn web_token(scopes: &str) -> EngineResult<String> {
+    let session = with_session(|s| s.clone())?;
+    let scopes = scopes.to_string();
+    // The provider keeps what it is given until it expires, so the common case
+    // costs a lock and a scan rather than a round trip.
+    runtime_handle()?.block_on(async move {
+        // What the session itself carries. librespot authenticates every
+        // spclient call with this, so it is known good against Spotify's own
+        // hosts; whether api.spotify.com honours it for a write is the question
+        // this answers.
+        match session.login5().auth_token().await {
+            Ok(token) => {
+                log::debug!("using the session's login5 token for {scopes}");
+                return Ok(token.access_token);
+            }
+            Err(e) => log::debug!("no login5 token: {e}"),
+        }
+
+        let mut last = String::new();
+        for client_id in token_client_ids(&session) {
+            match session
+                .token_provider()
+                .get_token_with_client_id(&scopes, &client_id)
+                .await
+            {
+                Ok(token) => return Ok(token.access_token),
+                Err(e) => {
+                    log::debug!("no {scopes} token for client {client_id}: {e}");
+                    last = e.to_string();
+                }
+            }
+        }
+        Err(format!("session token for {scopes} refused: {last}"))
+    })
+}
+
+/// Which applications to ask for a Web API token, in order.
+///
+/// Spotify does not grant every scope to every client id — librespot's own
+/// provider says as much — and the one this session authenticates with is the
+/// keymaster id, which is refused `playlist-modify-*` outright: the keymaster
+/// endpoint answers 403 `{"code":4,"errorDescription":"Invalid request"}`. The
+/// official mobile application is granted them, because it is what the phone
+/// app writes playlists with, so it is asked next.
+///
+/// The ids are librespot's own, from `librespot-core/src/config.rs`, repeated
+/// here because they are `pub(crate)` there and patching the vendored crate to
+/// widen them would be a patch to carry forever for two constants.
+fn token_client_ids(session: &Session) -> Vec<String> {
+    const ANDROID: &str = "9a8d2f0ce77a4e248bb71fefcb557637";
+    const IOS: &str = "58bd3c95768941ea9eb4350aaa033eb3";
+
+    let mut ids = vec![session.client_id()];
+    for candidate in [ANDROID, IOS] {
+        if !ids.iter().any(|id| id == candidate) {
+            ids.push(candidate.to_string());
+        }
+    }
+    ids
+}
+
 pub fn runtime_handle() -> EngineResult<tokio::runtime::Handle> {
     with_engine(|engine| engine.rt.handle().clone())
 }
@@ -425,6 +549,12 @@ pub fn start(
         // Fixed for the life of the player, like the bitrate, so the service
         // builds a new engine when the setting changes.
         crossfade_duration_ms: crossfade_ms.max(0) as u32,
+
+        // How the loader asks whether a track is already on the phone; see
+        // downloads.rs. Installed unconditionally: the lookup answers "no" for
+        // everything until a download root has been set, so there is no order
+        // to get right between this and the Kotlin side setting one up.
+        download_lookup: Some(crate::downloads::lookup()),
         ..PlayerConfig::default()
     };
 
@@ -469,7 +599,30 @@ pub fn start(
         cache_dir.to_string(),
     );
 
-    let bundle = build_bundle(&rt, &recipe, &mixer, &events_tx)?;
+    // The handshake, and what to do when it cannot be made.
+    //
+    // A failure here used to be the end of the app: no session, no player, no
+    // sound, whatever was already on the phone. With downloads that is the
+    // wrong answer — the music is right there — so a failed connection falls
+    // back to a session that was never connected and a player that only ever
+    // reads from disk. See `build_offline_bundle`.
+    //
+    // A refused account is not covered: that is Spotify saying no, not the
+    // network being absent, and starting anyway would hide it behind an app
+    // that plays a few downloaded songs and explains nothing.
+    let bundle = match build_bundle(&rt, &recipe, &mixer, &events_tx) {
+        Ok(bundle) => {
+            OFFLINE.store(false, Ordering::SeqCst);
+            bundle
+        }
+        Err(e) if e == PREMIUM_REQUIRED => return Err(e),
+        Err(e) if crate::downloads::any() => {
+            log::warn!("{e}; starting offline with what is on the phone");
+            OFFLINE.store(true, Ordering::SeqCst);
+            build_offline_bundle(&rt, &recipe, &mixer, &events_tx)?
+        }
+        Err(e) => return Err(e),
+    };
 
     *guard = Some(Engine {
         rt,
@@ -702,7 +855,64 @@ fn build_bundle(
     Ok(Bundle {
         session,
         player,
-        spirc,
+        spirc: Some(spirc),
+    })
+}
+
+/// Builds a player with no session behind it.
+///
+/// The `Session` is constructed and never connected. That is not a trick: the
+/// only thing the loader asks a session for is a track's metadata, its audio
+/// key and its bytes, and a downloaded track needs none of the three — the
+/// branch that finds it on disk returns before any of them is reached (see
+/// `load_downloaded_track` in player.rs). A track that is *not* downloaded
+/// simply fails to load, which is exactly what should happen.
+///
+/// No Spirc, and that is the whole difference. Without an account to publish to
+/// there is no Connect device, so nothing advances the queue on its own: the
+/// app drives it, one track at a time, through [`local_load`].
+fn build_offline_bundle(
+    rt: &Runtime,
+    recipe: &Recipe,
+    mixer: &Arc<SoftMixer>,
+    events_tx: &std::sync::mpsc::Sender<Pump>,
+) -> EngineResult<Bundle> {
+    let cache = Cache::new(
+        Some(std::path::Path::new(&recipe.credentials_dir)),
+        None,
+        Some(std::path::Path::new(&recipe.cache_dir)),
+        Some(AUDIO_CACHE_LIMIT),
+    )
+    .map_err(|e| format!("cache failed: {e}"))?;
+
+    let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+
+    // Inside the runtime, not beside it. `Session::new` registers tasks of its
+    // own the moment it is built, and off a runtime thread that is not an error
+    // but a panic — which, taken while `start` holds the engine lock, poisons it
+    // and leaves every later call answering "engine mutex poisoned". The online
+    // path never hit this because it does all of its building inside a
+    // `block_on`; this one has nothing to await, so it has to say so.
+    let _runtime = rt.enter();
+
+    let session = Session::new(recipe.session_config.clone(), Some(cache));
+    let player = Player::new(
+        recipe.player_config.clone(),
+        session.clone(),
+        mixer.get_soft_volume(),
+        move || Box::new(crate::sink::AndroidSink::new(AudioFormat::S16, generation)),
+    );
+
+    // No `Pump::Session`: history is reported over the session, and this one
+    // cannot carry anything. What was heard offline is kept by the app and
+    // sent when there is a connection again.
+    spawn_event_forwarder(rt, player.clone(), events_tx.clone(), generation);
+    SPIRC_LOST.store(false, Ordering::SeqCst);
+
+    Ok(Bundle {
+        session,
+        player,
+        spirc: None,
     })
 }
 
@@ -860,8 +1070,10 @@ pub fn reconnect() -> EngineResult<()> {
         if let Some(old) = engine.bundle.take() {
             log::info!("discarding the old session");
             crate::remote::clear();
-            let _ = old.spirc.disconnect(true);
-            let _ = old.spirc.shutdown();
+            if let Some(spirc) = old.spirc.as_ref() {
+                let _ = spirc.disconnect(true);
+                let _ = spirc.shutdown();
+            }
             old.player.stop();
             old.session.shutdown();
             // The device is emptied here rather than left to the player's own
@@ -871,9 +1083,32 @@ pub fn reconnect() -> EngineResult<()> {
             crate::sink::silence();
         }
 
-        let bundle = build_bundle(&engine.rt, &engine.recipe, &engine.mixer, &engine.events_tx)?;
+        // The same fallback the first start has, and for the same reason: a
+        // rebuild that fails leaves the engine with no bundle at all, which
+        // used to mean an app that could not even play what was on the phone.
+        // It also doubles as the way back — [`reconnect`] is what the app calls
+        // when a network appears, and a success here is what ends offline mode.
+        let bundle =
+            match build_bundle(&engine.rt, &engine.recipe, &engine.mixer, &engine.events_tx) {
+                Ok(bundle) => {
+                    OFFLINE.store(false, Ordering::SeqCst);
+                    log::info!("reconnected");
+                    bundle
+                }
+                Err(e) if e == PREMIUM_REQUIRED => return Err(e),
+                Err(e) if crate::downloads::any() => {
+                    log::warn!("{e}; staying offline with what is on the phone");
+                    OFFLINE.store(true, Ordering::SeqCst);
+                    build_offline_bundle(
+                        &engine.rt,
+                        &engine.recipe,
+                        &engine.mixer,
+                        &engine.events_tx,
+                    )?
+                }
+                Err(e) => return Err(e),
+            };
         engine.bundle = Some(bundle);
-        log::info!("reconnected");
         Ok(())
     })();
     RECONNECTING.store(false, Ordering::SeqCst);
@@ -929,6 +1164,12 @@ fn spawn_event_pump(
                         }
                         continue;
                     }
+                    Pump::App { kind, uri, value } => {
+                        if let Err(e) = emit(&listener, &kind, &uri, value) {
+                            log::warn!("dropping {kind}: {e}");
+                        }
+                        continue;
+                    }
                     Pump::Session(session) => {
                         match history.as_mut() {
                             // The listen in progress survives: the same person
@@ -969,7 +1210,31 @@ fn spawn_event_pump(
                     PlayerEvent::Unavailable { track_id, .. } => {
                         ("unavailable", uri_string(&track_id), 0)
                     }
-                    // Connect-protocol and volume events are not surfaced yet.
+                    // Shuffle and repeat belong to the account, so the app has
+                    // to hear about them rather than only ever set them: they
+                    // arrive here whenever another client changes them on this
+                    // device, and whenever a handover brings the account's own
+                    // along with the music.
+                    PlayerEvent::ShuffleChanged { shuffle } => {
+                        ("shuffle", String::new(), shuffle as i64)
+                    }
+                    // One number for two flags, and the track wins when both are
+                    // set: that is the order `set_repeat` already reads them in,
+                    // and it is the only combination a player with three buttons
+                    // can draw. 0 is off, 1 the context, 2 the track.
+                    PlayerEvent::RepeatChanged { context, track } => (
+                        "repeat",
+                        String::new(),
+                        if track {
+                            2
+                        } else if context {
+                            1
+                        } else {
+                            0
+                        },
+                    ),
+                    // Volume and the session's own comings and goings are not
+                    // surfaced yet.
                     _ => continue,
                 };
 
@@ -1261,6 +1526,23 @@ fn uri_string(uri: &SpotifyUri) -> String {
     uri.to_uri().unwrap_or_default()
 }
 
+/// Says something to the Kotlin listener from outside the player.
+///
+/// Best effort on purpose. A progress tick that cannot be delivered — because
+/// the engine is between two sessions, or because the pump has already been
+/// torn down — is a ring that does not move for a moment. That is not a reason
+/// to fail the download it belongs to.
+pub fn emit_app(kind: &str, uri: &str, value: i64) {
+    let Ok(sender) = with_engine(|engine| engine.events_tx.clone()) else {
+        return;
+    };
+    let _ = sender.send(Pump::App {
+        kind: kind.to_string(),
+        uri: uri.to_string(),
+        value,
+    });
+}
+
 /// Invoke `NativeEvents.onEvent` from a tokio worker thread.
 fn emit(listener: &GlobalRef, kind: &str, uri: &str, position_ms: i64) -> Result<(), String> {
     let vm = JAVA_VM.get().ok_or("JNI_OnLoad did not run")?;
@@ -1362,6 +1644,31 @@ fn sweep_stale_downloads(dir: &str) {
 /// Matched by the Kotlin side, so it stays a stable string.
 pub const PREMIUM_REQUIRED: &str = "premium account required";
 
+/// Plays one track on the player, with no Connect device in the way.
+///
+/// The offline half of [`load_queue`], and the only way anything is heard
+/// without a session. It does what Spirc would have done with the track it
+/// picked — load it, at this position, playing or not — and stops there: the
+/// track after it is loaded by the next call, when the app hears that this one
+/// ended.
+///
+/// Warming the successor is skipped on purpose. Offline the next track is
+/// already a file on this phone, and preloading it would decode a second stream
+/// to save four milliseconds.
+fn local_load(uris: &[String], index: u32, play: bool, position_ms: u32) -> EngineResult<()> {
+    let uri = uris
+        .get(index as usize)
+        .ok_or_else(|| "nothing at that index".to_string())?;
+    let parsed = SpotifyUri::from_uri(uri).map_err(|e| format!("bad uri {uri}: {e}"))?;
+    log::info!("offline: loading {uri} at {position_ms}ms, play={play}");
+    with_bundle(|e| e.player.load(parsed, play, position_ms))
+}
+
+/// Whether the engine is running with no session at all.
+pub fn is_offline() -> bool {
+    OFFLINE.load(Ordering::SeqCst)
+}
+
 /// How far into a track its successor is fetched, in milliseconds.
 const PRELOAD_AFTER_MS: u32 = 5_000;
 
@@ -1418,6 +1725,15 @@ pub fn load_queue(
     }
     if let Ok(mut stored) = QUEUE.lock() {
         *stored = uris.clone();
+    }
+
+    // Offline there is no Connect device to hand a queue to, so there is no
+    // queue to hand over: the player is given the one track, and the app comes
+    // back for the next one when this ends. Everything above still runs, so
+    // what the app believes about the queue is unchanged either way — the only
+    // difference is who advances it.
+    if with_bundle(|e| e.spirc.is_none())? {
+        return local_load(&uris, index, start_playing, position_ms);
     }
 
     let options = LoadRequestOptions {
@@ -1488,20 +1804,18 @@ pub fn load_queue(
         // Without this the device is registered but idle, and a load is
         // ignored: playback belongs to whichever device the account has
         // active, and taking that over is an explicit step.
-        e.spirc.activate()?;
-        // Shuffle off before the list goes in, every time.
+        e.spirc()?.activate()?;
+        e.spirc()?.load(request)?;
+        // And the account's options again, because the load has just wiped
+        // them: `handle_load` opens with `reset_options`, which turns shuffle
+        // and both kinds of repeat off before it reads a single track. Every
+        // tap on a song therefore ended repeat, and there was no way to tell
+        // that from the app deciding to end it.
         //
-        // The order handed over here is the order the app is showing, shuffled
-        // or not: the app draws its own random order and the engine is only
-        // asked to play the result. But the Connect state carries a shuffle
-        // flag of the account's, which another client may have set and which
-        // survives in the state this device restores, and when a context
-        // resolves with that flag on librespot shuffles it again for itself.
-        // The engine then played its own order while the screen followed
-        // another, so a skip stepped somewhere the listener could not see and
-        // whole tracks appeared to be missed.
-        e.spirc.shuffle(false)?;
-        e.spirc.load(request)
+        // Sent after the load rather than before it for the same reason: the
+        // commands are one queue read one at a time, so anything said first is
+        // said to a device that is about to forget it.
+        republish_options(e.spirc()?)
     })?
     .inspect_err(|_| {
         // A load has no way around Spirc: choosing what to decode next is the
@@ -1560,9 +1874,9 @@ fn transport(
         });
     }
 
-    if spirc_lost() {
+    if OFFLINE.load(Ordering::SeqCst) || spirc_lost() {
         return with_bundle(|engine| {
-            log::warn!("{what}: the connect device is gone, going straight to the player");
+            log::warn!("{what}: no connect device, going straight to the player");
             via_player(engine);
         });
     }
@@ -1576,7 +1890,7 @@ fn transport(
         // back as an error, so the app saw a pause that had been accepted and a
         // player that went on regardless. The load path has taken this step
         // since it was written; the transport path never did.
-        let _ = engine.spirc.activate();
+        let _ = engine.spirc().map(Spirc::activate);
         via_spirc(engine)
     } {
         Ok(()) => Ok(()),
@@ -1618,7 +1932,7 @@ pub fn elsewhere_active() -> bool {
         return false;
     }
 
-    match with_bundle(|bundle| bundle.spirc.is_active()) {
+    match with_bundle(|bundle| bundle.spirc.as_ref().is_some_and(Spirc::is_active)) {
         Ok(true) => false,
         Ok(false) => crate::remote::elsewhere_active(),
         Err(_) => crate::remote::elsewhere_active(),
@@ -1638,7 +1952,13 @@ pub fn elsewhere_active() -> bool {
 /// the Connect state itself, which is the same thing the other devices are
 /// shown.
 pub fn playing_here() -> EngineResult<String> {
-    let playing = with_bundle(|bundle| bundle.spirc.playing())?;
+    // Offline there is no Connect state to read, and no other client that
+    // could have driven this device somewhere the app does not know about —
+    // which is the only reason this call exists. An empty answer is the honest
+    // one, and it is a shape the caller already handles.
+    let Some(playing) = with_bundle(|bundle| bundle.spirc.as_ref().map(Spirc::playing))? else {
+        return Ok("{\"contextUri\":\"\",\"trackUri\":\"\",\"index\":0,\"videoId\":\"\",\"tracks\":[]}".to_string());
+    };
     let escape = |value: &str| serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into());
     let tracks: Vec<String> = playing.tracks.iter().map(|uri| escape(uri)).collect();
     // `videoId` rides along rather than getting a call of its own: it changes
@@ -1664,7 +1984,7 @@ pub fn play() -> EngineResult<()> {
         log::info!("play: another device has playback, ignoring");
         return Ok(());
     }
-    transport("play", |e| e.spirc.play(), |e| e.player.play())
+    transport("play", |e| e.spirc()?.play(), |e| e.player.play())
 }
 
 pub fn pause() -> EngineResult<()> {
@@ -1679,7 +1999,7 @@ pub fn pause() -> EngineResult<()> {
     // because the music is on another device, costs nothing.
     let _ = with_bundle(|engine| engine.player.pause());
 
-    transport("pause", |e| e.spirc.pause(), |e| e.player.pause())
+    transport("pause", |e| e.spirc()?.pause(), |e| e.player.pause())
 }
 
 pub fn stop() -> EngineResult<()> {
@@ -1687,11 +2007,11 @@ pub fn stop() -> EngineResult<()> {
     // device has given up playback, which is what makes it disappear from the
     // device list instead of lingering as a paused phantom. The fallback does
     // stop the player, because a stop that leaves audio running is not a stop.
-    transport("stop", |e| e.spirc.disconnect(true), |e| e.player.stop())
+    transport("stop", |e| e.spirc()?.disconnect(true), |e| e.player.stop())
 }
 
 pub fn seek(position_ms: u32) -> EngineResult<()> {
-    with_bundle(|e| e.spirc.set_position_ms(position_ms))?.map_err(|e| format!("seek failed: {e}"))
+    with_bundle(|e| e.spirc()?.set_position_ms(position_ms))?.map_err(|e| format!("seek failed: {e}"))
 }
 
 // Skipping is a Spirc command like the rest, and it was the one left out of
@@ -1702,12 +2022,12 @@ pub fn seek(position_ms: u32) -> EngineResult<()> {
 // that is certainly wrong: the listener asked for something else.
 pub fn next() -> EngineResult<()> {
     leaving();
-    transport("next", |e| e.spirc.next(), |e| e.player.stop())
+    transport("next", |e| e.spirc()?.next(), |e| e.player.stop())
 }
 
 pub fn previous() -> EngineResult<()> {
     leaving();
-    transport("previous", |e| e.spirc.prev(), |e| e.player.stop())
+    transport("previous", |e| e.spirc()?.prev(), |e| e.player.stop())
 }
 
 
@@ -1778,8 +2098,8 @@ pub fn publish_context(position_ms: u32) -> EngineResult<bool> {
     );
 
     with_bundle(|e| {
-        e.spirc.activate()?;
-        e.spirc.load(request)
+        e.spirc()?.activate()?;
+        e.spirc()?.load(request)
     })?
     .map_err(|e| format!("could not republish the context: {e}"))?;
     Ok(true)
@@ -1819,8 +2139,8 @@ pub fn resume_here(context_uri: &str, track_uri: &str, position_ms: u32) -> Engi
     );
 
     with_bundle(|e| {
-        e.spirc.activate()?;
-        e.spirc.load(request)
+        e.spirc()?.activate()?;
+        e.spirc()?.load(request)
     })?
     .map_err(|e| format!("could not resume here: {e}"))
 }
@@ -1832,7 +2152,7 @@ pub fn resume_here(context_uri: &str, track_uri: &str, position_ms: u32) -> Engi
 /// a command sent from a device to itself goes out to the access point and
 /// comes back refused. Activating is the same thing done directly.
 pub fn take_over() -> EngineResult<()> {
-    with_bundle(|e| e.spirc.activate())?.map_err(|e| format!("could not take over: {e}"))
+    with_bundle(|e| e.spirc()?.activate())?.map_err(|e| format!("could not take over: {e}"))
 }
 
 /// Hands the device a new running order without touching what is playing.
@@ -1853,19 +2173,58 @@ pub fn set_queue_order(uris: Vec<String>, index: u32) -> EngineResult<()> {
         *stored = uris;
     }
 
-    with_bundle(|e| e.spirc.set_queue_tracks(prev, next))?
+    with_bundle(|e| e.spirc()?.set_queue_tracks(prev, next))?
         .map_err(|e| format!("queue order failed: {e}"))
 }
 
+/// Shuffle and repeat as the account holds them, so a load can put them back.
+///
+/// These belong to the listener, not to any one device: Spotify keeps them in
+/// the Connect state and every client shows the same three buttons. The engine
+/// has to keep a copy because loading a queue resets them — see the note beside
+/// [`republish_options`] — and because a rebuilt session starts from nothing.
+static SHUFFLE: AtomicBool = AtomicBool::new(false);
+static REPEAT_CONTEXT: AtomicBool = AtomicBool::new(false);
+static REPEAT_TRACK: AtomicBool = AtomicBool::new(false);
+
+/// Says the options again, for a device that has just been made to forget them.
+///
+/// Only what is on. Everything is off after a load anyway, so saying so a second
+/// time is a command the Connect task has to answer for no change at all — and
+/// `repeat(false)` is not free: it refills the coming tracks from the context,
+/// in the context's order, which is not the order the app is showing.
+fn republish_options(spirc: &Spirc) -> Result<(), librespot_core::Error> {
+    if SHUFFLE.load(Ordering::SeqCst) {
+        spirc.shuffle(true)?;
+    }
+    if REPEAT_TRACK.load(Ordering::SeqCst) {
+        spirc.repeat_track(true)?;
+    }
+    if REPEAT_CONTEXT.load(Ordering::SeqCst) {
+        spirc.repeat(true)?;
+    }
+    Ok(())
+}
+
+/// Publishes shuffle to the account, without letting the device reorder for it.
+///
+/// The device carries the flag and the app carries the order; see the patch note
+/// in native/vendor/README.md. Before that they both carried both, and the flag
+/// had to be forced off on every load to keep the two orders in step — which is
+/// why the account showed this phone as never shuffling, and why shuffle turned
+/// on elsewhere never arrived.
 pub fn set_shuffle(shuffle: bool) -> EngineResult<()> {
-    with_bundle(|e| e.spirc.shuffle(shuffle))?.map_err(|e| format!("shuffle failed: {e}"))
+    SHUFFLE.store(shuffle, Ordering::SeqCst);
+    with_bundle(|e| e.spirc()?.shuffle(shuffle))?.map_err(|e| format!("shuffle failed: {e}"))
 }
 
 /// `repeat_track` takes precedence: the two are separate flags in the protocol.
 pub fn set_repeat(repeat_context: bool, repeat_track: bool) -> EngineResult<()> {
+    REPEAT_CONTEXT.store(repeat_context, Ordering::SeqCst);
+    REPEAT_TRACK.store(repeat_track, Ordering::SeqCst);
     with_bundle(|e| {
-        e.spirc.repeat_track(repeat_track)?;
-        e.spirc.repeat(repeat_context)
+        e.spirc()?.repeat_track(repeat_track)?;
+        e.spirc()?.repeat(repeat_context)
     })?
     .map_err(|e| format!("repeat failed: {e}"))
 }
@@ -1895,6 +2254,13 @@ pub fn volume() -> EngineResult<u16> {
 /// of a handshake, and both are asked from the playback looper: waiting there
 /// would be seconds of a frozen app for a question that has an answer already.
 pub fn spirc_lost() -> bool {
+    // Offline there is no device to lose, and saying one was lost would send
+    // the Kotlin side off rebuilding a session every thirty seconds against a
+    // network that is not there. The app is told it is offline instead, which
+    // is a different question with a different answer; see `is_offline`.
+    if OFFLINE.load(Ordering::SeqCst) {
+        return false;
+    }
     if RECONNECTING.load(Ordering::SeqCst) {
         // True in the strict sense: there is no device at this instant. It is
         // also the useful answer, because a command issued now would find no
@@ -1908,7 +2274,9 @@ pub fn spirc_lost() -> bool {
 }
 
 pub fn is_connected() -> bool {
-    !RECONNECTING.load(Ordering::SeqCst) && session_invalid().map(|bad| !bad) == Some(true)
+    !OFFLINE.load(Ordering::SeqCst)
+        && !RECONNECTING.load(Ordering::SeqCst)
+        && session_invalid().map(|bad| !bad) == Some(true)
 }
 
 /// Whether the current session has been invalidated, or `None` if asking would
@@ -1930,8 +2298,10 @@ pub fn shutdown() {
             // Told to the account before the socket goes: a device that
             // vanishes without disconnecting stays in the user's list until it
             // times out.
-            let _ = bundle.spirc.disconnect(true);
-            let _ = bundle.spirc.shutdown();
+            if let Some(spirc) = bundle.spirc.as_ref() {
+                let _ = spirc.disconnect(true);
+                let _ = spirc.shutdown();
+            }
             bundle.player.stop();
             bundle.session.shutdown();
         }

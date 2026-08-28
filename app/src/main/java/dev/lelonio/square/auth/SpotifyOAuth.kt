@@ -94,6 +94,45 @@ object SpotifyOAuth {
         "user-top-read",
     )
 
+    /**
+     * What the user's own registered application is asked for.
+     *
+     * Here rather than at the call site because two things need to agree on it:
+     * the sign-in that asks, and the check that notices a connected application
+     * was granted less than this — which happens every time this list grows, to
+     * everyone who connected before it did.
+     */
+    val WEB_API_SCOPES = listOf(
+        // The home feed's "artisti che ascolti".
+        "user-top-read",
+        // Reading what the account has actually played, which is a
+        // different permission from the top artists above.
+        "user-read-recently-played",
+        // The Connect device picker: one to list them, one to move
+        // playback.
+        "user-read-playback-state",
+        "user-modify-playback-state",
+        // The player's "add to playlist". Which of the two
+        // applies is the playlist's own visibility, not the
+        // caller's, so both are asked for.
+        "playlist-modify-private",
+        "playlist-modify-public",
+        // Following artists, and the list of the ones followed.
+        "user-follow-read",
+        "user-follow-modify",
+        // Liked Songs and saved albums: the library screen reads
+        // them, and the same sheet that adds to a playlist is what
+        // hearts a track. Asked for late — until this was written
+        // the saved-albums row simply came back 403 and the shelf
+        // stayed empty, which reads as "you have no albums".
+        "user-library-read",
+        "user-library-modify",
+        // Reading the account's own playlists, which are private
+        // more often than not.
+        "playlist-read-private",
+        "playlist-read-collaborative",
+    )
+
     private const val TAG = "SpotOAuth"
 
     private val http = OkHttpClient()
@@ -103,6 +142,21 @@ object SpotifyOAuth {
         val accessToken: String,
         val refreshToken: String?,
         val expiresAtMillis: Long,
+        /**
+         * What the account actually granted, space separated as Spotify sends it.
+         *
+         * Kept because asking for a permission and being given it are two
+         * different things, and the difference is invisible until a call comes
+         * back 403 with nothing to say about why. An application connected
+         * before a permission was added to the list above goes on working for
+         * everything else, so there is no moment at which the app would
+         * otherwise notice; see MainViewModel.addToPlaylist, which uses this to
+         * tell "this is not your playlist" from "reconnect the application".
+         *
+         * Empty for a token stored before this was recorded, which has to be
+         * read as "unknown" rather than as "nothing".
+         */
+        val scope: String = "",
     )
 
     /**
@@ -216,6 +270,7 @@ object SpotifyOAuth {
                 accessToken = json.getString("access_token"),
                 refreshToken = json.optString("refresh_token").takeIf { it.isNotEmpty() },
                 expiresAtMillis = System.currentTimeMillis() + expiresIn * 1000,
+                scope = json.optString("scope"),
             )
         }
     }

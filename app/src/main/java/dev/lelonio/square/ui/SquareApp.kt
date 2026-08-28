@@ -130,7 +130,8 @@ import dev.lelonio.square.ui.components.TrackSheetAction
 import dev.lelonio.square.ui.components.UpdateDialog
 import dev.lelonio.square.update.Updater
 import dev.lelonio.square.ui.library.openLink
-import com.adamglin.phosphoricons.regular.Download
+import com.adamglin.phosphoricons.fill.ArrowCircleDown
+import com.adamglin.phosphoricons.regular.ArrowCircleDown
 import com.adamglin.phosphoricons.regular.LinkSimple
 import com.adamglin.phosphoricons.regular.PencilSimple
 import com.adamglin.phosphoricons.regular.PushPin
@@ -258,6 +259,43 @@ fun SquareApp(
     val state by viewModel.state.collectAsStateWithLifecycle()
     val playlist by viewModel.playlist.collectAsStateWithLifecycle()
     val context = LocalContext.current
+
+    // Read here, where every screen that needs them can be handed them. The two
+    // maps are separate on purpose: a page's button follows [ownerStates],
+    // which is a handful of entries, while the rows are answered one at a time
+    // out of [files] and [progress] — see DownloadStore.ownerStates.
+    val downloadOwners by viewModel.downloads.ownerStates.collectAsStateWithLifecycle()
+    val downloadedFiles by viewModel.downloads.files.collectAsStateWithLifecycle()
+    val downloadProgress by viewModel.downloads.progress.collectAsStateWithLifecycle()
+    // Which songs were asked for on their own, so the row menu can offer the
+    // opposite of what is already true. A track downloaded only because its
+    // playlist was still reads as downloaded; removing it there would be a lie,
+    // since the playlist still claims it.
+    val downloadSingles = viewModel.downloads.owners
+        .collectAsStateWithLifecycle().value[dev.lelonio.square.data.DownloadStore.SINGLES]
+        .orEmpty()
+
+    // The shelf for songs kept on their own, and only when there are some. It
+    // is not something the account has — it is something this phone made — so
+    // it appears under the Downloads chip and nowhere else.
+    val downloadedSongsName = stringResource(R.string.downloaded_tracks)
+    val downloadedSongsShelf = remember(downloadSingles, downloadedSongsName) {
+        downloadSingles.takeIf { it.isNotEmpty() }?.let {
+            CatalogPlaylist(
+                uri = dev.lelonio.square.data.DownloadStore.SINGLES,
+                name = downloadedSongsName,
+                artworkUrl = dev.lelonio.square.ui.components.DOWNLOADS_COVER,
+            )
+        }
+    }
+
+    // Whatever a previous run left owing. Idempotent, and cheap when there is
+    // nothing: the queue asks the store and stops again.
+    LaunchedEffect(Unit) { viewModel.resumeDownloads() }
+
+    val offlineNow by dev.lelonio.square.playback.OfflineMode.active
+        .collectAsStateWithLifecycle()
+    val artistDownload by viewModel.artistDownload.collectAsStateWithLifecycle()
 
     UpdatePrompt()
 
@@ -723,6 +761,7 @@ fun SquareApp(
         (context.applicationContext as dev.lelonio.square.SquareApplication).language
     }
     val language by languageStore.tag.collectAsStateWithLifecycle()
+    val showLocalFiles by viewModel.showLocalFiles.collectAsStateWithLifecycle()
     val setLanguage: (String) -> Unit = remember(languageStore, context) {
         { tag ->
             if (tag != languageStore.tag.value) {
@@ -1172,6 +1211,8 @@ fun SquareApp(
                                 },
                                 artists = followedArtists,
                                 albums = savedAlbums,
+                                downloaded = downloadOwners.keys,
+                                downloadedSongs = downloadedSongsShelf,
                                 onOpenArtist = { artist ->
                                     viewModel.openContext(
                                         artist.uri,
@@ -1199,6 +1240,8 @@ fun SquareApp(
                                 onShowTutorial = { showTutorial = true },
                                 language = language,
                                 onLanguage = setLanguage,
+                                showLocalFiles = showLocalFiles,
+                                onShowLocalFiles = viewModel::setShowLocalFiles,
                                 onBack = { navController.popBackStack() },
                             )
                         }
@@ -1217,6 +1260,8 @@ fun SquareApp(
                             val queueLabel = stringResource(R.string.add_to_queue)
                             val addToPlaylistLabel = stringResource(R.string.add_to_playlist)
                             val removeLabel = stringResource(R.string.remove_from_playlist)
+                            val downloadLabel = stringResource(R.string.download)
+                            val removeDownloadLabel = stringResource(R.string.remove_download)
                             val detailClipboard =
                                 androidx.compose.ui.platform.LocalClipboardManager.current
                             val pinLabel = stringResource(R.string.pin)
@@ -1325,6 +1370,32 @@ fun SquareApp(
                                             ),
                                         )
                                     },
+                                    downloadState = playlist.uri
+                                        ?.let { downloadOwners[it] }
+                                        ?: dev.lelonio.square.data.OwnerState.None,
+                                    onToggleDownload = { viewModel.toggleDownload(playlist) },
+                                    // Everything Spotify serves, and nothing
+                                    // else. The local files shelf is already on
+                                    // the phone, and an empty page has nothing
+                                    // to fetch.
+                                    canDownload = playlist.uri
+                                        ?.startsWith("spotify:") == true &&
+                                        playlist.tracks.isNotEmpty(),
+                                    offline = offlineNow,
+                                    onLeaveOffline = {
+                                        viewModel.downloadSettings.setOfflineMode(false)
+                                    },
+                                    trackDownload = { track ->
+                                        when {
+                                            downloadedFiles.containsKey(track.uri) ->
+                                                dev.lelonio.square.data.DownloadState.Done
+                                            downloadProgress.containsKey(track.uri) ->
+                                                dev.lelonio.square.data.DownloadState.Running(
+                                                    downloadProgress.getValue(track.uri),
+                                                )
+                                            else -> dev.lelonio.square.data.DownloadState.None
+                                        }
+                                    },
                                     trackActions = { track ->
                                         buildList {
                                             add(
@@ -1345,6 +1416,34 @@ fun SquareApp(
                                                     icon = PhosphorIcons.Regular.Plus,
                                                 ) { viewModel.openAddToPlaylist(track.uri, track.name) },
                                             )
+                                            // The only way to download one
+                                            // song. Deliberately not the mark in
+                                            // the row: a fourteen-pixel target
+                                            // inside a list built to be scrolled
+                                            // would start megabytes on a mis-tap.
+                                            if (track.uri.startsWith("spotify:")) {
+                                                // Whether this song is kept in
+                                                // its own right. A track that is
+                                                // only here because its playlist
+                                                // is still shows the mark in the
+                                                // row — it is on the phone — but
+                                                // this entry is about pinning it
+                                                // for itself, so it must not
+                                                // offer to remove what another
+                                                // owner is holding.
+                                                val kept = downloadSingles.contains(track.uri)
+                                                add(
+                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                        label = if (kept) removeDownloadLabel
+                                                        else downloadLabel,
+                                                        icon = if (kept) {
+                                                            PhosphorIcons.Fill.ArrowCircleDown
+                                                        } else {
+                                                            PhosphorIcons.Regular.ArrowCircleDown
+                                                        },
+                                                    ) { viewModel.toggleTrackDownload(track) },
+                                                )
+                                            }
                                             add(
                                                 dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
                                                     label = shareLabel,
@@ -2051,6 +2150,27 @@ fun SquareApp(
                     )
                 }
 
+                // The one tap in the app that can cost gigabytes. The albums
+                // have already been resolved by the time this appears, so the
+                // numbers in it are real rather than a guess.
+                artistDownload?.let { asked ->
+                    dev.lelonio.square.ui.components.ConfirmDialog(
+                        title = stringResource(R.string.download),
+                        message = stringResource(
+                            R.string.download_artist_confirm,
+                            asked.tracks.size,
+                            asked.name,
+                            android.text.format.Formatter.formatShortFileSize(
+                                context,
+                                asked.estimate,
+                            ),
+                        ),
+                        confirmLabel = stringResource(R.string.download),
+                        onConfirm = viewModel::confirmArtistDownload,
+                        onDismiss = viewModel::dismissArtistDownload,
+                    )
+                }
+
                 naming?.let { request ->
                     dev.lelonio.square.ui.components.NameDialog(
                         title = stringResource(
@@ -2408,8 +2528,33 @@ private fun rememberBackdropDrift(alive: Boolean): BackdropDrift {
         ),
         label = "y",
     )
-    return remember { BackdropDrift({ zoom }, { x }, { y }) }
+    // Read through a step, so the wash asks for a redraw a few times a second
+    // rather than sixty.
+    //
+    // The animation itself is untouched — same easings, same periods, same
+    // reduced-motion behaviour. What changes is how often the value a reader
+    // sees actually differs, and `derivedStateOf` only wakes its readers when
+    // it does. That matters here more than anywhere else in the app: this is
+    // the *backdrop*, so every glass surface over it — the bar, the tabs, every
+    // chip and button — re-captured and re-blurred the screen on every one of
+    // those sixty frames, for the whole time music was playing. Measured on the
+    // phone it was most of a render thread, on every screen, whatever was on it.
+    //
+    // The step is chosen to be smaller than a pixel. The wash drifts about
+    // 1.8% of the page over thirty-seven seconds, which is roughly one pixel a
+    // second; a quarter-pixel quantum is four steps a second and cannot be
+    // seen, least of all through the blur this is drawn under.
+    val zoomStep by remember { derivedStateOf { quantise(zoom) } }
+    val xStep by remember { derivedStateOf { quantise(x) } }
+    val yStep by remember { derivedStateOf { quantise(y) } }
+    return remember { BackdropDrift({ zoomStep }, { xStep }, { yStep }) }
 }
+
+/** A quarter of a pixel on a 1080-wide screen, as a fraction of the page. */
+private const val DRIFT_STEP = 0.00025f
+
+private fun quantise(value: Float): Float =
+    kotlin.math.round(value / DRIFT_STEP) * DRIFT_STEP
 
 /** How much larger than the page the wash is drawn, to have room to move in. */
 private const val DRIFT_ZOOM = 1.10f

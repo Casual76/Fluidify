@@ -4,7 +4,7 @@
 //! `java.lang.IllegalStateException` with the engine's error message. Kotlin
 //! therefore never has to check return codes.
 
-use crate::{catalog, engine, sink};
+use crate::{catalog, collection, downloads, engine, playlists, sink};
 use jni::objects::{JClass, JObject, JString};
 use jni::sys::{jboolean, jint, jlong, jstring, JNI_FALSE, JNI_TRUE};
 use jni::JNIEnv;
@@ -324,6 +324,90 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeUse
 ) -> jstring {
     guard_string(&mut env, "Username", || catalog::username())
 
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeWebToken(
+    mut env: JNIEnv,
+    _class: JClass,
+    scopes: JString,
+) -> jstring {
+    let scopes = match read_string(&mut env, &scopes) {
+        Ok(value) => value,
+        Err(e) => {
+            let _ = env.throw_new("java/lang/IllegalStateException", e);
+            return std::ptr::null_mut();
+        }
+    };
+    guard_string(&mut env, "WebToken", || engine::web_token(&scopes))
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeAddToPlaylist(
+    mut env: JNIEnv,
+    _class: JClass,
+    playlist_uri: JString,
+    track_uri: JString,
+) {
+    let (playlist, track) = match (
+        read_string(&mut env, &playlist_uri),
+        read_string(&mut env, &track_uri),
+    ) {
+        (Ok(playlist), Ok(track)) => (playlist, track),
+        (Err(message), _) | (_, Err(message)) => {
+            let _ = env.throw_new(EXCEPTION, message);
+            return;
+        }
+    };
+    guard(&mut env, "AddToPlaylist", || {
+        playlists::add_track(&playlist, &track)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeRemoveFromPlaylist(
+    mut env: JNIEnv,
+    _class: JClass,
+    playlist_uri: JString,
+    track_uri: JString,
+    index: jint,
+) {
+    let (playlist, track) = match (
+        read_string(&mut env, &playlist_uri),
+        read_string(&mut env, &track_uri),
+    ) {
+        (Ok(playlist), Ok(track)) => (playlist, track),
+        (Err(message), _) | (_, Err(message)) => {
+            let _ = env.throw_new(EXCEPTION, message);
+            return;
+        }
+    };
+    guard(&mut env, "RemoveFromPlaylist", || {
+        playlists::remove_track(&playlist, &track, index.max(0) as u32)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeSetLiked(
+    mut env: JNIEnv,
+    _class: JClass,
+    track_uri: JString,
+    liked: jboolean,
+) {
+    let track = match read_string(&mut env, &track_uri) {
+        Ok(value) => value,
+        Err(message) => {
+            let _ = env.throw_new(EXCEPTION, message);
+            return;
+        }
+    };
+    guard(&mut env, "SetLiked", || {
+        if liked == JNI_TRUE {
+            collection::like(&track)
+        } else {
+            collection::unlike(&track)
+        }
+    })
 }
 
 #[no_mangle]
@@ -749,4 +833,93 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeShu
     _class: JClass,
 ) {
     let _ = std::panic::catch_unwind(engine::shutdown);
+}
+
+/// Whether the engine is running with no session, playing only what is on disk.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeIsOffline(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    engine::is_offline() as jboolean
+}
+
+// --------------------------------------------------------------- downloads
+
+/// Where downloads are kept. Called before anything is downloaded, and again
+/// if the listener moves the store to a memory card.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeSetDownloadRoot(
+    mut env: JNIEnv,
+    _class: JClass,
+    path: JString,
+) {
+    let path = read_string(&mut env, &path);
+    guard(&mut env, "SetDownloadRoot", || {
+        downloads::set_root(&path?)
+    });
+}
+
+/// Downloads one track and answers with the sidecar that was written.
+///
+/// Blocks for as long as the download takes, which is why the Kotlin side calls
+/// it from the download queue's own worker rather than from anything the
+/// listener is waiting on.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeDownloadTrack(
+    mut env: JNIEnv,
+    _class: JClass,
+    track_uri: JString,
+    bitrate_kbps: jint,
+) -> jstring {
+    let uri = match read_string(&mut env, &track_uri) {
+        Ok(value) => value,
+        Err(message) => {
+            let _ = env.throw_new(EXCEPTION, message);
+            return JObject::null().into_raw() as jstring;
+        }
+    };
+    guard_string(&mut env, "DownloadTrack", || {
+        downloads::download_track(&uri, bitrate_kbps)
+    })
+}
+
+/// The sidecar of a downloaded track as JSON, or `null` if it is not here.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeDownloadState(
+    mut env: JNIEnv,
+    _class: JClass,
+    track_uri: JString,
+) -> jstring {
+    let uri = match read_string(&mut env, &track_uri) {
+        Ok(value) => value,
+        Err(message) => {
+            let _ = env.throw_new(EXCEPTION, message);
+            return JObject::null().into_raw() as jstring;
+        }
+    };
+    guard_string(&mut env, "DownloadState", || downloads::stored(&uri))
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeRemoveDownload(
+    mut env: JNIEnv,
+    _class: JClass,
+    track_uri: JString,
+) {
+    let uri = read_string(&mut env, &track_uri);
+    guard(&mut env, "RemoveDownload", || {
+        downloads::remove_track(&uri?)
+    });
+}
+
+/// Asks a download in progress to stop at the end of its current chunk.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeCancelDownload(
+    mut env: JNIEnv,
+    _class: JClass,
+    track_uri: JString,
+) {
+    let uri = read_string(&mut env, &track_uri);
+    guard(&mut env, "CancelDownload", || downloads::cancel(&uri?));
 }

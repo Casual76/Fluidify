@@ -16,8 +16,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -36,6 +38,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.lelonio.square.data.Lyrics
+import kotlinx.coroutines.flow.first
 import kotlin.math.abs
 
 /**
@@ -61,19 +64,49 @@ fun LyricsView(
     // Keyed on the lyrics, so a new track starts at its first line. Kept across
     // the change, the list stayed wherever the previous song was left.
     val listState = remember(lyrics) { androidx.compose.foundation.lazy.LazyListState() }
-    val position by rememberSmoothPosition(positionMs, isPlaying)
+    val position = rememberSmoothPosition(positionMs, isPlaying)
 
-    val activeLine = remember(lyrics, position) {
-        if (!lyrics.synced) -1
-        else lyrics.lines.indexOfLast { (it.startTimeMs ?: 0L) <= position }
+    // Derived, so the clock invalidates this view only when the answer changes.
+    //
+    // As `remember(lyrics, position)` it was keyed on a number that moves every
+    // frame: the scan ran sixty times a second and, worse, so did the whole of
+    // this composable and every row the list was holding. What actually changes
+    // once a line is which line is being sung, and that is what this publishes.
+    val activeLine by remember(lyrics) {
+        derivedStateOf {
+            if (!lyrics.synced) -1
+            else lyrics.lines.indexOfLast { (it.startTimeMs ?: 0L) <= position.value }
+        }
     }
+
+    // Whether the list has been put where the song already is, once.
+    //
+    // A plain array rather than snapshot state: nothing on screen depends on
+    // it, and making it observable would recompose the list to record a fact
+    // only the effect below ever reads.
+    val placed = remember(lyrics) { BooleanArray(1) }
 
     // Centre the active line rather than pin it to the top: the lines around it
     // are the context that makes a lyric readable while it plays.
-    androidx.compose.runtime.LaunchedEffect(activeLine) {
+    androidx.compose.runtime.LaunchedEffect(lyrics, activeLine) {
         if (activeLine < 0) return@LaunchedEffect
-        val viewportCentre = listState.layoutInfo.viewportSize.height / 2
-        listState.animateScrollToItem(activeLine, -viewportCentre + LineHeightPx)
+        // The effect runs before the list has been measured, so on the first
+        // pass the viewport is still nothing high and centring on it would
+        // land the line at the top of the screen. Wait for a real height.
+        val viewportCentre = snapshotFlow { listState.layoutInfo.viewportSize.height }
+            .first { it > 0 } / 2
+        val offset = -viewportCentre + LineHeightPx
+        // Arriving is not a line change. Opening the panel forty lines into a
+        // song used to animate the list all the way down from the first line,
+        // composing and measuring every line it passed — on the same frames the
+        // panel was fading in, which is exactly where the switch stuttered. The
+        // first placement is a jump; every line after it is the travel.
+        if (placed[0]) {
+            listState.animateScrollToItem(activeLine, offset)
+        } else {
+            listState.scrollToItem(activeLine, offset)
+            placed[0] = true
+        }
     }
 
     LazyColumn(
@@ -105,6 +138,9 @@ fun LyricsView(
                 // Real timings where the source has them; see the lyrics package.
                 words = line.words,
                 translation = line.translation.takeIf { showTranslation },
+                // The clock itself, not a reading of it: only the line being
+                // sung unwraps it, so the eight rows around it never subscribe
+                // to a number that moves every frame.
                 positionMs = position,
                 distance = if (activeLine < 0) 0 else abs(index - activeLine),
                 isActive = isActive,
@@ -168,7 +204,8 @@ private fun LyricRow(
     words: List<dev.lelonio.square.data.LyricWord>,
     /** The line in the listener's language, if there is one and it is wanted. */
     translation: String?,
-    positionMs: Long,
+    /** The advancing clock, read only by the line that is being sung. */
+    positionMs: State<Long>,
     distance: Int,
     isActive: Boolean,
     unsynced: Boolean,
@@ -179,7 +216,12 @@ private fun LyricRow(
         stiffness = Spring.StiffnessLow,
     )
 
-    val scale by animateFloatAsState(
+    // Both of these are springs, and a low-stiffness one runs for the better
+    // part of a second. Left unwrapped here that was every visible row
+    // recomposing on every frame of it, after every line — for two numbers that
+    // only ever reach a layer block. Read there instead and a line change costs
+    // eight redraws rather than eight recompositions a frame.
+    val scale = animateFloatAsState(
         targetValue = if (isActive) 1f else 0.90f,
         animationSpec = springSpec,
         label = "lyricScale",
@@ -187,7 +229,7 @@ private fun LyricRow(
 
     // Opacity falls off with distance, so the eye is pulled to the current line
     // without the rest disappearing.
-    val alpha by animateFloatAsState(
+    val fade = animateFloatAsState(
         targetValue = when {
             unsynced -> 1f
             isActive -> 1f
@@ -236,9 +278,9 @@ private fun LyricRow(
                         // Scale from the left edge so the text grows into the line
                         // instead of drifting sideways.
                         transformOrigin = androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
-                        scaleX = scale
-                        scaleY = scale
-                        this.alpha = alpha
+                        scaleX = scale.value
+                        scaleY = scale.value
+                        alpha = fade.value
                     },
             ) {
                 // Word by word only where the words really are timed.
@@ -302,11 +344,18 @@ private fun LyricRow(
                         }
                     }
 
+                    // Read inside the row and behind the guard, which is the
+                    // whole point of taking the clock rather than a reading of
+                    // it: an inactive line never touches it, so it never
+                    // subscribes, so it is not recomposed sixty times a second
+                    // for a highlight that is happening two lines away.
+                    val now = if (isActive) positionMs.value else 0L
+
                     pieces.forEachIndexed { index, piece ->
                         val word = words[index]
                         val span = (word.endMs - word.startMs).coerceAtLeast(1L)
                         val lit = if (isActive) {
-                            ((positionMs - word.startMs).toFloat() / span).coerceIn(0f, 1f)
+                            ((now - word.startMs).toFloat() / span).coerceIn(0f, 1f)
                         } else {
                             0f
                         }
@@ -378,9 +427,9 @@ private fun LyricRow(
                             // one grows.
                             transformOrigin =
                                 androidx.compose.ui.graphics.TransformOrigin(0f, 0.5f)
-                            scaleX = scale
-                            scaleY = scale
-                            this.alpha = alpha
+                            scaleX = scale.value
+                            scaleY = scale.value
+                            alpha = fade.value
                         },
                 )
             }

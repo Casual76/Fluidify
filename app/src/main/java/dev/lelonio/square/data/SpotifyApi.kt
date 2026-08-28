@@ -6,6 +6,7 @@ import retrofit2.http.Body
 import retrofit2.http.DELETE
 import retrofit2.http.GET
 import retrofit2.http.HTTP
+import retrofit2.http.Headers
 import retrofit2.http.POST
 import retrofit2.http.PUT
 import retrofit2.http.Path
@@ -19,6 +20,21 @@ import retrofit2.http.Query
  * two strictly separated is what stops the "metadata says one thing, player says
  * another" desync that plagues the existing clients.
  */
+/**
+ * The pair Spotify wants for changing a playlist, in the comma-separated
+ * spelling librespot's token provider expects.
+ *
+ * Which of the two applies is the playlist's own visibility rather than the
+ * caller's, so both are always asked for.
+ */
+private const val PLAYLIST_WRITE = "playlist-modify-private,playlist-modify-public"
+
+/** Liked Songs and saved albums. */
+private const val LIBRARY_WRITE = "user-library-modify"
+
+/** Following and unfollowing artists. */
+private const val FOLLOW_WRITE = "user-follow-modify"
+
 interface SpotifyApi {
 
     @GET("v1/me")
@@ -204,6 +220,7 @@ interface SpotifyApi {
      * public ones — which one applies is the playlist's visibility, not the
      * caller's, so both are asked for.
      */
+    @Headers("${ApiFactory.SESSION_AUTH}: $PLAYLIST_WRITE")
     @POST("v1/playlists/{id}/tracks")
     suspend fun addToPlaylist(
         @Path("id") playlistId: String,
@@ -220,6 +237,7 @@ interface SpotifyApi {
      * `@HTTP` rather than `@DELETE` because this one carries a body, which
      * Retrofit's `@DELETE` does not allow.
      */
+    @Headers("${ApiFactory.SESSION_AUTH}: $PLAYLIST_WRITE")
     @HTTP(method = "DELETE", path = "v1/playlists/{id}/tracks", hasBody = true)
     suspend fun removeFromPlaylist(
         @Path("id") playlistId: String,
@@ -232,6 +250,7 @@ interface SpotifyApi {
      * Private by default: a playlist made from a phone in the middle of
      * listening is a working list, not a publication.
      */
+    @Headers("${ApiFactory.SESSION_AUTH}: $PLAYLIST_WRITE")
     @POST("v1/users/{userId}/playlists")
     suspend fun createPlaylist(
         @Path("userId") userId: String,
@@ -239,6 +258,7 @@ interface SpotifyApi {
     ): PlaylistDto
 
     /** Renames one; the same endpoint changes description and visibility. */
+    @Headers("${ApiFactory.SESSION_AUTH}: $PLAYLIST_WRITE")
     @PUT("v1/playlists/{id}")
     suspend fun updatePlaylistDetails(
         @Path("id") playlistId: String,
@@ -252,6 +272,7 @@ interface SpotifyApi {
      * really deleted, and for the owner unfollowing is exactly what the app's
      * own "delete" does.
      */
+    @Headers("${ApiFactory.SESSION_AUTH}: $PLAYLIST_WRITE")
     @DELETE("v1/playlists/{id}/followers")
     suspend fun unfollowPlaylist(@Path("id") playlistId: String)
 
@@ -263,12 +284,14 @@ interface SpotifyApi {
      * working everywhere else and is told to reconnect only here, where the
      * permission is actually missing.
      */
+    @Headers("${ApiFactory.SESSION_AUTH}: $FOLLOW_WRITE")
     @PUT("v1/me/following")
     suspend fun followArtists(
         @Query("type") type: String = "artist",
         @Query("ids") ids: String,
     )
 
+    @Headers("${ApiFactory.SESSION_AUTH}: $FOLLOW_WRITE")
     @DELETE("v1/me/following")
     suspend fun unfollowArtists(
         @Query("type") type: String = "artist",
@@ -299,6 +322,7 @@ interface SpotifyApi {
      * different things: a playlist is followed and an album is saved. Same
      * button on the page, two endpoints underneath.
      */
+    @Headers("${ApiFactory.SESSION_AUTH}: $PLAYLIST_WRITE")
     @PUT("v1/playlists/{id}/followers")
     suspend fun followPlaylist(@Path("id") playlistId: String)
 
@@ -309,16 +333,20 @@ interface SpotifyApi {
     ): List<Boolean>
 
     /** Saves tracks to Liked Songs, which is what the heart in the player says. */
+    @Headers("${ApiFactory.SESSION_AUTH}: $LIBRARY_WRITE")
     @PUT("v1/me/tracks")
     suspend fun saveTracks(@Query("ids") ids: String)
 
     /** And takes them out again, which is the heart pressed a second time. */
+    @Headers("${ApiFactory.SESSION_AUTH}: $LIBRARY_WRITE")
     @DELETE("v1/me/tracks")
     suspend fun removeSavedTracks(@Query("ids") ids: String)
 
+    @Headers("${ApiFactory.SESSION_AUTH}: $LIBRARY_WRITE")
     @PUT("v1/me/albums")
     suspend fun saveAlbums(@Query("ids") ids: String)
 
+    @Headers("${ApiFactory.SESSION_AUTH}: $LIBRARY_WRITE")
     @DELETE("v1/me/albums")
     suspend fun removeAlbums(@Query("ids") ids: String)
 

@@ -274,9 +274,11 @@ class PlaybackService : MediaLibraryService() {
                 kotlinx.coroutines.delay(DEVICE_WATCH_MS)
                 runCatching { librespot?.ensureDevice() }
                     .onFailure { android.util.Log.w(TAG, "device watch: $it") }
+                watchConnection()
             }
         }
 
+        watchForNetwork()
         startSpotifyEngineIfActive()
     }
 
@@ -947,6 +949,20 @@ class PlaybackService : MediaLibraryService() {
                     android.util.Log.w(TAG, "no token, logging in with the kept credential", error)
                     ""
                 }
+            // Before the engine, so the very first track it is asked for can
+            // already be found on disk. The root is handed over even when
+            // nothing has been downloaded: the lookup answers "no" for an empty
+            // store, and setting it later would mean a window in which
+            // downloaded tracks streamed instead.
+            withContext(Dispatchers.IO) {
+                container.downloads.load()
+                runCatching {
+                    NativeBridge.setDownloadRoot(container.downloads.root.absolutePath)
+                }.onFailure {
+                    android.util.Log.w(TAG, "downloads have no home: $it")
+                }
+            }
+
             withContext(Dispatchers.IO) {
                 NativeBridge.start(
                     // Must match the id the OAuth token was minted for.
@@ -1003,11 +1019,108 @@ class PlaybackService : MediaLibraryService() {
                 ).show()
             }
         }.onSuccess {
-            android.util.Log.i(TAG, "engine connected")
+            // The engine answers for itself: it may have started with no
+            // session at all and fallen back to what is on the phone.
+            val offline = runCatching { NativeBridge.isOffline }.getOrDefault(false)
+            OfflineMode.setNoSession(offline)
+            android.util.Log.i(TAG, if (offline) "engine started offline" else "engine connected")
             if (restoreQueue) restoreQueue()
             observeForSaving()
+            watchConnection()
         }
     }
+
+    /**
+     * Watches for a network to come back, so offline can end by itself.
+     *
+     * Necessary because nothing else notices. A lost Connect device is repaired
+     * by [LibrespotPlayer.ensureDevice], but an engine that started with no
+     * session never had one to lose — `spircLost` is false, on purpose, so the
+     * repair loop does not run against a network that is not there. Which
+     * leaves this: the one signal that says the network is back.
+     *
+     * The rebuild is what ends offline mode. `engine::reconnect` builds a real
+     * bundle if it can and falls back to another offline one if it cannot, so a
+     * network that turns out to be a captive portal simply leaves things as
+     * they were and this waits for the next one.
+     */
+    private fun watchForNetwork() {
+        val manager = getSystemService(android.net.ConnectivityManager::class.java) ?: return
+        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onCapabilitiesChanged(
+                network: android.net.Network,
+                capabilities: android.net.NetworkCapabilities,
+            ) {
+                // Validated, not merely present: a Wi-Fi that has associated but
+                // not yet reached anything would start a handshake that fails,
+                // and the backoff behind it is the listener's silence.
+                if (!capabilities.hasCapability(
+                        android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED,
+                    )
+                ) {
+                    return
+                }
+                if (!runCatching { NativeBridge.isOffline }.getOrDefault(false)) return
+                scope.launch {
+                    android.util.Log.i(TAG, "a network is back, trying to leave offline")
+                    withContext(Dispatchers.IO) {
+                        runCatching { NativeBridge.reconnect() }
+                            .onFailure { android.util.Log.w(TAG, "still offline: ${'$'}it") }
+                    }
+                    val stillOffline =
+                        runCatching { NativeBridge.isOffline }.getOrDefault(true)
+                    OfflineMode.setNoSession(stillOffline)
+                    if (!stillOffline) {
+                        android.util.Log.i(TAG, "back online")
+                        // The Connect device behind this session is new and has
+                        // never seen the queue; see LibrespotPlayer.
+                        librespot?.onSessionRebuilt()
+                        // Whatever the queue still owes, now that it can be had.
+                        dev.lelonio.square.download.DownloadService.start(this@PlaybackService)
+                    }
+                }
+            }
+        }
+        runCatching { manager.registerDefaultNetworkCallback(callback) }
+            .onSuccess { networkCallback = callback }
+    }
+
+    private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
+
+    /**
+     * Decides whether the connection is worse than the phone already holds.
+     *
+     * The listener asked for this: a link that would stream at 96 or 160 while
+     * the downloads are at 320 is a link worth ignoring. It is only ever asked
+     * of the automatic quality — someone who pinned 160 chose 160 and should
+     * not be told their own setting is too poor — and only when there is
+     * something downloaded to prefer.
+     *
+     * Two ticks either way before it changes its mind. One reading is a lift
+     * doorway, and an app that dropped in and out of offline every thirty
+     * seconds would be worse than one that never did it at all.
+     */
+    private fun watchConnection() {
+        val downloadKbps = container.downloadSettings.quality.value.kbps
+        val worseThanDisk = quality.quality.value == dev.lelonio.square.data.Quality.Auto &&
+            container.downloads.files.value.isNotEmpty() &&
+            quality.bitrateKbps() < downloadKbps
+
+        if (worseThanDisk == slowLink) {
+            slowTicks = 0
+            return
+        }
+        slowTicks += 1
+        if (slowTicks < SLOW_TICKS_TO_TURN) return
+        slowTicks = 0
+        slowLink = worseThanDisk
+        OfflineMode.setSlow(worseThanDisk)
+        val verdict = if (worseThanDisk) "worse" else "no worse"
+        android.util.Log.i(TAG, "the connection is now $verdict than the downloads")
+    }
+
+    private var slowLink = false
+    private var slowTicks = 0
 
     /**
      * Puts the last queue back, paused at the saved position.
@@ -1310,6 +1423,13 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        networkCallback?.let { callback ->
+            runCatching {
+                getSystemService(android.net.ConnectivityManager::class.java)
+                    ?.unregisterNetworkCallback(callback)
+            }
+        }
+        networkCallback = null
         // Before cancelling the scope: the last position is the one worth having.
         runCatching { savePlayback() }
         scope.cancel()
@@ -1346,6 +1466,9 @@ class PlaybackService : MediaLibraryService() {
         private const val PREMIUM_REQUIRED = "premium account required"
 
         /** Tells the service a Spotify session now exists. */
+        /** Readings in a row before the connection is called good or bad. */
+        private const val SLOW_TICKS_TO_TURN = 2
+
         const val ACTION_CONNECT = "dev.lelonio.square.action.CONNECT"
 
         fun connect(context: android.content.Context) {

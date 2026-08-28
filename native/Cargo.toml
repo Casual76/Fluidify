@@ -25,6 +25,9 @@ librespot-audio = { version = "0.8", default-features = false, features = ["rust
 librespot-metadata = { version = "0.8", default-features = false, features = ["rustls-tls-webpki-roots"] }
 librespot-protocol = { version = "0.8", default-features = false }
 protobuf = "3"
+# Reading a CDN response body. Same crate and major as librespot-core uses for
+# the same job, so the downloader consumes bodies exactly as the streamer does.
+http-body-util = "0.1"
 
 tokio = { version = "1", features = ["rt-multi-thread", "sync", "macros", "time"] }
 jni = "0.21"

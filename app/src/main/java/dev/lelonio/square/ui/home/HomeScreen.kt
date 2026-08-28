@@ -44,7 +44,7 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -120,6 +120,14 @@ private enum class Feed(@StringRes val label: Int) {
  * material as the bars and the player: no Material containers, no elevation, no
  * accent-filled buttons.
  */
+/**
+ * How long the filter dissolve takes.
+ *
+ * The same number as the library page, deliberately: they are the same gesture
+ * on two screens and a listener moving between them should not feel a seam.
+ */
+private const val FILTER_FADE_MS = 180
+
 @Composable
 fun HomeScreen(
     state: MainViewModel.UiState,
@@ -284,10 +292,22 @@ fun HomeScreen(
                 AnimatedContent(
                     targetState = filter,
                     transitionSpec = {
-                        // Short and vertical: the sections do not move sideways
-                        // when they are filtered, so neither should the change.
-                        (fadeIn(tween(220)) + slideInVertically(tween(260)) { it / 14 })
-                            .togetherWith(fadeOut(tween(120)))
+                        // A dissolve, and nothing else. The same fix the library
+                        // page already carries, for the same reason — this one
+                        // was simply missed.
+                        //
+                        // The header and its filter chips are the first item
+                        // *inside* this list, and the list is what is being
+                        // animated, so a slide draws the whole header twice at
+                        // two heights at once: caught on video, "Fluidify" and
+                        // the chip row visibly doubled and offset for a fifth of
+                        // a second. Fading two copies that sit exactly on top of
+                        // each other is invisible, because the header is the
+                        // same in both; only the shelves underneath, which
+                        // genuinely differ, are seen to change.
+                        fadeIn(tween(FILTER_FADE_MS))
+                            .togetherWith(fadeOut(tween(FILTER_FADE_MS)))
+                            .using(SizeTransform(clip = false))
                     },
                     label = "feed",
                 ) { current ->
@@ -310,7 +330,11 @@ fun HomeScreen(
                     Modifier
                         .fillMaxSize()
                         .fluidOverscrollEdge(overscroll)
-                        .glassBackdropSource(bodyGlass)
+                        // Held still while the feed is moving: recording the
+                        // page for the glass to sample is a full traversal of
+                        // it per frame, and a fling is when that costs most and
+                        // is worth least. See the engine's layerBackdrop.
+                        .glassBackdropSource(bodyGlass, frozen = { listState.isScrollInProgress })
                         .fluidOverscrollContent(overscroll),
                     state = listState,
                     // The bar over this list is glass, not a lid: it has to have
@@ -818,10 +842,10 @@ private fun FilterRow(selected: Feed, backdrop: Backdrop, onSelect: (Feed) -> Un
         modifier = Modifier.padding(top = 14.dp, bottom = 10.dp),
     ) {
         items(Feed.entries.toList(), key = { it.name }) { entry ->
-            // The engine's chip: the selected one fills with the app's own
-            // amethyst — legible over any artwork now that the accent no
-            // longer comes from the artwork — and the change is animated.
-            dev.antigravity.fluidengine.ui.fluid.FluidChip(
+            // The app's own glass, so the row reads as part of the chrome
+            // rather than as a Material control that wandered in. Flat, because
+            // it scrolls: see GlassChip.
+            dev.lelonio.square.ui.components.GlassChip(
                 label = stringResource(entry.label),
                 selected = entry == selected,
                 onClick = { onSelect(entry) },

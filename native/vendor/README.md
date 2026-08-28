@@ -260,3 +260,79 @@ for a change that was only ever about the tracks after it.
 
 `state::metadata` and its `Metadata` trait are `pub(crate)` for this, so a track
 built in `spirc.rs` can be stamped with the context it belongs to.
+
+### The patch: shuffle is the account's, the order is the app's
+
+`SpircTask::handle_shuffle` now only writes the `shuffling_context` flag into the
+published state. Upstream also reshuffles the context behind it, and that half is
+gone: `ConnectState::handle_shuffle` is deleted from `state/handle.rs` rather
+than left unused, so the file does not offer two ways to shuffle.
+
+Shuffle arrives as two things at once — a flag the account keeps for every
+client, and a permutation of the tracks — and only the first of them belongs to
+this device. The app draws its own order, because it has to: it holds tracks the
+account never sent it, a queued song among them, and it hands the result over
+with `set_queue_tracks`. A device that shuffled as well produced two orders for
+one queue, the screen followed one and the decoder the other, and a skip landed
+on a song nobody could see. The engine used to answer that by forcing the flag
+off before every load, which kept the orders in step at the cost of an account
+that never knew this device was shuffling — and of a shuffle set on a laptop
+never reaching the phone.
+
+With the permutation dropped there is nothing left to disagree about. Turned on
+here, the flag goes to the account and shows up on every other client; turned on
+there, it arrives as `SetShufflingContext` and reaches the app as a shuffle event
+to obey by reordering its own queue.
+
+### The patch: the options a transfer brings with it
+
+`handle_transfer` emits `ShuffleChanged` and `RepeatChanged` once
+`handle_initial_transfer` has put the account's options into the state.
+
+`handle_activate`, which runs a few lines earlier, already emits both — with the
+values this device happened to be left with when it last played. On a handover
+that is precisely the stale answer, and it was the only one the owner of the
+handle ever heard: playback arrived from a laptop that was repeating a track and
+the phone went on showing repeat off.
+
+### The patch: waking up is not news about shuffle and repeat
+
+`handle_activate` no longer emits `ShuffleChanged` and `RepeatChanged`.
+
+What it emitted was the state this device happened to be left with, which on a
+fresh session is the protocol's default of everything off. Activating is the
+first thing a load does, so the app was told "shuffle off" a moment before it
+handed over a queue it had shuffled itself, and the button turned itself off on
+launch. Both are still announced everywhere they actually change — the three
+handlers, and the transfer above, which is the one moment a device really does
+learn them from somewhere else.
+
+### The patch: the crossfade actually overlaps
+
+The crossfade above only ever overlapped anything when the next track happened
+to be sitting in `PlayerPreload::Ready`. `begin_fade_out` ran from
+`start_playback`, which is a whole load later than the load command: on every
+other path `handle_command_load` had by then put the player in
+`PlayerState::Loading`, and replacing the state is what drops the decoder the
+fade was going to read. So the song being left stopped dead a crossfade short of
+its own end — the tail thrown away, not faded — the next one arrived after the
+load's silence at full level, and `early_end` had been consumed on the way past,
+so nothing downstream could tell. A fade-out that is a cut and a fade-in that is
+not a fade: which is what a listener means by "it does not dissolve".
+
+The outgoing decoder is now taken in `handle_command_load`, while the track it
+belongs to is still the one playing, and only when the incoming track is a
+different one — a track cannot overlap itself, and repeat-one has one decoder
+between both ends.
+
+That leaves the wait. The mix is driven by the incoming track's packets and
+there are none until it opens, so `pump_fade_out` plays the outgoing track on
+its own meanwhile, straight to the sink at the gain the curve is currently
+holding. The curve does not advance while it does, so the incoming track still
+enters from silence and still gets the whole overlap; what the wait costs comes
+off the far end, where the outgoing track drains early because it only ever had
+a crossfade's worth of music left.
+
+Both halves also carry the gain reduction the dynamic limiter was applying when
+they parted. Without it the outgoing track loses several decibels of ducking at
+the exact instant the fade starts, so it jumps up before it begins coming down.

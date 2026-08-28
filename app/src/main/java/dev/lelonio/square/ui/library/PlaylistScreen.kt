@@ -1,8 +1,5 @@
 package dev.lelonio.square.ui.library
 
-import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollContent
-import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollEdge
-import dev.antigravity.fluidengine.ui.fluid.rememberFluidEdgeOverscroll
 import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
@@ -46,6 +43,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -75,6 +73,8 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.layout.BoxScope
 import dev.lelonio.square.R
 import dev.lelonio.square.data.CatalogTrack
+import dev.lelonio.square.data.DownloadState
+import dev.lelonio.square.data.OwnerState
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.ui.glass.backdrop.backdrops.layerBackdrop
@@ -96,11 +96,14 @@ import java.util.concurrent.TimeUnit
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Fill
 import com.adamglin.phosphoricons.Regular
+import com.adamglin.phosphoricons.fill.ArrowCircleDown
 import com.adamglin.phosphoricons.fill.Check
 import com.adamglin.phosphoricons.fill.MagnifyingGlass
 import com.adamglin.phosphoricons.fill.Pause
 import com.adamglin.phosphoricons.fill.Play
+import com.adamglin.phosphoricons.fill.Stop
 import com.adamglin.phosphoricons.fill.Waveform
+import com.adamglin.phosphoricons.regular.ArrowCircleDown
 import com.adamglin.phosphoricons.regular.ArrowLeft
 import com.adamglin.phosphoricons.regular.ArrowsDownUp
 import com.adamglin.phosphoricons.regular.Check
@@ -160,6 +163,30 @@ fun PlaylistScreen(
     /** What a row's menu offers; the row raises it itself, lifted in place. */
     trackActions: (CatalogTrack) -> List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction> =
         { emptyList() },
+    /**
+     * Whether this page is kept offline, and the button for it.
+     *
+     * [OwnerState.None] hides nothing — the button is always there on a page
+     * that can be downloaded, because it is how a download is started. What it
+     * hides is the per-row mark: see [trackDownload].
+     */
+    downloadState: OwnerState = OwnerState.None,
+    onToggleDownload: () -> Unit = {},
+    /** False where a download makes no sense, such as the local files shelf. */
+    canDownload: Boolean = false,
+    /**
+     * How one row should mark itself.
+     *
+     * A lambda rather than a map on the state: the answer changes several times
+     * a second while a playlist downloads, and threading a new map through the
+     * whole screen for each tick would recompose the list rather than the rows
+     * that changed.
+     */
+    trackDownload: (CatalogTrack) -> DownloadState = { DownloadState.None },
+    /** True while only what is on the phone can be played. */
+    offline: Boolean = false,
+    /** Turns the listener's own offline switch back off. */
+    onLeaveOffline: () -> Unit = {},
     onOpenItem: (dev.lelonio.square.data.SearchItem) -> Unit = {},
     /** Follows or unfollows the artist this page is about. */
     onToggleFollow: () -> Unit = {},
@@ -270,8 +297,6 @@ fun PlaylistScreen(
      */
     val chromeExpanded by remember { derivedStateOf { collapseFraction() < 0.5f } }
 
-    val overscroll = rememberFluidEdgeOverscroll()
-
     val headerScroll = remember(collapseRange) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -371,6 +396,9 @@ fun PlaylistScreen(
                 if (!searching) query = ""
             },
             searching = searching,
+            downloadState = downloadState,
+            onToggleDownload = onToggleDownload,
+            canDownload = canDownload,
         )
 
         LazyColumn(
@@ -382,14 +410,18 @@ fun PlaylistScreen(
             // list, so nothing in this layer samples it.
             modifier = Modifier
                 .layerBackdrop(listBackdrop)
-                // The hero takes the gesture first and closes; the edge gives
-                // only with what is left, once there is nothing to close.
-                .nestedScroll(headerScroll)
-                .fluidOverscrollEdge(overscroll)
-                .fluidOverscrollContent(overscroll),
+                // The hero takes the gesture first and closes; only what is
+                // left over reaches the list.
+                .nestedScroll(headerScroll),
             contentPadding = PaddingValues(bottom = contentPadding.calculateBottomPadding()),
-            overscrollEffect = null,
         ) {
+            item(contentType = "offline") {
+                dev.lelonio.square.ui.components.OfflineNotice(
+                    onTurnOff = onLeaveOffline,
+                    modifier = Modifier.padding(top = 8.dp),
+                )
+            }
+
             if (state.kind == MainViewModel.DetailKind.ARTIST) {
                 item(contentType = "artistAbout") {
                     ArtistAbout(followers = state.followers, genres = state.genres)
@@ -501,6 +533,12 @@ fun PlaylistScreen(
                             isCurrent = track.uri == nowPlayingUri,
                             onClick = { onPlay(visible, index, asContext) },
                             contextActions = trackActions(track),
+                            download = trackDownload(track),
+                            // The phone's own files play offline like anything
+                            // else — they were never coming over the network.
+                            unavailable = offline &&
+                                !track.uri.startsWith("local:") &&
+                                trackDownload(track) != DownloadState.Done,
                         )
                     }
                 }
@@ -751,6 +789,9 @@ private fun DetailHeader(
     /** True while this page is the one playing; Play becomes Pause. */
     playing: Boolean,
     onToggleSearch: () -> Unit,
+    downloadState: OwnerState,
+    onToggleDownload: () -> Unit,
+    canDownload: Boolean,
 ) {
     val density = LocalDensity.current
     val heroPx = with(density) { HERO_HEIGHT.roundToPx() }
@@ -799,9 +840,17 @@ private fun DetailHeader(
                 modifier = Modifier.padding(top = 4.dp),
             )
 
+            // Three controls and two labels do not fit across a phone, so the
+            // row tightens once there is more than one thing beside Play.
+            // Counted rather than asked of any one control: this used to key
+            // off the follow pill alone, and adding a fourth button would have
+            // let a playlist overflow while an artist page stayed correct.
+            val extras = listOfNotNull(saved, following).size + if (canDownload) 1 else 0
+            val tight = extras >= 2
+
             Row(
                 Modifier.padding(top = 16.dp),
-                horizontalArrangement = Arrangement.spacedBy(if (following != null) 10.dp else 14.dp),
+                horizontalArrangement = Arrangement.spacedBy(if (tight) 10.dp else 14.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 CircleAction(
@@ -825,7 +874,7 @@ private fun DetailHeader(
                         // and two labels do not fit across a phone at the width
                         // this has to itself on every other page.
                         .padding(
-                            horizontal = if (following != null) 26.dp else 40.dp,
+                            horizontal = if (tight) 26.dp else 40.dp,
                             vertical = 14.dp,
                         ),
                     horizontalArrangement = Arrangement.spacedBy(8.dp),
@@ -857,6 +906,19 @@ private fun DetailHeader(
                         size = 52.dp,
                         backdrop = backdrop,
                         onClick = onToggleSaved,
+                    )
+                }
+
+                // Keeping the music itself, next to keeping the page. Always
+                // present where a download is possible, unlike the two above:
+                // its off state is what starts one, so hiding it until there
+                // was something to show would leave no way in.
+                if (canDownload) {
+                    DownloadAction(
+                        state = downloadState,
+                        size = 52.dp,
+                        backdrop = backdrop,
+                        onClick = onToggleDownload,
                     )
                 }
 
@@ -895,6 +957,20 @@ private fun DetailHeader(
                 .graphicsLayer { alpha = (collapse() * 2f - 1f).coerceIn(0f, 1f) },
             verticalAlignment = Alignment.CenterVertically,
         ) {
+            // Composed only while this bar is the half of the header that
+            // answers, and free to be: its alpha ramp starts at the same
+            // half-collapse that flips `barActive`, so for the whole of the
+            // other half it is drawing nothing anyway.
+            //
+            // What it buys is the hit targets. `enabled = false` does not take
+            // an IconButton's target away — it only stops it acting — and a
+            // Box hit-tests its children from the top down, so the invisible
+            // bar's four icons were swallowing every touch that landed on the
+            // right-hand side of the open header. The download button lives
+            // exactly there and did nothing at all; so, it turns out, did the
+            // add-to-library button on every album page.
+            if (!barActive) return@Row
+
             IconButton(onClick = onBack, enabled = barActive) {
                 Icon(
                     PhosphorIcons.Regular.ArrowLeft,
@@ -928,6 +1004,29 @@ private fun DetailHeader(
                     tint = if (shuffleOn) MaterialTheme.colorScheme.primary else Color.White,
                     modifier = Modifier.size(18.dp),
                 )
+            }
+            if (canDownload) {
+                val downloaded = downloadState is OwnerState.Complete ||
+                    downloadState is OwnerState.Partial
+                val busy = downloadState is OwnerState.Running
+                IconButton(onClick = onToggleDownload, enabled = barActive) {
+                    Icon(
+                        when {
+                            busy -> PhosphorIcons.Fill.Stop
+                            downloaded -> PhosphorIcons.Fill.ArrowCircleDown
+                            else -> PhosphorIcons.Regular.ArrowCircleDown
+                        },
+                        contentDescription = stringResource(
+                            if (downloaded || busy) R.string.remove_download else R.string.download,
+                        ),
+                        tint = if (downloaded || busy) {
+                            MaterialTheme.colorScheme.primary
+                        } else {
+                            Color.White
+                        },
+                        modifier = Modifier.size(if (busy) 14.dp else 18.dp),
+                    )
+                }
             }
             IconButton(onClick = onPlay, enabled = barActive) {
                 Icon(
@@ -1155,6 +1254,193 @@ private fun CircleAction(
     }
 }
 
+/**
+ * The download button, in its three states.
+ *
+ * Built beside [CircleAction] rather than out of it because the middle state is
+ * not an icon: a ring around the glass says how far along the page is, and the
+ * glyph inside becomes a stop, since tapping it now gives the download back.
+ *
+ * `Partial` draws as complete on purpose. It means every track that can be
+ * fetched has been, and the ones left are not available on this account — which
+ * is finished, as far as this button can act on it. The count lives in the
+ * downloads panel, where it can be explained.
+ */
+/**
+ * The little mark in a row that says this song is here.
+ *
+ * Nothing at all until a download exists for the track. That is the whole rule:
+ * an ordinary playlist reads exactly as it did before this feature, and the
+ * mark appearing is itself the news. There is no "not downloaded" state to draw
+ * because a row full of empty placeholders would be worse than no marks.
+ *
+ * Not clickable. A single track is downloaded from its menu, and a tiny target
+ * that started hundreds of kilobytes on a mis-tap has no business inside a list
+ * whose whole job is to be scrolled.
+ */
+@Composable
+private fun DownloadMark(state: DownloadState) {
+    val running = state as? DownloadState.Running
+    // Queued deliberately draws nothing. A playlist of four hundred songs would
+    // otherwise sprout four hundred marks the instant the button is pressed,
+    // which says "all downloaded" a good ten minutes before it is true.
+    if (state !is DownloadState.Done && running == null) return
+
+    val accent = MaterialTheme.colorScheme.primary
+    Box(
+        modifier = Modifier
+            .padding(end = 6.dp)
+            .size(14.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        when {
+            state is DownloadState.Done -> Icon(
+                PhosphorIcons.Fill.ArrowCircleDown,
+                contentDescription = stringResource(R.string.downloaded),
+                tint = accent,
+                modifier = Modifier.size(14.dp),
+            )
+
+            // A thin ring rather than the app's spinner: at fourteen density
+            // pixels inside a scrolling list, anything with a label or a fill
+            // is a smudge.
+            else -> {
+                val progress by animateFloatAsState(
+                    targetValue = running?.progress ?: 0f,
+                    animationSpec = tween(320),
+                    label = "row download",
+                )
+                androidx.compose.foundation.Canvas(Modifier.size(12.dp)) {
+                    val stroke = 1.6.dp.toPx()
+                    drawArc(
+                        color = accent.copy(alpha = 0.28f),
+                        startAngle = 0f,
+                        sweepAngle = 360f,
+                        useCenter = false,
+                        topLeft = androidx.compose.ui.geometry.Offset(stroke / 2f, stroke / 2f),
+                        size = androidx.compose.ui.geometry.Size(
+                            this.size.width - stroke,
+                            this.size.height - stroke,
+                        ),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
+                    )
+                    drawArc(
+                        color = accent,
+                        startAngle = -90f,
+                        // A stub of ring even at zero, so a track that has
+                        // only just started still reads as busy.
+                        sweepAngle = (360f * progress).coerceAtLeast(24f),
+                        useCenter = false,
+                        topLeft = androidx.compose.ui.geometry.Offset(stroke / 2f, stroke / 2f),
+                        size = androidx.compose.ui.geometry.Size(
+                            this.size.width - stroke,
+                            this.size.height - stroke,
+                        ),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(
+                            width = stroke,
+                            cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                        ),
+                    )
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun DownloadAction(
+    state: OwnerState,
+    size: androidx.compose.ui.unit.Dp,
+    backdrop: Backdrop,
+    onClick: () -> Unit,
+) {
+    val accent = MaterialTheme.colorScheme.primary
+    val running = state as? OwnerState.Running
+    val kept = state is OwnerState.Complete || state is OwnerState.Partial
+    val lit = kept || running != null
+
+    val tint by androidx.compose.animation.animateColorAsState(
+        if (lit) accent else Color.White,
+        label = "download action",
+    )
+    // Eased, so a ring that jumps a track at a time still reads as travel.
+    val progress by animateFloatAsState(
+        targetValue = running?.progress ?: 0f,
+        animationSpec = tween(320),
+        label = "download progress",
+    )
+
+    Box(contentAlignment = Alignment.Center) {
+        LiquidButton(
+            onClick = onClick,
+            backdrop = backdrop,
+            modifier = Modifier
+                .size(size)
+                .border(0.6.dp, Color.White.copy(alpha = 0.30f), CircleShape),
+            contentHeight = size,
+            contentPadding = 0.dp,
+        ) {
+            Icon(
+                when {
+                    running != null -> PhosphorIcons.Fill.Stop
+                    kept -> PhosphorIcons.Fill.ArrowCircleDown
+                    else -> PhosphorIcons.Regular.ArrowCircleDown
+                },
+                contentDescription = stringResource(
+                    if (lit) R.string.remove_download else R.string.download,
+                ),
+                tint = tint,
+                modifier = Modifier.size(size * if (running != null) 0.30f else 0.44f),
+            )
+        }
+        if (running != null) {
+            // Drawn over the button, never inside it: the glass samples the
+            // page's backdrop, and anything painted into that layer would be
+            // sampled by the very surface drawing it.
+            androidx.compose.foundation.Canvas(Modifier.size(size)) {
+                val stroke = 2.5.dp.toPx()
+                val inset = androidx.compose.ui.geometry.Offset(stroke / 2f, stroke / 2f)
+                val ring = androidx.compose.ui.geometry.Size(
+                    this.size.width - stroke,
+                    this.size.height - stroke,
+                )
+                // A track under the arc. Without it the ring is only legible
+                // where it has already travelled, and on a page whose accent
+                // comes from a dark cover that is nearly nowhere: the button
+                // read as an ordinary circle that had stopped doing anything.
+                drawArc(
+                    color = Color.White.copy(alpha = 0.22f),
+                    startAngle = 0f,
+                    sweepAngle = 360f,
+                    useCenter = false,
+                    topLeft = inset,
+                    size = ring,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(width = stroke),
+                )
+                drawArc(
+                    // White, not the page accent. The accent here is taken from
+                    // the cover, and on a dark one it is a grey barely brighter
+                    // than the track behind it: the ring was there and could not
+                    // be seen filling, which is the only thing it exists to do.
+                    color = Color.White,
+                    startAngle = -90f,
+                    // Never quite nothing: a queue that has just been told to
+                    // start has no bytes to show for it yet, and an empty ring
+                    // beside a stop button says the tap did not take.
+                    sweepAngle = (360f * progress).coerceAtLeast(10f),
+                    useCenter = false,
+                    topLeft = inset,
+                    size = ring,
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(
+                        width = stroke,
+                        cap = androidx.compose.ui.graphics.StrokeCap.Round,
+                    ),
+                )
+            }
+        }
+    }
+}
+
 @Composable
 private fun AlbumStrip(
     albums: List<dev.lelonio.square.data.SearchItem>,
@@ -1272,6 +1558,18 @@ private fun TrackRow(
     isCurrent: Boolean,
     onClick: () -> Unit,
     contextActions: List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction>,
+    /** Nothing is drawn until a download for this track exists; see below. */
+    download: DownloadState = DownloadState.None,
+    /**
+     * Offline, and this one is not on the phone.
+     *
+     * Dimmed and inert rather than hidden: a playlist that quietly loses two
+     * thirds of its rows is a playlist the listener no longer recognises, and
+     * the songs come back the moment there is a connection. The menu still
+     * opens — copying a link or queueing for later are things worth doing
+     * about a song you cannot play right now.
+     */
+    unavailable: Boolean = false,
 ) {
     val shape = RoundedCornerShape(14.dp)
     // One menu, two ways in: the long press the hand expects, and the dots the
@@ -1313,12 +1611,20 @@ private fun TrackRow(
             )
             .fluidContextMenuAnchor(contextMenu)
             .pressable(
-                onClick,
+                // Inert rather than disabled: `enabled = false` would take the
+                // long press with it, and copying a link or queueing a song for
+                // when there is a connection again are still worth doing.
+                onClick = { if (!unavailable) onClick() },
                 shape = shape,
-                pressedScale = 0.985f,
+                pressedScale = if (unavailable) 1f else 0.985f,
                 onLongClick = { raiseMenu() },
             )
-            .padding(horizontal = 12.dp, vertical = 11.dp),
+            .padding(horizontal = 12.dp, vertical = 11.dp)
+            // Only when it is actually dimmed. `graphicsLayer` gives every row
+            // it is applied to a render layer of its own, whatever the alpha —
+            // so a plain `alpha = 1f` on a scrolling list of glass rows is a
+            // few dozen offscreen buffers bought for nothing.
+            .then(if (unavailable) Modifier.alpha(0.42f) else Modifier),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // The record, not the row number. A list of covers is scanned by
@@ -1368,17 +1674,27 @@ private fun TrackRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            Text(
-                // Artist and length on one line, as the reference has it: two
-                // stacked grey lines under every title turn the list into a wall
-                // of secondary text.
-                text = "${track.artist} · ${formatDuration(track.durationMs)}",
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
+            Row(
+                verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(top = 2.dp),
-            )
+            ) {
+                // The mark, and only once there is something to mark. A row for
+                // a track nobody has asked for looks exactly as it did before
+                // downloads existed — no greyed-out placeholder, nothing to
+                // read past. Starting a download is the row menu's job, so this
+                // never needs to be a target.
+                DownloadMark(download)
+                Text(
+                    // Artist and length on one line, as the reference has it:
+                    // two stacked grey lines under every title turn the list
+                    // into a wall of secondary text.
+                    text = "${track.artist} · ${formatDuration(track.durationMs)}",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
         }
 
         // No dots at the end of the row any more: the long press is the way

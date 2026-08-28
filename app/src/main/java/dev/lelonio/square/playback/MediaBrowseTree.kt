@@ -272,10 +272,46 @@ class MediaBrowseTree(
     }
 
     private suspend fun childrenOf(parentId: String): List<MediaItem> = when {
-        parentId == ID_ROOT -> listOf(
-            browsable(ID_PLAYLISTS, strings.getString(R.string.playlists), MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS),
-            browsable(ID_RECENT, strings.getString(R.string.play_again), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
-        )
+        parentId == ID_ROOT -> buildList {
+            // First, and only when there is something in it. In a car this is
+            // the shelf that always works: no engine to wait for, no signal to
+            // lose in a tunnel, and the one place the music is certain to be.
+            if (app.downloads.owners.value.isNotEmpty()) {
+                add(
+                    browsable(
+                        ID_DOWNLOADS,
+                        strings.getString(R.string.downloads),
+                        MediaMetadata.MEDIA_TYPE_FOLDER_MIXED,
+                    ),
+                )
+            }
+            add(browsable(ID_PLAYLISTS, strings.getString(R.string.playlists), MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS))
+            add(browsable(ID_RECENT, strings.getString(R.string.play_again), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED))
+        }
+
+        // Answered entirely from the download index: no engine, no network, no
+        // waiting. Everything under here plays from the phone.
+        parentId == ID_DOWNLOADS -> {
+            app.downloads.load()
+            app.downloads.owners.value.keys.mapNotNull { uri ->
+                val label = app.downloads.labelOf(uri) ?: return@mapNotNull null
+                nodeLabels[uri] = label.name
+                browsable(
+                    DOWNLOAD_PREFIX + uri,
+                    label.name,
+                    MediaMetadata.MEDIA_TYPE_PLAYLIST,
+                    label.artworkUrl?.let(Uri::parse),
+                )
+            }
+        }
+
+        parentId.startsWith(DOWNLOAD_PREFIX) -> {
+            val uri = parentId.removePrefix(DOWNLOAD_PREFIX)
+            app.downloads.owners.value[uri]
+                .orEmpty()
+                .mapNotNull(app.downloads::trackOf)
+                .map { playable(parentId, it) }
+        }
 
         parentId == ID_PLAYLISTS -> {
             if (!engineReady()) emptyList() else lock.withLock {
@@ -311,6 +347,13 @@ class MediaBrowseTree(
      */
     private suspend fun tracksOf(parentId: String): List<CatalogTrack> {
         if (parentId == ID_RECENT) return app.recentStore.tracks.value
+        // Straight from the index, and deliberately before the engine check
+        // below: this is the shelf that has to answer in a tunnel.
+        if (parentId.startsWith(DOWNLOAD_PREFIX)) {
+            return app.downloads.owners.value[parentId.removePrefix(DOWNLOAD_PREFIX)]
+                .orEmpty()
+                .mapNotNull(app.downloads::trackOf)
+        }
         trackCache[parentId]?.let { return it }
         if (!engineReady()) return emptyList()
 
@@ -548,6 +591,8 @@ class MediaBrowseTree(
         const val ID_ROOT = "sq/root"
         const val ID_PLAYLISTS = "sq/playlists"
         const val ID_RECENT = "sq/recent"
+        const val ID_DOWNLOADS = "sq/downloads"
+        const val DOWNLOAD_PREFIX = "sq/d/"
         const val TRACK_PREFIX = "sq/t/"
         const val SEARCH_PREFIX = "sq/q/"
 

@@ -9,8 +9,6 @@ import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.blur
@@ -70,7 +68,7 @@ fun CoverAura(
     val transition = rememberInfiniteTransition(label = "aura")
     // One phase read at several speeds below, rather than several animations:
     // they would drift apart on a dropped frame and this cannot.
-    val phase by transition.animateFloat(
+    val phase = transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
         animationSpec = infiniteRepeatable(
@@ -82,9 +80,14 @@ fun CoverAura(
 
     // Held where it was rather than snapped anywhere: the light stops, it does
     // not jump back to a starting position.
-    val frozen = remember { mutableFloatStateOf(0f) }
-    if (playing) frozen.floatValue = phase
-    val turn = frozen.floatValue * TAU
+    //
+    // A plain array, and read in the draw pass rather than here. Unwrapped in
+    // the composition the phase recomposed this whole thing on every frame of
+    // every song — for a number that only ever reaches a draw lambda — and it
+    // did so in the frames the player can least afford it. Snapshot state would
+    // not do: this is written where it is read, and a write during draw
+    // invalidates the frame it is in.
+    val held = remember { floatArrayOf(0f) }
 
     // Read here rather than in the draw pass: the accent is the theme's to
     // give, and a draw lambda has no composition to ask.
@@ -101,6 +104,12 @@ fun CoverAura(
             // and the whole thing is put out of focus afterwards.
             .blur(BLUR),
     ) {
+        // Only a playing track reads the clock, which is also what stops the
+        // light: with nothing read there is nothing to invalidate, and the
+        // whole thing simply stops being redrawn where it stands.
+        if (playing) held[0] = phase.value
+        val turn = held[0] * TAU
+
         // The bed: wide, soft, and the only part meant to be looked at
         // directly. Everything after this is for the glass.
         repeat(3) { index ->

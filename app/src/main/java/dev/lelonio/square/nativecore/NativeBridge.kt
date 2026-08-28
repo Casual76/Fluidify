@@ -11,9 +11,12 @@ import kotlinx.serialization.json.Json
 interface NativeEvents {
     /**
      * @param type one of `loading`, `playing`, `paused`, `position`, `stopped`,
-     *   `end_of_track`, `unavailable`
+     *   `end_of_track`, `unavailable`, `cluster`, `download_progress`,
+     *   `download_done`
      * @param uri the Spotify URI the event refers to, possibly empty
-     * @param positionMs playback position, 0 for events that carry no position
+     * @param positionMs playback position, 0 for events that carry no position.
+     *   The download events reuse it for their own number: per mille done for
+     *   `download_progress`, the size in bytes for `download_done`.
      */
     fun onEvent(type: String, uri: String, positionMs: Long)
 }
@@ -356,6 +359,50 @@ object NativeBridge {
     /** Logged-in account name. */
     fun username(): String = nativeUsername()
 
+    /**
+     * A Web API access token belonging to the session that is playing.
+     *
+     * For the writes the listener's own dashboard application is not allowed to
+     * make; see `engine::web_token` for what was measured and why. [scopes] is
+     * comma-separated, not space-separated.
+     *
+     * Null rather than throwing when the engine is not up: a caller asking for
+     * this always has somewhere else to go, and a missing engine is an ordinary
+     * moment rather than a fault.
+     */
+    fun webToken(scopes: String): String? =
+        runCatching { nativeWebToken(scopes) }
+            .onFailure { android.util.Log.w("SquareNative", "session token unavailable: ${it.message}") }
+            .getOrNull()
+
+    /**
+     * Appends a track to one of the account's playlists, at the end.
+     *
+     * Over the access point rather than `api.spotify.com`, which cannot do this
+     * at all; `native/src/playlists.rs` records what was measured and why.
+     * Throws with the reason, which the caller shows.
+     */
+    fun addToPlaylist(playlistUri: String, trackUri: String) =
+        nativeAddToPlaylist(playlistUri, trackUri)
+
+    /**
+     * Removes the occurrence of a track at [index] from a playlist.
+     *
+     * By position as well as by URI, because a playlist can hold the same song
+     * twice and "remove that one" is then the only unambiguous instruction.
+     */
+    fun removeFromPlaylist(playlistUri: String, trackUri: String, index: Int) =
+        nativeRemoveFromPlaylist(playlistUri, trackUri, index)
+
+    /**
+     * Puts a track in Liked Songs, or takes it out.
+     *
+     * Over the access point, like everything else that writes to the account:
+     * `PUT /v1/me/tracks` is refused to this app by every credential it can
+     * obtain. See `native/src/collection.rs`.
+     */
+    fun setLiked(trackUri: String, liked: Boolean) = nativeSetLiked(trackUri, liked)
+
     /** URI of the account's "Liked Songs" pseudo-playlist. */
     fun collectionUri(): String = nativeCollectionUri()
 
@@ -373,6 +420,61 @@ object NativeBridge {
      *   so the result may be shorter than the input
      */
     fun tracksMetadata(urisJson: String): String = nativeTracksMetadata(urisJson)
+
+    /**
+     * Whether the engine is running with no session at all.
+     *
+     * True when the handshake could not be made and there were downloads to
+     * fall back on: there is a player and there are files, and nothing else.
+     * Distinct from [spircLost], which means a session existed and its Connect
+     * device went — that one is worth repairing, and this one is not until
+     * there is a network again.
+     */
+    val isOffline: Boolean get() = nativeIsOffline()
+
+    /**
+     * Where downloaded tracks are kept.
+     *
+     * Call before downloading anything, and again if the listener moves the
+     * store to a memory card. Until it is called the engine simply has no
+     * downloads, so playback is unaffected by the order this happens in.
+     */
+    fun setDownloadRoot(path: String) = nativeSetDownloadRoot(path)
+
+    /**
+     * Downloads one track and returns the sidecar JSON that was written.
+     *
+     * **Blocks for the length of the download.** Call it from the download
+     * queue's worker, never from the main thread or from anything holding the
+     * player. Throws with `cancelled` if [cancelDownload] was called for this
+     * track, and with a message worth showing for anything else.
+     *
+     * Doing nothing is a valid outcome: a track already downloaded at this
+     * quality or better returns its existing sidecar immediately, which is what
+     * lets two playlists share a track without fetching it twice.
+     *
+     * @param bitrateKbps the quality to ask for; 96, 160 or 320
+     */
+    fun downloadTrack(trackUri: String, bitrateKbps: Int): String =
+        nativeDownloadTrack(trackUri, bitrateKbps)
+
+    /**
+     * The sidecar of a downloaded track as JSON, or the string `null` when the
+     * track is not downloaded.
+     */
+    fun downloadState(trackUri: String): String = nativeDownloadState(trackUri)
+
+    /** Deletes a download. Not being there is not an error. */
+    fun removeDownload(trackUri: String) = nativeRemoveDownload(trackUri)
+
+    /**
+     * Asks a download in progress to stop at the end of its current chunk.
+     *
+     * What has already been fetched is kept, so resuming later costs only the
+     * remainder — cancelling a queue because it started on mobile data should
+     * not throw away what it already paid for.
+     */
+    fun cancelDownload(trackUri: String) = nativeCancelDownload(trackUri)
 
     /** Lyrics JSON for a track, or the string `null` when Spotify has none. */
     fun lyrics(trackUri: String): String = nativeLyrics(trackUri)
@@ -500,6 +602,14 @@ object NativeBridge {
     private external fun nativeRemoteVolume(deviceId: String, volume: Int)
     private external fun nativeShutdown()
     private external fun nativeUsername(): String
+    private external fun nativeWebToken(scopes: String): String
+    private external fun nativeAddToPlaylist(playlistUri: String, trackUri: String)
+    private external fun nativeSetLiked(trackUri: String, liked: Boolean)
+    private external fun nativeRemoveFromPlaylist(
+        playlistUri: String,
+        trackUri: String,
+        index: Int,
+    )
     private external fun nativeCollectionUri(): String
     private external fun nativeRootlist(): String
     private external fun nativeContextTracks(contextUri: String): String
@@ -508,4 +618,10 @@ object NativeBridge {
     private external fun nativeTrackRelatives(trackUri: String): String
     private external fun nativeCanvas(trackUri: String): String
     private external fun nativeArtist(artistUri: String): String
+    private external fun nativeIsOffline(): Boolean
+    private external fun nativeSetDownloadRoot(path: String)
+    private external fun nativeDownloadTrack(trackUri: String, bitrateKbps: Int): String
+    private external fun nativeDownloadState(trackUri: String): String
+    private external fun nativeRemoveDownload(trackUri: String)
+    private external fun nativeCancelDownload(trackUri: String)
 }

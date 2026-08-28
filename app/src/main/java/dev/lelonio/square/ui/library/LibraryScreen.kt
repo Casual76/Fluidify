@@ -22,6 +22,8 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -41,6 +43,7 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -91,6 +94,9 @@ import com.adamglin.phosphoricons.regular.ListBullets
 import com.adamglin.phosphoricons.regular.Plus
 import com.adamglin.phosphoricons.regular.SquaresFour
 
+/** How long one filter dissolves into the next. */
+private const val FILTER_FADE_MS = 180
+
 /** How the playlists are arranged. */
 private enum class Layout { GRID, LIST }
 
@@ -114,6 +120,15 @@ private enum class Filter(@StringRes val label: Int, @StringRes val count: Int) 
     PLAYLISTS(R.string.playlists, R.string.playlist_count),
     ARTISTS(R.string.artists, R.string.artist_count),
     ALBUMS(R.string.albums, R.string.album_count),
+
+    /**
+     * What can be played with no connection.
+     *
+     * A filter rather than a page of its own, because it is the same question
+     * the other chips ask — what am I looking at — and because a downloaded
+     * playlist is still a playlist: it sorts, pins and opens like the rest.
+     */
+    DOWNLOADS(R.string.downloads, R.string.download_count),
 }
 
 /**
@@ -161,6 +176,16 @@ fun LibraryScreen(
     onOpenArtist: (dev.lelonio.square.data.SearchItem) -> Unit = {},
     /** The albums the account has saved; see MainViewModel.savedAlbums. */
     albums: List<CatalogPlaylist> = emptyList(),
+    /** Which pages are kept offline, for the Downloads chip. */
+    downloaded: Set<String> = emptySet(),
+    /**
+     * The shelf of songs downloaded on their own, or null when there are none.
+     *
+     * Only ever shown under the Downloads chip: it is not something the account
+     * has, it is something this phone made, and it would be an odd stranger
+     * among the playlists everywhere else.
+     */
+    downloadedSongs: CatalogPlaylist? = null,
     backdrop: Backdrop,
 ) {
     when (state) {
@@ -239,6 +264,12 @@ fun LibraryScreen(
                 Filter.PLAYLISTS -> state.playlists
                 Filter.ALBUMS -> albums
                 Filter.ARTISTS -> artistItems
+                // Everything with a download, whatever kind it is, plus the
+                // loose songs. Drawn from the same lists as the other chips, so
+                // a downloaded playlist keeps its cover, its pin and its place.
+                Filter.DOWNLOADS -> listOfNotNull(downloadedSongs) +
+                    (state.playlists + albums + artistItems)
+                        .filter { downloaded.contains(it.uri) }
             }
 
             fun sortedFor(which: Filter): List<CatalogPlaylist> {
@@ -263,11 +294,16 @@ fun LibraryScreen(
                     // not a playlist competing for a place: it is a fixed shelf
                     // of the library, and one nobody has opened yet would
                     // otherwise sit sixtieth among lists they have.
-                    .withLocalFilesFirst()
+                    //
+                    // Not under the Downloads chip, where the local files shelf
+                    // is not shown at all: those are somebody else's files that
+                    // happen to be on the phone, which is a different thing
+                    // from music this app was told to keep.
+                    .let { if (which == Filter.DOWNLOADS) it else it.withLocalFilesFirst() }
             }
 
             val playlists = remember(
-                state.playlists, albums, artistItems, filter,
+                state.playlists, albums, artistItems, filter, downloaded, downloadedSongs,
                 playlistOrder, pinned, order, descending,
             ) { sortedFor(filter) }
 
@@ -277,6 +313,12 @@ fun LibraryScreen(
             // shorter than it takes to notice.
             val gridState = androidx.compose.foundation.lazy.grid.rememberLazyGridState()
             val rowsState = androidx.compose.foundation.lazy.rememberLazyListState()
+            // Read once for both backdrops below, and read here so the lambdas
+            // they are given stay cheap.
+            val scrolling by remember {
+                derivedStateOf { gridState.isScrollInProgress || rowsState.isScrollInProgress }
+            }
+
             val gridScroll = rememberFluidCollapseScroll(gridState)
             val rowsScroll = rememberFluidCollapseScroll(rowsState)
             val title = stringResource(R.string.library)
@@ -311,16 +353,42 @@ fun LibraryScreen(
                 // did animate.
                 androidx.compose.animation.AnimatedContent(
                     targetState = filter,
+                    // A dissolve, and nothing else.
+                    //
+                    // It used to slide in from a fourteenth of the page below
+                    // while the outgoing copy faded twice as fast: the two were
+                    // never at the same opacity at the same moment, so the
+                    // change read as a jump followed by the new page climbing
+                    // into place. Worse, the slide re-laid-out a whole grid of
+                    // glass tiles on every frame of it, on top of the outgoing
+                    // grid still being drawn — which is where the stutter came
+                    // from. Equal, overlapping fades cost one extra layer for a
+                    // fifth of a second and move nothing.
                     transitionSpec = {
-                        (androidx.compose.animation.fadeIn(tween(220)) +
-                            androidx.compose.animation.slideInVertically(tween(260)) { it / 14 })
-                            .togetherWith(androidx.compose.animation.fadeOut(tween(120)))
+                        androidx.compose.animation.fadeIn(tween(FILTER_FADE_MS))
+                            .togetherWith(
+                                androidx.compose.animation.fadeOut(tween(FILTER_FADE_MS)),
+                            )
+                            .using(
+                                androidx.compose.animation.SizeTransform(clip = false),
+                            )
                     },
                     label = "library filter",
                     modifier = Modifier
                         .fillMaxSize()
-                        .layerBackdrop(listBackdrop)
-                        .glassBackdropSource(bodyGlass),
+                        // Held still while the list is moving.
+                        //
+                        // Both of these record the whole page into a layer for
+                        // the glass to sample, and recording is one full
+                        // traversal of the subtree per frame — the dominant
+                        // cost of a fling, measured and written up in
+                        // LayerBackdropModifier. A list under the finger is
+                        // exactly when that is most expensive and least worth
+                        // paying: what is lost is a reflection that stops
+                        // sliding for the length of the fling, under a blur
+                        // heavy enough that it does not read as stopping.
+                        .layerBackdrop(listBackdrop, frozen = { scrolling })
+                        .glassBackdropSource(bodyGlass, frozen = { scrolling }),
                 ) { shownFilter ->
                 val playlists = remember(
                     state.playlists, albums, artistItems, shownFilter,
@@ -569,15 +637,25 @@ private fun Header(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Filter.entries.forEach { entry ->
-                dev.antigravity.fluidengine.ui.fluid.FluidChip(
-                    label = stringResource(entry.label),
-                    selected = entry == filter,
-                    onClick = { onFilter(entry) },
-                )
+            // Scrollable, because there are five of them now and "Scaricati"
+            // does not fit across a phone beside the other four. The sort
+            // button stays put at the end of the row, where it has always been.
+            Row(
+                Modifier
+                    .weight(1f)
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Filter.entries.forEach { entry ->
+                    dev.lelonio.square.ui.components.GlassChip(
+                        label = stringResource(entry.label),
+                        selected = entry == filter,
+                        onClick = { onFilter(entry) },
+                    )
+                }
+                Spacer(Modifier.width(8.dp))
             }
-
-            Spacer(Modifier.weight(1f))
 
             LiquidButton(
                 onClick = onSort,

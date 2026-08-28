@@ -59,6 +59,7 @@ import androidx.compose.foundation.Canvas
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableFloatStateOf
@@ -68,11 +69,12 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.BlurEffect
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
@@ -157,6 +159,15 @@ private const val STAGE_FADE_MS = 180
 
 /** And the whole of a change between the cover and a Canvas; see the use of it. */
 private const val CLIP_FADE_MS = 460
+
+/**
+ * How long the stage stops re-recording itself after a panel changes.
+ *
+ * A little past [CLIP_FADE_MS], which is the longest of the animations a change
+ * starts — the fade itself, the blur behind it and the dim over it all finish
+ * inside this. See the use of it.
+ */
+private const val STAGE_SETTLE_NS = 520_000_000L
 
 private enum class Stage {
     COVER, LYRICS, INFO, QUEUE, DEVICES, ADD_TO_PLAYLIST, CANVAS, VIDEO
@@ -390,6 +401,29 @@ fun PlayerScreen(
     val playerGlass = dev.antigravity.fluidengine.ui.fluid
         .rememberCombinedGlassBackdrop(ground, stageGlass)
 
+    /**
+     * Held still while a panel is arriving or leaving.
+     *
+     * Every re-recording of the stage tells every pane above it that its source
+     * changed, and this screen wears a dozen of them — the top bar, the title
+     * capsule, five transport buttons, the switch, the dial. The aura drifts
+     * continuously, so without this they all re-blur on every frame of the
+     * change, on top of the words being composed and measured for the first
+     * time. What it costs is a reflection that stops drifting for the length of
+     * the fade, behind twenty-six dp of blur, which is nothing.
+     *
+     * A plain array and a wall clock, the pattern from `BackdropFreeze`: this is
+     * read in the draw phase, where a snapshot read would register a dependency
+     * and re-invalidate the very frame it is in. It also holds for the first
+     * half-second the player is open, which is the opening animation and wants
+     * the same thing.
+     */
+    val panelSettled = remember { longArrayOf(System.nanoTime()) }
+    LaunchedEffect(panel) { panelSettled[0] = System.nanoTime() }
+    val stageFrozen = remember {
+        { System.nanoTime() - panelSettled[0] < STAGE_SETTLE_NS }
+    }
+
     // Lyrics take over the middle of the screen rather than opening a panel at
     // the bottom, and the Canvas goes out of focus behind them: a clip is
     // motion, and reading over motion is the one thing that does not work. Blur
@@ -397,8 +431,15 @@ fun PlayerScreen(
     // Any panel, not just the lyrics: they all sit in the middle of the screen
     // now, and reading a slider over a moving clip is no easier than reading a
     // lyric over one.
+    //
+    // Held as a State and read only inside the layer block below, never with
+    // `by` here. Unwrapped at this level the radius is a composition read, so
+    // every frame of those 320ms re-ran the whole of this function — the top
+    // bar, the transport, the panels, the glass surfaces that then re-record
+    // their captures — and the frames it cost landed exactly on the switch
+    // between the cover and the words, which is where the stutter was.
     val panelOpen = panel != PlayerPanel.NONE
-    val canvasBlur by animateDpAsState(
+    val canvasBlur = animateDpAsState(
         targetValue = if (panelOpen) 26.dp else 0.dp,
         animationSpec = tween(320),
         label = "canvasBlur",
@@ -419,13 +460,29 @@ fun PlayerScreen(
         Box(
             Modifier
                 .fillMaxSize()
-                .then(if (canvasBlur > 0.dp) Modifier.blur(canvasBlur) else Modifier)
-                // The clip follows a track-change swipe, since with a Canvas
-                // playing it is the only thing on screen the gesture could be
-                // about. Damped, because the clip is the backdrop of everything
-                // above it and moving it one to one drags the whole screen's
-                // refraction with it.
+                // One layer for both of the things that happen to the stage.
+                //
+                // The blur is spelled out as a render effect rather than left to
+                // `Modifier.blur`, which takes its radius as an argument and so
+                // reads the animation up in the composition; here it is read in
+                // the layer block, where a change costs a redraw of one layer
+                // and nothing else. Clamped edges and a clip are what
+                // `Modifier.blur` does by default, and the look is its look.
+                //
+                // The clip also follows a track-change swipe, since with a
+                // Canvas playing it is the only thing on screen the gesture
+                // could be about. Damped, because the clip is the backdrop of
+                // everything above it and moving it one to one drags the whole
+                // screen's refraction with it.
                 .graphicsLayer {
+                    val radius = canvasBlur.value.toPx()
+                    renderEffect = if (radius > 0.5f) {
+                        BlurEffect(radius, radius, TileMode.Clamp)
+                    } else {
+                        null
+                    }
+                    clip = radius > 0.5f
+
                     val shift = canvasShift.floatValue
                     if (shift == 0f) return@graphicsLayer
                     translationX = shift * CANVAS_SWIPE_FOLLOW
@@ -435,9 +492,9 @@ fun PlayerScreen(
                     scaleY = shrink
                     alpha = 1f - travel * 0.5f
                 }
-                .layerBackdrop(canvasBackdrop)
+                .layerBackdrop(canvasBackdrop, frozen = stageFrozen)
                 // The engine's copy of the same picture; see stageGlass.
-                .glassBackdropSource(stageGlass),
+                .glassBackdropSource(stageGlass, frozen = stageFrozen),
         ) {
             // Inside the recorded layer, and that is the point: the glass above
             // samples this backdrop, so light drawn here is light the buttons
@@ -529,7 +586,13 @@ fun PlayerScreen(
                 // are the same statement — the clip is not what you are looking
                 // at right now — and the blur alone left a bright moving picture
                 // behind a column of text.
-                val dim by animateFloatAsState(
+                // Both of these are States read inside the draw lambda below
+                // rather than unwrapped here: this veil sits inside the layer
+                // the whole screen's glass samples, so a recomposition of it
+                // is a re-record of that layer and a re-capture in every pane
+                // above. Opening a panel starts both animations at once, which
+                // is precisely when nothing else can afford it.
+                val dim = animateFloatAsState(
                     targetValue = if (state.isPlaying && !panelOpen) 0f else 1f,
                     animationSpec = tween(420),
                     label = "canvasDim",
@@ -538,7 +601,7 @@ fun PlayerScreen(
                 // most of it goes too. Not all: a name still has to be legible
                 // over a near-white frame, and the little that is left is
                 // exactly what carries it.
-                val veil by animateFloatAsState(
+                val veil = animateFloatAsState(
                     targetValue = if (immersive) IMMERSIVE_VEIL else 1f,
                     animationSpec = tween(420),
                     label = "canvasVeil",
@@ -547,17 +610,18 @@ fun PlayerScreen(
                     Modifier
                         .fillMaxSize()
                         .drawWithContent {
+                            val shade = veil.value
                             drawRect(
                                 brush = Brush.verticalGradient(
                                     listOf(
-                                        Color.Black.copy(alpha = 0.28f * veil),
-                                        Color.Black.copy(alpha = 0.18f * veil),
-                                        Color.Black.copy(alpha = 0.52f * veil),
+                                        Color.Black.copy(alpha = 0.28f * shade),
+                                        Color.Black.copy(alpha = 0.18f * shade),
+                                        Color.Black.copy(alpha = 0.52f * shade),
                                     ),
                                 ),
                             )
                             drawContent()
-                            drawRect(Color.Black, alpha = dim * PAUSED_DIM * veil)
+                            drawRect(Color.Black, alpha = dim.value * PAUSED_DIM * shade)
                         },
                 )
             }
@@ -694,15 +758,31 @@ fun PlayerScreen(
                         // eighty made the two look like separate events instead
                         // of one dissolve.
                         val toClip = panel == PlayerPanel.NONE
-                        val phase by animateFloatAsState(
+                        val phase = animateFloatAsState(
                             targetValue = if (coverShowing) 0f else 1f,
                             animationSpec = tween(
                                 if (toClip) CLIP_FADE_MS else STAGE_FADE_MS * 2,
                             ),
                             label = "stageFade",
                         )
-                        val coverAlpha = (1f - phase * 2f).coerceIn(0f, 1f)
-                        val panelAlpha = ((phase - 0.5f) * 2f).coerceIn(0f, 1f)
+                        // The two halves of the clock, each read where it is
+                        // used and not here.
+                        //
+                        // Unwrapped at this level they recomposed this whole
+                        // column on every frame of the change — the cover, the
+                        // panel arriving, the title capsule, the progress bar,
+                        // the transport and the switch — which is a great deal
+                        // of work to do in the same frames the lyrics are being
+                        // composed and measured for the first time. In a layer
+                        // block the same number costs one redraw.
+                        //
+                        // Only the question the composition genuinely turns on
+                        // — is there any cover left to draw — stays up here,
+                        // and derived so it fires twice a change rather than
+                        // sixty times a second.
+                        val coverPresent by remember(phase) {
+                            derivedStateOf { phase.value < 0.5f }
+                        }
 
                         Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
                             // Says so in words, over whatever the slot is
@@ -731,11 +811,14 @@ fun PlayerScreen(
                                 }
                             }
 
-                            if (coverAlpha > 0f) {
+                            if (coverPresent) {
                                 Box(
                                     Modifier
                                         .fillMaxSize()
-                                        .graphicsLayer { alpha = coverAlpha },
+                                        .graphicsLayer {
+                                            alpha = (1f - phase.value * 2f)
+                                                .coerceIn(0f, 1f)
+                                        },
                                     contentAlignment = Alignment.Center,
                                 ) {
                                     Cover(
@@ -788,7 +871,7 @@ fun PlayerScreen(
                             // Between one panel and another, where no cover
                             // is involved, this is the whole animation. Going to
                             // or from the cover it is held at nothing until its
-                            // turn; see panelAlpha.
+                            // turn; see the second half of the clock below.
                             transitionSpec = {
                                 fadeIn(tween(STAGE_FADE_MS)) togetherWith
                                     fadeOut(tween(STAGE_FADE_MS)) using null
@@ -796,7 +879,10 @@ fun PlayerScreen(
                             label = "stage",
                             modifier = Modifier
                                 .fillMaxSize()
-                                .graphicsLayer { alpha = panelAlpha },
+                                .graphicsLayer {
+                                    alpha = ((phase.value - 0.5f) * 2f)
+                                        .coerceIn(0f, 1f)
+                                },
                         ) { stage ->
                             when (stage) {
                                 // Empty: the cover above this AnimatedContent
@@ -1955,7 +2041,11 @@ private fun LyricsStage(
 
     // A document that ships its own translation is already answered; anything
     // else is put through the translator the first time it is asked for.
-    val hasOwn = lyrics?.lines.orEmpty().any { !it.translation.isNullOrBlank() }
+    // Asked once per song. It is a walk over every line of the lyric, and the
+    // answer cannot change while the song is the same one.
+    val hasOwn = remember(lyrics) {
+        lyrics?.lines.orEmpty().any { !it.translation.isNullOrBlank() }
+    }
 
     androidx.compose.runtime.LaunchedEffect(lyrics, translated) {
         if (!translated || lyrics == null || hasOwn || machine != null) return@LaunchedEffect

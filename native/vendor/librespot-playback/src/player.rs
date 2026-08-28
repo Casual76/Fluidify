@@ -160,6 +160,15 @@ struct FadeOut {
     /// two tracks mastered at different levels sound alike, and a fade is the
     /// one moment both are audible at once.
     normalisation_factor: f64,
+    /// How much the dynamic limiter was holding this track down when it left.
+    ///
+    /// Frozen rather than followed, because the limiter's peak detector belongs
+    /// to whatever is playing and from here on that is the incoming track. Left
+    /// out entirely — which is where this started — the outgoing track loses
+    /// several decibels of gain reduction at the exact instant the fade begins,
+    /// so it jumps up before it starts coming down. One decibel is enough to
+    /// hear; it is the opposite of dissolving.
+    limiting: f64,
     /// Length of the fade in samples, so the gain curve knows its own scale.
     total: usize,
     /// How much of it has been mixed.
@@ -1112,6 +1121,23 @@ impl PlayerTrackLoader {
     ) -> Option<PlayerLoadedTrackData> {
         match track_uri {
             SpotifyUri::Track { .. } | SpotifyUri::Episode { .. } => {
+                // LOCAL PATCH: a downloaded track is played from disk.
+                //
+                // Before anything else, because the point of the branch is that
+                // it touches nothing: no metadata request, no storage resolve,
+                // no audio key, no CDN. That is what makes a downloaded track
+                // start instantly on a bad connection and play at all on none.
+                //
+                // A failure here falls through to the network rather than
+                // failing the load. The file could have been removed between
+                // the lookup and the open, or be a truncated leftover from a
+                // crash mid-write; either way the track is still playable the
+                // ordinary way, and the alternative is a song that refuses to
+                // play because of a housekeeping problem the listener cannot
+                // see. The download index is repaired separately, by the engine.
+                if let Some(loaded) = self.load_downloaded_track(&track_uri, position_ms) {
+                    return Some(loaded);
+                }
                 self.load_remote_track(track_uri, position_ms).await
             }
             SpotifyUri::Local { .. } => self.load_local_track(track_uri, position_ms).await,
@@ -1120,6 +1146,184 @@ impl PlayerTrackLoader {
                 None
             }
         }
+    }
+
+    /// LOCAL PATCH: loads a track from the copy the engine has downloaded.
+    ///
+    /// Deliberately not `async`: there is nothing here to await. Every step is
+    /// a local file operation, which is the whole reason this path exists.
+    ///
+    /// Below the first few lines it is the streaming path, unchanged — and it
+    /// is unchanged on purpose. The downloaded file is the file the CDN served,
+    /// still encrypted, so the same `AudioDecrypt` runs over it, the Ogg header
+    /// still ends at the same offset, and the normalisation packet is still
+    /// read out of the same place. Anything that behaves differently when a
+    /// track is downloaded would be a bug the listener hears, and the surest
+    /// way not to write one was to leave this half of the loader alone.
+    ///
+    /// Returns `None` when there is no download for this track — the ordinary
+    /// answer — and also when there is one that cannot be read, so that the
+    /// caller falls back to the network.
+    fn load_downloaded_track(
+        &self,
+        track_uri: &SpotifyUri,
+        position_ms: u32,
+    ) -> Option<PlayerLoadedTrackData> {
+        let lookup = self.config.download_lookup.as_ref()?;
+        let track_id: SpotifyId = track_uri.try_into().ok()?;
+        let downloaded = lookup(&track_id)?;
+
+        let began = Instant::now();
+
+        let file = match File::open(&downloaded.path) {
+            Ok(file) => file,
+            Err(e) => {
+                warn!(
+                    "download for <{}> could not be opened, fetching it instead: {e}",
+                    downloaded.name
+                );
+                return None;
+            }
+        };
+        let file_size = match file.metadata() {
+            Ok(meta) => meta.len(),
+            Err(e) => {
+                warn!("download for <{}> has no size: {e}", downloaded.name);
+                return None;
+            }
+        };
+
+        let key = downloaded.key.map(librespot_core::audio_key::AudioKey);
+        let mut decrypted_file = AudioDecrypt::new(key, file);
+
+        let is_ogg_vorbis = AudioFiles::is_ogg_vorbis(downloaded.format);
+        let (offset, mut normalisation_data) = if is_ogg_vorbis {
+            let normalisation_data = NormalisationData::parse_from_ogg(&mut decrypted_file).ok();
+            (SPOTIFY_OGG_HEADER_END, normalisation_data)
+        } else {
+            (0, None)
+        };
+
+        let audio_file = match Subfile::new(decrypted_file, offset, file_size) {
+            Ok(audio_file) => audio_file,
+            Err(e) => {
+                warn!("download for <{}> is too short to play: {e}", downloaded.name);
+                return None;
+            }
+        };
+
+        let mut hint = Hint::new();
+        if let Some(mime_type) = AudioFiles::mime_type(downloaded.format) {
+            hint.mime_type(mime_type);
+        }
+
+        let mut decoder: Decoder = match SymphoniaDecoder::new(audio_file, hint) {
+            Ok(mut decoder) => {
+                // Same as the streaming path: outside Ogg Vorbis the loudness
+                // comes from ReplayGain tags rather than Spotify's own packet.
+                if normalisation_data.is_none() {
+                    normalisation_data = decoder.normalisation_data();
+                }
+                Box::new(decoder)
+            }
+            Err(e) => {
+                // A file that will not decode is a broken download, not a
+                // broken track. Say so and let the caller stream it; the engine
+                // sweeps files that fail to open on its own schedule.
+                warn!(
+                    "download for <{}> will not decode, fetching it instead: {e}",
+                    downloaded.name
+                );
+                return None;
+            }
+        };
+
+        let duration_ms = downloaded.duration_ms;
+        let position_ms = if position_ms > duration_ms {
+            warn!(
+                "Invalid start position of {position_ms} ms exceeds track's duration of {duration_ms} ms, starting track from the beginning"
+            );
+            0
+        } else {
+            position_ms
+        };
+
+        // Unlike the streaming path this seek is cheap — symphonia's bisection
+        // reads from disk, not from the CDN — but it is still skipped at the
+        // start of a track, where a fresh decoder already sits on the first
+        // audio packet.
+        let stream_position_ms = if position_ms == 0 {
+            0
+        } else {
+            match decoder.seek(position_ms) {
+                Ok(new_position_ms) => new_position_ms,
+                Err(e) => {
+                    error!(
+                        "PlayerTrackLoader::load_downloaded_track error seeking to starting position {position_ms}: {e}"
+                    );
+                    return None;
+                }
+            }
+        };
+
+        // Only used to pace the fetcher, which has nothing to fetch here. Kept
+        // honest anyway because the sink reads it, and guarded because a
+        // sub-second track would divide by zero.
+        let bytes_per_second = if duration_ms > 0 {
+            (file_size as u128 * 1000 / duration_ms as u128) as usize
+        } else {
+            file_size as usize
+        };
+
+        info!(
+            "<{}> ({} ms) loaded in {} ms, from a download",
+            downloaded.name,
+            duration_ms,
+            began.elapsed().as_millis(),
+        );
+
+        Some(PlayerLoadedTrackData {
+            decoder,
+            normalisation_data: normalisation_data.unwrap_or_else(|| {
+                warn!("Unable to get normalisation data, continuing with defaults.");
+                NormalisationData::default()
+            }),
+            stream_loader_controller: StreamLoaderController::from_local_file(file_size),
+            bytes_per_second,
+            duration_ms,
+            stream_position_ms,
+            is_explicit: downloaded.is_explicit,
+            audio_item: AudioItem {
+                duration_ms,
+                uri: track_uri.to_uri().unwrap_or_default(),
+                track_id: track_uri.clone(),
+                // Empty because this item is never fetched: naming the files
+                // the track exists in would describe what is on the CDN, not
+                // what is being played.
+                files: Default::default(),
+                name: downloaded.name,
+                covers: vec![],
+                language: vec![],
+                is_explicit: downloaded.is_explicit,
+                availability: Ok(()),
+                alternatives: None,
+                unique_fields: UniqueFields::Track {
+                    // Names only, and the roles are not kept: the app draws its
+                    // track lists from its own catalogue rather than from the
+                    // player, and the one field anything downstream reads out
+                    // of an `AudioItem` is the duration (see `spirc.rs`, which
+                    // takes it from `TrackChanged`). Storing artist URIs in
+                    // every sidecar to fill a field with no reader would be
+                    // paying for it twice.
+                    artists: Default::default(),
+                    album: downloaded.album,
+                    album_artists: downloaded.album_artists,
+                    popularity: 0,
+                    number: downloaded.number,
+                    disc_number: downloaded.disc_number,
+                },
+            },
+        })
     }
 
     async fn load_remote_track(
@@ -1688,6 +1892,30 @@ impl Future for PlayerInternal {
                 }
             }
 
+            // LOCAL PATCH: the track being dissolved out of goes on playing on
+            // its own while the one it is dissolving into is still being
+            // fetched. See `pump_fade_out`.
+            //
+            // `Loading` only, and only a load that means to play: the fade is
+            // the sound of one song ending under another, and neither a pause
+            // nor a load that will sit paused is that.
+            if self.fade_out.is_some()
+                && matches!(
+                    self.state,
+                    PlayerState::Loading {
+                        start_playback: true,
+                        ..
+                    }
+                )
+            {
+                // Around again rather than to sleep: the write inside blocks
+                // for exactly as long as the audio it just handed over lasts,
+                // so this paces itself the same way playback does.
+                if self.pump_fade_out() {
+                    all_futures_completed_or_not_ready = false;
+                }
+            }
+
             if self.state.is_playing() {
                 self.ensure_sink_running();
 
@@ -1961,7 +2189,17 @@ impl PlayerInternal {
 
     /// LOCAL PATCH: moves the track being replaced into the outgoing half of a
     /// crossfade, if there is one and crossfading is on.
-    fn begin_fade_out(&mut self) {
+    ///
+    /// Called while the load command is being handled, before anything has had
+    /// the chance to replace the state. It used to run from `start_playback`,
+    /// which is a whole load later, and that is why an overlap was only ever
+    /// heard when the next track happened to be preloaded already: on every
+    /// other path `handle_command_load` has by then put the player in
+    /// `Loading`, and replacing the state is what drops the outgoing decoder.
+    /// There was nothing left to fade out of, so the song being left stopped
+    /// dead a crossfade short of its own end and the next one began at full
+    /// level, with a load's silence between them.
+    fn begin_fade_out(&mut self, incoming: &SpotifyUri) {
         let total = self.crossfade_samples();
         if total == 0 {
             self.fade_out = None;
@@ -1976,30 +2214,130 @@ impl PlayerInternal {
         // told apart by `early_end`, which names the one play request that was
         // reported as finishing before it had.
         let expected = self.early_end.take();
+
+        // What the limiter was holding the outgoing track down by, read while
+        // its own peaks are still what the detector is following. See
+        // [`FadeOut::limiting`].
+        let limiting = if self.config.normalisation
+            && self.config.normalisation_method == NormalisationMethod::Dynamic
+        {
+            db_to_ratio(-f64::max(
+                self.normalisation_peaks[0],
+                self.normalisation_peaks[1],
+            ))
+        } else {
+            1.0
+        };
+
         let previous = mem::replace(&mut self.state, PlayerState::Invalid);
         match previous {
             PlayerState::Playing {
+                track_id,
                 decoder,
                 normalisation_factor,
                 play_request_id,
                 ..
-            } if expected == Some(play_request_id) => {
+            } if expected == Some(play_request_id) && &track_id != incoming => {
+                debug!("crossfade: <{track_id:?}> is the outgoing half from here");
                 self.fade_out = Some(FadeOut {
                     decoder,
                     normalisation_factor,
+                    limiting,
                     total,
                     done: 0,
                     spare: std::collections::VecDeque::new(),
                     drained: false,
                 });
+                // The decoder this state existed to hold has just left it, and
+                // the caller is about to say what plays now. `Stopped` rather
+                // than `Invalid` because the load can still fail in between,
+                // and a player that stops is recoverable where one that trips
+                // the invalid-state check is not.
+                self.state = PlayerState::Stopped;
             }
-            // Nothing was playing: put the state back and leave the caller to
-            // replace it as it would have anyway.
+            // Nothing to fade out of — or the same track again, which has one
+            // decoder between the two ends and so cannot overlap with itself.
+            // Put the state back and leave the caller to replace it as it would
+            // have anyway.
             other => {
                 self.state = other;
                 self.fade_out = None;
             }
         }
+    }
+
+    /// LOCAL PATCH: plays the outgoing track on its own while the next one is
+    /// still being fetched.
+    ///
+    /// The fade is driven by the incoming track's packets, and between the load
+    /// command and the first of those there are none — a second or two here,
+    /// longer on a weak connection. Left to itself the song being replaced goes
+    /// silent the moment the queue moves, which throws away most of a fade's
+    /// worth of music and is the very thing the fade exists to prevent.
+    ///
+    /// The curve is held where it is rather than advanced, so the incoming
+    /// track still enters from silence and still gets the whole overlap. What
+    /// the wait costs comes off the far end instead: the outgoing track has
+    /// only a crossfade's worth of music left when it is handed over, so a slow
+    /// load leaves it draining before the curve reaches the bottom.
+    ///
+    /// Says whether anything was written, which is what tells `poll` to come
+    /// straight back instead of going to sleep.
+    fn pump_fade_out(&mut self) -> bool {
+        let volume = self.volume_getter.attenuation_factor();
+
+        let (samples, drained) = {
+            let Some(fade) = self.fade_out.as_mut() else {
+                return false;
+            };
+
+            let mut samples: Vec<f64> = fade.spare.drain(..).collect();
+            if !fade.drained {
+                match fade.decoder.next_packet() {
+                    Ok(Some((_, packet))) => match packet.samples() {
+                        Ok(decoded) => samples.extend_from_slice(decoded),
+                        Err(_) => fade.drained = true,
+                    },
+                    Ok(None) => fade.drained = true,
+                    Err(e) => {
+                        debug!("crossfade: the outgoing track stopped early: {e}");
+                        fade.drained = true;
+                    }
+                }
+            }
+
+            let x = fade.done as f64 / fade.total as f64;
+            let gain = (x * std::f64::consts::FRAC_PI_2).cos()
+                * fade.normalisation_factor
+                * fade.limiting
+                * volume;
+            for sample in samples.iter_mut() {
+                *sample = (*sample * gain).clamp(-1.0, MAX_SAMPLE);
+            }
+
+            (samples, fade.drained)
+        };
+
+        if samples.is_empty() {
+            if drained {
+                // Dropping it closes the outgoing stream.
+                self.fade_out = None;
+            }
+            return false;
+        }
+
+        if let Err(e) = self
+            .sink
+            .write(AudioPacket::Samples(samples), &mut self.converter)
+        {
+            // The fade goes rather than the playback: what failed is the tail
+            // of a song that is already over, and the track being loaded has
+            // its own sink errors to report if it hits any.
+            error!("{e}");
+            self.fade_out = None;
+            return false;
+        }
+        true
     }
 
     /// LOCAL PATCH: mixes the outgoing track under `data` and fades `data` up.
@@ -2045,7 +2383,7 @@ impl PlayerInternal {
             for sample in data.iter_mut().skip(offset).take(channels) {
                 let tail = fade.spare.pop_front().unwrap_or(0.0);
                 let mixed = *sample * gain_in
-                    + tail * gain_out * fade.normalisation_factor * volume;
+                    + tail * gain_out * fade.normalisation_factor * fade.limiting * volume;
                 *sample = mixed.clamp(-1.0, MAX_SAMPLE);
             }
 
@@ -2351,12 +2689,11 @@ impl PlayerInternal {
         let normalisation_factor =
             NormalisationData::get_factor(&config, loaded_track.normalisation_data);
 
-        // LOCAL PATCH: keep the track being replaced audible for the length of
-        // the crossfade. Only when one really is playing: a load from stopped,
-        // or a seek within the same track, has nothing to fade out of.
-        if start_playback {
-            self.begin_fade_out();
-        } else {
+        // LOCAL PATCH: a track loaded paused is not being dissolved into, so
+        // whatever was fading out is dropped rather than left hanging. The
+        // outgoing half is taken much earlier, in `handle_command_load`, while
+        // the track it belongs to is still the one playing.
+        if !start_playback {
             self.fade_out = None;
         }
 
@@ -2452,6 +2789,16 @@ impl PlayerInternal {
                 "Player::handle_command_load called from invalid state: {:?}",
                 self.state
             )));
+        }
+
+        // LOCAL PATCH: the outgoing half of the fade is taken here, while the
+        // track it belongs to is still the one playing.
+        //
+        // Everything below this line can replace the state — with the preloaded
+        // track, or with `Loading` — and replacing it is what drops the decoder
+        // the fade needs. See `begin_fade_out`.
+        if play {
+            self.begin_fade_out(&track_id);
         }
 
         // Now we check at different positions whether we already have a pre-loaded version

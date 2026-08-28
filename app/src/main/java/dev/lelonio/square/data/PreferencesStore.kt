@@ -116,8 +116,27 @@ class PreferencesStore(context: Context) {
         prefs.edit().putString(KEY_SKIPPED_UPDATE, value).apply()
     }
 
+    private val _showLocalFiles = MutableStateFlow(prefs.getBoolean(KEY_LOCAL_FILES, false))
+
+    /**
+     * Whether the phone's own music gets a shelf in the library.
+     *
+     * Off unless asked for. It used to be unconditional, on the reasoning that a
+     * file on this phone is there whichever service is signed in — true, but it
+     * put a folder at the head of every library for the many listeners who have
+     * no local music at all, and made them look at it every time. A shelf that
+     * is empty for most people is a setting, not a default.
+     */
+    val showLocalFiles: StateFlow<Boolean> = _showLocalFiles.asStateFlow()
+
+    fun setShowLocalFiles(value: Boolean) {
+        _showLocalFiles.value = value
+        prefs.edit().putBoolean(KEY_LOCAL_FILES, value).apply()
+    }
+
     private companion object {
         const val FILE_NAME = "square_preferences"
+        const val KEY_LOCAL_FILES = "show_local_files"
         const val KEY_CANVAS = "canvas"
         const val KEY_TRACK_SORT = "track_sort"
         const val KEY_TRACK_DESC = "track_sort_descending"

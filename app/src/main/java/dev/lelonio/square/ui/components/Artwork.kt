@@ -18,6 +18,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.ui.graphics.Color
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
+import com.adamglin.phosphoricons.Fill
+import com.adamglin.phosphoricons.fill.ArrowCircleDown
 import com.adamglin.phosphoricons.regular.FolderSimple
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -64,10 +66,18 @@ fun Artwork(
     Box(modifier.clip(shape), contentAlignment = Alignment.Center) {
         if (url == dev.lelonio.square.data.LocalLibrary.COVER) {
             LocalFilesCover()
+        } else if (url == DOWNLOADS_COVER) {
+            DownloadsCover()
         } else if (url != null) {
             val request = remember(url, decodeSize) {
                 ImageRequest.Builder(context)
-                    .data(url)
+                    // The copy kept beside a download, when there is one. Not a
+                    // fallback but a preference: the URL names the image, so the
+                    // bytes cannot have changed, and reading them off the phone
+                    // is right whether or not there is a connection.
+                    .data(
+                        dev.lelonio.square.download.DownloadExtras.fileOf(url, "art") ?: url,
+                    )
                     .scale(Scale.FILL)
                     .apply {
                         if (decodeSize > 0.dp) {
@@ -225,6 +235,32 @@ private fun LocalFilesCover() {
 
 /** The tile's ground, deep enough to sit in a grid of covers. */
 private val LocalFilesTile = Color(0xFF2B2144)
+
+/**
+ * What the shelf of songs downloaded on their own is drawn with.
+ *
+ * A sentinel rather than a picture, like the local files tile beside it: there
+ * is no cover for a shelf this phone invented, and a generated initial would
+ * put a letter where every neighbour has album art.
+ */
+const val DOWNLOADS_COVER = "square:downloads-cover"
+
+@Composable
+private fun DownloadsCover() {
+    Box(
+        Modifier
+            .fillMaxSize()
+            .background(LocalFilesTile),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            PhosphorIcons.Fill.ArrowCircleDown,
+            contentDescription = null,
+            tint = androidx.compose.material3.MaterialTheme.colorScheme.primary,
+            modifier = Modifier.fillMaxSize(0.44f),
+        )
+    }
+}
 
 @Composable
 private fun GeneratedCover(title: String, corner: Dp) {

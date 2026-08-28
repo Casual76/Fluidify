@@ -93,8 +93,25 @@ class TokenStore(
                 tokens.refreshToken?.let { putString(KEY_REFRESH, it) }
             }
             .putLong(KEY_EXPIRES_AT, tokens.expiresAtMillis)
+            .apply {
+                // A refresh answers without a scope; keep the one from the
+                // authorisation rather than overwriting it with nothing.
+                if (tokens.scope.isNotEmpty()) putString(KEY_SCOPE, tokens.scope)
+            }
             .commit()
     }
+
+    /**
+     * What this application was actually granted.
+     *
+     * Empty when unknown — a token stored before this was recorded — which
+     * callers must read as "cannot tell" rather than as "nothing was granted".
+     */
+    val granted: Set<String>
+        get() = prefs.getString(KEY_SCOPE, "").orEmpty()
+            .split(' ')
+            .filter { it.isNotEmpty() }
+            .toSet()
 
     fun clear() = prefs.edit().clear().commit()
 
@@ -152,6 +169,7 @@ class TokenStore(
         const val KEY_ACCESS = "access_token"
         const val KEY_REFRESH = "refresh_token"
         const val KEY_EXPIRES_AT = "expires_at"
+        const val KEY_SCOPE = "scope"
 
         /** Refresh early so a token cannot expire mid-request. */
         const val SKEW_MILLIS = 60_000L

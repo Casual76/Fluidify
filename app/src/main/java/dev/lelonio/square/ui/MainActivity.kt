@@ -332,7 +332,14 @@ class MainActivity : ComponentActivity() {
                     // YouTube's shelves carry no length, and a zero here would
                     // win over the one the player works out from the stream.
                     .setDurationMs(track.durationMs.takeIf { it > 0 })
-                    .setArtworkUri(track.artworkUrl?.let(android.net.Uri::parse))
+                    // The copy on the phone first. This is the picture the
+                    // notification and the quick settings panel draw, and they
+                    // fetch it themselves over the network: offline an https
+                    // URL is a blank tile next to music that is playing fine.
+                    .setArtworkUri(
+                        dev.lelonio.square.download.DownloadExtras.artworkUri(track.artworkUrl)
+                            ?: track.artworkUrl?.let(android.net.Uri::parse),
+                    )
                     // Where the queue came from, carried with the item because
                     // the engine lives in the service and this is the only
                     // channel between them that survives the session boundary.
