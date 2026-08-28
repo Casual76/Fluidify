@@ -24,7 +24,6 @@ import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import dev.antigravity.fluidengine.ui.fluid.GlassBackdropState
-import dev.antigravity.fluidengine.ui.fluid.GlassDefaults
 import dev.antigravity.fluidengine.ui.fluid.GlassRole
 import dev.antigravity.fluidengine.ui.fluidphysics.FluidCornerRadii
 import dev.antigravity.fluidengine.ui.fluidphysics.FluidForm
@@ -175,8 +174,16 @@ fun NowPlayingSheet(
                     .fluidPhysicsSurface(
                         state = physics,
                         backdrop = backdrop,
-                        tint = GlassDefaults.floatingTint(),
+                        tint = rememberPillMorphTint(),
                         role = GlassRole.Floating,
+                        // The family's floating optics, with the saturation
+                        // boost off: it lifts what it refracts, which reads
+                        // right for a control standing over a page and wrong for
+                        // a surface that has to be indistinguishable, in one
+                        // frame, from the pill it took over from.
+                        optics = dev.antigravity.fluidengine.ui.fluid.GlassDefaults
+                            .optics(GlassRole.Floating)
+                            .copy(vibrancy = 1f),
                         // Sampled once for the whole journey, and the intensity
                         // held constant to make that possible: intensity scales
                         // the blur radius, the radius is the capture's padding,

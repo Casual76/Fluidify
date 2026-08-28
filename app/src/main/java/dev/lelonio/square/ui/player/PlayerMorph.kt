@@ -8,12 +8,15 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
 import dev.antigravity.fluidengine.ui.fluid.FluidMotion
+import dev.antigravity.fluidengine.ui.fluid.GlassTint
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
@@ -154,6 +157,32 @@ fun CoroutineScope.settlePlayerMorph(
         haptics?.performHapticFeedback(HapticFeedbackType.LongPress)
     }
     expand.animateTo(target, PlayerMorphSpec, initialVelocity = velocity)
+}
+
+/**
+ * What the travelling surface is made of.
+ *
+ * Not the family's own floating film, and the reason is a measurement. The
+ * engine picks between a light material and a dark one by the luminance of
+ * `colorScheme.surface`, and this app puts a *translucent white film* in that
+ * slot — luminance ignores alpha, so the answer is always "light". Every engine
+ * glass surface in the app therefore gets the bright material, which is right
+ * over a page and wrong here: the pill it grows out of is a dark capsule, and
+ * sampled at the hand-over the two differed by about fifty-five levels of grey.
+ * A step that size in one frame is exactly the join this whole arrangement
+ * exists to hide.
+ *
+ * So the film darkens. Fixed rather than derived, for the same reason the bar's
+ * own dark tint is: deriving it would put it back through the detection that is
+ * already fooled.
+ */
+@Composable
+fun rememberPillMorphTint(): GlassTint = remember {
+    GlassTint(
+        overlay = Color.Black.copy(alpha = 0.62f),
+        fallback = Color(0xFF141416).copy(alpha = 0.94f),
+        hairline = Color.White.copy(alpha = 0.18f),
+    )
 }
 
 /**

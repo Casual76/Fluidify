@@ -1658,8 +1658,12 @@ fun SquareApp(
                     // And the same lock serves the setting: a bar told not to
                     // fold is a bar whose scrolling is not allowed to change it.
                     val barFolds by glassStore.barFolds.collectAsStateWithLifecycle()
-                    LaunchedEffect(searching, barFolds) {
-                        tabBarScroll.locked = searching || !barFolds
+                    // And while the player is on its way: the journey starts at
+                    // the pill's measured rectangle, so a bar that folds
+                    // mid-flight moves the very thing the window is growing out
+                    // of.
+                    LaunchedEffect(searching, barFolds, pillHidden) {
+                        tabBarScroll.locked = searching || !barFolds || pillHidden
                         if (searching || !barFolds) tabBarScroll.expand()
                     }
 
