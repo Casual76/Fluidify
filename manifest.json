@@ -12,7 +12,24 @@
       "repoOwner": "Casual76",
       "repoName": "Fluidify",
       "manifestPath": "manifest.json",
-      "ref": "master"
-    }
+      "ref": ""
+    },
+    "stable": {
+      "version": "1.0.0",
+      "releaseDate": "2026-08-28",
+      "changelog": "Prima versione di Fluidify.\n\nUn lettore per Spotify costruito sul design system Fluid: vetro che si\ntrasforma con la fisica dei fluidi, tema ametista, e le copertine che tingono\ntutto quello che sta intorno. Serve un account Premium.\n\nCosa sa fare\n\n- Riproduzione completa: libreria, playlist, album, artisti, ricerca, coda,\n  testo sincronizzato, Canvas, crediti e informazioni sull'artista.\n- Spotify Connect. Comanda gli altri dispositivi e si fa comandare; shuffle e\n  ripetizione seguono l'account, non il singolo telefono.\n- Download offline. Si scarica una playlist, un album, un artista intero o un\n  brano solo. Un brano scaricato una volta vale per ogni playlist che lo\n  contiene, e quando la rete manca l'app suona lo stesso, testo e Canvas\n  compresi. Solo su Wi-Fi, se vuoi.\n- Dissolvenza fra le tracce, equalizzatore e effetti sull'uscita.\n- Android Auto, e la copertina nel pannello delle impostazioni rapide anche\n  senza rete.\n- Otto lingue.\n\nDa sapere\n\n- Non e' un'app ufficiale e non e' affiliata a Spotify. E' un fork di Square di\n  Lelonio, con tutti i crediti del caso.\n- La ricerca passa da un'applicazione Web API che registri tu, in\n  Impostazioni: e' un tocco, e serve perche' la quota sia la tua.",
+      "releaseTag": "stable-fluidify-v1.0.0",
+      "apkAsset": "fluidify-1.0.0.apk",
+      "sizeBytes": 15119148
+    },
+    "beta": {
+      "version": "1.0.0",
+      "releaseDate": "2026-08-28",
+      "changelog": "Prima versione di Fluidify.\n\nUn lettore per Spotify costruito sul design system Fluid: vetro che si\ntrasforma con la fisica dei fluidi, tema ametista, e le copertine che tingono\ntutto quello che sta intorno. Serve un account Premium.\n\nCosa sa fare\n\n- Riproduzione completa: libreria, playlist, album, artisti, ricerca, coda,\n  testo sincronizzato, Canvas, crediti e informazioni sull'artista.\n- Spotify Connect. Comanda gli altri dispositivi e si fa comandare; shuffle e\n  ripetizione seguono l'account, non il singolo telefono.\n- Download offline. Si scarica una playlist, un album, un artista intero o un\n  brano solo. Un brano scaricato una volta vale per ogni playlist che lo\n  contiene, e quando la rete manca l'app suona lo stesso, testo e Canvas\n  compresi. Solo su Wi-Fi, se vuoi.\n- Dissolvenza fra le tracce, equalizzatore e effetti sull'uscita.\n- Android Auto, e la copertina nel pannello delle impostazioni rapide anche\n  senza rete.\n- Otto lingue.\n\nDa sapere\n\n- Non e' un'app ufficiale e non e' affiliata a Spotify. E' un fork di Square di\n  Lelonio, con tutti i crediti del caso.\n- La ricerca passa da un'applicazione Web API che registri tu, in\n  Impostazioni: e' un tocco, e serve perche' la quota sia la tua.",
+      "releaseTag": "stable-fluidify-v1.0.0",
+      "apkAsset": "fluidify-1.0.0.apk",
+      "sizeBytes": 15119148
+    },
+    "history": []
   }
 }
