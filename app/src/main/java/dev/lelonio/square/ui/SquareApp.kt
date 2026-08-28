@@ -142,6 +142,12 @@ import com.adamglin.phosphoricons.regular.SpotifyLogo
 import com.adamglin.phosphoricons.regular.YoutubeLogo
 import com.adamglin.phosphoricons.regular.Trash
 import dev.lelonio.square.data.RemoteConnect
+import androidx.compose.ui.layout.boundsInRoot
+import androidx.compose.ui.layout.onGloballyPositioned
+import dev.lelonio.square.ui.player.MorphEpsilon
+import dev.lelonio.square.ui.player.PlayerMorphSpec
+import dev.lelonio.square.ui.player.dragPlayerMorph
+import dev.lelonio.square.ui.player.settlePlayerMorph
 import dev.lelonio.square.ui.player.asPlaybackState
 import dev.lelonio.square.ui.player.rememberRemotePositionMs
 import kotlinx.coroutines.Dispatchers
@@ -190,12 +196,6 @@ object Routes {
     const val PLAYLIST = "playlist"
     const val SETTINGS = "settings"
 }
-
-/** How the player settles when it is not being dragged. */
-private val expandSpec = spring<Float>(
-    dampingRatio = 0.86f,
-    stiffness = Spring.StiffnessMediumLow,
-)
 
 private val BottomBarHeight = 62.dp
 
@@ -513,7 +513,42 @@ fun SquareApp(
 
     // How far the player is open, 0 to 1. A value rather than a destination:
     // see NowPlayingSheet for why the player stopped being a route.
-    val expand = remember { Animatable(if (preferences.playerWasOpen()) 1f else 0f) }
+    // Bounded, and not as a nicety: the silhouette's geometry does not clamp,
+    // so below zero it would extrapolate a capsule *smaller* than the pill —
+    // drawn, for a frame, on top of the real pill that has already come back.
+    val expand = remember {
+        Animatable(if (preferences.playerWasOpen()) 1f else 0f).apply { updateBounds(0f, 1f) }
+    }
+
+    /**
+     * Where the pill is, in the window's own pixels.
+     *
+     * Measured rather than computed. The journey's start is a real rectangle on
+     * a real screen, and every number derived from it — the shape it grows from,
+     * the distance the top edge travels — is only as true as this is.
+     */
+    var pillBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+
+    /**
+     * True from the first pixel of the journey.
+     *
+     * Derived, so it recomposes twice a journey instead of sixty times. The pill
+     * is cut dead rather than faded: its picture carries on inside the surface,
+     * and a hand-over has nothing to show.
+     */
+    val pillHidden by remember { derivedStateOf { expand.value > MorphEpsilon } }
+
+    /**
+     * The distance the window's top edge actually travels.
+     *
+     * The pill's own top, and therefore the same number going up and coming
+     * down — which is what makes a journey held halfway mean the same thing to
+     * both gestures. It replaced a figure derived from the screen's height minus
+     * a constant, which corresponded to nothing on the screen.
+     */
+    val travelPx = pillBounds.top.coerceAtLeast(1f)
+    // One knock at the end of a journey that ends somewhere it did not begin.
+    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
     val scope = rememberCoroutineScope()
 
     // Remembered for the next launch. Written when the animation settles rather
@@ -551,7 +586,7 @@ fun SquareApp(
             // with it the animation, about two frames in. That is why the player
             // "opened" and was never seen.
             scope.launch {
-                expand.animateTo(1f, expandSpec)
+                expand.animateTo(1f, PlayerMorphSpec)
             }
         }
     }
@@ -1507,60 +1542,67 @@ fun SquareApp(
                         )
                     }
 
-                    // How far the player has to travel, for the pull that opens
-                    // it. Read once here rather than per frame of the drag.
-                    val playerTravelPx = with(density) {
-                        (LocalConfiguration.current.screenHeightDp.dp - MiniPlayerHeight).toPx()
-                    }
                     val accessory: (@Composable androidx.compose.animation.SharedTransitionScope.(
                         Modifier,
                         androidx.compose.animation.AnimatedVisibilityScope,
                     ) -> Unit)? = if (playback.hasItem) {
                         { accessoryModifier, _ ->
+                          Box(
+                              Modifier
+                                  .fillMaxWidth()
+                                  // Cut, not faded: the picture carries on inside
+                                  // the travelling surface, and a hand-over has
+                                  // nothing to show.
+                                  .graphicsLayer { alpha = if (pillHidden) 0f else 1f }
+                                  // Measured HERE and not inside the pill: the pill
+                                  // wraps its own content in a press-scale layer, and
+                                  // bounds taken under that arrive four percent
+                                  // larger in the very instant a finger presses to
+                                  // open.
+                                  .onGloballyPositioned { coordinates ->
+                                      val bounds = coordinates.boundsInRoot()
+                                      // Measured whether or not the pill is on
+                                      // screen. Hidden it is still laid out, and
+                                      // the one case that matters most is the app
+                                      // coming back with the player already open:
+                                      // refusing the measurement there leaves the
+                                      // journey with no start and nothing draws at
+                                      // all. Alpha does not move a node, and the
+                                      // press-scale layer that would have moved it
+                                      // is inside the pill, below this.
+                                      if (bounds != pillBounds &&
+                                          bounds.width > 0f && bounds.height > 0f
+                                      ) {
+                                          pillBounds = bounds
+                                      }
+                                  }
+                                  .draggable(
+                                      state = rememberDraggableState { delta ->
+                                          scope.dragPlayerMorph(expand, delta, travelPx)
+                                      },
+                                      orientation = androidx.compose.foundation.gestures.Orientation.Vertical,
+                                      onDragStopped = { velocity ->
+                                          scope.settlePlayerMorph(expand, velocity, travelPx, haptics)
+                                      },
+                                  ),
+                          ) {
                           dev.lelonio.square.ui.theme.ArtworkAccentTheme(seed = accent) {
                             FloatingMiniPlayer(
                                 state = playback,
                                 positionMs = positionMs,
                                 playingOn = remote?.deviceName?.takeIf { it.isNotEmpty() },
+                                // The vertical drag has moved out to the box
+                                // around this one, so it survives the pill being
+                                // cut and so the measurement and the gesture share
+                                // a node. The pill's own detector locks to the
+                                // horizontal after the touch slop, which is why a
+                                // vertical pull never reached it in the first place.
                                 modifier = accessoryModifier
                                     .fillMaxWidth()
-                                    .then(pillGlass)
-                                    // Up to open the player, as it always was.
-                                    // The pill's own drag detector locks to the
-                                    // horizontal after the touch slop, so a
-                                    // vertical pull never reached it and the
-                                    // gesture landed on nothing — the sheet's
-                                    // collapsed half, which used to carry this,
-                                    // is empty now that what is playing lives in
-                                    // the bar.
-                                    .draggable(
-                                        state = rememberDraggableState { delta ->
-                                            scope.launch {
-                                                val travel = playerTravelPx
-                                                if (travel > 0f) {
-                                                    expand.snapTo(
-                                                        (expand.value - delta / travel)
-                                                            .coerceIn(0f, 1f),
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        orientation = androidx.compose.foundation.gestures.Orientation.Vertical,
-                                        onDragStopped = { velocity ->
-                                            scope.launch {
-                                                val target = when {
-                                                    velocity < -800f -> 1f
-                                                    velocity > 800f -> 0f
-                                                    expand.value > 0.4f -> 1f
-                                                    else -> 0f
-                                                }
-                                                expand.animateTo(target, expandSpec)
-                                            }
-                                        },
-                                    ),
+                                    .then(pillGlass),
                                 inline = tabBarScroll.isInline,
                                 onClick = {
-                                    scope.launch { expand.animateTo(1f, expandSpec) }
+                                    scope.launch { expand.animateTo(1f, PlayerMorphSpec) }
                                 },
                                 onTogglePlay = {
                                     if (remote != null) {
@@ -1583,6 +1625,7 @@ fun SquareApp(
                                 },
                                 onSeek = { positionMillis -> player?.seekTo(positionMillis) },
                             )
+                          }
                           }
                         }
                     } else {
@@ -1728,6 +1771,31 @@ fun SquareApp(
                     Box(Modifier.fillMaxSize().graphicsLayer { alpha = chrome }) {
                     NowPlayingSheet(
                         progress = expand,
+                        pillBounds = pillBounds,
+                        // The page it is leaving, which is what a window growing
+                        // out of that page has to refract.
+                        backdrop = pageGlass,
+                        pillFace = {
+                            dev.lelonio.square.ui.theme.ArtworkAccentTheme(seed = accent) {
+                                // Inert on purpose. Three more gestures on the
+                                // same axis as the one driving the journey is not
+                                // a detail, and this copy is a picture rather than
+                                // a control: the real pill is one frame away.
+                                FloatingMiniPlayer(
+                                    state = playback,
+                                    positionMs = positionMs,
+                                    playingOn = remote?.deviceName?.takeIf { it.isNotEmpty() },
+                                    modifier = Modifier.fillMaxSize(),
+                                    inline = tabBarScroll.isInline,
+                                    interactive = false,
+                                    onClick = {},
+                                    onTogglePlay = {},
+                                    onNext = {},
+                                    onPrevious = {},
+                                    onSeek = {},
+                                )
+                            }
+                        },
                         background = { AppBackdrop(playback.artworkUrl, alive = playback.isPlaying) },
                         expandedContent = {
                          dev.lelonio.square.ui.theme.ArtworkAccentTheme(seed = accent) {
@@ -1760,7 +1828,7 @@ fun SquareApp(
                                             .SpotifyVideoMode.watch(id, at)
                                     }
                                 },
-                                onCollapse = { scope.launch { expand.animateTo(0f, expandSpec) } },
+                                onCollapse = { scope.launch { expand.animateTo(0f, PlayerMorphSpec) } },
                                 onTogglePlay = {
                                     if (remote != null) {
                                         val playing = remote?.playing == true
@@ -1862,6 +1930,11 @@ fun SquareApp(
                                 connectAvailable = true,
                                 onCloseDevices = viewModel::closeDevices,
                                 ground = groundGlass,
+                                onMorphDrag = { scope.dragPlayerMorph(expand, it, travelPx) },
+                                onMorphRelease = {
+                                    scope.settlePlayerMorph(expand, it, travelPx, haptics)
+                                },
+                                playerOpen = { expand.value >= 1f - MorphEpsilon },
                                 artist = artistInfo,
                                 artistLoading = artistLoading,
                                 onRefreshDevices = viewModel::refreshDevices,

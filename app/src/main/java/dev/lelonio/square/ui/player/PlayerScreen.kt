@@ -202,12 +202,16 @@ fun PlayerScreen(
     /** The track's Canvas clip, or null when it has none. */
     canvas: dev.lelonio.square.data.CanvasClip?,
     /** See MiniPlayer: the cover is shared with the bar this screen grew out of. */
-    sharedScope: androidx.compose.animation.SharedTransitionScope? = null,
-    animatedScope: androidx.compose.animation.AnimatedVisibilityScope? = null,
     /** The Spotify Connect device list, and what to do with it. */
     devices: dev.lelonio.square.ui.MainViewModel.DevicesState,
     onOpenDevices: () -> Unit,
     onCloseDevices: () -> Unit,
+    /** Pixels of a collapse drag, positive downwards; see PlayerCollapseDrag. */
+    onMorphDrag: (Float) -> Unit,
+    /** Pixels per second when that drag is let go. */
+    onMorphRelease: (Float) -> Unit,
+    /** Whether the window is at its full size; read during the gesture. */
+    playerOpen: () -> Boolean,
     /** The artwork wash on its own, under everything this screen draws. */
     ground: dev.antigravity.fluidengine.ui.fluid.GlassBackdropState,
     /** Who is playing, for the Info panel's first page. */
@@ -563,7 +567,12 @@ fun PlayerScreen(
             LocalContentColor provides GlassInk,
             dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides playerGlass,
         ) {
-            DismissibleScreen(onDismiss = onCollapse, modifier = Modifier.fillMaxSize()) {
+            PlayerCollapseDrag(
+                onDrag = onMorphDrag,
+                onRelease = onMorphRelease,
+                open = playerOpen,
+                modifier = Modifier.fillMaxSize(),
+            ) {
                 Column(
                     Modifier
                         .fillMaxSize()
@@ -742,10 +751,6 @@ fun PlayerScreen(
                                         onPrevious,
                                         { immersive = !immersive },
                                         { immersive = false }.takeIf { immersive },
-                                        // Only for the journey the bar's
-                                        // thumbnail makes into this cover.
-                                        sharedScope.takeIf { coverShowing },
-                                        animatedScope.takeIf { coverShowing },
                                     )
                                 }
                             }
@@ -965,7 +970,7 @@ fun PlayerScreen(
                             shape = RoundedCornerShape(50),
                             modifier = Modifier
                                 .fillMaxWidth()
-                                .sharedPill(sharedScope, animatedScope),
+
                         ) {
                             Row(
                                 Modifier.padding(start = 22.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
@@ -1506,8 +1511,6 @@ private fun Cover(
     onToggleImmersive: () -> Unit,
     /** Null unless the chrome is already away; see PlayerScreen's `immersive`. */
     onLeaveImmersive: (() -> Unit)?,
-    sharedScope: androidx.compose.animation.SharedTransitionScope? = null,
-    animatedScope: androidx.compose.animation.AnimatedVisibilityScope? = null,
 ) {
     val coverFraction by animateFloatAsState(
         targetValue = if (panel == PlayerPanel.NONE) 0.82f else 0.44f,
@@ -1552,7 +1555,7 @@ private fun Cover(
                 title = title,
                 modifier = Modifier
                     .fillMaxSize()
-                    .sharedArtwork(sharedScope, animatedScope)
+
                     .softShadow(
                         RoundedCornerShape(26.dp),
                         elevation = (10 + 30 * playingLift).dp,

@@ -102,6 +102,14 @@ fun FloatingMiniPlayer(
     onNext: () -> Unit,
     onPrevious: () -> Unit,
     onSeek: (Long) -> Unit,
+    /**
+     * Whether this pill answers to a finger.
+     *
+     * False for the copy drawn inside the travelling surface, which is a picture
+     * and not a control: three more gestures on the same axis as the one driving
+     * the journey is not a detail, and the real pill is one frame away.
+     */
+    interactive: Boolean = true,
 ) {
     val scope = rememberCoroutineScope()
     val layoutDirection = LocalLayoutDirection.current
@@ -129,15 +137,18 @@ fun FloatingMiniPlayer(
     Box(
         contentAlignment = Alignment.CenterStart,
         modifier = Modifier
-            .graphicsLayer {
-                scaleX = pressScale
-                scaleY = pressScale
-            }
+            .then(
+                if (!interactive) Modifier else Modifier.graphicsLayer {
+                    scaleX = pressScale
+                    scaleY = pressScale
+                },
+            )
             .then(modifier)
-            .then(glow.modifier)
+            .then(if (interactive) glow.modifier else Modifier)
             .clipToBounds()
-            .then(glow.gestureModifier)
-            .pointerInput(state.hasNext, state.hasPrevious) {
+            .then(if (interactive) glow.gestureModifier else Modifier)
+            .pointerInput(state.hasNext, state.hasPrevious, interactive) {
+                if (!interactive) return@pointerInput
                 detectHorizontalDragGestures(
                     onDragStart = {
                         dragStart = System.currentTimeMillis()
@@ -178,10 +189,12 @@ fun FloatingMiniPlayer(
             modifier = Modifier
                 .fillMaxWidth()
                 .offset { IntOffset(offsetX.value.roundToInt(), 0) }
-                .clickable(
-                    interactionSource = pressInteractionSource,
-                    indication = null,
-                    onClick = onClick,
+                .then(
+                    if (!interactive) Modifier else Modifier.clickable(
+                        interactionSource = pressInteractionSource,
+                        indication = null,
+                        onClick = onClick,
+                    ),
                 )
                 .padding(
                     horizontal = if (inline) 10.dp else 12.dp,
