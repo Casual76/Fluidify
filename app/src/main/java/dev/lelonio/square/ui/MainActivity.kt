@@ -15,8 +15,11 @@ import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
+import androidx.lifecycle.lifecycleScope
+import dev.lelonio.square.R
 import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.playback.PlaybackService
+import kotlinx.coroutines.launch
 
 /**
  * Owns the connection to the playback service; everything visual lives in
@@ -79,6 +82,7 @@ class MainActivity : ComponentActivity() {
             openPlayer++
         }
         intent?.let(::takeLink)
+        intent?.let(::takeVoiceRequest)
 
         setContent {
             SquareApp(
@@ -210,6 +214,61 @@ class MainActivity : ComponentActivity() {
             openPlayer++
         }
         takeLink(intent)
+        takeVoiceRequest(intent)
+    }
+
+    /**
+     * "Play X on Fluidify", from an assistant or a car.
+     *
+     * The words arrive as a search intent; the first track they match is
+     * played, with the rest of the matches behind it. No words at all — "play
+     * some music" — is a request to carry on: whatever the player holds, or
+     * the last things played when it holds nothing.
+     */
+    private fun takeVoiceRequest(intent: android.content.Intent) {
+        if (intent.action != android.provider.MediaStore.INTENT_ACTION_MEDIA_PLAY_FROM_SEARCH) return
+        val query = intent.getStringExtra(android.app.SearchManager.QUERY).orEmpty().trim()
+        // Consumed: a rotation must not play it again.
+        intent.action = android.content.Intent.ACTION_MAIN
+        lifecycleScope.launch { playFromVoice(query) }
+    }
+
+    private suspend fun playFromVoice(query: String) {
+        val player = awaitController() ?: return
+        val app = application as dev.lelonio.square.SquareApplication
+        if (query.isEmpty()) {
+            if (player.mediaItemCount > 0) {
+                player.play()
+                return
+            }
+            val recent = app.recentStore.tracks.value
+            if (recent.isNotEmpty()) play(recent, 0, contextLabel = getString(R.string.play_again))
+            return
+        }
+        val results = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            runCatching {
+                app.activeBackend.search(
+                    query,
+                    dev.lelonio.square.backend.SearchLabels(
+                        artist = getString(R.string.artist),
+                        album = getString(R.string.album),
+                        playlist = getString(R.string.playlist),
+                    ),
+                )
+            }.onFailure { android.util.Log.w("MainActivity", "voice search failed: $it") }.getOrNull()
+        }
+        val tracks = results?.tracks.orEmpty()
+        if (tracks.isEmpty()) return
+        play(tracks, 0, contextLabel = getString(R.string.search))
+    }
+
+    /** The controller, once it has connected; null if it never does. */
+    private suspend fun awaitController(): MediaController? {
+        repeat(CONTROLLER_WAIT_TICKS) {
+            controller?.let { return it }
+            kotlinx.coroutines.delay(CONTROLLER_WAIT_TICK_MS)
+        }
+        return controller
     }
 
     /**
@@ -372,8 +431,13 @@ class MainActivity : ComponentActivity() {
                     .build(),
             )
             .build()
-}
 
+    private companion object {
+        /** How long a voice request waits for the session to connect: four seconds. */
+        const val CONTROLLER_WAIT_TICKS = 40
+        const val CONTROLLER_WAIT_TICK_MS = 100L
+    }
+}
 /** A `spotify:` URI the app was opened with, and which opening it was. */
 data class LinkRequest(val uri: String, val n: Int)
 

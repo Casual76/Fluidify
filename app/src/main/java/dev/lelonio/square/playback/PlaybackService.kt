@@ -250,8 +250,12 @@ class PlaybackService : MediaLibraryService() {
         // controller read the player and nothing else, so without this they
         // showed a stopped app while the account was playing in the next room.
         scope.launch {
-            dev.lelonio.square.data.RemoteConnect.playback.collect { elsewhere ->
-                librespot?.showRemote(elsewhere?.let { describeRemote(it) })
+            kotlinx.coroutines.flow.combine(
+                dev.lelonio.square.data.RemoteConnect.playback,
+                dev.lelonio.square.data.RemoteConnect.queue,
+            ) { elsewhere, queue -> elsewhere to queue }.collect { (elsewhere, queue) ->
+                librespot?.showRemote(elsewhere?.let { describeRemote(it) }, queue)
+                if (elsewhere != null) describeRemoteQueue(queue)
             }
         }
 
@@ -265,21 +269,144 @@ class PlaybackService : MediaLibraryService() {
         // have the phone in their hand.
         //
         // A poll rather than an event because the engine sets a flag and sends
-        // nothing, and reading one boolean over JNI twice a minute is not worth
-        // a new event, a new name in the protocol and a new way for the two
-        // sides to disagree. The rebuild itself only happens when the flag is
-        // set and nothing is playing here; see LibrespotPlayer.ensureDevice.
+        // nothing, and reading one boolean over JNI a few times a minute is not
+        // worth a new event, a new name in the protocol and a new way for the
+        // two sides to disagree. The rebuild itself is the engine's, in the
+        // background, underneath a player that keeps playing; this only nudges.
+        //
+        // The same tick asks the account what its other devices are doing.
+        // Spotify pushes that whenever something changes, and a push can be
+        // missed — the socket dies quietly, the phone was asleep — so the
+        // listener saw a laptop playing that the phone said was silent. Asked
+        // outright every tick while the app is on screen, where the device
+        // list and the "playing on" line are being looked at, and every few
+        // ticks otherwise, for the notification's sake.
         scope.launch {
+            var tick = 0L
             while (true) {
                 kotlinx.coroutines.delay(DEVICE_WATCH_MS)
+                tick += 1
                 runCatching { librespot?.ensureDevice() }
                     .onFailure { android.util.Log.w(TAG, "device watch: $it") }
-                watchConnection()
+                if (tick % 2 == 0L) watchConnection()
+                if (uiOnScreen() || tick % BACKGROUND_CLUSTER_TICKS == 0L) {
+                    withContext(Dispatchers.IO) {
+                        runCatching { NativeBridge.refreshCluster() }
+                            .onFailure { android.util.Log.d(TAG, "cluster not refreshed: ${it.message}") }
+                    }
+                }
+            }
+        }
+
+        // Handovers chosen in the phone's own output switcher; see
+        // ConnectRouteProvider, which lists the devices there.
+        scope.launch {
+            dev.lelonio.square.data.RemoteConnect.requests.collect { request ->
+                runCatching { handleTransferRequest(request) }
+                    .onFailure { android.util.Log.w(TAG, "handover from the switcher: $it") }
             }
         }
 
         watchForNetwork()
+        offerDevicesToSystem()
         startSpotifyEngineIfActive()
+    }
+
+    /**
+     * Puts the account's devices in the phone's output switcher.
+     *
+     * The switcher shows an app the routes that match what the app itself
+     * asked to discover, so the service that owns the player asks for the
+     * provider's own feature, and keeps asking for as long as it lives: that
+     * is what makes the laptop appear beside the Bluetooth earpiece when the
+     * "Media output" tile is tapped with this app's session up. From Android
+     * 14 the list can also be named outright, which is what the listing
+     * preference is; it is rebuilt whenever the account's list changes.
+     */
+    private fun offerDevicesToSystem() {
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.R) return
+        val router = android.media.MediaRouter2.getInstance(this)
+        systemRouter = router
+        router.registerRouteCallback(
+            androidx.core.content.ContextCompat.getMainExecutor(this),
+            systemRouteCallback,
+            android.media.RouteDiscoveryPreference.Builder(
+                listOf(ConnectRouteProvider.FEATURE),
+                true,
+            ).build(),
+        )
+        if (android.os.Build.VERSION.SDK_INT < android.os.Build.VERSION_CODES.UPSIDE_DOWN_CAKE) return
+        scope.launch {
+            dev.lelonio.square.data.RemoteConnect.devices.collect { devices ->
+                val items = devices
+                    .filterNot { it.isThisPhone }
+                    .map { device ->
+                        android.media.RouteListingPreference.Item.Builder(device.id).build()
+                    }
+                runCatching {
+                    router.routeListingPreference = android.media.RouteListingPreference.Builder()
+                        .setItems(items)
+                        .setUseSystemOrdering(true)
+                        .setLinkedItemComponentName(
+                            android.content.ComponentName(
+                                this@PlaybackService,
+                                dev.lelonio.square.ui.MainActivity::class.java,
+                            ),
+                        )
+                        .build()
+                }.onFailure { android.util.Log.w(TAG, "route listing: $it") }
+            }
+        }
+    }
+
+    private var systemRouter: android.media.MediaRouter2? = null
+
+    /** Nothing to do on a change: the provider publishes, the system draws. */
+    private val systemRouteCallback by lazy {
+        object : android.media.MediaRouter2.RouteCallback() {}
+    }
+
+    /**
+     * Carries out a handover chosen in the phone's output switcher.
+     *
+     * The same two roads as the app's own picker, minus the Web API one: a
+     * device elsewhere is told to take the playback over the dealer, after the
+     * queue has been republished as something it can resolve; this phone
+     * takes it back by resuming the account's track here. See
+     * MainViewModel.switchTo and takeBackPlayback, which say why each step is
+     * there.
+     */
+    private suspend fun handleTransferRequest(
+        request: dev.lelonio.square.data.RemoteConnect.TransferRequest,
+    ) {
+        when (request) {
+            is dev.lelonio.square.data.RemoteConnect.TransferRequest.To -> {
+                val position = player.currentPosition.coerceAtLeast(0)
+                withContext(Dispatchers.IO) {
+                    if (!dev.lelonio.square.data.RemoteConnect.elsewhereActive.value) {
+                        val republished = runCatching { NativeBridge.publishContext(position.toInt()) }
+                            .getOrDefault(false)
+                        if (republished) delay(TRANSFER_SETTLE_MS)
+                    }
+                    dev.lelonio.square.data.RemoteConnect.transferTo(request.deviceId)
+                }
+            }
+
+            dev.lelonio.square.data.RemoteConnect.TransferRequest.Here -> {
+                val remote = dev.lelonio.square.data.RemoteConnect.playback.value
+                    ?: dev.lelonio.square.data.RemoteConnect.here.value
+                    ?: return
+                withContext(Dispatchers.IO) {
+                    runCatching {
+                        NativeBridge.resumeHere(
+                            remote.realContext.orEmpty(),
+                            remote.uri,
+                            remote.positionMs.toInt(),
+                        )
+                    }.onFailure { android.util.Log.w(TAG, "could not bring playback here: $it") }
+                }
+            }
+        }
     }
 
     /**
@@ -514,6 +641,8 @@ class PlaybackService : MediaLibraryService() {
         // Another client pointing this device at a track of its own; see
         // LibrespotPlayer.onUnknownTrack.
         built.onUnknownTrack = { uri -> scope.launch { adoptPlayingTrack(uri) } }
+        // What came of a handshake, whenever one is made; see onSessionOutcome.
+        built.onSession = { outcome -> scope.launch { onSessionOutcome(outcome) } }
 
         // Applied straight to the output rather than waiting for the UI: the
         // service can be running with no activity attached at all.
@@ -717,6 +846,55 @@ class PlaybackService : MediaLibraryService() {
         return filled
     }
 
+    /**
+     * Uris of the other device's queue already looked up, so each is asked once.
+     *
+     * Bounded: the window moves as the other device plays, and a long evening
+     * on a speaker would otherwise leave every track it passed in here for
+     * ever. The oldest are forgotten, which at worst costs one lookup if the
+     * queue comes back round to them.
+     */
+    private val describedQueue = object : LinkedHashSet<String>() {
+        fun trim() {
+            while (size > DESCRIBED_QUEUE_MAX) remove(first())
+        }
+    }
+
+    /**
+     * Fills in what the other device did not say about the tracks around its
+     * own; see [describeRemote], which does the same for the one playing.
+     *
+     * One catalogue read for the whole window rather than one per track, and
+     * only for the tracks that arrived without a name. The answer goes back
+     * into RemoteConnect, which redraws the queue from it.
+     */
+    private suspend fun describeRemoteQueue(queue: dev.lelonio.square.data.RemoteQueue) {
+        val missing = queue.items
+            .filter { it.title.isEmpty() && it.uri.startsWith("spotify:track:") }
+            .map { it.uri }
+            .filterNot(describedQueue::contains)
+            .distinct()
+        if (missing.isEmpty()) return
+        describedQueue += missing
+        describedQueue.trim()
+        val tracks = runCatching { dev.lelonio.square.data.Catalog.tracks(missing) }
+            .onFailure { android.util.Log.w(TAG, "cannot read the other device's queue: $it") }
+            .getOrDefault(emptyList())
+        if (tracks.isEmpty()) return
+        dev.lelonio.square.data.RemoteConnect.describeQueue(
+            tracks.map { track ->
+                dev.lelonio.square.data.RemoteQueueItem(
+                    uri = track.uri,
+                    uid = "",
+                    title = track.name,
+                    artist = track.artist,
+                    album = track.album,
+                    coverUri = track.artworkUrl.orEmpty(),
+                )
+            },
+        )
+    }
+
     /** The queue last taken on, so the same transfer is not resolved twice. */
     private var adoptedContext: String? = null
 
@@ -869,44 +1047,80 @@ class PlaybackService : MediaLibraryService() {
      * the queue back afterwards, since the new Connect device has never seen it.
      */
     private fun reconfigureEngine(reason: String) {
-        if (rebuilding) return
-        val engine = librespot ?: return
-        if (!engineStarted) return
-        rebuilding = true
-        val wasPlaying = player.playWhenReady
-        val position = player.currentPosition.coerceAtLeast(0)
-        runCatching { savePlayback() }
-        android.util.Log.i(TAG, "rebuilding the player ($reason)")
+        if (librespot == null || !engineStarted) return
+        android.util.Log.i(TAG, "quality: $reason changed, telling the player")
 
         scope.launch {
-            val ok = withContext(Dispatchers.IO) {
+            withContext(Dispatchers.IO) {
                 runCatching {
                     android.util.Log.i(
                         TAG,
-                        "quality: asking for ${'$'}{quality.bitrateKbps()} kbps" +
-                            " (link estimate ${'$'}{quality.linkKbps()} kbps)",
+                        "quality: asking for ${quality.bitrateKbps()} kbps" +
+                            " (link estimate ${quality.linkKbps()} kbps)",
                     )
+                    // In place: nothing is rebuilt and nothing has to be put
+                    // back. What is playing keeps the file and the fade it
+                    // started with; the next track gets the new ones.
                     NativeBridge.setQuality(quality.bitrateKbps(), crossfade.durationMs())
                 }
-                    .onFailure { android.util.Log.e(TAG, "could not rebuild the player: $it") }
-                    .isSuccess
+                    .onFailure { android.util.Log.e(TAG, "could not change the quality: $it") }
             }
-            rebuilding = false
-            if (!ok) return@launch
-            // The queue on screen is untouched and is still the right one; the
-            // engine's copy went with the session.
-            engine.reloadQueue(playing = wasPlaying, positionMs = position)
         }
     }
 
     /**
-     * Whether a rebuild is already under way.
+     * What came of a handshake — the first one, or any the engine made on its
+     * own after a network drop.
      *
-     * The loss is noticed after every command, so a listener pressing skip twice
-     * while offline would otherwise ask for a second teardown in the middle of
-     * the first one.
+     * The player never waited for it: whatever was on the phone has been
+     * playing all along. What waits is the rest — the library, which reads the
+     * catalogue through the session; the downloads, which need it too; and the
+     * offline notice, which says only downloaded music is on offer until there
+     * is one.
      */
-    private var rebuilding = false
+    private fun onSessionOutcome(outcome: Long) {
+        when (outcome) {
+            NativeBridge.SESSION_CONNECTED -> {
+                android.util.Log.i(TAG, "engine connected")
+                OfflineMode.setNoSession(false)
+                watchConnection()
+                // Whatever the queue still owes, now that it can be had.
+                dev.lelonio.square.download.DownloadService.start(this)
+            }
+
+            NativeBridge.SESSION_FAILED -> {
+                android.util.Log.w(TAG, "no session; playing what is on the phone")
+                OfflineMode.setNoSession(true)
+            }
+
+            NativeBridge.SESSION_PREMIUM_REQUIRED -> {
+                // Back to the login screen, with a reason. Staying signed in
+                // would leave an app that looks connected and plays nothing.
+                android.util.Log.e(TAG, "the account cannot stream to this client")
+                tokens.clear()
+                dev.lelonio.square.auth.EngineCredentials.clear(this)
+                android.widget.Toast.makeText(
+                    this,
+                    getString(dev.lelonio.square.R.string.premium_required),
+                    android.widget.Toast.LENGTH_LONG,
+                ).show()
+            }
+        }
+    }
+
+    /**
+     * Whether the app's own screen is connected to the session.
+     *
+     * The activity holds a controller while it is started and releases it
+     * when it stops, so a controller from this package that is not the
+     * notification's is the screen being looked at.
+     */
+    private fun uiOnScreen(): Boolean {
+        val live = session ?: return false
+        return live.connectedControllers.any { controller ->
+            controller.packageName == packageName && !live.isMediaNotificationController(controller)
+        }
+    }
 
 
     /**
@@ -989,8 +1203,8 @@ class PlaybackService : MediaLibraryService() {
                     bitrateKbps = quality.bitrateKbps().also {
                         android.util.Log.i(
                             TAG,
-                            "quality: starting at ${'$'}it kbps" +
-                                " (link estimate ${'$'}{quality.linkKbps()} kbps)",
+                            "quality: starting at $it kbps" +
+                                " (link estimate ${quality.linkKbps()} kbps)",
                         )
                     },
                     // Off is zero, which is upstream librespot's own behaviour.
@@ -1001,29 +1215,26 @@ class PlaybackService : MediaLibraryService() {
         }.onFailure { error ->
             engineStarted = false
             android.util.Log.e(TAG, "engine start failed: $error", error)
-            // Only a refused account ends the session here. Everything else the
+            // Only a device that has never logged in fails here: for it the
+            // engine makes the handshake before answering, since a token is
+            // all it has and there is nothing on the phone to play meanwhile.
+            // Only a refused account ends the session. Everything else the
             // handshake can fail with — no network, an access point that is
             // busy, a dealer that dropped — is temporary, and signing the user
             // out over it costs them their session for a failure that would
             // have fixed itself on the next attempt. A refresh token Spotify
             // really has revoked is cleared by TokenStore before it gets here.
             if (error.message?.contains(PREMIUM_REQUIRED) == true) {
-                // Back to the login screen, with a reason. Staying signed in
-                // would leave an app that looks connected and plays nothing.
-                tokens.clear()
-                dev.lelonio.square.auth.EngineCredentials.clear(this@PlaybackService)
-                android.widget.Toast.makeText(
-                    this@PlaybackService,
-                    getString(dev.lelonio.square.R.string.premium_required),
-                    android.widget.Toast.LENGTH_LONG,
-                ).show()
+                onSessionOutcome(NativeBridge.SESSION_PREMIUM_REQUIRED)
             }
         }.onSuccess {
-            // The engine answers for itself: it may have started with no
-            // session at all and fallen back to what is on the phone.
-            val offline = runCatching { NativeBridge.isOffline }.getOrDefault(false)
-            OfflineMode.setNoSession(offline)
-            android.util.Log.i(TAG, if (offline) "engine started offline" else "engine connected")
+            // There is a player, and the queue goes to it now: what is on the
+            // phone plays at once, what has to be streamed waits for the
+            // session inside the engine. The handshake's outcome arrives as a
+            // `session` event; see onSessionOutcome. Until then the app is not
+            // offline, merely connecting, and the notice stays down.
+            android.util.Log.i(TAG, "engine started; connecting")
+            engineUp = true
             if (restoreQueue) restoreQueue()
             observeForSaving()
             watchConnection()
@@ -1033,16 +1244,12 @@ class PlaybackService : MediaLibraryService() {
     /**
      * Watches for a network to come back, so offline can end by itself.
      *
-     * Necessary because nothing else notices. A lost Connect device is repaired
-     * by [LibrespotPlayer.ensureDevice], but an engine that started with no
-     * session never had one to lose — `spircLost` is false, on purpose, so the
-     * repair loop does not run against a network that is not there. Which
-     * leaves this: the one signal that says the network is back.
-     *
-     * The rebuild is what ends offline mode. `engine::reconnect` builds a real
-     * bundle if it can and falls back to another offline one if it cannot, so a
-     * network that turns out to be a captive portal simply leaves things as
-     * they were and this waits for the next one.
+     * The engine tries again on its own after a failure, but later each time
+     * — five seconds, ten, twenty, up to two minutes — so a phone that has
+     * just found wi-fi could otherwise sit offline for most of that. This is
+     * the one signal that says the network is back, and it brings the next
+     * attempt forward to now. A network that turns out to be a captive portal
+     * fails the handshake like any other and leaves things as they were.
      */
     private fun watchForNetwork() {
         val manager = getSystemService(android.net.ConnectivityManager::class.java) ?: return
@@ -1060,25 +1267,18 @@ class PlaybackService : MediaLibraryService() {
                 ) {
                     return
                 }
-                if (!runCatching { NativeBridge.isOffline }.getOrDefault(false)) return
-                scope.launch {
-                    android.util.Log.i(TAG, "a network is back, trying to leave offline")
-                    withContext(Dispatchers.IO) {
-                        runCatching { NativeBridge.reconnect() }
-                            .onFailure { android.util.Log.w(TAG, "still offline: ${'$'}it") }
-                    }
-                    val stillOffline =
-                        runCatching { NativeBridge.isOffline }.getOrDefault(true)
-                    OfflineMode.setNoSession(stillOffline)
-                    if (!stillOffline) {
-                        android.util.Log.i(TAG, "back online")
-                        // The Connect device behind this session is new and has
-                        // never seen the queue; see LibrespotPlayer.
-                        librespot?.onSessionRebuilt()
-                        // Whatever the queue still owes, now that it can be had.
-                        dev.lelonio.square.download.DownloadService.start(this@PlaybackService)
-                    }
-                }
+                if (runCatching { NativeBridge.isConnected }.getOrDefault(false)) return
+                // Not before the engine exists. This fires once as soon as it
+                // is registered, which on a cold start is while the native side
+                // is still being built: asking then is a call that can only
+                // answer "engine not started", and the engine is connecting on
+                // its own anyway.
+                if (!engineUp) return
+                android.util.Log.i(TAG, "a network is back, connecting now")
+                // Returns at once; what comes of it arrives as a `session`
+                // event, see onSessionOutcome.
+                runCatching { NativeBridge.reconnect(force = true) }
+                    .onFailure { android.util.Log.w(TAG, "could not ask to reconnect: $it") }
             }
         }
         runCatching { manager.registerDefaultNetworkCallback(callback) }
@@ -1086,6 +1286,9 @@ class PlaybackService : MediaLibraryService() {
     }
 
     private var networkCallback: android.net.ConnectivityManager.NetworkCallback? = null
+
+    /** Whether the native engine has been built; see [watchForNetwork]. */
+    private var engineUp = false
 
     /**
      * Decides whether the connection is worse than the phone already holds.
@@ -1423,6 +1626,12 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
+            systemRouter?.let { router ->
+                runCatching { router.unregisterRouteCallback(systemRouteCallback) }
+            }
+            systemRouter = null
+        }
         networkCallback?.let { callback ->
             runCatching {
                 getSystemService(android.net.ConnectivityManager::class.java)
@@ -1451,16 +1660,32 @@ class PlaybackService : MediaLibraryService() {
         private const val TAG = "PlaybackService"
 
         /**
-         * How often the Connect device is checked for still being there.
+         * How often the Connect device is checked for still being there, and
+         * the account asked what its other devices are doing.
          *
-         * Half a minute: long enough that the check itself costs nothing, short
-         * enough that a phone which dropped off the account's list is back on it
-         * before anyone has finished walking to the speaker.
+         * Fifteen seconds: long enough that the check itself costs nothing,
+         * short enough that a laptop starting a song shows up on the phone
+         * before the chorus even when the push that should have said so was
+         * missed.
          */
-        private const val DEVICE_WATCH_MS = 30_000L
+        private const val DEVICE_WATCH_MS = 15_000L
+
+        /**
+         * Every how many ticks the account is asked with the app off screen.
+         *
+         * A minute. The notification is the only thing looking then, and a
+         * request a minute keeps it honest without keeping the radio up.
+         */
+        private const val BACKGROUND_CLUSTER_TICKS = 4L
 
         /** How often the position is written back while playing. */
         private const val SAVE_INTERVAL_MS = 10_000L
+
+        /** How long Spotify is given to see a republished context before the handover. */
+        private const val TRANSFER_SETTLE_MS = 600L
+
+        /** How many looked-up tracks of another device's queue are remembered. */
+        private const val DESCRIBED_QUEUE_MAX = 500
 
         /** What the engine reports for an account it cannot stream to. */
         private const val PREMIUM_REQUIRED = "premium account required"

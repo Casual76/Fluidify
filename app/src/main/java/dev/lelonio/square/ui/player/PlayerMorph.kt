@@ -57,11 +57,24 @@ val PlayerMorphSpec: SpringSpec<Float> = spring(
 const val MorphEpsilon = 0.0005f
 
 /**
- * The draw gate.
+ * The hand-over between the real pill and the travelling glass.
  *
- * A node's first and last frame can draw with default properties, which on a
- * surface whose arrival is an alpha is a flash at full strength. Nothing is
- * recorded below this, and an empty display list has no flash to replay.
+ * Below it the pill in the bar is the real one and nothing of the journey is
+ * drawn; above it the pill is cut and the glass is what stands in its place.
+ * One number for both halves, and that is the point: it used to be two.
+ *
+ * The draw gate came first, to stop a flash — a node's first and last frame can
+ * draw with default properties, which on a surface whose arrival is an alpha is
+ * a flash at full strength, and an empty display list has none to replay. But
+ * the pill came back at [MorphEpsilon], eight times smaller, so between the two
+ * there was a stretch with the glass already gone and the pill not yet back:
+ * the face of the pill drawn over the page with nothing behind it. Invisible
+ * when the spring is quick and plain to see at the end of a drag, where the
+ * tail of a critically damped spring crawls through exactly that range.
+ *
+ * So the two are the same number now. Everything that decides between the pill
+ * and the journey reads this one: the bar, the face inside the surface, and the
+ * surface itself.
  */
 const val MorphDrawGate = 0.004f
 

@@ -85,6 +85,9 @@ class MediaBrowseTree(
     /** One catalogue read at a time: the car fires children requests in parallel. */
     private val lock = Mutex()
 
+    /** The queue as it was left, for the phone to resume without the app open. */
+    private val playbackStore = dev.lelonio.square.data.PlaybackStore(context)
+
     /**
      * The buttons the car draws beside play and skip.
      *
@@ -223,12 +226,92 @@ class MediaBrowseTree(
         session: MediaLibrarySession,
         browser: MediaSession.ControllerInfo,
         params: LibraryParams?,
-    ): ListenableFuture<LibraryResult<MediaItem>> = Futures.immediateFuture(
-        LibraryResult.ofItem(
-            browsable(ID_ROOT, strings.getString(R.string.app_name), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
-            params,
-        ),
-    )
+    ): ListenableFuture<LibraryResult<MediaItem>> {
+        // The phone asking what was playing last, to offer it again.
+        //
+        // Android keeps a card in the quick settings for the last few things
+        // that played, across a reboot, and fills it from this root: one
+        // playable item, the song that was on. Tapping it starts the service
+        // cold and plays the whole queue that song was in; see tracksOf.
+        if (params?.isRecent == true) {
+            return Futures.immediateFuture(
+                LibraryResult.ofItem(
+                    browsable(ID_RESUME_ROOT, strings.getString(R.string.app_name), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
+                    params,
+                ),
+            )
+        }
+        return Futures.immediateFuture(
+            LibraryResult.ofItem(
+                browsable(ID_ROOT, strings.getString(R.string.app_name), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
+                params,
+            ),
+        )
+    }
+
+    /**
+     * What to play when the phone resumes this app on its own.
+     *
+     * A headset button, a car, the resumption card in the quick settings: all
+     * of them start the service with nothing loaded and ask this. The queue as
+     * it was left, at the track and the second it was left at, is the answer
+     * everywhere else in the app and is the answer here.
+     */
+    override fun onPlaybackResumption(
+        mediaSession: MediaSession,
+        controller: MediaSession.ControllerInfo,
+    ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
+        val saved = resumable()
+        if (saved == null) {
+            // Nothing was left; the last things played are the next best.
+            val recent = app.recentStore.tracks.value
+            if (recent.isEmpty()) throw UnsupportedOperationException("nothing to resume")
+            ensurePlayerFor(recent.first().uri)
+            return@future MediaSession.MediaItemsWithStartPosition(
+                recent.map { queueItem(it, ID_RECENT) }.toMutableList(),
+                0,
+                0L,
+            )
+        }
+        val tracks = savedInPlayingOrder(saved)
+        // The track that was playing, not the first one: a queue can hold both
+        // Spotify tracks and files from the phone, and they need different
+        // players. What was left is what is about to be resumed.
+        ensurePlayerFor(tracks.getOrNull(saved.index)?.uri ?: tracks.first().uri)
+        MediaSession.MediaItemsWithStartPosition(
+            tracks.map { savedItem(it, saved) }.toMutableList(),
+            saved.index.coerceIn(0, tracks.lastIndex),
+            saved.positionMs,
+        )
+    }
+
+    /** The saved queue, when there is one this player can take. */
+    private fun resumable(): dev.lelonio.square.data.SavedPlayback? =
+        runCatching { playbackStore.load() }.getOrNull()?.takeIf { it.tracks.isNotEmpty() }
+
+    /** The saved tracks in the order they were playing, shuffle applied. */
+    private fun savedInPlayingOrder(saved: dev.lelonio.square.data.SavedPlayback): List<CatalogTrack> {
+        val order = saved.shuffleOrder
+            ?.takeIf { it.size == saved.tracks.size && it.toSet() == saved.tracks.indices.toSet() }
+        return order?.map(saved.tracks::get) ?: saved.tracks
+    }
+
+    /** A saved track as a queue item, carrying the context it was saved with. */
+    private fun savedItem(track: CatalogTrack, saved: dev.lelonio.square.data.SavedPlayback): MediaItem =
+        MediaItem.Builder()
+            .setMediaId(track.uri)
+            .setMediaMetadata(
+                metadata(track)
+                    .setExtras(
+                        Bundle().apply {
+                            saved.contextUri?.let { putString(EXTRA_CONTEXT_URI, it) }
+                            putBoolean(EXTRA_CONTEXT_ORDERED, saved.contextOrdered)
+                            putString(EXTRA_CONTEXT_LABEL, saved.contextLabel)
+                        },
+                    )
+                    .build(),
+            )
+            .build()
 
     override fun onGetItem(
         session: MediaLibrarySession,
@@ -242,6 +325,8 @@ class MediaBrowseTree(
                 browsable(ID_PLAYLISTS, strings.getString(R.string.playlists), MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS)
             mediaId == ID_RECENT ->
                 browsable(ID_RECENT, strings.getString(R.string.play_again), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+            mediaId == ID_RESUME_ROOT ->
+                browsable(ID_RESUME_ROOT, strings.getString(R.string.app_name), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
             mediaId.startsWith(TRACK_PREFIX) -> {
                 val (parentId, trackUri) = splitTrackId(mediaId) ?: return@future notFound()
                 val track = tracksOf(parentId).firstOrNull { it.uri == trackUri } ?: return@future notFound()
@@ -332,6 +417,16 @@ class MediaBrowseTree(
         parentId == ID_RECENT ->
             app.recentStore.tracks.value.map { playable(ID_RECENT, it) }
 
+        // The song that was on, for the phone's resumption card; see
+        // onGetLibraryRoot. One item: the card shows one, and tapping it
+        // brings the whole queue back through tracksOf.
+        parentId == ID_RESUME_ROOT -> {
+            val saved = resumable()
+            val tracks = saved?.let(::savedInPlayingOrder).orEmpty()
+            val current = tracks.getOrNull(saved?.index ?: 0)
+            listOfNotNull(current?.let { playable(ID_RESUME, it) })
+        }
+
         parentId.startsWith("spotify:") ->
             tracksOf(parentId).map { playable(parentId, it) }
 
@@ -347,6 +442,7 @@ class MediaBrowseTree(
      */
     private suspend fun tracksOf(parentId: String): List<CatalogTrack> {
         if (parentId == ID_RECENT) return app.recentStore.tracks.value
+        if (parentId == ID_RESUME) return resumable()?.let(::savedInPlayingOrder).orEmpty()
         // Straight from the index, and deliberately before the engine check
         // below: this is the shelf that has to answer in a tunnel.
         if (parentId.startsWith(DOWNLOAD_PREFIX)) {
@@ -591,6 +687,10 @@ class MediaBrowseTree(
         const val ID_ROOT = "sq/root"
         const val ID_PLAYLISTS = "sq/playlists"
         const val ID_RECENT = "sq/recent"
+        /** The root the phone asks for when it wants the last thing played. */
+        const val ID_RESUME_ROOT = "sq/resume-root"
+        /** The saved queue as a node, so its one card expands to the whole of it. */
+        const val ID_RESUME = "sq/resume"
         const val ID_DOWNLOADS = "sq/downloads"
         const val DOWNLOAD_PREFIX = "sq/d/"
         const val TRACK_PREFIX = "sq/t/"

@@ -35,26 +35,6 @@ pub fn clear_output() {
     }
 }
 
-/// Stops the Android output and drops whatever it still holds.
-///
-/// Called when a session is discarded. `AudioTrack` buffers about a second of
-/// audio ahead of the speaker, so a player that has already been told to stop
-/// has still left a second of the previous song sitting in the device, and it
-/// comes out over the beginning of the next one. `AudioOutput.stop` pauses and
-/// flushes, which is what throws it away.
-pub fn silence() {
-    let Some(output) = OUTPUT.lock().ok().and_then(|guard| guard.clone()) else {
-        return;
-    };
-    let Some(vm) = JAVA_VM.get() else { return };
-    let Ok(mut env) = vm.attach_current_thread() else {
-        return;
-    };
-    if env.call_method(&output, "stop", "()V", &[]).is_err() {
-        log::warn!("could not silence the output");
-    }
-}
-
 fn output() -> SinkResult<GlobalRef> {
     OUTPUT
         .lock()

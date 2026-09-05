@@ -11,13 +11,13 @@ use crate::{
         session::UserAttributes,
         spclient::TransferRequest,
     },
-    model::{LoadRequest, PlayingTrack, SpircPlayStatus},
+    model::{AdoptRequest, ClusterListener, LoadRequest, PlayingTrack, SpircPlayStatus},
     playback::{
         mixer::Mixer,
         player::{Player, PlayerEvent, PlayerEventChannel},
     },
     protocol::{
-        connect::{Cluster, ClusterUpdate, LogoutCommand, SetVolumeCommand},
+        connect::{Cluster, ClusterUpdate, LogoutCommand, PutStateReason, SetVolumeCommand},
         context::Context,
         explicit_content_pubsub::UserAttributesUpdate,
         playlist4_external::PlaylistModificationInfo,
@@ -81,6 +81,8 @@ struct SpircTask {
     active: std::sync::Arc<std::sync::atomic::AtomicBool>,
     /// LOCAL PATCH: kept in step with what this device is playing; see [`Spirc`].
     playing: std::sync::Arc<std::sync::Mutex<PlayingHere>>,
+    /// LOCAL PATCH: kept in step with `connect_established`; see [`Spirc::is_established`].
+    established: std::sync::Arc<std::sync::atomic::AtomicBool>,
     connect_established: bool,
 
     play_request_id: Option<u64>,
@@ -88,6 +90,14 @@ struct SpircTask {
     /// LOCAL PATCH: when the queue last moved on, whatever moved it. See
     /// [`SpircTask::advanced_recently`].
     last_advance: Option<Instant>,
+    /// LOCAL PATCH: who to tell about the account's picture of its devices,
+    /// whenever a state update brings one back; see [`Spirc::set_cluster_listener`].
+    cluster_listener: Arc<std::sync::Mutex<Option<ClusterListener>>>,
+    /// LOCAL PATCH: state updates that have timed out in a row, so the next
+    /// try waits longer than the last; see [`SpircTask::notify`].
+    state_timeouts: u32,
+    /// LOCAL PATCH: not before this does the account get asked again.
+    state_retry_after: Option<Instant>,
 
     connection_id_update: BoxedStreamResult<String>,
     connect_state_update: BoxedStreamResult<ClusterUpdate>,
@@ -147,6 +157,10 @@ enum SpircCommand {
     Activate,
     Transfer(Option<TransferRequest>),
     Load(LoadRequest),
+    /// LOCAL PATCH: take what the player is already playing as this device's own.
+    Adopt(AdoptRequest),
+    /// LOCAL PATCH: ask the account what every device is doing, now.
+    RefreshCluster,
 }
 
 const CONTEXT_FETCH_THRESHOLD: usize = 2;
@@ -157,8 +171,17 @@ const VOLUME_UPDATE_DELAY: Duration = Duration::from_millis(500);
 const UPDATE_STATE_DELAY: Duration = Duration::from_millis(200);
 
 /// LOCAL PATCH: how long the loop will wait for the account to acknowledge a
-/// state update before going back to reading commands. See the use site.
+/// state update before going back to reading commands. See [`SpircTask::notify`].
 const STATE_UPDATE_TIMEOUT: Duration = Duration::from_millis(1500);
+
+/// LOCAL PATCH: how long the very first state update may take.
+///
+/// Longer than the others because nothing works until it lands — the loop does
+/// not read commands before the account has acknowledged the device — and
+/// shorter than for ever, because a handshake that hangs here would otherwise
+/// leave a device that exists and answers nothing. Past this the loop ends and
+/// the owner builds another session.
+const NEW_DEVICE_TIMEOUT: Duration = Duration::from_secs(12);
 
 /// The spotify connect handle
 pub struct Spirc {
@@ -182,6 +205,10 @@ pub struct Spirc {
     /// before. The owner of the handle needs the current answer to keep a
     /// queue of its own in step with the one being played.
     playing: std::sync::Arc<std::sync::Mutex<PlayingHere>>,
+    /// LOCAL PATCH: shared with the loop; see [`Spirc::set_cluster_listener`].
+    cluster_listener: Arc<std::sync::Mutex<Option<ClusterListener>>>,
+    /// LOCAL PATCH: mirrors `connect_established`; see [`Spirc::is_established`].
+    established: std::sync::Arc<std::sync::atomic::AtomicBool>,
 }
 
 /// LOCAL PATCH: a snapshot of what the device is playing, for its owner.
@@ -192,7 +219,9 @@ pub struct Spirc {
 /// the real list in hand, because the account sent it here to be played.
 #[derive(Clone, Default)]
 pub struct PlayingHere {
+    /// The playlist or album being played from; empty for a bare list.
     pub context_uri: String,
+    /// The track being played; empty when nothing is.
     pub track_uri: String,
     /// Previous, current and coming tracks, in playing order.
     pub tracks: Vec<String>,
@@ -213,12 +242,67 @@ impl Spirc {
         self.active.load(std::sync::atomic::Ordering::SeqCst)
     }
 
+    /// LOCAL PATCH: whether the loop is reading commands yet.
+    ///
+    /// The loop does not read its command channel until the account has
+    /// acknowledged the device, which is a round trip over the dealer after
+    /// the handshake. A command sent before that waits in the channel, and
+    /// the owner of the handle cannot tell waiting from lost: a load it sent
+    /// is neither refused nor started, for as long as the acknowledgement
+    /// takes. So the owner asks this first and goes around the device while
+    /// the answer is no.
+    pub fn is_established(&self) -> bool {
+        self.established.load(std::sync::atomic::Ordering::SeqCst)
+    }
+
     /// LOCAL PATCH: what this device is playing right now.
     pub fn playing(&self) -> PlayingHere {
         self.playing
             .lock()
             .map(|state| state.clone())
             .unwrap_or_default()
+    }
+
+    /// LOCAL PATCH: takes what the player is already playing as this device's own.
+    ///
+    /// The owner of the player can drive it directly, and does so whenever
+    /// there is no device to go through: a track chosen while the access point
+    /// is still being reached, or after the session died under a song, plays
+    /// at once from the player. When a device is up again the song is in
+    /// progress, and loading it through the device would start it over. This
+    /// describes it to the device instead — the queue, the track, the position
+    /// and the player's own id for the load — so the account sees what is
+    /// playing and the device carries on from here: the end of the track, the
+    /// preload of the next one and every command arrive as if it had loaded
+    /// the song itself.
+    ///
+    /// Activates the device, like a load does. Works whether or not the
+    /// device was active.
+    pub fn adopt(&self, request: AdoptRequest) -> Result<(), Error> {
+        Ok(self.commands.send(SpircCommand::Adopt(request))?)
+    }
+
+    /// LOCAL PATCH: asks the account what every device is doing.
+    ///
+    /// The account pushes a cluster update whenever something changes, and a
+    /// push can be missed: the dealer socket dies quietly, or the phone was
+    /// asleep. This sends a state update for the reason the official client
+    /// gives when its device picker opens, and the answer — the account's
+    /// whole picture — goes to the [cluster listener](Self::set_cluster_listener).
+    pub fn refresh_cluster(&self) -> Result<(), Error> {
+        Ok(self.commands.send(SpircCommand::RefreshCluster)?)
+    }
+
+    /// LOCAL PATCH: who to tell about the account's picture of its devices.
+    ///
+    /// Every state update this device sends is answered with a `Cluster`, the
+    /// same thing the dealer pushes when another device changes something.
+    /// Upstream reads it once, on connecting, and throws the rest away; the
+    /// owner of the handle keeps a copy of the last one and wants every one.
+    pub fn set_cluster_listener(&self, listener: Option<ClusterListener>) {
+        if let Ok(mut current) = self.cluster_listener.lock() {
+            *current = listener;
+        }
     }
 }
 
@@ -333,6 +417,10 @@ impl Spirc {
             // LOCAL PATCH: replaced with the handle's own the moment it exists.
             active: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
             playing: std::sync::Arc::new(std::sync::Mutex::new(PlayingHere::default())),
+            cluster_listener: Arc::new(std::sync::Mutex::new(None)),
+            established: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
+            state_timeouts: 0,
+            state_retry_after: None,
 
             spirc_id,
         };
@@ -341,11 +429,17 @@ impl Spirc {
         task.active = active.clone();
         let playing = std::sync::Arc::new(std::sync::Mutex::new(PlayingHere::default()));
         task.playing = playing.clone();
+        let cluster_listener = Arc::new(std::sync::Mutex::new(None));
+        task.cluster_listener = cluster_listener.clone();
+        let established = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        task.established = established.clone();
 
         let spirc = Spirc {
             commands: cmd_tx,
             active,
             playing,
+            cluster_listener,
+            established,
         };
 
         let initial_volume = task.connect_state.device_info().volume;
@@ -527,6 +621,8 @@ impl SpircTask {
             self.connect_state.is_active(),
             std::sync::atomic::Ordering::SeqCst,
         );
+        self.established
+            .store(self.connect_established, std::sync::atomic::Ordering::SeqCst);
         if let Ok(mut playing) = self.playing.lock() {
             let state = self.connect_state.player();
             let track = state
@@ -595,6 +691,8 @@ impl SpircTask {
             // without guessing from the cluster; see [`Spirc`].
             self.publish_local_state();
 
+            // LOCAL PATCH: read before the futures below borrow the rest.
+            let state_update_delay = self.state_update_delay();
             let commands = self.commands.as_mut();
             let player_events = self.player_events.as_mut();
 
@@ -668,29 +766,11 @@ impl SpircTask {
                         error!("could not dispatch player event: {e}");
                     }
                 },
-                _ = async { sleep(UPDATE_STATE_DELAY).await }, if self.update_state => {
+                // LOCAL PATCH: the delay grows after a timeout; see `notify`.
+                _ = async { sleep(state_update_delay).await }, if self.update_state => {
                     self.update_state = false;
-
-                    // LOCAL PATCH: bounded, because this loop is the only thing
-                    // reading the command channel.
-                    //
-                    // Telling the account what this device is doing is an HTTP
-                    // request, and awaiting it here suspends the whole select:
-                    // the pause the listener just pressed sits unread in its
-                    // channel until the request comes back. On a weak signal
-                    // that is many seconds of music playing under a finger that
-                    // has already asked for silence. The account can be told
-                    // late; the listener cannot be answered late.
-                    match tokio::time::timeout(STATE_UPDATE_TIMEOUT, self.notify()).await {
-                        Ok(Err(why)) => error!("state update: {why}"),
-                        Err(_) => {
-                            warn!("state update timed out, telling the account later");
-                            // Left set, so the next turn of the loop tries
-                            // again rather than leaving the account with a
-                            // state this device has moved on from.
-                            self.update_state = true;
-                        }
-                        Ok(Ok(())) => (),
+                    if let Err(why) = self.notify().await {
+                        error!("state update: {why}");
                     }
                 },
                 _ = async { sleep(VOLUME_UPDATE_DELAY).await }, if self.update_volume => {
@@ -835,6 +915,15 @@ impl SpircTask {
                 self.handle_activate();
                 return self.notify().await;
             }
+            // LOCAL PATCH: both work whether or not the device is active. An
+            // adoption activates by itself, like a load; a refresh is a state
+            // update, which a device sends in every state.
+            SpircCommand::Adopt(request) => {
+                self.handle_adopt(request)?;
+            }
+            SpircCommand::RefreshCluster => {
+                return self.handle_refresh_cluster().await;
+            }
             SpircCommand::Transfer(..) | SpircCommand::Activate => {
                 warn!("SpircCommand::{cmd:?} will be ignored while already active")
             }
@@ -879,6 +968,124 @@ impl SpircTask {
         };
 
         self.notify().await
+    }
+
+    /// LOCAL PATCH: see [`Spirc::adopt`].
+    ///
+    /// The same steps as `handle_load` for a list of tracks, up to the point
+    /// where that one hands the track to the player. Here the player already
+    /// has it, so what would have been a load is a description: the play
+    /// request the player is on, where it has got to, and whether it is
+    /// making sound. The events the player goes on sending about that request
+    /// then match, and the device treats the song as its own from here on.
+    fn handle_adopt(&mut self, request: AdoptRequest) -> Result<(), Error> {
+        if request.tracks.is_empty() || request.index >= request.tracks.len() {
+            return Err(SpircError::NoData.into());
+        }
+        info!(
+            "adopting {} at {} of {} ({}, {} ms)",
+            request.tracks[request.index],
+            request.index,
+            request.tracks.len(),
+            if request.playing { "playing" } else { "paused" },
+            request.position_ms,
+        );
+
+        if !self.connect_state.is_active() {
+            self.handle_activate();
+        }
+
+        self.connect_state.reset_context(ResetContext::Completely);
+        self.connect_state.reset_options();
+        self.load_context_from_tracks(request.tracks, request.context_uri)?;
+        self.connect_state.set_active_context(ContextType::Default);
+        self.connect_state.clear_next_tracks();
+        self.connect_state.clear_restrictions();
+        self.connect_state.set_current_track(request.index)?;
+        self.connect_state
+            .reset_playback_to_position(Some(request.index))?;
+        self.add_autoplay_resolving_when_required();
+
+        // Not `load_track`: the player is on it already. Only the bookkeeping
+        // that a load would have left behind.
+        self.play_request_id = Some(request.play_request_id);
+        self.last_advance = None;
+        self.connect_state
+            .update_position(request.position_ms, self.now_ms());
+        if request.duration_ms > 0 {
+            self.connect_state.update_duration(request.duration_ms);
+        }
+        self.play_status = if request.playing {
+            SpircPlayStatus::Playing {
+                nominal_start_time: self.now_ms() - request.position_ms as i64,
+                preloading_of_next_track_triggered: false,
+            }
+        } else {
+            SpircPlayStatus::Paused {
+                position_ms: request.position_ms,
+                preloading_of_next_track_triggered: false,
+            }
+        };
+        self.connect_state.set_status(&self.play_status);
+        Ok(())
+    }
+
+    /// LOCAL PATCH: see [`Spirc::refresh_cluster`].
+    async fn handle_refresh_cluster(&mut self) -> Result<(), Error> {
+        self.connect_state.set_status(&self.play_status);
+        if self.connect_state.is_playing() {
+            self.connect_state
+                .update_position_in_relation(self.now_ms());
+        }
+        self.connect_state.set_now(self.now_ms() as u64);
+
+        let sent = tokio::time::timeout(
+            STATE_UPDATE_TIMEOUT * 2,
+            self.connect_state
+                .send_with_reason(&self.session, PutStateReason::PICKER_OPENED),
+        )
+        .await;
+        match sent {
+            Ok(Ok(answer)) => {
+                self.share_cluster(&answer);
+                Ok(())
+            }
+            Ok(Err(why)) => Err(why),
+            Err(_) => {
+                warn!("the account did not answer the cluster refresh in time");
+                Ok(())
+            }
+        }
+    }
+
+    /// LOCAL PATCH: hands the account's answer to whoever asked to hear it.
+    fn share_cluster(&self, answer: &[u8]) {
+        let listener = self
+            .cluster_listener
+            .lock()
+            .ok()
+            .and_then(|guard| guard.clone());
+        let Some(listener) = listener else { return };
+        use protobuf::Message as _;
+        match Cluster::parse_from_bytes(answer) {
+            Ok(cluster) => listener(cluster),
+            Err(why) => {
+                debug!("the state update answered with something other than a cluster: {why}")
+            }
+        }
+    }
+
+    /// LOCAL PATCH: how long to wait before the next state update.
+    ///
+    /// The usual short grouping delay, or the backoff a timeout left behind,
+    /// whichever is longer.
+    fn state_update_delay(&self) -> Duration {
+        match self.state_retry_after {
+            Some(at) => at
+                .saturating_duration_since(Instant::now())
+                .max(UPDATE_STATE_DELAY),
+            None => UPDATE_STATE_DELAY,
+        }
     }
 
     /// LOCAL PATCH: see [`Spirc::set_queue_tracks`].
@@ -1070,14 +1277,24 @@ impl SpircTask {
         trace!("Received connection ID update: {connection_id:?}");
         self.session.set_connection_id(&connection_id);
 
-        let cluster = match self
-            .connect_state
-            .notify_new_device_appeared(&self.session)
-            .await
+        // LOCAL PATCH: bounded; see NEW_DEVICE_TIMEOUT. And shared, since it
+        // is the first picture of the account's devices this session gets.
+        let cluster = match tokio::time::timeout(
+            NEW_DEVICE_TIMEOUT,
+            self.connect_state.notify_new_device_appeared(&self.session),
+        )
+        .await
         {
-            Ok(res) => Cluster::parse_from_bytes(&res).ok(),
-            Err(why) => {
+            Ok(Ok(res)) => {
+                self.share_cluster(&res);
+                Cluster::parse_from_bytes(&res).ok()
+            }
+            Ok(Err(why)) => {
                 error!("{why:?}");
+                None
+            }
+            Err(_) => {
+                error!("the account did not acknowledge this device in time");
                 None
             }
         }
@@ -1492,7 +1709,20 @@ impl SpircTask {
             .update_position_in_relation(self.now_ms());
         self.notify().await?;
 
-        self.connect_state.became_inactive(&self.session).await?;
+        // LOCAL PATCH: bounded, for the same reason `notify` is. Letting go of
+        // playback is a request too, and a device that lost its link is
+        // exactly the device that is letting go.
+        match tokio::time::timeout(
+            STATE_UPDATE_TIMEOUT * 2,
+            self.connect_state.became_inactive(&self.session),
+        )
+        .await
+        {
+            Ok(result) => {
+                result?;
+            }
+            Err(_) => warn!("could not tell the account this device let go in time"),
+        }
 
         self.player
             .emit_session_disconnected_event(self.session.connection_id(), self.session.username());
@@ -2121,10 +2351,43 @@ impl SpircTask {
 
         self.connect_state.set_now(self.now_ms() as u64);
 
-        self.connect_state
-            .send_state(&self.session)
-            .await
-            .map(|_| ())
+        // LOCAL PATCH: bounded, because the loop this runs in is the only
+        // thing reading the command channel.
+        //
+        // Telling the account what this device is doing is an HTTP request,
+        // and awaiting it suspends the whole select: the pause the listener
+        // just pressed sits unread until the request comes back. On a weak
+        // signal that is many seconds of music playing under a finger that has
+        // already asked for silence. The account can be told late; the
+        // listener cannot be answered late. A timeout leaves the update
+        // flagged, so the next turn says it again — after a wait that grows
+        // with each failure, since a link that just took longer than this is
+        // not going to answer faster if asked at once.
+        //
+        // And the answer is kept: it is the account's picture of every device,
+        // the same thing the dealer pushes, and a push can have been missed.
+        let sent = tokio::time::timeout(
+            STATE_UPDATE_TIMEOUT,
+            self.connect_state.send_state(&self.session),
+        )
+        .await;
+        match sent {
+            Ok(Ok(answer)) => {
+                self.state_timeouts = 0;
+                self.state_retry_after = None;
+                self.share_cluster(&answer);
+                Ok(())
+            }
+            Ok(Err(why)) => Err(why),
+            Err(_) => {
+                self.state_timeouts = self.state_timeouts.saturating_add(1);
+                let backoff = STATE_UPDATE_TIMEOUT * (1u32 << self.state_timeouts.min(3));
+                warn!("state update timed out, telling the account again in {backoff:?}");
+                self.state_retry_after = Some(Instant::now() + backoff);
+                self.update_state = true;
+                Ok(())
+            }
+        }
     }
 
     fn set_volume(&mut self, volume: u16) {

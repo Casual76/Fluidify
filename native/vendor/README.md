@@ -191,6 +191,30 @@ upstream's behaviour, since a genuinely unencrypted file has to go on playing.
 See also the retry in `librespot-core`'s `audio_key.rs`, which is what tries a
 refused key again before it gets this far.
 
+### The patch: the crossfade can change without a new player
+
+The same shape as the bitrate above. The length of the dissolve is read at the
+two moments it matters — when a track's end is announced early, and when the
+outgoing decoder is mixed under the incoming one — and both read the live
+configuration, so there was never a reason for it to be fixed. With it the
+last setting that needed a new session is gone: `PlayerCommand::SetCrossfade`
+and `Player::set_crossfade` change it in place. The track playing keeps the
+fade it has already begun, if any; the next transition uses the new one.
+
+### The patch: a streamed load waits for the session
+
+The player now outlives the session it streams through (see the engine), so a
+track can be asked for while the access point is still being reached. A load
+that went to the network in that window failed at once, was retried a few
+times over the next seconds, and was then declared unavailable — for a song
+that would have played perfectly a moment later.
+
+`PlayerConfig` gains `session_ready`, a closure the owner of the player fills
+in: the loader awaits it before anything touches the network, and takes the
+session it answers with, which is the connected one by then. A downloaded
+track never reaches it, because it is found on disk before the network is
+thought about. `None`, the default, is upstream behaviour.
+
 ### Maintenance
 
 The markers are `LOCAL PATCH` in `src/player.rs` and `src/config.rs`.
@@ -336,3 +360,47 @@ a crossfade's worth of music left.
 Both halves also carry the gain reduction the dynamic limiter was applying when
 they parted. Without it the outgoing track loses several decibels of ducking at
 the exact instant the fade starts, so it jumps up before it begins coming down.
+
+### The patch: the device adopts what the player is already playing
+
+`Spirc::adopt(AdoptRequest)` describes a track the player is on — the queue,
+the track's place in it, the player's own id for the load, the position, and
+whether it is making sound — and the device takes it as its own without
+loading it again.
+
+The owner of the player drives the player directly whenever there is no
+device to go through: while the first handshake is being made, after a session
+died under a song, with no network at all. When a device is up again the song
+is in progress, and loading it through the device would start it over. After
+an adoption the events the player goes on sending match the play request the
+device now expects, so the end of the track, the preload of the next one and
+every command arrive as if the device had loaded the song itself. Activates
+the device, like a load does.
+
+### The patch: every state update is bounded, and its answer kept
+
+The loop's `notify` was bounded once, at one call site, and unbounded at the
+rest: a disconnect, a transfer, the first update after connecting. Each is an
+HTTP request awaited inside the only loop that reads the command channel, and
+on a weak signal each held the buttons for as long as the request took. The
+timeout now lives inside `notify` itself, with a backoff that grows after each
+timeout so a link that has just failed is not asked again at once; letting go
+of playback is bounded the same way, and the first update after connecting has
+a longer bound of its own, past which the loop ends and the owner builds
+another session.
+
+The answer to a state update is the account's picture of every device — the
+same `Cluster` the dealer pushes when another device changes something — and
+upstream read it once, on connecting, and threw the rest away. It now goes to
+a listener the owner sets with `Spirc::set_cluster_listener`, on every update,
+which is what keeps the picture right when a push was missed. And
+`Spirc::refresh_cluster` asks for one outright, with the reason the official
+client gives when its device picker opens.
+
+### The patch: is the loop listening yet?
+
+`Spirc::is_established` mirrors `connect_established`. The loop does not read
+its command channel until the account has acknowledged the device, which is a
+round trip over the dealer after the handshake; a command sent before that
+waits in the channel, and the owner could not tell waiting from lost. It asks
+this first and goes around the device while the answer is no.

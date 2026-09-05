@@ -34,12 +34,39 @@ static CLUSTER: Mutex<Option<Cluster>> = Mutex::new(None);
 /// Whether a watcher is already running, so a reconnection does not stack them.
 static WATCHING: AtomicBool = AtomicBool::new(false);
 
-/// Forgets the last cluster. Called when the session it came from is discarded.
+/// Forgets the last cluster. Called when the engine goes away.
 pub fn clear() {
     if let Ok(mut cluster) = CLUSTER.lock() {
         *cluster = None;
     }
     WATCHING.store(false, Ordering::SeqCst);
+}
+
+/// Notes that the session being watched is gone, keeping what it last said.
+///
+/// The last cluster stays: a session is replaced because the network went,
+/// and what the account was doing a moment ago is a better picture than
+/// nothing until the next session's first update arrives — which it does
+/// within a second of connecting.
+pub fn unwatch() {
+    WATCHING.store(false, Ordering::SeqCst);
+}
+
+/// Takes a cluster the device got back from a state update of its own.
+///
+/// The same picture the dealer pushes, by another road: every state update
+/// this device sends is answered with one. The dealer's push can be missed —
+/// the socket dies quietly, the phone was asleep — and this is what makes
+/// sure the last word is never older than the last thing this device said.
+pub fn set_cluster(cluster: Cluster) {
+    log::debug!(
+        "cluster from a state update: active {} of {} devices",
+        cluster.active_device_id,
+        cluster.device.len(),
+    );
+    if let Ok(mut stored) = CLUSTER.lock() {
+        *stored = Some(cluster);
+    }
 }
 
 /// Starts listening for cluster updates on `session`'s dealer.
@@ -188,6 +215,79 @@ pub fn state_json() -> String {
         player.options.repeating_context,
         player.options.repeating_track,
     )
+}
+
+/// What is coming and what was played on the account's active device, as JSON.
+///
+/// `{"index": n, "tracks": [{"uri", "uid", "title", "artist", "album",
+/// "coverUri", "current"}]}` — the previous tracks, the current one and the
+/// next ones, in playing order, with `index` pointing at the current one. The
+/// account publishes a window of the queue with the state, some dozens of
+/// tracks each way, and that window is the only copy of the queue a client
+/// that is not the one playing can get: a context can be one Spotify makes
+/// rather than stores, and the order can be a shuffle nobody else can
+/// reproduce.
+///
+/// Metadata is whatever the playing device put beside each uri, which is not
+/// always anything; the caller fills the rest in from the catalogue.
+pub fn queue_json() -> String {
+    let Ok(guard) = CLUSTER.lock() else {
+        return "{\"index\":0,\"tracks\":[]}".into();
+    };
+    let Some(cluster) = guard.as_ref() else {
+        return "{\"index\":0,\"tracks\":[]}".into();
+    };
+    let player: &PlayerState = &cluster.player_state;
+
+    let escape = |value: &str| serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into());
+    let one = |track: &librespot_protocol::player::ProvidedTrack, current: bool| {
+        let metadata = |key: &str| track.metadata.get(key).cloned().unwrap_or_default();
+        format!(
+            concat!(
+                "{{\"uri\":{},\"uid\":{},\"title\":{},\"artist\":{},\"album\":{},",
+                "\"coverUri\":{},\"current\":{}}}"
+            ),
+            escape(&track.uri),
+            escape(&track.uid),
+            escape(&metadata("title")),
+            escape(&metadata("artist_name")),
+            escape(&metadata("album_title")),
+            escape(&metadata("image_url")),
+            current,
+        )
+    };
+
+    // Only songs. The window also carries the odd advert and the delimiters
+    // the official client uses to mark where the queue ends and the context
+    // resumes, and none of those is anything a listener can tap.
+    let is_song = |track: &librespot_protocol::player::ProvidedTrack| {
+        track.uri.starts_with("spotify:track:")
+    };
+    let mut tracks: Vec<String> = player
+        .prev_tracks
+        .iter()
+        .filter(|track| is_song(track))
+        .map(|track| one(track, false))
+        .collect();
+    let index = tracks.len();
+    let mut has_current = false;
+    if let Some(track) = player.track.as_ref() {
+        if is_song(track) {
+            tracks.push(one(track, true));
+            has_current = true;
+        }
+    }
+    tracks.extend(
+        player
+            .next_tracks
+            .iter()
+            .filter(|track| is_song(track))
+            .map(|track| one(track, false)),
+    );
+    if !has_current {
+        return "{\"index\":0,\"tracks\":[]}".into();
+    }
+    format!("{{\"index\":{index},\"tracks\":[{}]}}", tracks.join(","))
 }
 
 /// Every device the account can see, as a JSON array.

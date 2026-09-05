@@ -625,12 +625,53 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeSet
     guard(&mut env, "SetBitrate", || engine::set_bitrate(bitrate_kbps));
 }
 
+/// Asks for a session and a Connect device, when there is none.
+///
+/// Returns at once; the outcome arrives as a `session` event. `force` skips
+/// the backoff a failed attempt left behind.
 #[no_mangle]
 pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeReconnect(
     mut env: JNIEnv,
     _class: JClass,
+    force: jboolean,
 ) {
-    guard(&mut env, "Reconnect", engine::reconnect);
+    guard(&mut env, "Reconnect", || engine::reconnect(force == JNI_TRUE));
+}
+
+/// Whether a handshake is in flight.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeIsConnecting(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    engine::is_connecting() as jboolean
+}
+
+/// Whether the Connect device knows the track the player is on.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeIsAdopted(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    engine::is_adopted() as jboolean
+}
+
+/// Asks the account what every device is doing, now.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeRefreshCluster(
+    mut env: JNIEnv,
+    _class: JClass,
+) {
+    guard(&mut env, "RefreshCluster", engine::refresh_cluster);
+}
+
+/// The queue around what the account's active device is playing.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeRemoteQueue(
+    mut env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    guard_string(&mut env, "RemoteQueue", || Ok(crate::remote::queue_json()))
 }
 
 /// Whether the account is playing on a device that is not this one.
@@ -835,7 +876,7 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeShu
     let _ = std::panic::catch_unwind(engine::shutdown);
 }
 
-/// Whether the engine is running with no session, playing only what is on disk.
+/// Whether there is no Connect device right now.
 #[no_mangle]
 pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeIsOffline(
     _env: JNIEnv,

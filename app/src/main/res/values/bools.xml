@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      The route provider is an Android 11 class; declaring the service on
+      older phones would make the system try to bind a class that does not
+      load. Overridden in values-v30.
+    -->
+    <bool name="route_provider_enabled">false</bool>
+</resources>

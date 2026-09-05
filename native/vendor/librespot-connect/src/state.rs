@@ -465,7 +465,9 @@ impl ConnectState {
         session.spclient().put_connect_state_inactive(false).await
     }
 
-    async fn send_with_reason(
+    /// LOCAL PATCH: `pub(crate)`, so the loop can send a state update for a
+    /// reason of its own; see `SpircTask::handle_refresh_cluster`.
+    pub(crate) async fn send_with_reason(
         &mut self,
         session: &Session,
         reason: PutStateReason,

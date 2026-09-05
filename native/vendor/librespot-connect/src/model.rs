@@ -4,6 +4,36 @@ use crate::{
 
 use std::ops::Deref;
 
+/// LOCAL PATCH: what the player is already playing, for the device to take as
+/// its own.
+///
+/// The owner of the player can load a track into it directly — it does so when
+/// there is no Connect device yet, or the one there was has died — and when a
+/// device is up again the music is already going. Loading it again through the
+/// device would restart it; this describes it instead: the same shape as a
+/// load, minus the load. See [`Spirc::adopt`](crate::Spirc::adopt).
+#[derive(Debug, Clone)]
+pub struct AdoptRequest {
+    /// The playlist or album the tracks came from, when there is one.
+    pub context_uri: Option<String>,
+    /// The whole queue, in playing order.
+    pub tracks: Vec<String>,
+    /// Where the current track sits in `tracks`.
+    pub index: usize,
+    /// The player's own id for the load in progress, so its events count.
+    pub play_request_id: u64,
+    /// Where the track is, right now.
+    pub position_ms: u32,
+    /// How long it is; zero when unknown.
+    pub duration_ms: u32,
+    /// Whether it is making sound.
+    pub playing: bool,
+}
+
+/// LOCAL PATCH: told whenever the account answers a state update with its
+/// picture of every device; see [`Spirc::set_cluster_listener`](crate::Spirc::set_cluster_listener).
+pub type ClusterListener = std::sync::Arc<dyn Fn(crate::protocol::connect::Cluster) + Send + Sync>;
+
 /// Request for loading playback
 #[derive(Debug, Clone)]
 pub struct LoadRequest {

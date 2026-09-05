@@ -67,6 +67,28 @@
             </intent-filter>
 
             <!--
+              What makes this a music app to the rest of the phone. "Open the
+              music app" — from a launcher, an assistant, a keyboard's media
+              key — is a MAIN intent with this category, and the pickers that
+              offer a default music app are built from the apps that answer
+              it. Without it the app is a launcher icon and nothing more.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.APP_MUSIC" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <!--
+              "Play X on Fluidify". The assistant and the car send the words
+              here; MainActivity searches and plays the first match.
+            -->
+            <intent-filter>
+                <action android:name="android.media.action.MEDIA_PLAY_FROM_SEARCH" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
+
+            <!--
               Spotify's own scheme. Nothing verifies these, so a phone with both
               apps installed simply asks which one, and a phone with only Square
               opens Square.
@@ -113,6 +135,30 @@
             -->
             <intent-filter>
                 <action android:name="android.media.browse.MediaBrowserService" />
+            </intent-filter>
+            <!--
+              A headset button with the app not running. The system starts
+              the service with the key event, and Media3 resumes the last
+              queue through onPlaybackResumption; see MediaBrowseTree.
+            -->
+            <intent-filter>
+                <action android:name="android.intent.action.MEDIA_BUTTON" />
+            </intent-filter>
+        </service>
+
+        <!--
+          The account's other devices, offered to the phone's own output
+          switcher — the panel behind "Media output" in the quick settings —
+          so a speaker or a laptop can be chosen there like a Bluetooth
+          earpiece. Android 11 and up bind it; older phones never look.
+        -->
+        <service
+            android:name=".playback.ConnectRouteProvider"
+            android:exported="true"
+            android:enabled="@bool/route_provider_enabled"
+            android:permission="android.permission.BIND_ROUTE_PROVIDER">
+            <intent-filter>
+                <action android:name="android.media.MediaRoute2ProviderService" />
             </intent-filter>
         </service>
 

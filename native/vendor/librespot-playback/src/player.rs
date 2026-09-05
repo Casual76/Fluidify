@@ -202,6 +202,8 @@ enum PlayerCommand {
     SetAutoNormaliseAsAlbum(bool),
     /// LOCAL PATCH: the quality to ask for from the next load onwards.
     SetBitrate(Bitrate),
+    /// LOCAL PATCH: how long the next dissolve lasts, in milliseconds.
+    SetCrossfade(u32),
     EmitSessionDisconnectedEvent {
         connection_id: String,
         user_name: String,
@@ -708,6 +710,19 @@ impl Player {
         self.command(PlayerCommand::SetBitrate(bitrate));
     }
 
+    /// LOCAL PATCH: change the crossfade without building another player.
+    ///
+    /// The length of the dissolve is read at the two moments it matters — when
+    /// a track's end is announced early, and when the outgoing decoder is mixed
+    /// under the incoming one — and both read the live configuration. So there
+    /// is nothing about it that has to be fixed for the life of the player
+    /// either, and with the bitrate above it was the last reason a setting
+    /// needed a new session. The track playing keeps the fade it was started
+    /// with, if it has already begun one; the next transition uses this.
+    pub fn set_crossfade(&self, crossfade_ms: u32) {
+        self.command(PlayerCommand::SetCrossfade(crossfade_ms));
+    }
+
     pub fn emit_filter_explicit_content_changed_event(&self, filter: bool) {
         self.command(PlayerCommand::EmitFilterExplicitContentChangedEvent(filter));
     }
@@ -1063,7 +1078,11 @@ struct PlayerTrackLoader {
 }
 
 impl PlayerTrackLoader {
-    async fn find_available_alternative(&self, audio_item: AudioItem) -> Option<AudioItem> {
+    async fn find_available_alternative(
+        &self,
+        session: &Session,
+        audio_item: AudioItem,
+    ) -> Option<AudioItem> {
         if let Err(e) = audio_item.availability {
             error!("Track is unavailable: {e}");
             None
@@ -1074,7 +1093,7 @@ impl PlayerTrackLoader {
 
             let alternatives: FuturesUnordered<_> = alternatives_vec
                 .into_iter()
-                .map(|alt_id| AudioItem::get_file(&self.session, alt_id))
+                .map(|alt_id| AudioItem::get_file(session, alt_id))
                 .collect();
 
             alternatives
@@ -1339,9 +1358,21 @@ impl PlayerTrackLoader {
             }
         };
 
+        // LOCAL PATCH: not before the session can answer.
+        //
+        // See `PlayerConfig::session_ready`. Asked for while the access point
+        // is still being reached, a streamed track used to fail its first
+        // attempts against a session that was not there yet, and the retries
+        // ran out before the handshake did. Waiting here costs nothing when
+        // the session is already up, which is the ordinary case.
+        let session = match self.config.session_ready.as_ref() {
+            Some(ready) => ready().await.unwrap_or_else(|| self.session.clone()),
+            None => self.session.clone(),
+        };
+
         let began = Instant::now();
-        let audio_item = match AudioItem::get_file(&self.session, track_uri).await {
-            Ok(audio) => match self.find_available_alternative(audio).await {
+        let audio_item = match AudioItem::get_file(&session, track_uri).await {
+            Ok(audio) => match self.find_available_alternative(&session, audio).await {
                 Some(audio) => audio,
                 None => {
                     warn!(
@@ -1427,7 +1458,7 @@ impl PlayerTrackLoader {
         // This is only a loop to be able to reload the file if an error occurred
         // while opening a cached file.
         loop {
-            let encrypted_file = AudioFile::open(&self.session, file_id, bytes_per_second);
+            let encrypted_file = AudioFile::open(&session, file_id, bytes_per_second);
 
             let encrypted_file = match encrypted_file.await {
                 Ok(encrypted_file) => encrypted_file,
@@ -1462,7 +1493,7 @@ impl PlayerTrackLoader {
             // treated this way; any other key failure keeps upstream's
             // behaviour, since a file that is genuinely unencrypted has to go
             // on playing.
-            let key = match self.session.audio_key().request(track_id, file_id).await {
+            let key = match session.audio_key().request(track_id, file_id).await {
                 Ok(key) => Some(key),
                 Err(e) => {
                     let refused = matches!(
@@ -1540,7 +1571,7 @@ impl PlayerTrackLoader {
                 Err(e) if is_cached => {
                     warn!("Unable to read cached audio file: {e}. Trying to download it.");
 
-                    match self.session.cache() {
+                    match session.cache() {
                         Some(cache) => {
                             if cache.remove_file(file_id).is_err() {
                                 error!("Error removing file from cache");
@@ -3184,6 +3215,14 @@ impl PlayerInternal {
                 self.auto_normalise_as_album = setting
             }
 
+            // LOCAL PATCH: see Player::set_crossfade.
+            PlayerCommand::SetCrossfade(crossfade_ms) => {
+                if self.config.crossfade_duration_ms != crossfade_ms {
+                    info!("crossfade is now {crossfade_ms} ms, from the next transition");
+                    self.config.crossfade_duration_ms = crossfade_ms;
+                }
+            }
+
             // LOCAL PATCH: see Player::set_bitrate.
             PlayerCommand::SetBitrate(bitrate) => {
                 if self.config.bitrate != bitrate {
@@ -3402,6 +3441,9 @@ impl fmt::Debug for PlayerCommand {
                 .debug_tuple("EmitVolumeChangedEvent")
                 .field(&volume)
                 .finish(),
+            PlayerCommand::SetCrossfade(crossfade_ms) => {
+                f.debug_tuple("SetCrossfade").field(crossfade_ms).finish()
+            }
             PlayerCommand::SetBitrate(bitrate) => {
                 f.debug_tuple("SetBitrate").field(bitrate).finish()
             }

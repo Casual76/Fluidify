@@ -23,6 +23,10 @@ import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.dp
 import dev.antigravity.fluidengine.ui.fluid.GlassBackdropState
 import dev.antigravity.fluidengine.ui.fluid.GlassRole
 import dev.antigravity.fluidengine.ui.fluidphysics.FluidCornerRadii
@@ -111,8 +115,22 @@ fun NowPlayingSheet(
     val from = remember(lastPill, hostBounds) {
         FluidFormPresets.capsule(lastPill.translate(-hostBounds.left, -hostBounds.top))
     }
-    val to = remember(hostBounds) {
-        FluidForm.Slab(Rect(0f, 0f, hostBounds.width, hostBounds.height), FluidCornerRadii.Zero)
+    // The window's corners are the *phone's* corners, not square ones.
+    //
+    // Zero was the obvious end of a journey to a full-screen window and it is
+    // the wrong one: the radius is interpolated the whole way, so the shape is
+    // visibly square long before it arrives — at nine tenths of the journey it
+    // is a hard-edged rectangle sitting inside a rounded display. What the
+    // corner should reach is the radius the display already has, which the
+    // bezel then covers exactly. Nothing is ever seen to square off, because
+    // the only square corner is the one behind the glass of the phone.
+    val view = LocalView.current
+    val density = LocalDensity.current
+    val to = remember(hostBounds, view, density) {
+        FluidForm.Slab(
+            Rect(0f, 0f, hostBounds.width, hostBounds.height),
+            FluidCornerRadii.all(displayCornerRadiusPx(view, density)),
+        )
     }
     // A stable lambda: the drive de-duplicates on its endpoints and ignores this,
     // so handing it a new one every recomposition would silently keep the old.
@@ -128,7 +146,11 @@ fun NowPlayingSheet(
         derivedStateOf { progress.value > MorphEpsilon && progress.value < 1f - MorphEpsilon }
     }
     val contentLive by remember { derivedStateOf { progress.value > MorphEpsilon } }
-    val pillFaceLive by remember { derivedStateOf { progress.value < PillFaceGate } }
+    // From the hand-over, not from zero. Below it the pill in the bar is the
+    // real one and this copy would be a second face over it; see MorphDrawGate.
+    val pillFaceLive by remember {
+        derivedStateOf { progress.value > MorphDrawGate && progress.value < PillFaceGate }
+    }
     // True only at the two ends of the travel; see LocalGlassEnabled.
     val settled by remember {
         derivedStateOf { progress.value <= MorphEpsilon || progress.value >= GlassLiveAt }
@@ -266,6 +288,31 @@ fun NowPlayingSheet(
         }
     }
 }
+
+/**
+ * The radius of the display's own rounded corners, in pixels.
+ *
+ * Asked of the window from Android 12 up, which is where the question can be
+ * answered: every phone rounds its screen by a different amount, and a number
+ * written here would be right on one of them. Older phones, and the rare one
+ * that answers nothing, get [FallbackDisplayCorner] — close enough that the
+ * corner lands under the bezel on anything with a rounded screen, and on a
+ * genuinely square screen it is simply a rounded window, which is not wrong.
+ */
+private fun displayCornerRadiusPx(view: android.view.View, density: Density): Float {
+    val reported = if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.S) {
+        view.rootWindowInsets
+            ?.getRoundedCorner(android.view.RoundedCorner.POSITION_TOP_LEFT)
+            ?.radius
+            ?.toFloat()
+    } else {
+        null
+    }
+    return reported?.takeIf { it > 0f } ?: with(density) { FallbackDisplayCorner.toPx() }
+}
+
+/** What to round the window by when the phone will not say. */
+private val FallbackDisplayCorner = 28.dp
 
 /**
  * How much of the collapse the back gesture may show before it is committed.

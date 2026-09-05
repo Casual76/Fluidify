@@ -1,6 +1,6 @@
 use std::{mem, path::PathBuf, str::FromStr, sync::Arc, time::Duration};
 
-use librespot_core::SpotifyId;
+use librespot_core::{Session, SpotifyId};
 use librespot_metadata::audio::AudioFileFormat;
 
 pub use crate::dither::{DithererBuilder, TriangularDitherer, mk_ditherer};
@@ -48,6 +48,26 @@ pub struct DownloadedTrack {
 /// writes it and the engine parses it — instead of teaching this crate a JSON
 /// schema it has no other reason to know.
 pub type DownloadLookup = Arc<dyn Fn(&SpotifyId) -> Option<DownloadedTrack> + Send + Sync>;
+
+/// LOCAL PATCH: something the loader waits on before it asks the network.
+///
+/// The player outlives the session it streams through: a track can be asked
+/// for while the access point is still being reached, and a load that goes to
+/// the network in that window fails at once, is retried a few times over the
+/// next seconds and is then declared unavailable — for a song that would have
+/// played perfectly a moment later. The owner of the player knows when the
+/// session is up, so it hands over a future that resolves then, bounded by
+/// its own patience. A downloaded track never reaches this: it is found on
+/// disk before the network is thought about.
+///
+/// Answers with the session to load through, or `None` to use the one the
+/// player was given: the owner may have swapped the session underneath the
+/// player while the load was waiting, and the loader took its copy before.
+pub type SessionReady = Arc<
+    dyn Fn() -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<Session>> + Send>>
+        + Send
+        + Sync,
+>;
 
 #[derive(Clone, Copy, Debug, Hash, PartialOrd, Ord, PartialEq, Eq, Default)]
 pub enum Bitrate {
@@ -181,6 +201,11 @@ pub struct PlayerConfig {
     ///
     /// `None`, the default, is upstream behaviour: every track is fetched.
     pub download_lookup: Option<DownloadLookup>,
+
+    /// LOCAL PATCH: what a streamed load waits for before touching the network.
+    ///
+    /// `None`, the default, is upstream behaviour: the load goes out at once.
+    pub session_ready: Option<SessionReady>,
 }
 
 impl Default for PlayerConfig {
@@ -202,6 +227,7 @@ impl Default for PlayerConfig {
             local_file_directories: Vec::new(),
             crossfade_duration_ms: 0,
             download_lookup: None,
+            session_ready: None,
         }
     }
 }

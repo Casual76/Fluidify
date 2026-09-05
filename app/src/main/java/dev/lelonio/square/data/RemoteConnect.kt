@@ -1,8 +1,11 @@
 package dev.lelonio.square.data
 
 import dev.lelonio.square.nativecore.NativeBridge
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
@@ -67,6 +70,46 @@ object RemoteConnect {
     /** Everything the account can play on, this phone included. */
     val devices: StateFlow<List<RemoteDevice>> = _devices.asStateFlow()
 
+    private val _queue = MutableStateFlow(RemoteQueue())
+
+    /**
+     * The queue around what the account's active device is playing.
+     *
+     * The account publishes a window of it with every state: some dozens of
+     * tracks before and after the current one, in the order they will play,
+     * shuffle included. It is the only copy of that queue anyone but the
+     * playing device can get, since a context can be one Spotify makes rather
+     * than stores. Kept whether the playback is here or elsewhere; the player
+     * draws it only for elsewhere, where it has no queue of its own to show.
+     */
+    val queue: StateFlow<RemoteQueue> = _queue.asStateFlow()
+
+    /**
+     * A handover asked for from outside the app's own screens.
+     *
+     * The phone's output switcher lists the account's devices through
+     * [dev.lelonio.square.playback.ConnectRouteProvider], and a choice made
+     * there has to move the music the same way the app's picker does — which
+     * needs the player, for where the song is. The provider posts the choice
+     * here and the playback service, which has the player, carries it out.
+     */
+    sealed class TransferRequest {
+        /** Send playback to another device. */
+        data class To(val deviceId: String) : TransferRequest()
+
+        /** Bring playback back to this phone. */
+        data object Here : TransferRequest()
+    }
+
+    private val _requests = MutableSharedFlow<TransferRequest>(extraBufferCapacity = 4)
+
+    /** Handovers asked for from outside; see [TransferRequest]. */
+    val requests: SharedFlow<TransferRequest> = _requests.asSharedFlow()
+
+    fun request(request: TransferRequest) {
+        _requests.tryEmit(request)
+    }
+
     /** Whether an id is this phone's own. */
     fun isThisPhone(deviceId: String): Boolean {
         if (ownId.isEmpty()) ownId = NativeBridge.deviceId()
@@ -97,6 +140,54 @@ object RemoteConnect {
         _elsewhere.value = elsewhere
         _playback.value = playback?.takeIf { elsewhere }
         _here.value = playback?.takeIf { !elsewhere && active.isNotEmpty() }
+        _queue.value = runCatching { parseQueue(NativeBridge.remoteQueue()) }
+            .getOrDefault(RemoteQueue())
+    }
+
+    private fun parseQueue(json: String): RemoteQueue {
+        val root = JSONObject(json)
+        val array = root.optJSONArray("tracks") ?: return RemoteQueue()
+        val items = (0 until array.length()).map { index ->
+            val item = array.getJSONObject(index)
+            RemoteQueueItem(
+                uri = item.optString("uri"),
+                uid = item.optString("uid"),
+                title = item.optString("title"),
+                artist = item.optString("artist"),
+                album = item.optString("album"),
+                coverUri = item.optString("coverUri"),
+            ).filled()
+        }
+        return RemoteQueue(items, root.optInt("index").coerceIn(0, maxOf(0, items.lastIndex)))
+    }
+
+    /**
+     * Replaces what is known about the tracks in the queue, with more of it.
+     *
+     * The window carries whatever the playing device put beside each uri, and
+     * that is often only the uri. What was looked up is remembered by uri, so
+     * the next state update — which rebuilds the whole window — does not
+     * forget it again.
+     */
+    fun describeQueue(described: List<RemoteQueueItem>) {
+        for (item in described) {
+            if (item.title.isNotEmpty()) knownItems[item.uri] = item
+        }
+        val current = _queue.value
+        _queue.value = current.copy(items = current.items.map { it.filled() })
+    }
+
+    /** Titles, artists and covers looked up for tracks in the window, by uri. */
+    private val knownItems = mutableMapOf<String, RemoteQueueItem>()
+
+    private fun RemoteQueueItem.filled(): RemoteQueueItem {
+        val earlier = knownItems[uri] ?: return this
+        return copy(
+            title = title.ifEmpty { earlier.title },
+            artist = artist.ifEmpty { earlier.artist },
+            album = album.ifEmpty { earlier.album },
+            coverUri = coverUri.ifEmpty { earlier.coverUri },
+        )
     }
 
     private fun read(state: JSONObject, active: String): RemotePlayback? {
@@ -163,6 +254,7 @@ object RemoteConnect {
         _playback.value = null
         _here.value = null
         _devices.value = emptyList()
+        _queue.value = RemoteQueue()
     }
 
     private fun parseDevices(json: String): List<RemoteDevice> {
@@ -197,6 +289,52 @@ object RemoteConnect {
 
     fun seek(deviceId: String, positionMs: Long) =
         send(deviceId, """{"command":{"endpoint":"seek_to","value":$positionMs}}""")
+
+    /**
+     * Jumps the other device to a track later in its queue.
+     *
+     * The same word as a skip, with the track named: the device steps forward
+     * until that one is current, which is how the official clients play a
+     * queued song out of order. Only forward, because that is what the
+     * protocol offers; see [playFrom] for the other direction.
+     */
+    fun skipToNext(deviceId: String, item: RemoteQueueItem) {
+        val track = org.json.JSONObject()
+            .put("uri", item.uri)
+            .apply { if (item.uid.isNotEmpty()) put("uid", item.uid) }
+        send(deviceId, """{"command":{"endpoint":"skip_next","track":$track}}""")
+    }
+
+    /**
+     * Starts the other device's context again at one of its tracks.
+     *
+     * For a track earlier in the window, which a skip cannot reach. The same
+     * command the web player sends when a row of the playing playlist is
+     * tapped: the context, and where in it to begin. A queue with no context
+     * behind it — a search result, a bare list — cannot be restarted this
+     * way, and the caller falls back to a plain previous.
+     */
+    fun playFrom(deviceId: String, contextUri: String, item: RemoteQueueItem) {
+        val context = org.json.JSONObject()
+            .put("uri", contextUri)
+            .put("url", "context://$contextUri")
+            .put("metadata", org.json.JSONObject())
+        val skipTo = org.json.JSONObject()
+            .put("track_uri", item.uri)
+            .apply { if (item.uid.isNotEmpty()) put("track_uid", item.uid) }
+        val options = org.json.JSONObject()
+            .put("license", "premium")
+            .put("skip_to", skipTo)
+            .put("player_options_override", org.json.JSONObject())
+        val origin = org.json.JSONObject()
+            .put("feature_identifier", "playlist")
+            .put("feature_version", "1.0")
+        send(
+            deviceId,
+            """{"command":{"endpoint":"play","context":$context,"options":$options,""" +
+                """"play_origin":$origin}}""",
+        )
+    }
 
     fun setShuffle(deviceId: String, shuffle: Boolean) =
         send(deviceId, """{"command":{"endpoint":"set_shuffling_context","value":$shuffle}}""")
@@ -302,6 +440,33 @@ data class RemotePlayback(
 
 /** What librespot publishes in place of a context it does not have. */
 const val WEB_API_CONTEXT = "spotify:web-api"
+
+/** One track in the window the account publishes around its playback. */
+data class RemoteQueueItem(
+    val uri: String,
+    /** The account's own id for this occurrence, which tells two copies apart. */
+    val uid: String,
+    val title: String,
+    val artist: String,
+    val album: String,
+    /** As the cluster carries it: a plain URL, or a `spotify:image:` uri. */
+    val coverUri: String,
+) {
+    val coverUrl: String
+        get() = when {
+            coverUri.isEmpty() -> ""
+            coverUri.startsWith("http") -> coverUri
+            else -> "https://i.scdn.co/image/${coverUri.substringAfterLast(':')}"
+        }
+}
+
+/** The window itself, with the current track's place in it. */
+data class RemoteQueue(
+    val items: List<RemoteQueueItem> = emptyList(),
+    val index: Int = 0,
+) {
+    val current: RemoteQueueItem? get() = items.getOrNull(index)
+}
 
 /** One device the account can play on. */
 data class RemoteDevice(

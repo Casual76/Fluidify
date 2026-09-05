@@ -413,6 +413,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun refreshDevices() {
         devicesJob?.cancel()
+        // The account's own picture first, which the engine can ask for with
+        // no application of the listener's: the answer arrives as a cluster
+        // update and redraws the list by the usual road.
+        viewModelScope.launch(Dispatchers.IO) {
+            runCatching { NativeBridge.refreshCluster() }
+                .onFailure { android.util.Log.d(TAG, "cluster not refreshed: ${describe(it)}") }
+        }
         if (!container.webApi.isReady) {
             _devices.value = _devices.value.copy(
                 loading = false,
@@ -3191,10 +3198,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // transport command triggers, brought forward to where the failure is
         // actually noticed. Nothing is playing here or the wait would not have
         // failed, so there is no sound to interrupt.
-        android.util.Log.i(TAG, "engine did not answer, rebuilding the session")
+        android.util.Log.i(TAG, "engine did not answer, asking for a new session")
         withContext(Dispatchers.IO) {
-            runCatching { NativeBridge.reconnect() }
-                .onFailure { android.util.Log.w(TAG, "session not rebuilt: ${describe(it)}") }
+            runCatching { NativeBridge.reconnect(force = true) }
+                .onFailure { android.util.Log.w(TAG, "session not asked for: ${describe(it)}") }
         }
         return pollEngine()
     }
@@ -3214,8 +3221,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         true
     } ?: false
 
+    /**
+     * Whether the engine has given up on a session for now.
+     *
+     * Not merely "no session yet": the first handshake runs in the background
+     * and takes a moment, and that moment is what the poll above is for. This
+     * is the engine having tried and failed, after which the library is served
+     * from what is on the phone until a network comes back.
+     */
     private fun engineIsOffline(): Boolean =
-        runCatching { NativeBridge.isOffline }.getOrDefault(false)
+        runCatching { NativeBridge.isOffline && !NativeBridge.isConnecting }.getOrDefault(false)
 
     /** Full `Class: message` chain, for the log. */
     /**

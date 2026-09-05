@@ -333,26 +333,6 @@ fn lookup_track(track_id: &SpotifyId) -> Option<DownloadedTrack> {
     })
 }
 
-/// Whether there is anything downloaded at all.
-///
-/// The question the engine asks before deciding that a failed handshake is
-/// worth carrying on through. Stops at the first sidecar it finds rather than
-/// counting: a library of five thousand songs and one are the same answer.
-pub fn any() -> bool {
-    let Some(root) = root() else { return false };
-    let Ok(shards) = fs::read_dir(root.join("meta")) else {
-        return false;
-    };
-    for shard in shards.flatten() {
-        if let Ok(entries) = fs::read_dir(shard.path()) {
-            if entries.flatten().next().is_some() {
-                return true;
-            }
-        }
-    }
-    false
-}
-
 /// The lookup handed to `PlayerConfig` when the engine is built.
 pub fn lookup() -> DownloadLookup {
     Arc::new(lookup_track)

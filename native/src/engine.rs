@@ -8,7 +8,7 @@
 use jni::objects::{GlobalRef, JObject, JValue};
 use jni::JavaVM;
 use librespot_connect::{
-    ConnectConfig, LoadRequest, LoadRequestOptions, PlayingTrack, Spirc,
+    AdoptRequest, ConnectConfig, LoadRequest, LoadRequestOptions, PlayingTrack, Spirc,
 };
 use librespot_core::{
     authentication::Credentials, cache::Cache, config::DeviceType, config::SessionConfig,
@@ -29,23 +29,13 @@ use tokio::runtime::Runtime;
 pub(crate) static JAVA_VM: OnceCell<JavaVM> = OnceCell::new();
 static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
 static CONTEXT_INITIALIZED: AtomicBool = AtomicBool::new(false);
-/// Set when a transport command had to go around Spirc; see [`transport`].
+/// Set when the last handshake failed and nothing is being tried right now.
 ///
-/// The engine is still making sound at that point, but the Connect device is
-/// gone: the account has a stale idea of this phone, and nothing arriving from
-/// another client will be obeyed. Only a rebuild fixes that, and only the Kotlin
-/// side can decide when to do it, so this is a flag it can ask about rather than
-/// something acted on here.
-static SPIRC_LOST: AtomicBool = AtomicBool::new(false);
-
-/// Set while the engine is running with no session at all.
-///
-/// Different from [`SPIRC_LOST`], which means "there was a device and it went".
-/// This means there was never one, because the handshake could not be made —
-/// and the app went on anyway, playing what is already on the phone. Kept
-/// apart because the Kotlin side answers a lost device by rebuilding the
-/// session, which offline would be a repair attempt every thirty seconds for a
-/// network that is not there.
+/// Different from [`CONNECTED`], which is simply whether there is a device,
+/// and from [`RECONNECTING`], which means one is being made. This means the
+/// attempt was made and the network did not answer — and the app goes on
+/// anyway, playing what is already on the phone, until the next attempt or a
+/// network coming back.
 static OFFLINE: AtomicBool = AtomicBool::new(false);
 
 /// Whether the sink may make sound.
@@ -146,10 +136,23 @@ fn tune_fetching() {
         // a second of waiting on every track; half of one is still several
         // blocks at this size.
         read_ahead_before_playback: Duration::from_millis(500),
-        read_ahead_during_playback: Duration::from_secs(5),
-        prefetch_threshold_factor: 4.0,
-        // A block that has not arrived in fifteen seconds is not going to.
-        download_timeout: Duration::from_secs(15),
+        // How far past the decoder's position the reads themselves ask for,
+        // and how much the fetcher keeps in flight on its own while a track
+        // streams. Both were the crate's defaults, tuned for a desktop on a
+        // fixed line, where a request answers before the next one is due. A
+        // phone on a poor link is different: the fetcher kept one block in
+        // flight at a time, and with a full round trip between blocks the
+        // link delivered about a bitrate's worth and no more — the buffer sat
+        // at the edge of empty for the whole song and every hiccup was heard.
+        // Several requests pipelined hide the round trips, and a quarter of a
+        // minute in hand rides out the ones that stall.
+        read_ahead_during_playback: Duration::from_secs(15),
+        prefetch_threshold_factor: 12.0,
+        // A block that has not arrived in this long is not going to. Longer
+        // than the crate's fifteen seconds, because giving up is a reload from
+        // the current position, which on a network file is a seek that costs
+        // seconds of its own; a slow block is cheaper to wait for.
+        download_timeout: Duration::from_secs(25),
     });
 }
 
@@ -188,71 +191,153 @@ fn track_started(uri: &str) {
     }
 }
 
-/// Set while [`reconnect`] is between two bundles.
+/// Set while a session is being built; see [`reconnect`].
 ///
-/// Read without the engine lock, which is the point: the lock is held across a
-/// handshake and the questions asked during one must still be answerable.
+/// Read without the engine lock. A handshake used to be made *under* that lock,
+/// which froze every question asked of the engine for as long as the access
+/// point took to answer — on a weak signal, the whole app for ten seconds. The
+/// handshake now runs on the runtime, holding nothing, and this is how the
+/// rest of the engine knows one is in flight.
 static RECONNECTING: AtomicBool = AtomicBool::new(false);
+
+/// Whether there is a Connect device right now.
+///
+/// The one fact the rest of the engine reads before deciding who does a thing:
+/// with a device, loads and transport go through it so the account sees them;
+/// without one, they go straight to the player, and the device is told what
+/// it missed when it comes back. See [`adopt_now`].
+static CONNECTED: AtomicBool = AtomicBool::new(false);
+
+/// Whether the Connect device has been told what the player is on.
+///
+/// False after every load that went straight to the player — because there was
+/// no device, or the device did not answer — and true once the device has
+/// either loaded the track itself or adopted it. While it is false the device's
+/// idea of the queue is not the player's, so the app owns the advance at the
+/// end of a track; see [`is_offline`], which is what the Kotlin side reads.
+static SPIRC_KNOWS: AtomicBool = AtomicBool::new(false);
+
+/// Which Connect device is current, so a task ending late is told from one
+/// ending now. See the watcher spawned by [`install_device`].
+static DEVICE_GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// When the next connection attempt may be made, in [`uptime_ms`] terms.
+///
+/// Attempts that nobody forced wait longer each time they fail — five seconds,
+/// then ten, then twenty, up to two minutes — so a phone with no network is
+/// not handshaking on a loop. A network coming back, or the listener asking,
+/// is a reason to try at once; see [`reconnect`].
+static NEXT_ATTEMPT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static FAILED_ATTEMPTS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// The first wait after a failed attempt, doubled each time up to [`MAX_BACKOFF_MS`].
+const FIRST_BACKOFF_MS: u64 = 5_000;
+const MAX_BACKOFF_MS: u64 = 120_000;
+
+/// How long one handshake may take before it is called failed.
+///
+/// The access point resolves, connects with retries, authenticates, fetches a
+/// client token and a login5 token; on a poor link each step can stall, and
+/// librespot bounds none of them. Past this the attempt is abandoned and the
+/// next is scheduled, which is the difference between "connecting" and "hung".
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(45);
+
+/// How long a streamed load waits for a session before it goes to the network
+/// anyway. See `PlayerConfig::session_ready`.
+const SESSION_WAIT: Duration = Duration::from_secs(30);
+
+/// How long the Connect device is given to start loading a track it was handed.
+///
+/// A device whose task has died still accepts the message and nobody reads
+/// it; the account's keepalive takes up to eighty seconds to notice. Past this
+/// the track is loaded straight into the player and the device is rebuilt.
+/// Longer than the longest bounded wait in the device's own loop, so a loop
+/// that was merely busy telling the account something is not mistaken for a
+/// dead one.
+const LOAD_ACK: Duration = Duration::from_millis(2_500);
+
+/// Tells the player's loader when it may ask the network; see [`session_ready`].
+static SESSION_UP: OnceCell<tokio::sync::watch::Sender<bool>> = OnceCell::new();
+
+/// What the player reported last, kept for [`adopt_now`].
+///
+/// The device that adopts a track has to describe it as the player's own load:
+/// the id the player gave that load, where it is, how long it is. All of it
+/// arrives as events and is kept here by the forwarder.
+static CURRENT_PLAY_REQUEST_ID: std::sync::atomic::AtomicU64 =
+    std::sync::atomic::AtomicU64::new(0);
+static CURRENT_POSITION_MS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+static CURRENT_DURATION_MS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+
+/// A load handed to the Connect device and not yet seen to start.
+///
+/// `(sequence, uri)`: the watchdog spawned by [`load_queue`] checks that the
+/// same load is still pending when its time is up, so a later load does not
+/// have an earlier one's watchdog fire on it.
+static LOAD_EXPECT: Mutex<Option<(u64, String)>> = Mutex::new(None);
+static LOAD_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+/// What the `session` event tells the Kotlin side.
+pub const SESSION_FAILED: i64 = 0;
+pub const SESSION_CONNECTED: i64 = 1;
+pub const SESSION_PREMIUM_REQUIRED: i64 = 2;
 
 pub fn store_java_vm(vm: JavaVM) {
     let _ = JAVA_VM.set(vm);
 }
 
-/// The parts that outlive a reconnection.
+/// The engine: one runtime, one mixer, one player, and whichever session and
+/// Connect device are current.
 ///
-/// Split from [`Bundle`] because losing the network costs the session, and
-/// getting it back means building another one: librespot hands out the Spirc
-/// builder once per session, so nothing short of a new session brings the
-/// Connect device back. The two things that must *not* be rebuilt are here.
+/// The player lives as long as the engine, and that is the whole design. It
+/// used to be thrown away with every session — librespot binds a player to
+/// the session it streams through, and a session that has lost its connection
+/// cannot be reconnected — so every network drop was also a stop, and every
+/// repair a second of silence and a queue to hand over again. The player now
+/// keeps going across all of it: a session is swapped underneath it with
+/// [`Player::set_session`], the track it is decoding finishes on the fetcher
+/// it already has, and the next load uses the new session. A downloaded track
+/// never notices the network at all.
 ///
-/// The runtime is one of them. Dropping it means `shutdown_timeout` from a JNI
-/// thread while librespot's own threads are still inside it, and that aborted
-/// the process on a destroyed mutex. The audio output is the other: it belongs
-/// to the Android service, not to any session, and clearing it mid-life is the
-/// second half of the same crash. Neither is touched by [`reconnect`].
+/// The runtime and the audio output are here for the reason they always were:
+/// dropping the runtime from a JNI thread while librespot's own threads are
+/// inside it aborted the process, and the output belongs to the Android
+/// service, not to any session.
 pub struct Engine {
     rt: Runtime,
     mixer: Arc<SoftMixer>,
-    /// Everything needed to build another [`Bundle`], kept so a reconnection
+    /// Everything needed to build another session, kept so a reconnection
     /// needs nothing from the Kotlin side.
     recipe: Recipe,
     /// Where player events go. Owned here so the pump thread, and with it the
-    /// listener reference, lives as long as the engine rather than as long as
-    /// any one player.
+    /// listener reference, lives as long as the engine.
     events_tx: std::sync::mpsc::Sender<Pump>,
-    /// `None` only while [`reconnect`] is between two of them.
-    bundle: Option<Bundle>,
-}
-
-/// Session, player and Connect device: one network lifetime, thrown away whole.
-struct Bundle {
-    session: Session,
+    /// The one player; see the type's note.
     player: Arc<Player>,
-    /// The Connect device. Every transport command goes through it; see [`load`].
-    ///
-    /// `None` for an offline bundle: with no connection there is no device to
-    /// register, no account to publish state to, and nothing on the other end
-    /// of a command. The player is still there, and a downloaded track still
-    /// plays through it — which is the whole of what offline means here.
+    /// The session the player streams through. Replaced whole by a
+    /// reconnection; never connected at all until the first handshake lands.
+    session: Session,
+    /// The Connect device, when there is one. `None` while the first handshake
+    /// is being made, after a session has died, and when the network is gone.
     spirc: Option<Spirc>,
 }
 
-impl Bundle {
+impl Engine {
     /// The Connect device, or the error a command on a missing one becomes.
     ///
-    /// Every transport call goes through this rather than testing for offline
-    /// first: the callers already handle a Spirc that refuses — that is what a
-    /// lost device looks like — and refusing is exactly the right answer when
-    /// there is no device at all. See [`transport`], which then goes straight
-    /// to the player.
+    /// Every transport call goes through this rather than testing for a device
+    /// first: the callers already handle a device that refuses — that is what a
+    /// lost one looks like — and refusing is exactly the right answer when there
+    /// is no device at all. See [`transport`], which then goes straight to the
+    /// player.
     fn spirc(&self) -> Result<&Spirc, librespot_core::Error> {
         self.spirc
             .as_ref()
-            .ok_or_else(|| librespot_core::Error::unavailable("no connect device: offline"))
+            .ok_or_else(|| librespot_core::Error::unavailable("no connect device"))
     }
 }
 
-/// The inputs to a [`Bundle`], all of them cheap to clone.
+/// The inputs to a session, all of them cheap to clone.
 struct Recipe {
     session_config: SessionConfig,
     player_config: PlayerConfig,
@@ -268,7 +353,7 @@ struct Recipe {
 
 /// What the event pump reads.
 ///
-/// Events are the reason it exists; the session arrives with every new bundle,
+/// Events are the reason it exists; the session arrives with every new one,
 /// because listening history is reported through the session and the pump holds
 /// one for the life of the engine.
 enum Pump {
@@ -277,7 +362,7 @@ enum Pump {
     /// Something changed on another of the account's devices; see `remote`.
     Cluster,
     /// Something the app wants said to Kotlin that did not come from the
-    /// player — download progress, so far.
+    /// player — download progress, and whether a session could be made.
     ///
     /// Carried on this channel rather than one of its own because the listener
     /// and the permanent JVM attachment are both here. A second thread saying
@@ -301,28 +386,15 @@ fn with_engine<T>(f: impl FnOnce(&Engine) -> T) -> EngineResult<T> {
     Ok(f(engine))
 }
 
-/// Borrow the current session, player and Connect device together.
-///
-/// Separate from [`with_engine`] because these three are replaced as a set: a
-/// caller holding one of them alongside a stale copy of another would be holding
-/// two different network lifetimes.
-fn with_bundle<T>(f: impl FnOnce(&Bundle) -> T) -> EngineResult<T> {
-    let guard = ENGINE.lock().map_err(|_| "engine mutex poisoned")?;
-    let engine = guard.as_ref().ok_or("engine not started")?;
-    let bundle = engine.bundle.as_ref().ok_or("engine is reconnecting")?;
-    Ok(f(bundle))
-}
-
 /// Borrow the authenticated session, e.g. to clone it for a catalogue request.
+///
+/// Before the first handshake lands this is a session that has never been
+/// connected, and a request on it fails the way it always did offline. The
+/// Kotlin side asks [`is_connected`] before it reads the catalogue.
 pub fn with_session<T>(f: impl FnOnce(&Session) -> T) -> EngineResult<T> {
-    with_bundle(|bundle| f(&bundle.session))
+    with_engine(|engine| f(&engine.session))
 }
 
-/// A handle to the engine's runtime.
-///
-/// Returned by value so callers can release the engine lock before blocking on
-/// a request; holding it across an await would serialise playback commands
-/// behind network I/O.
 /// A Web API access token minted for the session that is playing.
 ///
 /// The listener's own Web API application is a registration they make in
@@ -404,6 +476,11 @@ fn token_client_ids(session: &Session) -> Vec<String> {
     ids
 }
 
+/// A handle to the engine's runtime.
+///
+/// Returned by value so callers can release the engine lock before blocking on
+/// a request; holding it across an await would serialise playback commands
+/// behind network I/O.
 pub fn runtime_handle() -> EngineResult<tokio::runtime::Handle> {
     with_engine(|engine| engine.rt.handle().clone())
 }
@@ -441,8 +518,48 @@ pub fn init_android_context(context: &JObject) -> EngineResult<()> {
     Ok(())
 }
 
-/// Build the session and player, then authenticate with an OAuth access token
-/// obtained by the Kotlin side.
+/// What a streamed load waits for before it asks the network.
+///
+/// Handed to the player through `PlayerConfig::session_ready`. Resolves at once
+/// with the current session when there is a Connect device; otherwise waits
+/// for the handshake in flight, bounded by [`SESSION_WAIT`], and answers with
+/// whatever session the engine has by then — the connected one if the
+/// handshake landed, the placeholder if it did not, in which case the load
+/// fails the ordinary way and is retried by the player.
+fn session_ready() -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<Session>> + Send>> {
+    Box::pin(async {
+        if !CONNECTED.load(Ordering::SeqCst) {
+            if let Some(up) = SESSION_UP.get() {
+                let mut rx = up.subscribe();
+                let waited = tokio::time::timeout(SESSION_WAIT, async move {
+                    while !*rx.borrow_and_update() {
+                        if rx.changed().await.is_err() {
+                            break;
+                        }
+                    }
+                })
+                .await;
+                if waited.is_err() {
+                    log::warn!("no session after {SESSION_WAIT:?}; loading against what there is");
+                }
+            }
+        }
+        with_engine(|engine| engine.session.clone()).ok()
+    })
+}
+
+/// Build the runtime, the player and a session to hang it on, then connect.
+///
+/// Returns as soon as there is a player, which is at once: the handshake runs
+/// on the runtime and what it produces — a session and a Connect device — is
+/// installed when it lands, and announced to the Kotlin side as a `session`
+/// event. Music on the phone plays in the meantime, and music that has to be
+/// streamed waits for the session inside the loader; see [`session_ready`].
+///
+/// The one exception is a device that has never logged in. Then the only way
+/// in is the access token the caller just obtained, the caller is a login
+/// screen waiting for an answer, and there is nothing on the phone to play
+/// meanwhile — so that handshake is made here and its result returned.
 ///
 /// `listener` must implement `dev.lelonio.square.nativecore.NativeEvents`.
 pub fn start(
@@ -515,9 +632,7 @@ pub fn start(
     mixer.set_volume(u16::MAX);
 
     let player_config = PlayerConfig {
-        // Chosen by the caller. The bitrate is read when a track is loaded but
-        // the player owns its config for its whole life, so changing this means
-        // building a new engine: see PlaybackService.
+        // Chosen by the caller, and changed in place later; see set_quality.
         bitrate: match bitrate_kbps {
             96 => Bitrate::Bitrate96,
             160 => Bitrate::Bitrate160,
@@ -546,8 +661,7 @@ pub fn start(
         // How long one track dissolves into the next, chosen by the user. See
         // the patch notes in native/vendor/README.md: the player asks for the
         // next track a fade early and mixes the one going out underneath it.
-        // Fixed for the life of the player, like the bitrate, so the service
-        // builds a new engine when the setting changes.
+        // Changed in place later, like the bitrate; see set_quality.
         crossfade_duration_ms: crossfade_ms.max(0) as u32,
 
         // How the loader asks whether a track is already on the phone; see
@@ -555,6 +669,8 @@ pub fn start(
         // everything until a download root has been set, so there is no order
         // to get right between this and the Kotlin side setting one up.
         download_lookup: Some(crate::downloads::lookup()),
+        // What a streamed load waits for; see session_ready.
+        session_ready: Some(Arc::new(session_ready)),
         ..PlayerConfig::default()
     };
 
@@ -564,9 +680,10 @@ pub fn start(
     // what it decodes. That is why nothing appeared in the history before this
     // existed.
     //
-    // It owns the player from here on. Driving the player directly as well would
-    // play audio the published state knows nothing about, so every transport
-    // command below goes through the Spirc handle instead.
+    // It drives the player whenever it is there. Driving the player directly as
+    // well would play audio the published state knows nothing about, so every
+    // transport command below goes through the Spirc handle when there is one —
+    // and tells the device what it missed when there was not; see adopt_now.
     let connect_config = ConnectConfig {
         name: device_name.to_string(),
         // Smartphone rather than the librespot default of Speaker: the icon in
@@ -587,10 +704,9 @@ pub fn start(
         cache_dir: cache_dir.to_string(),
     };
 
-    // Started before the first bundle, and outliving every one of them: the pump
-    // owns the listener reference, and that must be dropped on a thread still
-    // attached to the JVM. Tying it to a player would mean dropping it whenever
-    // a reconnection replaced one.
+    // Started before anything else and outliving every session: the pump owns
+    // the listener reference, and that must be dropped on a thread still
+    // attached to the JVM.
     let (events_tx, events_rx) = std::sync::mpsc::channel();
     spawn_event_pump(
         events_rx,
@@ -599,65 +715,118 @@ pub fn start(
         cache_dir.to_string(),
     );
 
-    // The handshake, and what to do when it cannot be made.
-    //
-    // A failure here used to be the end of the app: no session, no player, no
-    // sound, whatever was already on the phone. With downloads that is the
-    // wrong answer — the music is right there — so a failed connection falls
-    // back to a session that was never connected and a player that only ever
-    // reads from disk. See `build_offline_bundle`.
-    //
-    // A refused account is not covered: that is Spotify saying no, not the
-    // network being absent, and starting anyway would hide it behind an app
-    // that plays a few downloaded songs and explains nothing.
-    let bundle = match build_bundle(&rt, &recipe, &mixer, &events_tx) {
-        Ok(bundle) => {
-            OFFLINE.store(false, Ordering::SeqCst);
-            bundle
-        }
-        Err(e) if e == PREMIUM_REQUIRED => return Err(e),
-        Err(e) if crate::downloads::any() => {
-            log::warn!("{e}; starting offline with what is on the phone");
-            OFFLINE.store(true, Ordering::SeqCst);
-            build_offline_bundle(&rt, &recipe, &mixer, &events_tx)?
-        }
-        Err(e) => return Err(e),
+    let up = SESSION_UP.get_or_init(|| tokio::sync::watch::channel(false).0);
+    let _ = up.send(false);
+    CONNECTED.store(false, Ordering::SeqCst);
+    SPIRC_KNOWS.store(false, Ordering::SeqCst);
+    OFFLINE.store(false, Ordering::SeqCst);
+    FAILED_ATTEMPTS.store(0, Ordering::SeqCst);
+    NEXT_ATTEMPT_MS.store(0, Ordering::SeqCst);
+
+    sweep_stale_downloads(cache_dir);
+
+    // Taken before anything can report against it, and before the player
+    // exists: the sink the player builds carries this number, which is what
+    // keeps a replaced player's last packets out of the new one's output. One
+    // player now lives for the whole engine, so this only ever moves at
+    // shutdown — but the sink still asks.
+    let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+
+    // The player, over a session that has not been connected and may never
+    // be. `Session::new` registers tasks of its own the moment it is built,
+    // and off a runtime thread that is a panic, so it is built inside one.
+    let (session, player) = {
+        let _runtime = rt.enter();
+        let session = new_session(&recipe)?;
+        let player = Player::new(
+            recipe.player_config.clone(),
+            session.clone(),
+            mixer.get_soft_volume(),
+            move || Box::new(crate::sink::AndroidSink::new(AudioFormat::S16, generation)),
+        );
+        (session, player)
     };
+    spawn_event_forwarder(&rt, player.clone(), events_tx.clone(), generation);
+    // Listens are tracked from the first note, whatever the network is doing;
+    // the reporting is pointed at the connected session when there is one.
+    let _ = events_tx.send(Pump::Session(session.clone()));
+
+    // Whether this device has been in before. A kept credential is one the
+    // access point issued to it, so a failure with it is the network's; a
+    // device with only a token is a login screen waiting for an answer.
+    let has_kept = kept_credentials(&recipe).is_some();
 
     *guard = Some(Engine {
         rt,
         mixer,
         recipe,
         events_tx,
-        bundle: Some(bundle),
+        player,
+        session,
+        spirc: None,
     });
-    Ok(())
+    drop(guard);
+
+    if has_kept {
+        log::info!("player ready; connecting in the background");
+        reconnect(true)
+    } else {
+        log::info!("first login; connecting before answering");
+        RECONNECTING.store(true, Ordering::SeqCst);
+        let handle = runtime_handle()?;
+        let outcome = handle.block_on(connect_attempt());
+        match outcome {
+            Ok(()) => Ok(()),
+            Err(e) => {
+                // Nothing to keep: a device that has never been in has
+                // nothing on the phone either, and the caller starts again.
+                shutdown();
+                Err(e)
+            }
+        }
+    }
 }
 
-/// Builds a session, a player and a Connect device, and wires them to the pump.
+/// Where a reusable credential is kept, apart from librespot's own cache.
 ///
-/// Everything here is disposable. It runs on the caller's thread and blocks on
-/// the handshake, so it is only ever reached from a JNI call the Kotlin side
-/// makes off the main thread.
-fn build_bundle(
-    rt: &Runtime,
-    recipe: &Recipe,
-    mixer: &Arc<SoftMixer>,
-    events_tx: &std::sync::mpsc::Sender<Pump>,
-) -> EngineResult<Bundle> {
-    // A credentials cache is not an optimisation here, it is required for
-    // catalogue access. `connect` persists reusable credentials into it, and
-    // login5 then issues the access point's HTTP token as a *stored credential*
-    // request, which it signs with the session's client id. Without a cache it
-    // falls back to the platform default id instead, which no longer matches the
-    // id the OAuth token was minted for, and every spclient call fails with
-    // "Login request was denied: BAD_REQUEST".
-    //
-    // Bounded, and swept before it is opened: an audio cache with no limit had
-    // grown past a gigabyte on the test phone, and the half-finished downloads
-    // librespot writes next to it — one temporary file per interrupted load, and
-    // skipping interrupts a lot of loads — were never collected at all.
-    sweep_stale_downloads(&recipe.cache_dir);
+/// The credential the access point issued the first time this device logged
+/// in. It is the difference between a session that lasts and one that has to
+/// be renewed: an OAuth access token is good for an hour, and the refresh token
+/// behind it is rotated on every use and revoked on the first mistake, so an
+/// engine that needs one at every launch is one bad refresh away from asking
+/// the listener to sign in again. The blob the handshake answers with has
+/// neither property: it is what go-librespot writes to `credentials.json` and
+/// then reuses forever, and it is why signing in there is something you do
+/// once. Kept apart from librespot's own credentials file because that file is
+/// written by the connection itself, and what has to survive is the copy
+/// nothing else touches.
+fn kept_cache(recipe: &Recipe) -> EngineResult<Cache> {
+    Cache::new(
+        Some(&std::path::Path::new(&recipe.credentials_dir).join("reusable")),
+        None,
+        None,
+        None,
+    )
+    .map_err(|e| format!("cache failed: {e}"))
+}
+
+fn kept_credentials(recipe: &Recipe) -> Option<Credentials> {
+    kept_cache(recipe).ok().and_then(|cache| cache.credentials())
+}
+
+/// A session over the engine's cache, not yet connected.
+///
+/// A credentials cache is not an optimisation here, it is required for
+/// catalogue access. `connect` persists reusable credentials into it, and
+/// login5 then issues the access point's HTTP token as a *stored credential*
+/// request, which it signs with the session's client id. Without a cache it
+/// falls back to the platform default id instead, which no longer matches the
+/// id the OAuth token was minted for, and every spclient call fails with
+/// "Login request was denied: BAD_REQUEST".
+///
+/// Bounded: an audio cache with no limit had grown past a gigabyte on the test
+/// phone.
+fn new_session(recipe: &Recipe) -> EngineResult<Session> {
     let cache = Cache::new(
         Some(std::path::Path::new(&recipe.credentials_dir)),
         None,
@@ -665,45 +834,81 @@ fn build_bundle(
         Some(AUDIO_CACHE_LIMIT),
     )
     .map_err(|e| format!("cache failed: {e}"))?;
+    Ok(Session::new(recipe.session_config.clone(), Some(cache)))
+}
 
-    // Taken before anything can report against it, and before the player exists:
-    // the sink each player builds carries this number, which is what keeps a
-    // replaced player's last packets out of the new one's output.
-    //
-    // A discarded session does not fall silent the moment it is replaced. Its
-    // Spirc task ends a little later, and it ends the same way a lost one does;
-    // without a number to check, that tidy ending would land on the bundle that
-    // replaced it and mark a device that is perfectly alive as gone.
-    let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+/// Makes a session and a Connect device over the engine's player, and installs
+/// them.
+///
+/// Runs on the runtime, holding no lock across anything that waits. Every
+/// question asked of the engine meanwhile is answered from what it has: the
+/// player, the placeholder session, no device.
+///
+/// Both sides of the outcome are announced as a `session` event, because the
+/// caller that started this is long gone: it either returned at once or is
+/// blocking on this future with nothing else to do.
+async fn connect_attempt() -> EngineResult<()> {
+    let outcome = tokio::time::timeout(CONNECT_TIMEOUT, build_device())
+        .await
+        .unwrap_or_else(|_| Err("the handshake took too long".to_string()));
 
-    // Cloned before the async block takes ownership of the Arc as a `dyn Mixer`.
-    let mixer_for_spirc: Arc<dyn Mixer> = mixer.clone();
-    let session_config = recipe.session_config.clone();
-    let player_config = recipe.player_config.clone();
-    let connect_config = recipe.connect_config.clone();
+    match outcome {
+        Ok((session, spirc, spirc_task)) => {
+            install_device(session, spirc, spirc_task)?;
+            RECONNECTING.store(false, Ordering::SeqCst);
+            FAILED_ATTEMPTS.store(0, Ordering::SeqCst);
+            log::info!("connected");
+            emit_app("session", "", SESSION_CONNECTED);
+            Ok(())
+        }
+        Err(e) if e == PREMIUM_REQUIRED => {
+            RECONNECTING.store(false, Ordering::SeqCst);
+            OFFLINE.store(true, Ordering::SeqCst);
+            emit_app("session", "", SESSION_PREMIUM_REQUIRED);
+            Err(e)
+        }
+        Err(e) => {
+            // Nothing to stream through, and nothing left in flight. Whatever
+            // is on the phone plays on; the next attempt is scheduled below,
+            // and a network coming back brings one forward.
+            let failures = FAILED_ATTEMPTS.fetch_add(1, Ordering::SeqCst) + 1;
+            let backoff = (FIRST_BACKOFF_MS << (failures - 1).min(5)).min(MAX_BACKOFF_MS);
+            NEXT_ATTEMPT_MS.store(uptime_ms() + backoff, Ordering::SeqCst);
+            RECONNECTING.store(false, Ordering::SeqCst);
+            OFFLINE.store(true, Ordering::SeqCst);
+            log::warn!("{e}; playing what is on the phone, trying again in {backoff} ms");
+            emit_app("session", "", SESSION_FAILED);
+            if let Ok(handle) = runtime_handle() {
+                handle.spawn(async move {
+                    tokio::time::sleep(Duration::from_millis(backoff)).await;
+                    let _ = reconnect(false);
+                });
+            }
+            Err(e)
+        }
+    }
+}
 
-    // The credential the access point issued the first time this device logged
-    // in, kept in a directory of its own.
-    //
-    // It is the difference between a session that lasts and one that has to be
-    // renewed. An OAuth access token is good for an hour, and the refresh token
-    // behind it is rotated on every use and revoked on the first mistake, so an
-    // engine that needs one at every launch is one bad refresh away from asking
-    // the listener to sign in again. The blob the handshake answers with has
-    // neither property: it is what go-librespot writes to `credentials.json` and
-    // then reuses forever, and it is why signing in there is something you do
-    // once.
-    //
-    // Kept apart from librespot's own credentials file because that file is
-    // written by the connection itself, and what has to survive is the copy
-    // nothing else touches.
-    let kept = Cache::new(
-        Some(&std::path::Path::new(&recipe.credentials_dir).join("reusable")),
-        None,
-        None,
-        None,
-    )
-    .map_err(|e| format!("cache failed: {e}"))?;
+/// The handshake itself: a session connected with the credentials this device
+/// has, and a Connect device over the engine's player.
+async fn build_device() -> EngineResult<(Session, Spirc, impl std::future::Future<Output = ()>)> {
+    let (recipe, mixer, player, events_tx) = with_engine(|engine| {
+        (
+            Recipe {
+                session_config: engine.recipe.session_config.clone(),
+                player_config: engine.recipe.player_config.clone(),
+                connect_config: engine.recipe.connect_config.clone(),
+                credentials: engine.recipe.credentials.clone(),
+                credentials_dir: engine.recipe.credentials_dir.clone(),
+                cache_dir: engine.recipe.cache_dir.clone(),
+            },
+            engine.mixer.clone(),
+            engine.player.clone(),
+            engine.events_tx.clone(),
+        )
+    })?;
+
+    let kept = kept_cache(&recipe)?;
 
     // The kept credential first, the token second. A token is only ever the way
     // in for a device that has never been in.
@@ -717,117 +922,139 @@ fn build_bundle(
         return Err("no credentials".into());
     }
 
-    // The account's other devices, watched over the same dealer.
-    //
-    // Subscribed before the session connects, which is the whole point of doing
-    // it here rather than after the device is built: Spotify pushes a cluster
-    // update when this device appears, and that push is the only one that
-    // arrives without something changing later. Subscribing afterwards meant
-    // opening the app next to a speaker that was already playing and being told
-    // nothing until the speaker's track ended.
-    let watch_tx = events_tx.clone();
+    let mixer_for_spirc: Arc<dyn Mixer> = mixer;
+    let last = attempts.len() - 1;
+    let mut failure = String::new();
 
-    let (session, player, spirc, spirc_task) = rt.block_on(async move {
-        let last = attempts.len() - 1;
-        let mut failure = String::new();
-
-        for (n, (kind, credentials)) in attempts.into_iter().enumerate() {
-            log::info!("logging in with {kind}");
-            // Seed the cache, then hand the cached copy to `connect` with
-            // storing switched off. Letting `connect` store instead would
-            // overwrite the cache with the handshake's own blob, and what is in
-            // the cache is what gets sent as the stored credential when login5
-            // issues the access point's HTTP token.
-            let cache = cache.clone();
+    for (n, (kind, credentials)) in attempts.into_iter().enumerate() {
+        log::info!("logging in with {kind}");
+        // Seed the cache, then hand the cached copy to `connect` with storing
+        // switched off. Letting `connect` store instead would overwrite the
+        // cache with the handshake's own blob, and what is in the cache is what
+        // gets sent as the stored credential when login5 issues the access
+        // point's HTTP token.
+        let session = new_session(&recipe)?;
+        if let Some(cache) = session.cache() {
             cache.save_credentials(&credentials);
-            let session = Session::new(session_config.clone(), Some(cache));
-
-            let watch_tx = watch_tx.clone();
-            crate::remote::watch(&session, move || {
-                let _ = watch_tx.send(Pump::Cluster);
-            });
-
-            // No `session.connect` here: `Spirc::new` registers its dealer
-            // listeners and then connects the session itself. Connecting first
-            // authenticated twice and left the second attempt reporting
-            // "Session is not connected", which is what this looked like from
-            // the outside.
-
-            // Read per attempt: the getter is a box the player takes, so one
-            // made in advance would be gone by the second time round.
-            let player = Player::new(
-                player_config.clone(),
-                session.clone(),
-                mixer.get_soft_volume(),
-                move || Box::new(crate::sink::AndroidSink::new(AudioFormat::S16, generation)),
-            );
-
-            let connected = Spirc::new(
-                connect_config.clone(),
-                session.clone(),
-                credentials.clone(),
-                player.clone(),
-                mixer_for_spirc.clone(),
-            )
-            .await;
-
-            let (spirc, spirc_task) = match connected {
-                Ok(pair) => pair,
-                Err(e) => {
-                    session.shutdown();
-                    failure = format!("connect failed: {e}");
-                    // A kept credential the account no longer honours — the
-                    // password changed, the device was removed from the list —
-                    // is a dead end, not a reason to stop: it is thrown away so
-                    // the token behind it gets its turn, and so the next launch
-                    // does not try it again.
-                    if n < last {
-                        log::warn!("{failure}, trying the next credential");
-                        let _ = std::fs::remove_dir_all(
-                            std::path::Path::new(&recipe.credentials_dir).join("reusable"),
-                        );
-                        continue;
-                    }
-                    return Err(failure);
-                }
-            };
-
-            // Spirc connects with credential storing switched on, so the cache
-            // now holds the blob the access point answered with. That is the
-            // one worth keeping, and the seed goes back into the cache after it
-            // is taken: login5 signs its stored-credential request with the
-            // session's client id, and the pair that is known to agree is the
-            // one this session actually logged in with.
-            if let Some(cache) = session.cache() {
-                if let Some(reusable) = cache.credentials() {
-                    kept.save_credentials(&reusable);
-                }
-                cache.save_credentials(&credentials);
-            }
-
-            // Checked here rather than left to the library. The vendored
-            // librespot-core used to call exit(1) on a non-premium account,
-            // which took the app's process down and left Android restarting the
-            // service in a loop; it now only logs, so the refusal has to be
-            // made an error the caller can show.
-            if let Some(account_type) = session.get_user_attribute("type") {
-                if account_type != "premium" {
-                    session.shutdown();
-                    return Err(PREMIUM_REQUIRED.to_string());
-                }
-            }
-
-            return Ok::<_, String>((session, player, spirc, spirc_task));
         }
 
-        Err(failure)
-    })?;
+        // The account's other devices, watched over the same dealer.
+        //
+        // Subscribed before the session connects, which is the whole point of
+        // doing it here: Spotify pushes a cluster update when this device
+        // appears, and that push is the only one that arrives without something
+        // changing later. Subscribing afterwards meant opening the app next to
+        // a speaker that was already playing and being told nothing until the
+        // speaker's track ended.
+        let watch_tx = events_tx.clone();
+        crate::remote::watch(&session, move || {
+            let _ = watch_tx.send(Pump::Cluster);
+        });
 
-    // The event loop runs for the life of the bundle: it is what answers the
+        // No `session.connect` here: `Spirc::new` registers its dealer
+        // listeners and then connects the session itself. Connecting first
+        // authenticated twice and left the second attempt reporting "Session
+        // is not connected", which is what this looked like from the outside.
+        let connected = Spirc::new(
+            recipe.connect_config.clone(),
+            session.clone(),
+            credentials.clone(),
+            player.clone(),
+            mixer_for_spirc.clone(),
+        )
+        .await;
+
+        let (spirc, spirc_task) = match connected {
+            Ok(pair) => pair,
+            Err(e) => {
+                session.shutdown();
+                failure = format!("connect failed: {e}");
+                // A kept credential the account no longer honours — the
+                // password changed, the device was removed from the list — is a
+                // dead end, not a reason to stop: it is thrown away so the token
+                // behind it gets its turn, and so the next launch does not try
+                // it again.
+                if n < last {
+                    log::warn!("{failure}, trying the next credential");
+                    let _ = std::fs::remove_dir_all(
+                        std::path::Path::new(&recipe.credentials_dir).join("reusable"),
+                    );
+                    continue;
+                }
+                return Err(failure);
+            }
+        };
+
+        // Spirc connects with credential storing switched on, so the cache now
+        // holds the blob the access point answered with. That is the one worth
+        // keeping, and the seed goes back into the cache after it is taken:
+        // login5 signs its stored-credential request with the session's client
+        // id, and the pair that is known to agree is the one this session
+        // actually logged in with.
+        if let Some(cache) = session.cache() {
+            if let Some(reusable) = cache.credentials() {
+                kept.save_credentials(&reusable);
+            }
+            cache.save_credentials(&credentials);
+        }
+
+        // Checked here rather than left to the library. The vendored
+        // librespot-core used to call exit(1) on a non-premium account, which
+        // took the app's process down and left Android restarting the service
+        // in a loop; it now only logs, so the refusal has to be made an error
+        // the caller can show.
+        if let Some(account_type) = session.get_user_attribute("type") {
+            if account_type != "premium" {
+                session.shutdown();
+                return Err(PREMIUM_REQUIRED.to_string());
+            }
+        }
+
+        return Ok((session, spirc, spirc_task));
+    }
+
+    Err(failure)
+}
+
+/// Puts a freshly connected session and device into the engine.
+///
+/// The player is told about the session first, so the next load streams
+/// through it; the device is then told what the player is already on, if it is
+/// on anything, so the account catches up without the music restarting.
+fn install_device(
+    session: Session,
+    spirc: Spirc,
+    spirc_task: impl std::future::Future<Output = ()> + Send + 'static,
+) -> EngineResult<()> {
+    let generation = DEVICE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
+
+    // The account's picture of every device, whenever a state update brings
+    // one back. The dealer pushes the same thing when something changes
+    // elsewhere; this is for the pushes that are missed.
+    let listener_tx = with_engine(|engine| engine.events_tx.clone())?;
+    spirc.set_cluster_listener(Some(Arc::new(move |cluster| {
+        crate::remote::set_cluster(cluster);
+        let _ = listener_tx.send(Pump::Cluster);
+    })));
+
+    let (handle, events_tx) = {
+        let mut guard = ENGINE.lock().map_err(|_| "engine mutex poisoned")?;
+        let engine = guard.as_mut().ok_or("engine not started")?;
+        engine.player.set_session(session.clone());
+        // The device that was there is gone, whatever it was doing.
+        if let Some(old) = engine.spirc.take() {
+            old.set_cluster_listener(None);
+        }
+        engine.session = session.clone();
+        engine.spirc = Some(spirc);
+        (engine.rt.handle().clone(), engine.events_tx.clone())
+    };
+
+    // The event loop runs for the life of the device: it is what answers the
     // dealer, so without it the device appears once and then goes stale.
-    rt.spawn(async move {
+    handle.spawn(async move {
         spirc_task.await;
-        if GENERATION.load(Ordering::SeqCst) != generation {
+        if DEVICE_GENERATION.load(Ordering::SeqCst) != generation {
             log::info!("connect device {generation} stopped, already replaced");
             return;
         }
@@ -835,101 +1062,62 @@ fn build_bundle(
         //
         // Not a failed command, which is what this used to key off and why the
         // repair never fired: when the task ends, its channel still accepts
-        // messages and nobody reads them. A load sent afterwards returns Ok,
-        // nothing loads, and the previous track plays on. Watching the task
-        // itself is the only signal that does not depend on being lucky enough
-        // to get an error back.
+        // messages and nobody reads them. Watching the task itself is the only
+        // signal that does not depend on being lucky enough to get an error
+        // back. The music is not touched: whatever the player is on, it stays
+        // on, and the queue is the app's to advance until a new device has
+        // adopted it.
         log::info!("connect device stopped");
-        SPIRC_LOST.store(true, Ordering::SeqCst);
+        device_lost();
+        let _ = reconnect(false);
     });
 
     // The pump reports listening history through the session, so it is told
     // about this one before any of its events can arrive.
-    let _ = events_tx.send(Pump::Session(session.clone()));
-    spawn_event_forwarder(rt, player.clone(), events_tx.clone(), generation);
+    let _ = events_tx.send(Pump::Session(session));
 
-    // A fresh bundle has a live Connect device again, whatever the last one
-    // ended up as.
-    SPIRC_LOST.store(false, Ordering::SeqCst);
-
-    Ok(Bundle {
-        session,
-        player,
-        spirc: Some(spirc),
-    })
+    OFFLINE.store(false, Ordering::SeqCst);
+    SPIRC_KNOWS.store(false, Ordering::SeqCst);
+    CONNECTED.store(true, Ordering::SeqCst);
+    if let Some(up) = SESSION_UP.get() {
+        let _ = up.send(true);
+    }
+    // What the player is on, if anything, is described to the new device as
+    // soon as it is listening; see the forwarder, which tries on every tick.
+    let _ = adopt_now();
+    Ok(())
 }
 
-/// Builds a player with no session behind it.
-///
-/// The `Session` is constructed and never connected. That is not a trick: the
-/// only thing the loader asks a session for is a track's metadata, its audio
-/// key and its bytes, and a downloaded track needs none of the three — the
-/// branch that finds it on disk returns before any of them is reached (see
-/// `load_downloaded_track` in player.rs). A track that is *not* downloaded
-/// simply fails to load, which is exactly what should happen.
-///
-/// No Spirc, and that is the whole difference. Without an account to publish to
-/// there is no Connect device, so nothing advances the queue on its own: the
-/// app drives it, one track at a time, through [`local_load`].
-fn build_offline_bundle(
-    rt: &Runtime,
-    recipe: &Recipe,
-    mixer: &Arc<SoftMixer>,
-    events_tx: &std::sync::mpsc::Sender<Pump>,
-) -> EngineResult<Bundle> {
-    let cache = Cache::new(
-        Some(std::path::Path::new(&recipe.credentials_dir)),
-        None,
-        Some(std::path::Path::new(&recipe.cache_dir)),
-        Some(AUDIO_CACHE_LIMIT),
-    )
-    .map_err(|e| format!("cache failed: {e}"))?;
-
-    let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
-
-    // Inside the runtime, not beside it. `Session::new` registers tasks of its
-    // own the moment it is built, and off a runtime thread that is not an error
-    // but a panic — which, taken while `start` holds the engine lock, poisons it
-    // and leaves every later call answering "engine mutex poisoned". The online
-    // path never hit this because it does all of its building inside a
-    // `block_on`; this one has nothing to await, so it has to say so.
-    let _runtime = rt.enter();
-
-    let session = Session::new(recipe.session_config.clone(), Some(cache));
-    let player = Player::new(
-        recipe.player_config.clone(),
-        session.clone(),
-        mixer.get_soft_volume(),
-        move || Box::new(crate::sink::AndroidSink::new(AudioFormat::S16, generation)),
-    );
-
-    // No `Pump::Session`: history is reported over the session, and this one
-    // cannot carry anything. What was heard offline is kept by the app and
-    // sent when there is a connection again.
-    spawn_event_forwarder(rt, player.clone(), events_tx.clone(), generation);
-    SPIRC_LOST.store(false, Ordering::SeqCst);
-
-    Ok(Bundle {
-        session,
-        player,
-        spirc: None,
-    })
+/// Notes that the Connect device is gone, without touching the player.
+fn device_lost() {
+    CONNECTED.store(false, Ordering::SeqCst);
+    SPIRC_KNOWS.store(false, Ordering::SeqCst);
+    if let Some(up) = SESSION_UP.get() {
+        let _ = up.send(false);
+    }
 }
 
-/// Which bundle is current. See the note where it is taken.
+/// Which player the sink belongs to.
+///
+/// There is one player for the life of the engine now, so this moves only at
+/// shutdown — but the sink still asks, because a player that has been told to
+/// stop does not fall silent at once: its playback thread finishes the packets
+/// it already holds, and there is one AudioTrack for the whole app. Without
+/// the check those packets came out after everything else had gone.
 static GENERATION: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
-/// The current bundle's number, for anything holding an older one.
+/// The live player's number, for a sink that belongs to an older one.
 pub(crate) fn live_generation() -> u64 {
     GENERATION.load(Ordering::SeqCst)
 }
 
-/// Feeds one player's events to the engine-wide pump, and preloads ahead of it.
+/// Feeds the player's events to the engine-wide pump, keeps the bookkeeping the
+/// Connect device needs to adopt a track, and preloads ahead of it.
 ///
-/// Ends on its own when the player is dropped, which is what a reconnection does
-/// to it. The generation check is for the events already in flight at that
-/// moment: a dying player emits a `Stopped`, and delivered late that would tell
-/// Kotlin the new player had stopped before it started.
+/// Runs for the life of the player, which is the life of the engine. The
+/// generation check is for the events already in flight at shutdown: a dying
+/// player emits a `Stopped`, and delivered late that would tell Kotlin the
+/// engine had stopped before it was asked to.
 fn spawn_event_forwarder(
     rt: &Runtime,
     player: Arc<Player>,
@@ -947,9 +1135,30 @@ fn spawn_event_forwarder(
             }
 
             match &event {
-                PlayerEvent::Playing { .. } => LOCAL_PLAYING.store(true, Ordering::SeqCst),
-                PlayerEvent::Paused { .. } | PlayerEvent::Stopped { .. } => {
-                    LOCAL_PLAYING.store(false, Ordering::SeqCst)
+                PlayerEvent::Playing { position_ms, .. } => {
+                    LOCAL_PLAYING.store(true, Ordering::SeqCst);
+                    CURRENT_POSITION_MS.store(*position_ms, Ordering::SeqCst);
+                }
+                PlayerEvent::Paused { position_ms, .. } => {
+                    LOCAL_PLAYING.store(false, Ordering::SeqCst);
+                    CURRENT_POSITION_MS.store(*position_ms, Ordering::SeqCst);
+                }
+                PlayerEvent::Stopped { .. } => {
+                    LOCAL_PLAYING.store(false, Ordering::SeqCst);
+                    if let Ok(mut current) = CURRENT_URI.lock() {
+                        current.clear();
+                    }
+                }
+                PlayerEvent::PositionChanged { position_ms, .. }
+                | PlayerEvent::Seeked { position_ms, .. }
+                | PlayerEvent::PositionCorrection { position_ms, .. } => {
+                    CURRENT_POSITION_MS.store(*position_ms, Ordering::SeqCst);
+                }
+                PlayerEvent::PlayRequestIdChanged { play_request_id } => {
+                    CURRENT_PLAY_REQUEST_ID.store(*play_request_id, Ordering::SeqCst);
+                }
+                PlayerEvent::TrackChanged { audio_item } => {
+                    CURRENT_DURATION_MS.store(audio_item.duration_ms, Ordering::SeqCst);
                 }
                 _ => {}
             }
@@ -960,7 +1169,14 @@ fn spawn_event_forwarder(
             if let PlayerEvent::Loading { track_id, .. } | PlayerEvent::Playing { track_id, .. } =
                 &event
             {
-                track_started(&uri_string(track_id));
+                let uri = uri_string(track_id);
+                track_started(&uri);
+                // The Connect device answered the load it was handed.
+                if let Ok(mut expect) = LOAD_EXPECT.lock() {
+                    if expect.as_ref().is_some_and(|(_, wanted)| *wanted == uri) {
+                        *expect = None;
+                    }
+                }
             }
 
             // Warm up the next track — but not the instant this one starts.
@@ -983,6 +1199,12 @@ fn spawn_event_forwarder(
                     preload_after(&player, &uri);
                     preloaded = Some(uri);
                 }
+
+                // A device that came up after the track did, or a load that went
+                // past it: told now, once a second, until it has been told.
+                if CONNECTED.load(Ordering::SeqCst) && !SPIRC_KNOWS.load(Ordering::SeqCst) {
+                    let _ = adopt_now();
+                }
             }
 
             if events_tx.send(Pump::Event(event)).is_err() {
@@ -993,40 +1215,36 @@ fn spawn_event_forwarder(
     });
 }
 
-/// Changes what the player is built with, and builds it again.
+/// Changes what the player asks for, in place.
 ///
-/// The bitrate and the crossfade belong to the player's configuration, which is
-/// fixed for the life of a player, so a new value means a new player. That used
-/// to mean tearing the whole engine down from the Kotlin side, and that is the
-/// call that aborted the process on a destroyed mutex: the runtime cannot be
-/// dropped from a JNI thread while librespot's own threads are still inside it.
-///
-/// Replacing the bundle does the same job without touching the runtime or the
-/// audio output. The queue is not restored here; the caller owns that.
+/// The bitrate and the crossfade used to belong to a configuration fixed for
+/// the life of a player, so a new value meant a new player, which meant a new
+/// session — a second of silence and a Connect device to hand the queue to
+/// again. Both are now read live by the player (see the patch notes in
+/// native/vendor/README.md), so this is two messages and nothing rebuilt: what
+/// is playing keeps the file and the fade it started with, and the next track
+/// gets the new ones.
 pub fn set_quality(bitrate_kbps: i32, crossfade_ms: i32) -> EngineResult<()> {
-    {
-        let mut guard = ENGINE.lock().map_err(|_| "engine mutex poisoned")?;
-        let engine = guard.as_mut().ok_or("engine not started")?;
-        engine.recipe.player_config.bitrate = match bitrate_kbps {
-            96 => Bitrate::Bitrate96,
-            160 => Bitrate::Bitrate160,
-            _ => Bitrate::Bitrate320,
-        };
-        engine.recipe.player_config.crossfade_duration_ms = crossfade_ms.max(0) as u32;
-    }
-    reconnect()
+    let bitrate = match bitrate_kbps {
+        96 => Bitrate::Bitrate96,
+        160 => Bitrate::Bitrate160,
+        _ => Bitrate::Bitrate320,
+    };
+    let crossfade = crossfade_ms.max(0) as u32;
+    let mut guard = ENGINE.lock().map_err(|_| "engine mutex poisoned")?;
+    let engine = guard.as_mut().ok_or("engine not started")?;
+    engine.recipe.player_config.bitrate = bitrate;
+    engine.recipe.player_config.crossfade_duration_ms = crossfade;
+    engine.player.set_bitrate(bitrate);
+    engine.player.set_crossfade(crossfade);
+    Ok(())
 }
 
 /// Changes the quality of what is asked for next, without rebuilding anything.
 ///
 /// The bitrate is read while a track is being loaded, to put the formats it
-/// exists in into order of preference, and nowhere else. Rebuilding the session
-/// for it — which is what [`set_quality`] does, because the crossfade beside it
-/// really is fixed for the life of a player — costs a second of silence, so
-/// following a connection as it changes was never worth doing. This is the same
-/// change at the cost of a message.
-///
-/// What is playing keeps the file it started with. The next track gets this.
+/// exists in into order of preference, and nowhere else. What is playing keeps
+/// the file it started with. The next track gets this.
 pub fn set_bitrate(bitrate_kbps: i32) -> EngineResult<()> {
     let bitrate = match bitrate_kbps {
         96 => Bitrate::Bitrate96,
@@ -1038,82 +1256,82 @@ pub fn set_bitrate(bitrate_kbps: i32) -> EngineResult<()> {
     // Kept on the recipe as well, so a session rebuilt for any other reason
     // starts where the listening left it rather than back at the setting.
     engine.recipe.player_config.bitrate = bitrate;
-    if let Some(bundle) = engine.bundle.as_ref() {
-        bundle.player.set_bitrate(bitrate);
-    }
+    engine.player.set_bitrate(bitrate);
     Ok(())
 }
 
-/// Throws away a bundle and builds another one, leaving the runtime and the
-/// audio output alone.
+/// Gets a session and a Connect device, when there is none.
 ///
 /// This is the whole answer to a network drop. librespot's Spirc builder is
 /// handed out once per session, so a Connect device that has died cannot be
 /// replaced on the session it belonged to; go-librespot reaches the same
-/// conclusion and discards the session too. Everything that made rebuilding the
-/// engine crash, dropping the tokio runtime from a JNI thread and detaching the
-/// Android sink, lives in [`Engine`] and is not touched here.
+/// conclusion and discards the session too. What is *not* discarded any more
+/// is the player: the session is swapped underneath it and the music goes on.
 ///
-/// The engine lock is held throughout, so commands arriving mid-reconnection
-/// wait rather than seeing half a bundle.
-pub fn reconnect() -> EngineResult<()> {
-    let mut guard = ENGINE.lock().map_err(|_| "engine mutex poisoned")?;
-    let engine = guard.as_mut().ok_or("engine not started")?;
-    RECONNECTING.store(true, Ordering::SeqCst);
-    // Every path out of here from this point has to clear it, which is what the
-    // closure is for: a `?` on the build would otherwise leave the engine
-    // looking permanently mid-reconnection.
-    let result = (|| {
-        // Taken out first, and dropped before the new one is built: two live
-        // sessions would be two devices in the account's list, and the old one
-        // would go on publishing state for a player nobody is listening to.
-        if let Some(old) = engine.bundle.take() {
-            log::info!("discarding the old session");
-            crate::remote::clear();
-            if let Some(spirc) = old.spirc.as_ref() {
-                let _ = spirc.disconnect(true);
-                let _ = spirc.shutdown();
-            }
-            old.player.stop();
-            old.session.shutdown();
-            // The device is emptied here rather than left to the player's own
-            // sink: by the time that one is told to stop, the audio it wrote is
-            // already in the AudioTrack, and that is what plays over the start
-            // of the next track.
-            crate::sink::silence();
-        }
+/// Returns at once. The handshake runs on the runtime, and its outcome arrives
+/// as a `session` event. Idempotent, and safe to call from anywhere at any
+/// time: a live device is left alone, an attempt in flight is not doubled, and
+/// an attempt nobody forced waits out its backoff.
+///
+/// `force` is for a reason to try now — a network that has just come back, a
+/// listener pressing retry, the engine starting — rather than at the time the
+/// last failure said.
+pub fn reconnect(force: bool) -> EngineResult<()> {
+    if CONNECTED.load(Ordering::SeqCst) && session_invalid() == Some(false) {
+        return Ok(());
+    }
+    if RECONNECTING.swap(true, Ordering::SeqCst) {
+        return Ok(());
+    }
+    if !force && uptime_ms() < NEXT_ATTEMPT_MS.load(Ordering::SeqCst) {
+        RECONNECTING.store(false, Ordering::SeqCst);
+        return Err("not yet: waiting out the last failure".into());
+    }
+    if force {
+        NEXT_ATTEMPT_MS.store(0, Ordering::SeqCst);
+        FAILED_ATTEMPTS.store(0, Ordering::SeqCst);
+    }
 
-        // The same fallback the first start has, and for the same reason: a
-        // rebuild that fails leaves the engine with no bundle at all, which
-        // used to mean an app that could not even play what was on the phone.
-        // It also doubles as the way back — [`reconnect`] is what the app calls
-        // when a network appears, and a success here is what ends offline mode.
-        let bundle =
-            match build_bundle(&engine.rt, &engine.recipe, &engine.mixer, &engine.events_tx) {
-                Ok(bundle) => {
-                    OFFLINE.store(false, Ordering::SeqCst);
-                    log::info!("reconnected");
-                    bundle
-                }
-                Err(e) if e == PREMIUM_REQUIRED => return Err(e),
-                Err(e) if crate::downloads::any() => {
-                    log::warn!("{e}; staying offline with what is on the phone");
-                    OFFLINE.store(true, Ordering::SeqCst);
-                    build_offline_bundle(
-                        &engine.rt,
-                        &engine.recipe,
-                        &engine.mixer,
-                        &engine.events_tx,
-                    )?
-                }
-                Err(e) => return Err(e),
-            };
-        engine.bundle = Some(bundle);
-        Ok(())
-    })();
-    RECONNECTING.store(false, Ordering::SeqCst);
-    result
+    let handle = match with_engine(|engine| engine.rt.handle().clone()) {
+        Ok(handle) => handle,
+        Err(e) => {
+            RECONNECTING.store(false, Ordering::SeqCst);
+            return Err(e);
+        }
+    };
+
+    // The device that was there is gone, whatever the flags said. Its session
+    // is invalidated so its task ends, and the account is told nothing: a
+    // session that has lost its connection cannot tell the account anything,
+    // and one that is merely believed lost will be replaced by the device
+    // built next, which the account sees as the same device coming back.
+    if let Ok(mut guard) = ENGINE.lock() {
+        if let Some(engine) = guard.as_mut() {
+            if let Some(old) = engine.spirc.take() {
+                old.set_cluster_listener(None);
+                engine.session.shutdown();
+            }
+        }
+    }
+    crate::remote::unwatch();
+    device_lost();
+
+    log::info!("connecting{}", if force { " now" } else { "" });
+    handle.spawn(async {
+        let _ = connect_attempt().await;
+    });
+    Ok(())
 }
+
+/// Asks the account what every device is doing; see `Spirc::refresh_cluster`.
+///
+/// Refused without a device: a state update is the device's own, and there is
+/// nothing to send one as.
+pub fn refresh_cluster() -> EngineResult<()> {
+    with_engine(|engine| engine.spirc()?.refresh_cluster())?
+        .map_err(|e| format!("cluster refresh failed: {e}"))
+}
+
 
 /// Forward player events to Kotlin. Runs for the life of the engine.
 ///
@@ -1577,15 +1795,6 @@ fn emit(listener: &GlobalRef, kind: &str, uri: &str, position_ms: i64) -> Result
     Ok(())
 }
 
-/// Hands a whole queue to the Connect device.
-///
-/// A list rather than one track at a time, which is what this did before. Spirc
-/// publishes the queue as well as the current item, so loading track by track
-/// would show the account a device that never has anything coming up — and it
-/// is Spirc, not the caller, that advances at the end of a track.
-///
-/// `index` selects the starting track; anything out of range starts at the
-/// beginning, which is librespot's own behaviour rather than an error.
 /// The playlist or album the current queue came from, for the listening events.
 ///
 /// A global rather than a field on the engine: the event pump reads it from its
@@ -1646,27 +1855,51 @@ pub const PREMIUM_REQUIRED: &str = "premium account required";
 
 /// Plays one track on the player, with no Connect device in the way.
 ///
-/// The offline half of [`load_queue`], and the only way anything is heard
-/// without a session. It does what Spirc would have done with the track it
-/// picked — load it, at this position, playing or not — and stops there: the
-/// track after it is loaded by the next call, when the app hears that this one
-/// ended.
+/// The direct half of [`load_queue`], and the only way anything is heard
+/// without a device: while the first handshake is being made, after a session
+/// has died, and with no network at all. It does what Spirc would have done
+/// with the track it picked — load it, at this position, playing or not — and
+/// stops there: the track after it is loaded by the next call, when the app
+/// hears that this one ended, and the device is told about all of it when it
+/// is back; see [`adopt_now`].
 ///
-/// Warming the successor is skipped on purpose. Offline the next track is
-/// already a file on this phone, and preloading it would decode a second stream
-/// to save four milliseconds.
+/// Warming the successor is skipped on purpose. Without a device the next
+/// track is most often a file on this phone, and preloading it would decode a
+/// second stream to save four milliseconds.
 fn local_load(uris: &[String], index: u32, play: bool, position_ms: u32) -> EngineResult<()> {
     let uri = uris
         .get(index as usize)
         .ok_or_else(|| "nothing at that index".to_string())?;
     let parsed = SpotifyUri::from_uri(uri).map_err(|e| format!("bad uri {uri}: {e}"))?;
-    log::info!("offline: loading {uri} at {position_ms}ms, play={play}");
-    with_bundle(|e| e.player.load(parsed, play, position_ms))
+    log::info!("direct: loading {uri} at {position_ms}ms, play={play}");
+    SPIRC_KNOWS.store(false, Ordering::SeqCst);
+    with_engine(|e| e.player.load(parsed, play, position_ms))
 }
 
-/// Whether the engine is running with no session at all.
+/// Whether there is no Connect device right now.
+///
+/// True while the first handshake is being made, after a session has died and
+/// until the next one lands, and with no network at all. The Kotlin side reads
+/// it with [`is_adopted`] to know whose the queue is; see that.
 pub fn is_offline() -> bool {
-    OFFLINE.load(Ordering::SeqCst)
+    !CONNECTED.load(Ordering::SeqCst)
+}
+
+/// Whether a handshake is in flight.
+pub fn is_connecting() -> bool {
+    RECONNECTING.load(Ordering::SeqCst)
+}
+
+/// Whether the Connect device knows what the player is on.
+///
+/// The question the Kotlin side asks before it advances the queue itself: a
+/// device that loaded the current track, or adopted it, advances at the end
+/// of it and skips through the list it was given; a device that does not know
+/// the track does neither, and a device that is not there cannot. So the app
+/// owns the queue exactly while this is false, and hands it over — through
+/// the next load — the moment it is true again.
+pub fn is_adopted() -> bool {
+    CONNECTED.load(Ordering::SeqCst) && SPIRC_KNOWS.load(Ordering::SeqCst)
 }
 
 /// How far into a track its successor is fetched, in milliseconds.
@@ -1680,6 +1913,11 @@ const PRELOAD_AFTER_MS: u32 = 5_000;
 /// audio key and first chunk; fetched now, while the current track plays, the
 /// skip has them already.
 fn preload_after(player: &Player, uri: &str) {
+    // Not without a session: the head start would go to the network, fail,
+    // and be forgotten, for nothing.
+    if !CONNECTED.load(Ordering::SeqCst) {
+        return;
+    }
     let next = {
         let Ok(queue) = QUEUE.lock() else { return };
         let Some(position) = queue.iter().position(|item| item == uri) else {
@@ -1716,7 +1954,7 @@ pub fn load_queue(
     }
 
     // Read before the request takes the list: what the load asks for is also
-    // what the output waits for after a reconnection.
+    // what the output waits for, and what the watchdog below looks for.
     let wanted = uris.get(index as usize).cloned().unwrap_or_default();
 
     let context = context_uri.clone();
@@ -1727,13 +1965,46 @@ pub fn load_queue(
         *stored = uris.clone();
     }
 
-    // Offline there is no Connect device to hand a queue to, so there is no
-    // queue to hand over: the player is given the one track, and the app comes
-    // back for the next one when this ends. Everything above still runs, so
-    // what the app believes about the queue is unchanged either way — the only
-    // difference is who advances it.
-    if with_bundle(|e| e.spirc.is_none())? {
-        return local_load(&uris, index, start_playing, position_ms);
+    // A queue that nobody asked to hear does not go out while the account is
+    // playing somewhere else.
+    //
+    // A load activates this device, which is right when the listener has just
+    // tapped a track and wrong every other time. Opening the app restores the
+    // last queue, paused, and that restore was taking the session away from
+    // whatever was playing in the other room: Fluidify went silent-but-active
+    // and the music stopped mid-track.
+    //
+    // Asked before the direct path below as well as after it, because the
+    // answer does not depend on there being a device: it comes from the
+    // account, and loading a paused track into the player would fetch a song
+    // nobody is going to hear.
+    //
+    // Refused rather than quietly dropped, so the caller keeps its queue marked
+    // as one the engine has never seen and hands it over again the moment the
+    // listener really does ask for it.
+    if !start_playing && elsewhere_active() {
+        return Err("another device has playback".into());
+    }
+
+    // Without a device that is listening, the player is given the track
+    // itself and the device is asked for. The music does not wait for the
+    // access point: a downloaded track starts in milliseconds whatever the
+    // network is doing, a streamed one waits for the session inside its
+    // loader, and the device is told what the player is on the moment it can
+    // hear it; see adopt_now. Everything above still runs, so what the app
+    // believes about the queue is unchanged either way — the only difference
+    // is who advances it, and the app reads that from is_adopted.
+    //
+    // With the account playing elsewhere this is a track the listener has
+    // just asked for, since a restore was refused above. It starts here at
+    // once, which for a moment means two devices making sound; the adoption
+    // that follows the handshake activates this one, and the other stops.
+    // The alternative is silence under a finger that asked for a song.
+    let listening = with_engine(|e| e.spirc.as_ref().is_some_and(Spirc::is_established))?;
+    if !CONNECTED.load(Ordering::SeqCst) || !listening {
+        let result = local_load(&uris, index, start_playing, position_ms);
+        let _ = reconnect(false);
+        return result;
     }
 
     let options = LoadRequestOptions {
@@ -1774,38 +2045,28 @@ pub fn load_queue(
         // resolve: handing playback to one gave it a queue that would not play,
         // and taking it back arrived with a track that could not be found. See
         // native/vendor/README.md.
-        LoadRequest::from_tracks_in(context, uris, options)
+        LoadRequest::from_tracks_in(context, uris.clone(), options)
     } else {
-        LoadRequest::from_tracks(uris, options)
+        LoadRequest::from_tracks(uris.clone(), options)
     };
-
-    // A queue that nobody asked to hear does not go out while the account is
-    // playing somewhere else.
-    //
-    // A load activates this device, which is right when the listener has just
-    // tapped a track and wrong every other time. Opening the app restores the
-    // last queue, paused, and that restore was taking the session away from
-    // whatever was playing in the other room: Square went silent-but-active and
-    // the music stopped mid-track.
-    //
-    // Refused rather than quietly dropped, so the caller keeps its queue marked
-    // as one the engine has never seen and hands it over again the moment the
-    // listener really does ask for it.
-    if !start_playing && elsewhere_active() {
-        return Err("another device has playback".into());
-    }
 
     // Nothing but this track may be heard until it starts; see PLAYBACK_ARMED.
     if !wanted.is_empty() {
         shut(Gate::Expect(wanted.clone()));
     }
 
-    with_bundle(|e| {
+    let sequence = LOAD_SEQ.fetch_add(1, Ordering::SeqCst) + 1;
+    if let Ok(mut expect) = LOAD_EXPECT.lock() {
+        *expect = Some((sequence, wanted.clone()));
+    }
+
+    let sent = with_engine(|e| {
         // Without this the device is registered but idle, and a load is
         // ignored: playback belongs to whichever device the account has
         // active, and taking that over is an explicit step.
-        e.spirc()?.activate()?;
-        e.spirc()?.load(request)?;
+        let spirc = e.spirc()?;
+        spirc.activate()?;
+        spirc.load(request)?;
         // And the account's options again, because the load has just wiped
         // them: `handle_load` opens with `reset_options`, which turns shuffle
         // and both kinds of repeat off before it reads a single track. Every
@@ -1815,19 +2076,139 @@ pub fn load_queue(
         // Sent after the load rather than before it for the same reason: the
         // commands are one queue read one at a time, so anything said first is
         // said to a device that is about to forget it.
-        republish_options(e.spirc()?)
-    })?
-    .inspect_err(|_| {
-        // A load has no way around Spirc: choosing what to decode next is the
-        // Connect device's job and nothing else can do it. A refused one is a
-        // second, weaker sign of the same loss the task watcher above catches
-        // properly, kept because it costs nothing.
-        SPIRC_LOST.store(true, Ordering::SeqCst);
-    })
-    .map_err(|e| format!("load failed: {e}"))
+        republish_options(spirc)
+    })?;
+
+    match sent {
+        Ok(()) => {
+            SPIRC_KNOWS.store(true, Ordering::SeqCst);
+            watch_load(sequence, uris, index, start_playing, position_ms);
+            Ok(())
+        }
+        Err(e) => {
+            // The channel is closed: the device's task has ended and nobody
+            // noticed yet. The player is given the track itself, which is what
+            // the listener asked for, and a new device is asked for.
+            log::warn!("the connect device refused the load ({e}); loading it directly");
+            if let Ok(mut expect) = LOAD_EXPECT.lock() {
+                *expect = None;
+            }
+            device_lost();
+            let result = local_load(&uris, index, start_playing, position_ms);
+            let _ = reconnect(false);
+            result
+        }
+    }
 }
 
-/// Runs a transport command through Spirc, and through the player if Spirc is gone.
+/// Makes sure a load handed to the Connect device actually reached the player.
+///
+/// A device whose task has died still accepts the message; nobody reads it,
+/// nothing loads, and the old track plays on, for as long as the account's
+/// keepalive takes to notice — up to eighty seconds of a listener pressing
+/// things at a player that will not move. This waits [`LOAD_ACK`] for the
+/// player to say it is loading the track, and when it does not, gives the
+/// player the track itself and has the device rebuilt.
+fn watch_load(sequence: u64, uris: Vec<String>, index: u32, play: bool, position_ms: u32) {
+    let Ok(handle) = runtime_handle() else { return };
+    handle.spawn(async move {
+        tokio::time::sleep(LOAD_ACK).await;
+        let pending = LOAD_EXPECT
+            .lock()
+            .map(|expect| expect.as_ref().is_some_and(|(seq, _)| *seq == sequence))
+            .unwrap_or(false);
+        if !pending {
+            return;
+        }
+        if let Ok(mut expect) = LOAD_EXPECT.lock() {
+            *expect = None;
+        }
+        let uri = uris.get(index as usize).cloned().unwrap_or_default();
+        log::warn!(
+            "the connect device did not start {uri} within {LOAD_ACK:?}; \
+             loading it directly and rebuilding the device"
+        );
+        // Dead to us whatever the account thinks. Its session is invalidated
+        // so its task ends, and a late load from it cannot restart the track
+        // the player is about to be given.
+        if let Ok(mut guard) = ENGINE.lock() {
+            if let Some(engine) = guard.as_mut() {
+                if let Some(old) = engine.spirc.take() {
+                    old.set_cluster_listener(None);
+                    engine.session.shutdown();
+                }
+            }
+        }
+        device_lost();
+        if let Err(e) = local_load(&uris, index, play, position_ms) {
+            log::error!("direct load failed as well: {e}");
+        }
+        let _ = reconnect(true);
+    });
+}
+
+/// Tells the Connect device what the player is on.
+///
+/// The other half of [`local_load`]. A track loaded straight into the player
+/// is one the device knows nothing about: it will not advance at the end of
+/// it, will not preload what follows, and the account shows a device that is
+/// playing nothing. Loading the track again through the device would tell it,
+/// at the price of starting the song over. This describes it instead — the
+/// queue, the track, the position and the player's own id for the load — and
+/// the device carries on as if it had loaded the song itself; see the patch
+/// note in native/vendor/README.md.
+///
+/// Called when a device lands while something is playing, once a second from
+/// the forwarder until it succeeds, and before any transport command that
+/// needs the device to know the track. Fails harmlessly when there is nothing
+/// to describe, or nobody listening yet.
+fn adopt_now() -> EngineResult<()> {
+    let uri = current_uri();
+    if uri.is_empty() {
+        return Err("nothing to adopt".into());
+    }
+    let playing = LOCAL_PLAYING.load(Ordering::SeqCst);
+    // Paused, with another device active: adopting activates this one, which
+    // would take the session away from the device that is playing, for
+    // nothing anybody asked for. The next play here is that request.
+    if !playing && crate::remote::elsewhere_active() {
+        return Err("another device has playback".into());
+    }
+
+    let uris = QUEUE.lock().map(|queue| queue.clone()).unwrap_or_default();
+    let index = uris
+        .iter()
+        .position(|item| *item == uri)
+        .ok_or_else(|| format!("the player is on {uri}, which the queue does not hold"))?;
+    let context = current_context();
+    let request = AdoptRequest {
+        context_uri: (!context.is_empty()).then_some(context),
+        tracks: uris,
+        index,
+        play_request_id: CURRENT_PLAY_REQUEST_ID.load(Ordering::SeqCst),
+        position_ms: CURRENT_POSITION_MS.load(Ordering::SeqCst),
+        duration_ms: CURRENT_DURATION_MS.load(Ordering::SeqCst),
+        playing,
+    };
+
+    let sent = with_engine(|e| {
+        let spirc = e.spirc()?;
+        if !spirc.is_established() {
+            return Err(librespot_core::Error::unavailable(
+                "connect device not listening yet",
+            ));
+        }
+        spirc.adopt(request)?;
+        republish_options(spirc)
+    })?;
+    sent.map_err(|e| format!("adopt failed: {e}"))?;
+    SPIRC_KNOWS.store(true, Ordering::SeqCst);
+    log::info!("the connect device adopted {uri}");
+    Ok(())
+}
+
+/// Runs a transport command through Spirc, and through the player if Spirc is
+/// not there or does not know the track.
 ///
 /// Spirc and the player are separate things: the first is the Connect device,
 /// the second is what decodes audio and writes it to the sink. Every transport
@@ -1839,24 +2220,18 @@ pub fn load_queue(
 /// failure. It cannot be fixed by reporting the error, because the audio is
 /// still playing either way: something has to reach the thing making it. So the
 /// player is told directly, and the account is left with a stale idea of what
-/// this device is doing until the engine is rebuilt. Silence under the user's
+/// this device is doing until the device is rebuilt. Silence under the user's
 /// finger is worth more than a tidy Connect state.
 fn transport(
     what: &str,
-    via_spirc: impl FnOnce(&Bundle) -> Result<(), librespot_core::Error>,
-    via_player: impl FnOnce(&Bundle),
+    via_spirc: impl FnOnce(&Engine) -> Result<(), librespot_core::Error>,
+    via_player: impl FnOnce(&Engine),
 ) -> EngineResult<()> {
     // LOCAL PATCH: every command this side sends, so a skip nobody asked for
     // can be told from one this app asked for. See spirc.rs, which says the
     // same about the commands that arrive from the account.
     log::info!("this device asks to {what}");
 
-    // Asked before trying, not after failing.
-    //
-    // A command sent to a Spirc task that has already ended does not come back
-    // an error: the channel still accepts the message and nobody ever reads it.
-    // Waiting for a failure meant the fallback almost never ran, which is why
-    // pause went on doing nothing with the network gone.
     // Another device has the account's playback: this one must not reach for it.
     //
     // Every command here activates the device first, which is right when the
@@ -1868,39 +2243,107 @@ fn transport(
     // The player is still told, because the point of a pause is silence here.
     // Spirc is not, so nothing is taken from anyone.
     if elsewhere_active() {
-        return with_bundle(|engine| {
+        return with_engine(|engine| {
             log::info!("{what}: another device has playback, keeping this one to itself");
             via_player(engine);
         });
     }
 
-    if OFFLINE.load(Ordering::SeqCst) || spirc_lost() {
-        return with_bundle(|engine| {
-            log::warn!("{what}: no connect device, going straight to the player");
+    // Asked before trying, not after failing.
+    //
+    // A command sent to a Spirc task that has already ended does not come back
+    // an error: the channel still accepts the message and nobody ever reads it.
+    // Waiting for a failure meant the fallback almost never ran, which is why
+    // pause went on doing nothing with the network gone. And a device that
+    // does not know the track would answer a command about it with nothing.
+    if !is_adopted() {
+        return with_engine(|engine| {
+            log::info!("{what}: no connect device on this track, going straight to the player");
             via_player(engine);
         });
     }
 
-    with_bundle(|engine| match {
+    let refused = with_engine(|engine| match {
         // Taken over first, the same way a load does.
         //
         // A device that is registered but not the account's active one drops
         // every transport command on the floor, and says so at warning level:
         // "SpircCommand::Play will be ignored while Not Active". Nothing came
         // back as an error, so the app saw a pause that had been accepted and a
-        // player that went on regardless. The load path has taken this step
-        // since it was written; the transport path never did.
+        // player that went on regardless.
         let _ = engine.spirc().map(Spirc::activate);
         via_spirc(engine)
     } {
-        Ok(()) => Ok(()),
+        Ok(()) => false,
         Err(e) => {
             log::warn!("{what}: spirc refused it ({e}), going straight to the player");
-            SPIRC_LOST.store(true, Ordering::SeqCst);
             via_player(engine);
-            Ok(())
+            true
         }
-    })?
+    })?;
+    // Outside the borrow above: a reconnection takes the same lock.
+    if refused {
+        device_lost();
+        let _ = reconnect(false);
+    }
+    Ok(())
+}
+
+/// Makes sure a skip handed to the Connect device actually moved the music.
+///
+/// The same watch as [`watch_load`], for the same dead-but-not-yet-noticed
+/// device: a skip it swallows leaves the old track playing under a listener
+/// who asked for the next one. The output was shut when the skip went out,
+/// to open on the first track that is not the one being left; if it is still
+/// shut when the time is up, nothing moved, and the engine moves the queue
+/// itself from the copy it holds — forward or back, as asked, wrapping when
+/// the account's repeat says so — and has the device rebuilt.
+fn watch_skip(before: String, forward: bool) {
+    if before.is_empty() {
+        return;
+    }
+    let Ok(handle) = runtime_handle() else { return };
+    handle.spawn(async move {
+        tokio::time::sleep(LOAD_ACK).await;
+        if PLAYBACK_ARMED.load(Ordering::SeqCst) || current_uri() != before {
+            return;
+        }
+        log::warn!(
+            "the connect device did not move off {before} within {LOAD_ACK:?};              moving the queue directly and rebuilding the device"
+        );
+        if let Ok(mut guard) = ENGINE.lock() {
+            if let Some(engine) = guard.as_mut() {
+                if let Some(old) = engine.spirc.take() {
+                    old.set_cluster_listener(None);
+                    engine.session.shutdown();
+                }
+            }
+        }
+        device_lost();
+
+        let uris = QUEUE.lock().map(|queue| queue.clone()).unwrap_or_default();
+        let at = uris.iter().position(|uri| *uri == before);
+        let wrap = REPEAT_CONTEXT.load(Ordering::SeqCst);
+        let target = match (at, forward) {
+            (Some(index), true) if index + 1 < uris.len() => Some(index + 1),
+            (Some(_), true) if wrap && !uris.is_empty() => Some(0),
+            (Some(index), false) if index > 0 => Some(index - 1),
+            (Some(_), false) if wrap && !uris.is_empty() => Some(uris.len() - 1),
+            _ => None,
+        };
+        match target {
+            Some(index) => {
+                if let Err(e) = local_load(&uris, index as u32, true, 0) {
+                    log::error!("direct skip failed as well: {e}");
+                }
+            }
+            None => {
+                // Nothing to move to: the end of the queue, which is a stop.
+                let _ = with_engine(|engine| engine.player.stop());
+            }
+        }
+        let _ = reconnect(true);
+    });
 }
 
 /// Whether this device is decoding audio right now.
@@ -1932,7 +2375,7 @@ pub fn elsewhere_active() -> bool {
         return false;
     }
 
-    match with_bundle(|bundle| bundle.spirc.as_ref().is_some_and(Spirc::is_active)) {
+    match with_engine(|engine| engine.spirc.as_ref().is_some_and(Spirc::is_active)) {
         Ok(true) => false,
         Ok(false) => crate::remote::elsewhere_active(),
         Err(_) => crate::remote::elsewhere_active(),
@@ -1952,11 +2395,11 @@ pub fn elsewhere_active() -> bool {
 /// the Connect state itself, which is the same thing the other devices are
 /// shown.
 pub fn playing_here() -> EngineResult<String> {
-    // Offline there is no Connect state to read, and no other client that
-    // could have driven this device somewhere the app does not know about —
-    // which is the only reason this call exists. An empty answer is the honest
-    // one, and it is a shape the caller already handles.
-    let Some(playing) = with_bundle(|bundle| bundle.spirc.as_ref().map(Spirc::playing))? else {
+    // Without a device there is no Connect state to read, and no other client
+    // that could have driven this device somewhere the app does not know
+    // about — which is the only reason this call exists. An empty answer is
+    // the honest one, and it is a shape the caller already handles.
+    let Some(playing) = with_engine(|engine| engine.spirc.as_ref().map(Spirc::playing))? else {
         return Ok("{\"contextUri\":\"\",\"trackUri\":\"\",\"index\":0,\"videoId\":\"\",\"tracks\":[]}".to_string());
     };
     let escape = |value: &str| serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into());
@@ -1984,6 +2427,15 @@ pub fn play() -> EngineResult<()> {
         log::info!("play: another device has playback, ignoring");
         return Ok(());
     }
+    // A device that is there but does not know the track is told first, so
+    // the play goes through it and the account sees the song. When it cannot
+    // be told — not listening yet, nothing loaded — the player is played
+    // directly, which is what the listener asked for.
+    if CONNECTED.load(Ordering::SeqCst) && !SPIRC_KNOWS.load(Ordering::SeqCst) {
+        if let Err(e) = adopt_now() {
+            log::info!("play: {e}; playing directly");
+        }
+    }
     transport("play", |e| e.spirc()?.play(), |e| e.player.play())
 }
 
@@ -1997,7 +2449,7 @@ pub fn pause() -> EngineResult<()> {
     // here, so it is told first and the account is told whenever it can be.
     // Pausing a player that is already paused, or one that was never playing
     // because the music is on another device, costs nothing.
-    let _ = with_bundle(|engine| engine.player.pause());
+    let _ = with_engine(|engine| engine.player.pause());
 
     transport("pause", |e| e.spirc()?.pause(), |e| e.player.pause())
 }
@@ -2007,11 +2459,19 @@ pub fn stop() -> EngineResult<()> {
     // device has given up playback, which is what makes it disappear from the
     // device list instead of lingering as a paused phantom. The fallback does
     // stop the player, because a stop that leaves audio running is not a stop.
-    transport("stop", |e| e.spirc()?.disconnect(true), |e| e.player.stop())
+    let result = transport("stop", |e| e.spirc()?.disconnect(true), |e| e.player.stop());
+    // Whatever the device believed about the queue, it is not playing it now.
+    SPIRC_KNOWS.store(false, Ordering::SeqCst);
+    result
 }
 
 pub fn seek(position_ms: u32) -> EngineResult<()> {
-    with_bundle(|e| e.spirc()?.set_position_ms(position_ms))?.map_err(|e| format!("seek failed: {e}"))
+    if is_adopted() {
+        with_engine(|e| e.spirc()?.set_position_ms(position_ms))?
+            .map_err(|e| format!("seek failed: {e}"))
+    } else {
+        with_engine(|e| e.player.seek(position_ms))
+    }
 }
 
 // Skipping is a Spirc command like the rest, and it was the one left out of
@@ -2019,17 +2479,30 @@ pub fn seek(position_ms: u32) -> EngineResult<()> {
 // that was already playing carried on. Stopping is the fallback because there
 // is nothing better available here. The player owns no queue, so it cannot pick
 // the next track itself, and going on with the current one is the one answer
-// that is certainly wrong: the listener asked for something else.
+// that is certainly wrong: the listener asked for something else. The app
+// does not send these without a device that knows the track — it pushes the
+// queue instead — so the fallback is for a device that dies between the two.
 pub fn next() -> EngineResult<()> {
+    let before = current_uri();
     leaving();
-    transport("next", |e| e.spirc()?.next(), |e| e.player.stop())
+    let through_device = is_adopted() && !elsewhere_active();
+    transport("next", |e| e.spirc()?.next(), |e| e.player.stop())?;
+    if through_device {
+        watch_skip(before, true);
+    }
+    Ok(())
 }
 
 pub fn previous() -> EngineResult<()> {
+    let before = current_uri();
     leaving();
-    transport("previous", |e| e.spirc()?.prev(), |e| e.player.stop())
+    let through_device = is_adopted() && !elsewhere_active();
+    transport("previous", |e| e.spirc()?.prev(), |e| e.player.stop())?;
+    if through_device {
+        watch_skip(before, false);
+    }
+    Ok(())
 }
-
 
 /// Shuts the output until the track being played is a different one.
 ///
@@ -2072,7 +2545,7 @@ pub fn publish_context(position_ms: u32) -> EngineResult<bool> {
     // app's own, so the state is already something another device can resolve.
     // Reloading anyway cost a restart of the audio and a wait, on every single
     // change of device, to republish what was published already.
-    if !current_context().is_empty() {
+    if !current_context().is_empty() && is_adopted() {
         return Ok(false);
     }
 
@@ -2084,7 +2557,10 @@ pub fn publish_context(position_ms: u32) -> EngineResult<bool> {
     // playlist behind it, which is most of what a search produces, handed over
     // as a context that answers 400 and left the receiving device with nothing
     // to play.
-    let context = current.clone();
+    let context = {
+        let known = current_context();
+        if known.is_empty() { current.clone() } else { known }
+    };
 
     log::info!("republishing {current} as {context} before handing over");
     let request = LoadRequest::from_context_uri(
@@ -2097,11 +2573,12 @@ pub fn publish_context(position_ms: u32) -> EngineResult<bool> {
         },
     );
 
-    with_bundle(|e| {
+    with_engine(|e| {
         e.spirc()?.activate()?;
         e.spirc()?.load(request)
     })?
     .map_err(|e| format!("could not republish the context: {e}"))?;
+    SPIRC_KNOWS.store(true, Ordering::SeqCst);
     Ok(true)
 }
 
@@ -2138,11 +2615,13 @@ pub fn resume_here(context_uri: &str, track_uri: &str, position_ms: u32) -> Engi
         },
     );
 
-    with_bundle(|e| {
+    with_engine(|e| {
         e.spirc()?.activate()?;
         e.spirc()?.load(request)
     })?
-    .map_err(|e| format!("could not resume here: {e}"))
+    .map_err(|e| format!("could not resume here: {e}"))?;
+    SPIRC_KNOWS.store(true, Ordering::SeqCst);
+    Ok(())
 }
 
 /// Takes the account's playback for this device.
@@ -2152,7 +2631,7 @@ pub fn resume_here(context_uri: &str, track_uri: &str, position_ms: u32) -> Engi
 /// a command sent from a device to itself goes out to the access point and
 /// comes back refused. Activating is the same thing done directly.
 pub fn take_over() -> EngineResult<()> {
-    with_bundle(|e| e.spirc()?.activate())?.map_err(|e| format!("could not take over: {e}"))
+    with_engine(|e| e.spirc()?.activate())?.map_err(|e| format!("could not take over: {e}"))
 }
 
 /// Hands the device a new running order without touching what is playing.
@@ -2161,6 +2640,9 @@ pub fn take_over() -> EngineResult<()> {
 /// turns that on or off the list changes under a track that is still playing.
 /// Reloading the queue would say the same thing at the cost of a gap in the
 /// song, for a change that is only ever about what comes after it.
+///
+/// Without a device that knows the track there is nothing to hand it to, and
+/// nothing lost: the order is kept here and travels with the adoption.
 pub fn set_queue_order(uris: Vec<String>, index: u32) -> EngineResult<()> {
     if uris.is_empty() {
         return Err("empty queue".into());
@@ -2173,7 +2655,10 @@ pub fn set_queue_order(uris: Vec<String>, index: u32) -> EngineResult<()> {
         *stored = uris;
     }
 
-    with_bundle(|e| e.spirc()?.set_queue_tracks(prev, next))?
+    if !is_adopted() {
+        return Ok(());
+    }
+    with_engine(|e| e.spirc()?.set_queue_tracks(prev, next))?
         .map_err(|e| format!("queue order failed: {e}"))
 }
 
@@ -2213,16 +2698,25 @@ fn republish_options(spirc: &Spirc) -> Result<(), librespot_core::Error> {
 /// had to be forced off on every load to keep the two orders in step — which is
 /// why the account showed this phone as never shuffling, and why shuffle turned
 /// on elsewhere never arrived.
+///
+/// Kept here whatever the device's state, and said to it when there is one:
+/// without a device the flag travels with the next adoption or load.
 pub fn set_shuffle(shuffle: bool) -> EngineResult<()> {
     SHUFFLE.store(shuffle, Ordering::SeqCst);
-    with_bundle(|e| e.spirc()?.shuffle(shuffle))?.map_err(|e| format!("shuffle failed: {e}"))
+    if !is_adopted() {
+        return Ok(());
+    }
+    with_engine(|e| e.spirc()?.shuffle(shuffle))?.map_err(|e| format!("shuffle failed: {e}"))
 }
 
 /// `repeat_track` takes precedence: the two are separate flags in the protocol.
 pub fn set_repeat(repeat_context: bool, repeat_track: bool) -> EngineResult<()> {
     REPEAT_CONTEXT.store(repeat_context, Ordering::SeqCst);
     REPEAT_TRACK.store(repeat_track, Ordering::SeqCst);
-    with_bundle(|e| {
+    if !is_adopted() {
+        return Ok(());
+    }
+    with_engine(|e| {
         e.spirc()?.repeat_track(repeat_track)?;
         e.spirc()?.repeat(repeat_context)
     })?
@@ -2238,73 +2732,57 @@ pub fn volume() -> EngineResult<u16> {
     with_engine(|e| e.mixer.volume())
 }
 
-/// Whether the Connect device is gone and the engine wants rebuilding.
+/// Whether the Connect device is gone.
 ///
-/// Two signals, because one of them is late. The flag is authoritative but only
-/// rises when the Spirc task has actually finished, and that took ten seconds
-/// after a dropped network in the case this was written for: for those ten
-/// seconds the device is already unreachable, every command is accepted and
-/// discarded, and the listener is pressing skip at a player that will not move.
-///
-/// An invalid session is the earlier sign of the same thing. It is checked at
-/// the moment a command is issued rather than watched, so a connection that
-/// drops and comes back on its own between two commands costs nothing: the
-/// question is only ever asked when somebody is waiting for an answer.
-/// Neither of these takes the engine lock. A reconnection holds it for the whole
-/// of a handshake, and both are asked from the playback looper: waiting there
-/// would be seconds of a frozen app for a question that has an answer already.
+/// What the Kotlin side reads before nudging a reconnection. There is no
+/// device while the first handshake is being made, after a session has died
+/// and until the next one lands, and with no network at all; the nudge is
+/// harmless in every one of those, since [`reconnect`] refuses to double an
+/// attempt in flight and waits out a backoff nobody forced. An invalid
+/// session under a device that still exists counts too: the task will end a
+/// moment later, and the answer is the same either way.
 pub fn spirc_lost() -> bool {
-    // Offline there is no device to lose, and saying one was lost would send
-    // the Kotlin side off rebuilding a session every thirty seconds against a
-    // network that is not there. The app is told it is offline instead, which
-    // is a different question with a different answer; see `is_offline`.
-    if OFFLINE.load(Ordering::SeqCst) {
-        return false;
-    }
-    if RECONNECTING.load(Ordering::SeqCst) {
-        // True in the strict sense: there is no device at this instant. It is
-        // also the useful answer, because a command issued now would find no
-        // bundle to run against.
-        return true;
-    }
-    if SPIRC_LOST.load(Ordering::SeqCst) {
-        return true;
-    }
-    session_invalid().unwrap_or(false)
+    !CONNECTED.load(Ordering::SeqCst) || session_invalid().unwrap_or(false)
 }
 
+/// Whether there is a session to read the catalogue through.
 pub fn is_connected() -> bool {
-    !OFFLINE.load(Ordering::SeqCst)
-        && !RECONNECTING.load(Ordering::SeqCst)
-        && session_invalid().map(|bad| !bad) == Some(true)
+    CONNECTED.load(Ordering::SeqCst) && session_invalid().map(|bad| !bad) == Some(true)
 }
 
 /// Whether the current session has been invalidated, or `None` if asking would
 /// have meant waiting.
 fn session_invalid() -> Option<bool> {
     let guard = ENGINE.try_lock().ok()?;
-    let bundle = guard.as_ref()?.bundle.as_ref()?;
-    Some(bundle.session.is_invalid())
+    let engine = guard.as_ref()?;
+    Some(engine.session.is_invalid())
 }
 
 /// Tear the engine down. Safe to call when it was never started.
 pub fn shutdown() {
     let taken = ENGINE.lock().ok().and_then(|mut g| g.take());
     if let Some(engine) = taken {
-        // Nothing may report against a bundle from here on, and the pump is
-        // about to go with the sender.
+        // Nothing may report against this player from here on, and the pump is
+        // about to go with the sender. A device task ending late says nothing.
         GENERATION.fetch_add(1, Ordering::SeqCst);
-        if let Some(bundle) = engine.bundle {
-            // Told to the account before the socket goes: a device that
-            // vanishes without disconnecting stays in the user's list until it
-            // times out.
-            if let Some(spirc) = bundle.spirc.as_ref() {
-                let _ = spirc.disconnect(true);
-                let _ = spirc.shutdown();
-            }
-            bundle.player.stop();
-            bundle.session.shutdown();
+        DEVICE_GENERATION.fetch_add(1, Ordering::SeqCst);
+        CONNECTED.store(false, Ordering::SeqCst);
+        SPIRC_KNOWS.store(false, Ordering::SeqCst);
+        RECONNECTING.store(false, Ordering::SeqCst);
+        OFFLINE.store(false, Ordering::SeqCst);
+        if let Some(up) = SESSION_UP.get() {
+            let _ = up.send(false);
         }
+        // Told to the account before the socket goes: a device that vanishes
+        // without disconnecting stays in the user's list until it times out.
+        if let Some(spirc) = engine.spirc.as_ref() {
+            spirc.set_cluster_listener(None);
+            let _ = spirc.disconnect(true);
+            let _ = spirc.shutdown();
+        }
+        engine.player.stop();
+        engine.session.shutdown();
+        crate::remote::clear();
         // Dropped so the pump thread's loop ends and the listener is released
         // while that thread is still attached to the JVM.
         drop(engine.events_tx);

@@ -574,7 +574,11 @@ fun SquareApp(
      * is cut dead rather than faded: its picture carries on inside the surface,
      * and a hand-over has nothing to show.
      */
-    val pillHidden by remember { derivedStateOf { expand.value > MorphEpsilon } }
+    // The same number the journey draws itself from, so the pill and the glass
+    // that replaces it are never both absent for a frame; see MorphDrawGate.
+    val pillHidden by remember {
+        derivedStateOf { expand.value > dev.lelonio.square.ui.player.MorphDrawGate }
+    }
 
     /**
      * The distance the window's top edge actually travels.

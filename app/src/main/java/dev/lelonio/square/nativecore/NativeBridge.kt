@@ -11,12 +11,14 @@ import kotlinx.serialization.json.Json
 interface NativeEvents {
     /**
      * @param type one of `loading`, `playing`, `paused`, `position`, `stopped`,
-     *   `end_of_track`, `unavailable`, `cluster`, `download_progress`,
+     *   `end_of_track`, `unavailable`, `cluster`, `session`, `download_progress`,
      *   `download_done`
      * @param uri the Spotify URI the event refers to, possibly empty
      * @param positionMs playback position, 0 for events that carry no position.
      *   The download events reuse it for their own number: per mille done for
-     *   `download_progress`, the size in bytes for `download_done`.
+     *   `download_progress`, the size in bytes for `download_done`. `session`
+     *   uses it for the outcome of a handshake: [NativeBridge.SESSION_CONNECTED],
+     *   [NativeBridge.SESSION_FAILED] or [NativeBridge.SESSION_PREMIUM_REQUIRED].
      */
     fun onEvent(type: String, uri: String, positionMs: Long)
 }
@@ -52,7 +54,15 @@ object NativeBridge {
     fun setAudioOutput(output: Any) = nativeSetAudioOutput(output)
 
     /**
-     * Authenticates and builds the player.
+     * Builds the player and starts connecting.
+     *
+     * Returns as soon as there is a player, which is at once, for a device
+     * that has logged in before: the handshake runs in the background and its
+     * outcome arrives as a `session` event, while anything downloaded plays in
+     * the meantime and anything streamed waits for the session inside the
+     * engine. A device that has never logged in has only the token to go on
+     * and nothing to play meanwhile, so for it this blocks on the handshake
+     * and throws when it fails.
      *
      * @param clientId must match the client id the [accessToken] was issued for,
      *   otherwise login5 rejects the token. Pass an empty string to fall back to
@@ -172,13 +182,12 @@ object NativeBridge {
     val spircLost: Boolean get() = nativeSpircLost()
 
     /**
-     * Rebuilds the player with a new bitrate and crossfade.
+     * Changes the bitrate and the crossfade, in place.
      *
-     * Both belong to a configuration the player owns for its whole life, so a
-     * change means another player. This replaces the session and the player and
-     * leaves the runtime and the audio output where they are: tearing those
-     * down from here is what used to abort the process. The queue is the
-     * caller's to put back. Blocking.
+     * Both used to be fixed for the life of the player, so a change meant a
+     * new player, a new session, and the queue handed over again. The engine
+     * now changes them live: what is playing keeps the file and the fade it
+     * started with, and the next track gets the new ones. Nothing to put back.
      */
     fun setQuality(bitrateKbps: Int, crossfadeMs: Int) = nativeSetQuality(bitrateKbps, crossfadeMs)
 
@@ -193,17 +202,53 @@ object NativeBridge {
     fun setBitrate(bitrateKbps: Int) = nativeSetBitrate(bitrateKbps)
 
     /**
-     * Builds a new session, player and Connect device, keeping everything else.
+     * Asks for a session and a Connect device, when there is none.
      *
      * The answer to [spircLost]. A dead Connect device cannot be revived on the
      * session it belonged to, because librespot hands out the Spirc builder once
-     * per session, so this discards the session as well. The tokio runtime and
-     * the audio output survive: tearing those down from here is what used to
-     * abort the process on a destroyed mutex.
-     *
-     * Blocks on the handshake. Never call it from the main thread.
+     * per session, so the engine builds another session, underneath the same
+     * player, which goes on playing whatever it was on. Returns at once; the
+     * outcome arrives as a `session` event. Safe to call at any time: a live
+     * device is left alone, an attempt in flight is not doubled, and an
+     * attempt nobody forced waits out the backoff the last failure left.
      */
-    fun reconnect() = nativeReconnect()
+    fun reconnect(force: Boolean = false) = nativeReconnect(force)
+
+    /** Whether a handshake is in flight. */
+    val isConnecting: Boolean get() = runCatching { nativeIsConnecting() }.getOrDefault(false)
+
+    /**
+     * Whether the Connect device knows the track the player is on.
+     *
+     * The device advances the queue at the end of a track it loaded or adopted;
+     * for anything else the app is the one that has to move on. Read it at the
+     * moment the question arises, since the answer changes with every load and
+     * every reconnection.
+     */
+    val isAdopted: Boolean get() = runCatching { nativeIsAdopted() }.getOrDefault(false)
+
+    /**
+     * Asks the account what every device is doing, now.
+     *
+     * The account pushes an update whenever anything changes, and a push can
+     * be missed; this asks outright, and the answer arrives as a `cluster`
+     * event like any push. Throws when there is no Connect device to ask with.
+     */
+    fun refreshCluster() = nativeRefreshCluster()
+
+    /**
+     * The queue around what the account's active device is playing, as JSON.
+     *
+     * `{"index", "tracks": [{uri, uid, title, artist, album, coverUri, current}]}`,
+     * the window the account publishes with its state: what was played, what
+     * is playing, what comes next, in that order.
+     */
+    fun remoteQueue(): String = runCatching { nativeRemoteQueue() }.getOrDefault("{}")
+
+    /** What a `session` event's number means. */
+    const val SESSION_FAILED = 0L
+    const val SESSION_CONNECTED = 1L
+    const val SESSION_PREMIUM_REQUIRED = 2L
 
     // --- The account's other devices ---
     //
@@ -422,13 +467,12 @@ object NativeBridge {
     fun tracksMetadata(urisJson: String): String = nativeTracksMetadata(urisJson)
 
     /**
-     * Whether the engine is running with no session at all.
+     * Whether there is no Connect device right now.
      *
-     * True when the handshake could not be made and there were downloads to
-     * fall back on: there is a player and there are files, and nothing else.
-     * Distinct from [spircLost], which means a session existed and its Connect
-     * device went — that one is worth repairing, and this one is not until
-     * there is a network again.
+     * True while the first handshake is being made, after a session has died
+     * and until the next one lands, and with no network at all. The player is
+     * there in every one of those states and plays what is on the phone; what
+     * this changes is who advances the queue. See [isAdopted].
      */
     val isOffline: Boolean get() = nativeIsOffline()
 
@@ -563,7 +607,11 @@ object NativeBridge {
     private external fun nativeSetQuality(bitrateKbps: Int, crossfadeMs: Int)
 
     private external fun nativeSetBitrate(bitrateKbps: Int)
-    private external fun nativeReconnect()
+    private external fun nativeReconnect(force: Boolean)
+    private external fun nativeIsConnecting(): Boolean
+    private external fun nativeIsAdopted(): Boolean
+    private external fun nativeRefreshCluster()
+    private external fun nativeRemoteQueue(): String
     private external fun nativePlaybackElsewhere(): Boolean
     private external fun nativePublishContext(positionMs: Int): Boolean
     private external fun nativeResumeHere(contextUri: String, trackUri: String, positionMs: Int)
