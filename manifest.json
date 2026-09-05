@@ -12,24 +12,33 @@
       "repoOwner": "Casual76",
       "repoName": "Fluidify",
       "manifestPath": "manifest.json",
-      "ref": ""
+      "ref": "master"
     },
     "stable": {
-      "version": "1.0.0",
-      "releaseDate": "2026-08-28",
-      "changelog": "Prima versione di Fluidify.\n\nUn lettore per Spotify costruito sul design system Fluid: vetro che si\ntrasforma con la fisica dei fluidi, tema ametista, e le copertine che tingono\ntutto quello che sta intorno. Serve un account Premium.\n\nCosa sa fare\n\n- Riproduzione completa: libreria, playlist, album, artisti, ricerca, coda,\n  testo sincronizzato, Canvas, crediti e informazioni sull'artista.\n- Spotify Connect. Comanda gli altri dispositivi e si fa comandare; shuffle e\n  ripetizione seguono l'account, non il singolo telefono.\n- Download offline. Si scarica una playlist, un album, un artista intero o un\n  brano solo. Un brano scaricato una volta vale per ogni playlist che lo\n  contiene, e quando la rete manca l'app suona lo stesso, testo e Canvas\n  compresi. Solo su Wi-Fi, se vuoi.\n- Dissolvenza fra le tracce, equalizzatore e effetti sull'uscita.\n- Android Auto, e la copertina nel pannello delle impostazioni rapide anche\n  senza rete.\n- Otto lingue.\n\nDa sapere\n\n- Non e' un'app ufficiale e non e' affiliata a Spotify. E' un fork di Square di\n  Lelonio, con tutti i crediti del caso.\n- La ricerca passa da un'applicazione Web API che registri tu, in\n  Impostazioni: e' un tocco, e serve perche' la quota sia la tua.",
-      "releaseTag": "stable-fluidify-v1.0.0",
-      "apkAsset": "fluidify-1.0.0.apk",
-      "sizeBytes": 15119148
+      "version": "1.0.1",
+      "releaseDate": "2026-09-05",
+      "changelog": "Ascolto senza intoppi, e la coda degli altri dispositivi.\n\nIl motore non si ferma piu' per rifare la connessione. Il lettore vive per\nconto suo e le sessioni si rifanno sotto, senza toccare la musica: un brano\nscaricato parte in pochi millisecondi qualunque cosa faccia la rete, e uno in\nstreaming aspetta la connessione invece di essere dichiarato non disponibile.\n\nAscolto\n\n- Niente attesa all'avvio: la coda torna dal disco prima ancora che Spotify\n  risponda.\n- Ogni richiesta all'account ha un tetto di tempo, cosi' i tasti non restano\n  bloccati quando il segnale e' debole.\n- Un comando accettato da un dispositivo ormai morto viene rifatto entro due\n  secondi e mezzo, invece di aspettare che la connessione se ne accorga.\n- La riconnessione non blocca nulla e riparte da sola quando torna la rete.\n- Il prelievo dell'audio in streaming e' tarato per un telefono: piu' musica\n  in anticipo, meno buchi.\n- Cambiare qualita' o dissolvenza non ricostruisce piu' niente.\n\nIl resto del telefono\n\n- Android riconosce Fluidify come app di musica: si sceglie come predefinita,\n  risponde a \"riproduci ... su Fluidify\", e il tasto delle cuffie riprende\n  l'ultima coda anche ad app chiusa.\n- I dispositivi dell'account compaiono nel pannello di uscita multimediale del\n  telefono, accanto alle cuffie: si sceglie da li' dove suonare.\n\nGli altri dispositivi\n\n- L'app chiede all'account cosa sta suonando altrove molto piu' spesso, quindi\n  si accorge subito di un computer o di una cassa che parte.\n- Mentre suona un altro dispositivo si vede la sua coda intera, con copertine\n  e artisti, e toccando una riga si salta a quel brano.\n- Casuale e ripetizione, mentre si comanda un altro dispositivo, vanno a lui.\n\nDettagli\n\n- Aprendo e chiudendo il player con il dito, l'ultimo fotogramma non perde piu'\n  il vetro.\n- Gli angoli del player restano tondi per tutta l'apertura, fino a coincidere\n  con quelli dello schermo.",
+      "releaseTag": "stable-fluidify-v1.0.1",
+      "apkAsset": "fluidify-1.0.1.apk",
+      "sizeBytes": 15210327
     },
     "beta": {
-      "version": "1.0.0",
-      "releaseDate": "2026-08-28",
-      "changelog": "Prima versione di Fluidify.\n\nUn lettore per Spotify costruito sul design system Fluid: vetro che si\ntrasforma con la fisica dei fluidi, tema ametista, e le copertine che tingono\ntutto quello che sta intorno. Serve un account Premium.\n\nCosa sa fare\n\n- Riproduzione completa: libreria, playlist, album, artisti, ricerca, coda,\n  testo sincronizzato, Canvas, crediti e informazioni sull'artista.\n- Spotify Connect. Comanda gli altri dispositivi e si fa comandare; shuffle e\n  ripetizione seguono l'account, non il singolo telefono.\n- Download offline. Si scarica una playlist, un album, un artista intero o un\n  brano solo. Un brano scaricato una volta vale per ogni playlist che lo\n  contiene, e quando la rete manca l'app suona lo stesso, testo e Canvas\n  compresi. Solo su Wi-Fi, se vuoi.\n- Dissolvenza fra le tracce, equalizzatore e effetti sull'uscita.\n- Android Auto, e la copertina nel pannello delle impostazioni rapide anche\n  senza rete.\n- Otto lingue.\n\nDa sapere\n\n- Non e' un'app ufficiale e non e' affiliata a Spotify. E' un fork di Square di\n  Lelonio, con tutti i crediti del caso.\n- La ricerca passa da un'applicazione Web API che registri tu, in\n  Impostazioni: e' un tocco, e serve perche' la quota sia la tua.",
-      "releaseTag": "stable-fluidify-v1.0.0",
-      "apkAsset": "fluidify-1.0.0.apk",
-      "sizeBytes": 15119148
+      "version": "1.0.1",
+      "releaseDate": "2026-09-05",
+      "changelog": "Ascolto senza intoppi, e la coda degli altri dispositivi.\n\nIl motore non si ferma piu' per rifare la connessione. Il lettore vive per\nconto suo e le sessioni si rifanno sotto, senza toccare la musica: un brano\nscaricato parte in pochi millisecondi qualunque cosa faccia la rete, e uno in\nstreaming aspetta la connessione invece di essere dichiarato non disponibile.\n\nAscolto\n\n- Niente attesa all'avvio: la coda torna dal disco prima ancora che Spotify\n  risponda.\n- Ogni richiesta all'account ha un tetto di tempo, cosi' i tasti non restano\n  bloccati quando il segnale e' debole.\n- Un comando accettato da un dispositivo ormai morto viene rifatto entro due\n  secondi e mezzo, invece di aspettare che la connessione se ne accorga.\n- La riconnessione non blocca nulla e riparte da sola quando torna la rete.\n- Il prelievo dell'audio in streaming e' tarato per un telefono: piu' musica\n  in anticipo, meno buchi.\n- Cambiare qualita' o dissolvenza non ricostruisce piu' niente.\n\nIl resto del telefono\n\n- Android riconosce Fluidify come app di musica: si sceglie come predefinita,\n  risponde a \"riproduci ... su Fluidify\", e il tasto delle cuffie riprende\n  l'ultima coda anche ad app chiusa.\n- I dispositivi dell'account compaiono nel pannello di uscita multimediale del\n  telefono, accanto alle cuffie: si sceglie da li' dove suonare.\n\nGli altri dispositivi\n\n- L'app chiede all'account cosa sta suonando altrove molto piu' spesso, quindi\n  si accorge subito di un computer o di una cassa che parte.\n- Mentre suona un altro dispositivo si vede la sua coda intera, con copertine\n  e artisti, e toccando una riga si salta a quel brano.\n- Casuale e ripetizione, mentre si comanda un altro dispositivo, vanno a lui.\n\nDettagli\n\n- Aprendo e chiudendo il player con il dito, l'ultimo fotogramma non perde piu'\n  il vetro.\n- Gli angoli del player restano tondi per tutta l'apertura, fino a coincidere\n  con quelli dello schermo.",
+      "releaseTag": "stable-fluidify-v1.0.1",
+      "apkAsset": "fluidify-1.0.1.apk",
+      "sizeBytes": 15210327
     },
-    "history": []
+    "history": [
+      {
+        "version": "1.0.0",
+        "releaseDate": "2026-08-28",
+        "changelog": "Prima versione di Fluidify.\n\nUn lettore per Spotify costruito sul design system Fluid: vetro che si\ntrasforma con la fisica dei fluidi, tema ametista, e le copertine che tingono\ntutto quello che sta intorno. Serve un account Premium.\n\nCosa sa fare\n\n- Riproduzione completa: libreria, playlist, album, artisti, ricerca, coda,\n  testo sincronizzato, Canvas, crediti e informazioni sull'artista.\n- Spotify Connect. Comanda gli altri dispositivi e si fa comandare; shuffle e\n  ripetizione seguono l'account, non il singolo telefono.\n- Download offline. Si scarica una playlist, un album, un artista intero o un\n  brano solo. Un brano scaricato una volta vale per ogni playlist che lo\n  contiene, e quando la rete manca l'app suona lo stesso, testo e Canvas\n  compresi. Solo su Wi-Fi, se vuoi.\n- Dissolvenza fra le tracce, equalizzatore e effetti sull'uscita.\n- Android Auto, e la copertina nel pannello delle impostazioni rapide anche\n  senza rete.\n- Otto lingue.\n\nDa sapere\n\n- Non e' un'app ufficiale e non e' affiliata a Spotify. E' un fork di Square di\n  Lelonio, con tutti i crediti del caso.\n- La ricerca passa da un'applicazione Web API che registri tu, in\n  Impostazioni: e' un tocco, e serve perche' la quota sia la tua.",
+        "releaseTag": "stable-fluidify-v1.0.0",
+        "apkAsset": "fluidify-1.0.0.apk",
+        "sizeBytes": 15119148
+      }
+    ]
   }
 }
