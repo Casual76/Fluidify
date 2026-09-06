@@ -153,6 +153,8 @@ class MediaBrowseTree(
             .add(SessionCommand(CMD_SHUFFLE, Bundle.EMPTY))
             .add(SessionCommand(CMD_REPEAT, Bundle.EMPTY))
             .add(SessionCommand(CMD_RADIO, Bundle.EMPTY))
+            .add(SessionCommand(CMD_LIKE, Bundle.EMPTY))
+            .add(SessionCommand(CMD_IS_LIKED, Bundle.EMPTY))
             .build()
 
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
@@ -186,6 +188,7 @@ class MediaBrowseTree(
                 startRadio(session)
                 return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
             }
+            CMD_LIKE, CMD_IS_LIKED -> return likeCommand(player, customCommand.customAction, args)
 
             else -> return Futures.immediateFuture(
                 SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED),
@@ -195,6 +198,40 @@ class MediaBrowseTree(
         // the old icon up read as a press that had not landed.
         session.setCustomLayout(layoutFor(player))
         return Futures.immediateFuture(SessionResult(SessionResult.RESULT_SUCCESS))
+    }
+
+    /**
+     * The heart from outside: save or unsave a track in Liked Songs, or ask
+     * whether it is there. Only Spotify tracks have a heart; anything else
+     * answers "not supported" so the caller can say so instead of guessing.
+     */
+    private fun likeCommand(
+        player: androidx.media3.common.Player,
+        action: String,
+        args: Bundle,
+    ): ListenableFuture<SessionResult> {
+        val uri = args.getString("uri") ?: player.currentMediaItem?.mediaId
+        if (uri == null || !uri.startsWith("spotify:track:")) {
+            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+        }
+        val id = uri.substringAfterLast(':')
+        return scope.future {
+            runCatching {
+                when (action) {
+                    CMD_IS_LIKED -> {
+                        val liked = app.api.tracksAreSaved(id).firstOrNull() ?: false
+                        SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putBoolean("liked", liked) })
+                    }
+                    else -> {
+                        if (args.getBoolean("remove", false)) app.api.removeSavedTracks(id) else app.api.saveTracks(id)
+                        SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putBoolean("liked", !args.getBoolean("remove", false)) })
+                    }
+                }
+            }.getOrElse {
+                android.util.Log.w(TAG, "like failed for $uri: $it")
+                SessionResult(SessionResult.RESULT_ERROR_IO)
+            }
+        }
     }
 
     /**
@@ -683,6 +720,14 @@ class MediaBrowseTree(
         const val CMD_SHUFFLE = "dev.lelonio.square.SHUFFLE"
         const val CMD_REPEAT = "dev.lelonio.square.REPEAT"
         const val CMD_RADIO = "dev.lelonio.square.RADIO"
+
+        /**
+         * The heart, for an assistant that has no screen to press it on. Args:
+         * `uri` (defaults to what is playing), `remove` to take it out again.
+         * The reply's extras carry `liked` for [CMD_IS_LIKED].
+         */
+        const val CMD_LIKE = "dev.lelonio.square.LIKE"
+        const val CMD_IS_LIKED = "dev.lelonio.square.IS_LIKED"
 
         const val ID_ROOT = "sq/root"
         const val ID_PLAYLISTS = "sq/playlists"
