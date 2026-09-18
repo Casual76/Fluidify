@@ -27,6 +27,7 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -1616,6 +1617,19 @@ private fun Cover(
         label = "coverLift",
     )
 
+    // The smaller of a share of the width and all of the height.
+    //
+    // It used to be a share of the width alone, which is the same thing on a
+    // phone — the slot is always taller than 82% of a phone is wide — and is a
+    // nine-hundred-point square on a tablet held sideways: the cover ran off the
+    // top and the bottom of the window and the transport was printed on top of
+    // it. A square is bounded by whichever side runs out first, and on a tablet
+    // that is the height.
+    BoxWithConstraints(
+        modifier = Modifier.fillMaxSize(),
+        contentAlignment = Alignment.Center,
+    ) {
+    val side = minOf(maxWidth * coverFraction, maxHeight)
     CoverGestures(
         onNext = onNext,
         onPrevious = onPrevious,
@@ -1624,8 +1638,7 @@ private fun Cover(
         onTap = onToggleImmersive,
         onPullDown = onLeaveImmersive,
         modifier = Modifier
-            .fillMaxWidth(coverFraction)
-            .aspectRatio(1f)
+            .size(side)
             .graphicsLayer {
                 scaleX = playingScale
                 scaleY = playingScale
@@ -1651,6 +1664,7 @@ private fun Cover(
                 corner = 26.dp,
             )
         }
+    }
     }
 }
 

@@ -398,7 +398,16 @@ fun LibraryScreen(
                 ) { sortedFor(shownFilter) }
                 when (layout) {
                     Layout.GRID -> LazyVerticalGrid(
-                        columns = GridCells.Fixed(2),
+                        // By tile size, not by a count.
+                        //
+                        // Two was right on a phone and is the whole reason the
+                        // library on a tablet was two album covers the size of a
+                        // saucer: `Fixed(2)` does not know how wide the window
+                        // is, it only knows how to divide it. A minimum width
+                        // gives the same two on a phone and as many as fit on
+                        // anything larger, which is the answer a grid is supposed
+                        // to give.
+                        columns = GridCells.Adaptive(minSize = 168.dp),
                         state = gridState,
                         contentPadding = listPadding,
                         horizontalArrangement = Arrangement.spacedBy(14.dp),

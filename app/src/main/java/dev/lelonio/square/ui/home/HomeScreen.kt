@@ -368,6 +368,8 @@ fun HomeScreen(
                 val showReleases = (current == Feed.ALL && ownFeed) || current == Feed.RELEASES
                 val showArtists = (current == Feed.ALL && ownFeed) || current == Feed.ARTISTS
                 val showLibrary = (current == Feed.ALL && ownFeed) || current == Feed.LIBRARY
+                // Read out here: a LazyListScope is not a composition.
+                val columns = artistColumns
                 val showForYou = (current == Feed.ALL && ownFeed) || current == Feed.FOR_YOU
                 val filter = current
 
@@ -554,7 +556,7 @@ fun HomeScreen(
                     // Rows of a list rather than a nested grid, which cannot go
                     // inside a scrolling column without being given a height.
                     items(
-                        feed.topArtists.chunked(ARTIST_COLUMNS),
+                        feed.topArtists.chunked(columns),
                         key = { row -> row.first().uri },
                         contentType = { Feed.ARTISTS.name },
                     ) { row ->
@@ -569,7 +571,7 @@ fun HomeScreen(
                             }
                             // The last row keeps the others\' spacing instead of
                             // stretching two artists across the page.
-                            repeat(ARTIST_COLUMNS - row.size) {
+                            repeat(columns - row.size) {
                                 Spacer(Modifier.weight(1f))
                             }
                         }
@@ -978,8 +980,22 @@ private fun FeedCard(item: SearchItem, onClick: () -> Unit) {
     }
 }
 
-/** How many artists fit across the page without the names going to three lines. */
-private const val ARTIST_COLUMNS = 3
+/**
+ * How many artists fit across the page without the names going to three lines.
+ *
+ * Three on a phone, and more as the window grows: the row is laid out by hand
+ * (a grid cannot go inside a scrolling column without being given a height), so
+ * the count is worked out here rather than by a `GridCells.Adaptive`. Same rule
+ * though — a minimum cell, and as many as fit.
+ */
+private val artistColumns: Int
+    @Composable get() {
+        val width = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+        return ((width - 40) / ARTIST_CELL_MIN).coerceIn(3, 8)
+    }
+
+/** The narrowest an artist's portrait and name can be and still be read. */
+private const val ARTIST_CELL_MIN = 132
 
 /**
  * One cell of the artist grid: the same round portrait, sized by its column.

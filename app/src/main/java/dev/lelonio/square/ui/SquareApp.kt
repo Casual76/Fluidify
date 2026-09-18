@@ -27,6 +27,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -46,7 +47,9 @@ import dev.antigravity.fluidengine.ui.fluid.GlassDefaults
 import dev.antigravity.fluidengine.ui.fluid.GlassRole
 import dev.antigravity.fluidengine.ui.fluid.glassSurface
 import dev.antigravity.fluidengine.ui.fluid.FluidFoldingTabBarDefaults
+import dev.antigravity.fluidengine.ui.fluid.FluidTabBarDefaults
 import dev.antigravity.fluidengine.ui.fluid.FluidTabItem
+import dev.antigravity.fluidengine.ui.fluid.FluidTabRail
 import dev.antigravity.fluidengine.ui.fluid.rememberFluidBarFold
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -214,6 +217,18 @@ object Routes {
  * first frame of a cold start puts the end of the list under the bar, which is
  * visible as a jump the moment the measurement lands.
  */
+/**
+ * Where the bar at the bottom becomes a rail at the side.
+ *
+ * Six hundred, which is the width at which a phone stops being the thing on the
+ * other end and a tablet starts: below it the bar is under a thumb, above it the
+ * thumb is nowhere near the bottom of the screen.
+ */
+private val TabletWidth = 600.dp
+
+/** And where there is room for the page to be a page rather than a full-bleed list. */
+private val WideTabletWidth = 900.dp
+
 private val BottomBarHeight =
     FluidFoldingTabBarDefaults.contentInsetWithAccessory(MiniPlayerHeight)
 
@@ -839,14 +854,22 @@ fun SquareApp(
 
     // Turned on its side while a video plays, the phone is a screen.
     //
-    // Nobody rotates a music player to read a queue sideways; they rotate it
-    // because they are watching something. So landscape gives the picture the
-    // whole display and nothing else, the way every video app does — and
-    // turning back brings the player exactly as it was, since none of this
+    // Nobody rotates a *phone* music player to read a queue sideways; they
+    // rotate it because they are watching something. So landscape gives the
+    // picture the whole display and nothing else, the way every video app does —
+    // and turning back brings the player exactly as it was, since none of this
     // touches what is playing.
-    val landscape = androidx.compose.ui.platform.LocalConfiguration.current.orientation ==
-        android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    if (landscape && spotifyVideoOn && player != null) {
+    //
+    // A tablet is the case this argument does not cover. It is held sideways for
+    // everything, so taking the whole window away the moment a Canvas starts
+    // playing is the app deciding, on its own, that you meant to watch a video —
+    // once per rotation, on a device that is rotated all the time. There the
+    // picture stays where a picture goes, inside the player.
+    val configuration = androidx.compose.ui.platform.LocalConfiguration.current
+    val landscapePhone = configuration.orientation ==
+        android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
+        configuration.screenHeightDp < 500
+    if (landscapePhone && spotifyVideoOn && player != null) {
         SquareTheme(seed = accent) {
             dev.lelonio.square.ui.player.FullScreenVideo(
                 player = player,
@@ -990,6 +1013,27 @@ fun SquareApp(
                     }
                 }
 
+                // How wide the window is, which on a tablet is a different
+                // question from how wide the phone is: the activity handles its
+                // own size changes, so this recomposes on a rotation and on a
+                // resize in split screen without the app restarting.
+                val windowWidth = LocalConfiguration.current.screenWidthDp.dp
+                val wide = windowWidth >= TabletWidth
+                // Rail on the left instead of a bar at the bottom, once there is
+                // room for one. A bar at the bottom of a twelve-inch screen is a
+                // long way from a thumb that is holding the edge, and it spends
+                // the one dimension a tablet has spare — the vertical — on
+                // chrome.
+                val railWidth = if (wide) FluidTabBarDefaults.RailWidth else 0.dp
+                // Pages get room around them rather than a line of text as long
+                // as the window. Everything here is written against a phone's
+                // gutters, and this is the one place that can widen them all.
+                val pageGutter = when {
+                    windowWidth >= WideTabletWidth -> 32.dp
+                    wide -> 20.dp
+                    else -> 0.dp
+                }
+
                 val statusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
                 val navBar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
@@ -1086,6 +1130,8 @@ fun SquareApp(
 
                     Box(
                         Modifier
+                            .padding(start = railWidth)
+                            .padding(horizontal = pageGutter)
                             .nestedScroll(barFold.connection)
                             .nestedScroll(pageScroll)
                             // Touching the page puts the keyboard away.
@@ -1598,7 +1644,117 @@ fun SquareApp(
                 // until the process dies.
                 // Faded out *and* taken out: a transparent bar still swallows
                 // the taps meant for the page underneath it.
-                if (chrome > 0.01f) Box(
+                // The material is the engine's now, and that is the point of
+                // this pass. The bar, the pill and the window the pill
+                // becomes were three panes of glass from two different
+                // stacks — and the window has been the engine's ever since
+                // the morph was built, which is why the hand-over between
+                // them never quite matched.
+                //
+                // The settings page goes on tuning the vendored renderer,
+                // which is still what every other surface in the app is made
+                // of. It simply no longer reaches the bar: the engine's
+                // material is described in physical terms rather than in
+                // blur radii, and there is nothing honest to map the one
+                // onto the other.
+                val pillGlass = Modifier.glassSurface(
+                    state = pageGlass,
+                    // The same film as the bar under it and as the window it
+                    // becomes: see rememberPillMorphTint, which is now one
+                    // name for a decision the three of them share.
+                    tint = rememberPillMorphTint(),
+                    shape = FluidCapsuleShape,
+                    role = GlassRole.Floating,
+                )
+
+                val accessory: (@Composable () -> Unit)? = if (playback.hasItem) {
+                    {
+                      Box(
+                          Modifier
+                              .fillMaxSize()
+                              // Cut, not faded: the picture carries on inside
+                              // the travelling surface, and a hand-over has
+                              // nothing to show.
+                              .graphicsLayer { alpha = if (pillHidden) 0f else 1f }
+                              // Measured HERE and not inside the pill: the pill
+                              // wraps its own content in a press-scale layer, and
+                              // bounds taken under that arrive four percent
+                              // larger in the very instant a finger presses to
+                              // open.
+                              .onGloballyPositioned { coordinates ->
+                                  val bounds = coordinates.boundsInRoot()
+                                  // Measured whether or not the pill is on
+                                  // screen. Hidden it is still laid out, and
+                                  // the one case that matters most is the app
+                                  // coming back with the player already open:
+                                  // refusing the measurement there leaves the
+                                  // journey with no start and nothing draws at
+                                  // all. Alpha does not move a node, and the
+                                  // press-scale layer that would have moved it
+                                  // is inside the pill, below this.
+                                  if (bounds != pillBounds &&
+                                      bounds.width > 0f && bounds.height > 0f
+                                  ) {
+                                      pillBounds = bounds
+                                  }
+                              }
+                              .draggable(
+                                  state = rememberDraggableState { delta ->
+                                      scope.dragPlayerMorph(expand, delta, travelPx)
+                                  },
+                                  orientation = androidx.compose.foundation.gestures.Orientation.Vertical,
+                                  onDragStopped = { velocity ->
+                                      scope.settlePlayerMorph(expand, velocity, travelPx, haptics)
+                                  },
+                              ),
+                      ) {
+                      dev.lelonio.square.ui.theme.ArtworkAccentTheme(seed = accent) {
+                        FloatingMiniPlayer(
+                            state = playback,
+                            positionMs = positionMs,
+                            playingOn = remote?.deviceName?.takeIf { it.isNotEmpty() },
+                            // The vertical drag has moved out to the box
+                            // around this one, so it survives the pill being
+                            // cut and so the measurement and the gesture share
+                            // a node. The pill's own detector locks to the
+                            // horizontal after the touch slop, which is why a
+                            // vertical pull never reached it in the first place.
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .then(pillGlass),
+                            inline = barFold.folded,
+                            onClick = {
+                                scope.launch { expand.animateTo(1f, PlayerMorphSpec) }
+                            },
+                            onTogglePlay = {
+                                if (remote != null) {
+                                    val playing = remote?.playing == true
+                                    onRemote { id ->
+                                        if (playing) RemoteConnect.pause(id)
+                                        else RemoteConnect.play(id)
+                                    }
+                                } else {
+                                    player?.togglePlay()
+                                }
+                            },
+                            onNext = {
+                                if (remote != null) onRemote(RemoteConnect::next)
+                                else player?.seekToNextMediaItem()
+                            },
+                            onPrevious = {
+                                if (remote != null) onRemote(RemoteConnect::previous)
+                                else player?.seekToPreviousMediaItem()
+                            },
+                            onSeek = { positionMillis -> player?.seekTo(positionMillis) },
+                        )
+                      }
+                      }
+                    }
+                } else {
+                    null
+                }
+
+                if (chrome > 0.01f && !wide) Box(
                     Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
@@ -1616,124 +1772,6 @@ fun SquareApp(
                         }
                         .onSizeChanged { barHeight = with(density) { it.height.toDp() } },
                 ) {
-                    // The material comes from the settings now, provided once at
-                    // the top of the app; what is still local here is which
-                    // backdrop the bar's surfaces sample when they are not handed
-                    // one, and that has to stay local — a pane drawn inside the
-                    // layer it samples recurses on the render thread until the
-                    // process dies.
-                    androidx.compose.runtime.CompositionLocalProvider(
-                        dev.lelonio.square.ui.glass.LocalAppBackdrop provides pageBackdrop,
-                    ) {
-                    // The material is the engine's now, and that is the point of
-                    // this pass. The bar, the pill and the window the pill
-                    // becomes were three panes of glass from two different
-                    // stacks — and the window has been the engine's ever since
-                    // the morph was built, which is why the hand-over between
-                    // them never quite matched.
-                    //
-                    // The settings page goes on tuning the vendored renderer,
-                    // which is still what every other surface in the app is made
-                    // of. It simply no longer reaches the bar: the engine's
-                    // material is described in physical terms rather than in
-                    // blur radii, and there is nothing honest to map the one
-                    // onto the other.
-                    val pillGlass = Modifier.glassSurface(
-                        state = pageGlass,
-                        // The same film as the bar under it and as the window it
-                        // becomes: see rememberPillMorphTint, which is now one
-                        // name for a decision the three of them share.
-                        tint = rememberPillMorphTint(),
-                        shape = FluidCapsuleShape,
-                        role = GlassRole.Floating,
-                    )
-
-                    val accessory: (@Composable () -> Unit)? = if (playback.hasItem) {
-                        {
-                          Box(
-                              Modifier
-                                  .fillMaxSize()
-                                  // Cut, not faded: the picture carries on inside
-                                  // the travelling surface, and a hand-over has
-                                  // nothing to show.
-                                  .graphicsLayer { alpha = if (pillHidden) 0f else 1f }
-                                  // Measured HERE and not inside the pill: the pill
-                                  // wraps its own content in a press-scale layer, and
-                                  // bounds taken under that arrive four percent
-                                  // larger in the very instant a finger presses to
-                                  // open.
-                                  .onGloballyPositioned { coordinates ->
-                                      val bounds = coordinates.boundsInRoot()
-                                      // Measured whether or not the pill is on
-                                      // screen. Hidden it is still laid out, and
-                                      // the one case that matters most is the app
-                                      // coming back with the player already open:
-                                      // refusing the measurement there leaves the
-                                      // journey with no start and nothing draws at
-                                      // all. Alpha does not move a node, and the
-                                      // press-scale layer that would have moved it
-                                      // is inside the pill, below this.
-                                      if (bounds != pillBounds &&
-                                          bounds.width > 0f && bounds.height > 0f
-                                      ) {
-                                          pillBounds = bounds
-                                      }
-                                  }
-                                  .draggable(
-                                      state = rememberDraggableState { delta ->
-                                          scope.dragPlayerMorph(expand, delta, travelPx)
-                                      },
-                                      orientation = androidx.compose.foundation.gestures.Orientation.Vertical,
-                                      onDragStopped = { velocity ->
-                                          scope.settlePlayerMorph(expand, velocity, travelPx, haptics)
-                                      },
-                                  ),
-                          ) {
-                          dev.lelonio.square.ui.theme.ArtworkAccentTheme(seed = accent) {
-                            FloatingMiniPlayer(
-                                state = playback,
-                                positionMs = positionMs,
-                                playingOn = remote?.deviceName?.takeIf { it.isNotEmpty() },
-                                // The vertical drag has moved out to the box
-                                // around this one, so it survives the pill being
-                                // cut and so the measurement and the gesture share
-                                // a node. The pill's own detector locks to the
-                                // horizontal after the touch slop, which is why a
-                                // vertical pull never reached it in the first place.
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .then(pillGlass),
-                                inline = barFold.folded,
-                                onClick = {
-                                    scope.launch { expand.animateTo(1f, PlayerMorphSpec) }
-                                },
-                                onTogglePlay = {
-                                    if (remote != null) {
-                                        val playing = remote?.playing == true
-                                        onRemote { id ->
-                                            if (playing) RemoteConnect.pause(id)
-                                            else RemoteConnect.play(id)
-                                        }
-                                    } else {
-                                        player?.togglePlay()
-                                    }
-                                },
-                                onNext = {
-                                    if (remote != null) onRemote(RemoteConnect::next)
-                                    else player?.seekToNextMediaItem()
-                                },
-                                onPrevious = {
-                                    if (remote != null) onRemote(RemoteConnect::previous)
-                                    else player?.seekToPreviousMediaItem()
-                                },
-                                onSeek = { positionMillis -> player?.seekTo(positionMillis) },
-                            )
-                          }
-                          }
-                        }
-                    } else {
-                        null
-                    }
 
                     // Before anything is drawn for real; see GlassWarmUp.
                     dev.lelonio.square.ui.glass.GlassWarmUp(pageBackdrop)
@@ -1881,6 +1919,88 @@ fun SquareApp(
                             )
                         },
                     )
+                }
+
+                // The tablet's own chrome: a rail down the side, and a dock at
+                // the foot of the page.
+                //
+                // Not the same bar moved. A bar at the bottom of a twelve-inch
+                // screen is a long way from the hand holding the edge, and it
+                // spends the one dimension a tablet has spare — the vertical —
+                // on navigation. The rail gives that back and costs width, which
+                // is the dimension there is plenty of.
+                //
+                // Search joins the rail as a third destination here, instead of
+                // being the circle that grows into a field. On a phone the field
+                // has to live in the chrome because the chrome is the only thing
+                // above the keyboard; on a tablet it can be a place you go, the
+                // way the rest of the world does it.
+                if (chrome > 0.01f && wide) {
+                    val homeLabel = stringResource(R.string.home)
+                    val libraryLabel = stringResource(R.string.library)
+                    val searchLabel = stringResource(R.string.search)
+                    val railTabs = remember(homeLabel, libraryLabel, searchLabel) {
+                        listOf(
+                            FluidTabItem(Routes.HOME, homeLabel, PhosphorIcons.Regular.House),
+                            FluidTabItem(Routes.LIBRARY, libraryLabel, PhosphorIcons.Regular.MusicNotes),
+                            FluidTabItem(
+                                Routes.SEARCH,
+                                searchLabel,
+                                PhosphorIcons.Regular.MagnifyingGlass,
+                            ),
+                        )
+                    }
+                    Box(
+                        Modifier
+                            .align(Alignment.CenterStart)
+                            // Inside the safe area, and centred in what is left:
+                            // the rail is a capsule floating beside the page, not
+                            // a sidebar, and one that starts at the top of the
+                            // screen is a sidebar with the clock on it.
+                            .padding(top = statusBar, bottom = navBar)
+                            .padding(start = 10.dp)
+                            // Told its height, because it is not told to wrap:
+                            // the rail paints its glass on a Column that fills
+                            // whatever it is given, which is right for a rail
+                            // that runs the height of a window and wrong for one
+                            // that holds three destinations.
+                            .height(FluidTabBarDefaults.Height * railTabs.size)
+                            .graphicsLayer {
+                                alpha = (1f - expand.value * 3f).coerceIn(0f, 1f) * chrome
+                            },
+                    ) {
+                        FluidTabRail(
+                            items = railTabs,
+                            // The route itself here, not `activeTab`: search is a
+                            // destination of its own on this side, so the rail
+                            // can light it.
+                            selectedRoute = if (route in railTabs.map { it.route }) route else activeTab,
+                            onSelect = { navController.switchTab(it.route) },
+                            onReselect = { navController.switchTab(it.route) },
+                            backdrop = pageGlass,
+                        )
+                    }
+
+                    // The dock. Same pill, same measured rectangle, so the window
+                    // still grows out of it exactly as it does on a phone — it is
+                    // simply sitting at the foot of the page instead of over the
+                    // whole width of the screen.
+                    if (accessory != null) {
+                        Box(
+                            Modifier
+                                .align(Alignment.BottomCenter)
+                                .fillMaxWidth()
+                                .padding(start = railWidth)
+                                .padding(horizontal = pageGutter + 12.dp)
+                                .padding(bottom = navBar + 12.dp)
+                                .imePadding()
+                                .graphicsLayer {
+                                    alpha = (1f - expand.value * 3f).coerceIn(0f, 1f) * chrome
+                                }
+                                .onSizeChanged { barHeight = with(density) { it.height.toDp() } },
+                        ) {
+                            Box(Modifier.height(MiniPlayerHeight)) { accessory() }
+                        }
                     }
                 }
 
