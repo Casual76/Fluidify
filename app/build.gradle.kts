@@ -88,8 +88,15 @@ android {
         versionCode = 3
         versionName = "1.1.0"
 
+        // The shipped set, and only that. AGP takes the **union** of this and
+        // whatever a build type adds — clearing the build type's own list does
+        // not remove what was named here — so a default of everything is a
+        // release that carries everything, whatever the release block says. That
+        // is exactly what happened: the store APK came out at 26 MB with an
+        // x86_64 library in it that no phone will ever load. The build types
+        // that want more say so themselves; see `dev` and `debug` below.
         ndk {
-            abiFilters += nativeAbis
+            abiFilters += shippedAbis
         }
     }
 
@@ -114,15 +121,14 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
+            // The emulator's architecture too; see the note in defaultConfig.
+            ndk {
+                abiFilters += nativeAbis
+            }
         }
         release {
             isMinifyEnabled = true
             isShrinkResources = true
-            // The phone's architecture only; see shippedAbis.
-            ndk {
-                abiFilters.clear()
-                abiFilters += shippedAbis
-            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // The real key when there is one, the debug key otherwise — see
             // keystoreProperties above. A build signed with the debug key runs
@@ -155,12 +161,11 @@ android {
             initWith(getByName("release"))
             isMinifyEnabled = false
             isShrinkResources = false
-            // `initWith` copies release's ABI filter along with everything else,
-            // and release ships arm64 alone — so without this the one build type
-            // that exists to be run while working on the app is the one that
-            // cannot be run on an emulator.
+            // Added to the shipped set rather than replacing it: these are
+            // unioned, which is the whole trap. Without this the one build type
+            // that exists to be run while working on the app is the one an
+            // emulator cannot run.
             ndk {
-                abiFilters.clear()
                 abiFilters += nativeAbis
             }
             // The engine modules only declare debug/release; without a fallback
