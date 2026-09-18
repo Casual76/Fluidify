@@ -381,4 +381,5 @@
     <string name="shortcut_search_short">Cerca</string>
     <string name="shortcut_library">La tua libreria</string>
     <string name="shortcut_library_short">Libreria</string>
+    <string name="reorder">Riordina</string>
 </resources>

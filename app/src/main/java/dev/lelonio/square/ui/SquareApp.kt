@@ -2232,6 +2232,9 @@ fun SquareApp(
                                 onWantArtist = viewModel::loadArtist,
                                 onPlayQueueItem = { player?.seekTo(it, 0L) },
                                 onRemoveQueueItem = { player?.removeMediaItem(it) },
+                                onMoveQueueItem = { from, to ->
+                                    player?.moveMediaItem(from, to)
+                                },
                                 backdrop = artBackdrop,
                                 canvas = canvas,
                                 devices = devices,

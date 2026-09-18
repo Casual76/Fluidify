@@ -101,6 +101,8 @@ import dev.lelonio.square.ui.glass.liquidGlass
 import dev.lelonio.square.ui.glass.backdrop.backdrops.layerBackdrop
 import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberCombinedBackdrop
 import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberLayerBackdrop
+import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
+import dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics
 import dev.lelonio.square.R
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.Artwork
@@ -203,6 +205,8 @@ fun PlayerScreen(
     onPlayQueueItem: (Int) -> Unit,
     /** Drops one track out of the queue, by index. */
     onRemoveQueueItem: (Int) -> Unit,
+    /** Moves a queued track to another place in the queue. */
+    onMoveQueueItem: (from: Int, to: Int) -> Unit,
     /** The music video for this track, when the catalogue has one. */
     videoFileId: String? = null,
     /** Whether the listener has asked to watch rather than listen. */
@@ -989,7 +993,12 @@ fun PlayerScreen(
                                 )
 
                                 Stage.QUEUE -> Box(Modifier.fillMaxSize()) {
-                                    QueueList(queue, onPlayQueueItem, onRemoveQueueItem)
+                                    QueueList(
+                                        queue = queue,
+                                        onPlay = onPlayQueueItem,
+                                        onRemove = onRemoveQueueItem,
+                                        onMove = onMoveQueueItem,
+                                    )
                                 }
 
                                 Stage.DEVICES -> Box(
@@ -1869,11 +1878,21 @@ internal fun Controls(
         // gives the transport its own row of circles rather than icons on a bar,
         // and the size difference is the only thing marking the primary action —
         // no fill, no accent.
+        // A knock under the finger on each of the three, and it is the engine's
+        // own vocabulary rather than the platform's: a skip is a Tap, the thing
+        // the phone does when you have changed what is happening. The transport
+        // is the one place in the app where the control is small, the
+        // consequence is large, and the eyes are often somewhere else.
+        val transportHaptics = LocalFluidHaptics.current
+
         RoundGlassButton(
             backdrop = backdrop,
             size = 62.dp,
             enabled = state.hasPrevious,
-            onClick = onPrevious,
+            onClick = {
+                transportHaptics.play(FluidHapticEvent.Tap)
+                onPrevious()
+            },
         ) {
             Icon(
                 PhosphorIcons.Fill.SkipBack,
@@ -1882,7 +1901,17 @@ internal fun Controls(
             )
         }
 
-        RoundGlassButton(backdrop = backdrop, size = 76.dp, onClick = onTogglePlay) {
+        RoundGlassButton(
+            backdrop = backdrop,
+            size = 76.dp,
+            onClick = {
+                transportHaptics.play(
+                    if (state.isPlaying) FluidHapticEvent.ToggleOff
+                    else FluidHapticEvent.ToggleOn,
+                )
+                onTogglePlay()
+            },
+        ) {
             // A ring around the icon while the track is still being fetched.
             //
             // Worth its place here and nowhere else: a YouTube track has to have
@@ -1918,7 +1947,10 @@ internal fun Controls(
             backdrop = backdrop,
             size = 62.dp,
             enabled = state.hasNext,
-            onClick = onNext,
+            onClick = {
+                transportHaptics.play(FluidHapticEvent.Tap)
+                onNext()
+            },
         ) {
             Icon(
                 PhosphorIcons.Fill.SkipForward,

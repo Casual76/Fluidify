@@ -395,4 +395,5 @@
     <string name="shortcut_search_short">खोज</string>
     <string name="shortcut_library">आपकी लाइब्रेरी</string>
     <string name="shortcut_library_short">लाइब्रेरी</string>
+    <string name="reorder">क्रम बदलें</string>
 </resources>

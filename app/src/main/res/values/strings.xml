@@ -401,4 +401,5 @@
     <string name="shortcut_search_short">Search</string>
     <string name="shortcut_library">Your library</string>
     <string name="shortcut_library_short">Library</string>
+    <string name="reorder">Reorder</string>
 </resources>

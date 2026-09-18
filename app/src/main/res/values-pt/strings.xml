@@ -380,4 +380,5 @@
     <string name="shortcut_search_short">Procurar</string>
     <string name="shortcut_library">A tua biblioteca</string>
     <string name="shortcut_library_short">Biblioteca</string>
+    <string name="reorder">Reordenar</string>
 </resources>

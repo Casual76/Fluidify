@@ -395,4 +395,5 @@
     <string name="shortcut_search_short">Ara</string>
     <string name="shortcut_library">Kitapligin</string>
     <string name="shortcut_library_short">Kitaplik</string>
+    <string name="reorder">Yeniden sirala</string>
 </resources>

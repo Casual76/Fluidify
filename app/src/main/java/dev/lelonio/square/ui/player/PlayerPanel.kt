@@ -30,7 +30,6 @@ import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
@@ -63,6 +62,15 @@ import com.adamglin.phosphoricons.regular.VinylRecord
 import com.adamglin.phosphoricons.fill.Info
 import com.adamglin.phosphoricons.regular.Info
 import com.adamglin.phosphoricons.regular.X
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import androidx.compose.ui.platform.LocalHapticFeedback
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.graphics.graphicsLayer
+import com.adamglin.phosphoricons.regular.DotsSixVertical
 import dev.lelonio.square.ui.glass.pressable
 
 /** Which panel is open below the transport controls. */
@@ -265,11 +273,30 @@ internal fun QueueList(
     onPlay: (Int) -> Unit,
     /** Takes a track out of the queue; absent for the one playing. */
     onRemove: (Int) -> Unit,
+    /** Moves a track to another place in the queue. See [QueueDragHandleWidth]. */
+    onMove: (from: Int, to: Int) -> Unit = { _, _ -> },
 ) {
     if (queue.isEmpty()) {
         EmptyPanel(stringResource(R.string.queue_empty))
         return
     }
+
+    val haptics = LocalHapticFeedback.current
+
+    // Which row is in the hand.
+    //
+    // The index is renumbered *while* the drag happens — every crossing moves
+    // the row and shifts the ones it passed — so this is updated at each
+    // crossing rather than held from the press. Minus one means nobody is
+    // dragging, which is also why it cannot simply be the row's own index.
+    var draggingIndex by remember { mutableIntStateOf(-1) }
+
+    // How far the finger has travelled since the last crossing, not since the
+    // press. Once a row has been moved, the list has already put it under the
+    // finger again, so carrying the whole distance forward would move it a
+    // second time for a journey it has already made.
+    var dragOffset by remember { mutableFloatStateOf(0f) }
+    val rowHeight = with(LocalDensity.current) { QueueRowHeight.toPx() }
 
     LazyColumn(Modifier.padding(vertical = 8.dp)) {
         // Keyed on the track, not on where it sits.
@@ -283,10 +310,39 @@ internal fun QueueList(
             queue,
             key = { at, entry -> "${entry.uri}-$at-${entry.title}" },
         ) { _, entry ->
+            val held = draggingIndex == entry.index
             Row(
                 Modifier
                     .fillMaxWidth()
-                    .animateItem()
+                    // Everything but the row in the hand animates into its new
+                    // place. The held one must not: `animateItem` would be
+                    // animating a row that is already following a finger, and
+                    // the two together read as the row lagging behind the hand
+                    // rather than as the list making room for it.
+                    .then(if (held) Modifier else Modifier.animateItem())
+                    // Lifted onto the glass while it travels, which is the whole
+                    // point of a drag you can see: a row that only slides looks
+                    // like the list scrolling under it.
+                    .graphicsLayer {
+                        if (held) {
+                            translationY = dragOffset
+                            scaleX = QueueHeldScale
+                            scaleY = QueueHeldScale
+                            shadowElevation = QueueHeldElevation.toPx()
+                            shape = RoundedCornerShape(14.dp)
+                            clip = false
+                        }
+                    }
+                    .then(
+                        if (held) {
+                            Modifier.background(
+                                GlassInk.copy(alpha = 0.10f),
+                                RoundedCornerShape(14.dp),
+                            )
+                        } else {
+                            Modifier
+                        },
+                    )
                     .clickable { onPlay(entry.index) }
                     .padding(horizontal = 18.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
@@ -356,11 +412,101 @@ internal fun QueueList(
                             .padding(10.dp)
                             .size(16.dp),
                     )
+
+                    // A handle, and not the whole row.
+                    //
+                    // The row is already a button — tapping it plays that track
+                    // — and a list that reorders itself when you meant to play
+                    // something is worse than one that does not reorder at all.
+                    // A long press would have been the other answer, and it is
+                    // the wrong one here: this list is inside a panel that is
+                    // itself dragged open and shut, so half a second of holding
+                    // still before anything happens is half a second of the
+                    // panel wondering whether it is being closed.
+                    val startIndex by rememberUpdatedState(entry.index)
+                    Icon(
+                        PhosphorIcons.Regular.DotsSixVertical,
+                        contentDescription = stringResource(R.string.reorder),
+                        tint = GlassInkDim,
+                        modifier = Modifier
+                            .padding(start = 2.dp)
+                            .size(QueueDragHandleWidth)
+                            // Keyed on nothing: the detector must survive the
+                            // reordering it is causing. `startIndex` is read
+                            // through a state for the same reason — the row this
+                            // lambda was built for has a different index by the
+                            // second crossing.
+                            .pointerInput(Unit) {
+                                detectVerticalDragGestures(
+                                    onDragStart = {
+                                        draggingIndex = startIndex
+                                        dragOffset = 0f
+                                        haptics.performHapticFeedback(
+                                            HapticFeedbackType.LongPress,
+                                        )
+                                    },
+                                    onDragEnd = {
+                                        draggingIndex = -1
+                                        dragOffset = 0f
+                                    },
+                                    onDragCancel = {
+                                        draggingIndex = -1
+                                        dragOffset = 0f
+                                    },
+                                ) { change, amount ->
+                                    change.consume()
+                                    dragOffset += amount
+                                    // One row at a time, and the offset is reset
+                                    // by exactly the row it crossed: what is
+                                    // left is the part of the journey the list
+                                    // has not answered yet.
+                                    while (dragOffset >= rowHeight) {
+                                        val to = draggingIndex + 1
+                                        if (to > queue.last().index) break
+                                        onMove(draggingIndex, to)
+                                        draggingIndex = to
+                                        dragOffset -= rowHeight
+                                        haptics.performHapticFeedback(
+                                            HapticFeedbackType.SegmentTick,
+                                        )
+                                    }
+                                    while (dragOffset <= -rowHeight) {
+                                        val to = draggingIndex - 1
+                                        if (to < queue.first().index) break
+                                        onMove(draggingIndex, to)
+                                        draggingIndex = to
+                                        dragOffset += rowHeight
+                                        haptics.performHapticFeedback(
+                                            HapticFeedbackType.SegmentTick,
+                                        )
+                                    }
+                                }
+                            },
+                    )
                 }
             }
         }
     }
 }
+
+/**
+ * How tall one queue row is: a 44 dp cover with 8 dp above and below it.
+ *
+ * Written down rather than measured, and that is a trade made on purpose. The
+ * honest way is to read each row's bounds and find which one the finger is over,
+ * which is also four more pieces of state and a re-layout inside a drag. Every
+ * row here is the same height by construction — the cover sets it and the two
+ * lines beside it are shorter — so one number is the whole answer, and it is
+ * wrong only if somebody changes the row without changing this.
+ */
+private val QueueRowHeight = 60.dp
+
+/** The grip. Wide enough to hit without being wide enough to hit by accident. */
+private val QueueDragHandleWidth = 22.dp
+
+/** How much a held row grows, and how far it stands off the list. */
+private const val QueueHeldScale = 1.02f
+private val QueueHeldElevation = 10.dp
 
 @Composable
 internal fun EmptyPanel(message: String) {
