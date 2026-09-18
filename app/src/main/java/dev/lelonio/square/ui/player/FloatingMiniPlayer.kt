@@ -62,7 +62,7 @@ import com.adamglin.phosphoricons.fill.Pause
 import com.adamglin.phosphoricons.fill.Play
 import com.adamglin.phosphoricons.fill.SkipForward
 import dev.lelonio.square.R
-import dev.lelonio.square.ui.glass.InteractiveHighlight
+import dev.antigravity.fluidengine.ui.glass.interaction.GlassTouchHighlight
 import dev.lelonio.square.ui.glass.ScrollingWaveformSeekBar
 import dev.lelonio.square.ui.components.Artwork
 import kotlinx.coroutines.launch
@@ -129,7 +129,7 @@ fun FloatingMiniPlayer(
     // detector and the click below.
     val onDark = dev.lelonio.square.ui.theme.onDarkPage
     val glow = remember(scope, onDark) {
-        InteractiveHighlight(animationScope = scope, onDarkSurface = onDark)
+        GlassTouchHighlight(animationScope = scope, onDarkSurface = onDark)
     }
 
     val offsetX = remember { Animatable(0f) }

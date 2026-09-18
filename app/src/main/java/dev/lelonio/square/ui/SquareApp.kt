@@ -40,12 +40,12 @@ import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
 import dev.antigravity.fluidengine.ui.fluid.GlassDefaults
 import dev.antigravity.fluidengine.ui.fluid.GlassRole
 import dev.antigravity.fluidengine.ui.fluid.glassSurface
-import dev.antigravity.fluidengine.ui.fluid.FluidFoldingTabBarDefaults
 import dev.antigravity.fluidengine.ui.fluid.FluidTabBarDefaults
 import dev.antigravity.fluidengine.ui.fluid.FluidTabItem
-import dev.lelonio.square.ui.glass.floatingtabbar.FloatingTabBar
-import dev.lelonio.square.ui.glass.floatingtabbar.FloatingTabBarDefaults
-import dev.lelonio.square.ui.glass.floatingtabbar.rememberFloatingTabBarScrollConnection
+import dev.antigravity.fluidengine.ui.fluid.FluidFloatingTabBar
+import dev.antigravity.fluidengine.ui.fluid.FluidFloatingTabBarDefaults
+import dev.antigravity.fluidengine.ui.fluid.FluidFloatingTabBarGlass
+import dev.antigravity.fluidengine.ui.fluid.rememberFluidFloatingTabBarScrollConnection
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -225,7 +225,7 @@ private val TabletWidth = 600.dp
 private val WideTabletWidth = 900.dp
 
 private val BottomBarHeight =
-    FluidFoldingTabBarDefaults.contentInsetWithAccessory(MiniPlayerHeight)
+    FluidFloatingTabBarDefaults.contentInsetWithAccessory(MiniPlayerHeight)
 
 /**
  * Decode size of the page backdrop, in pixels.
@@ -940,7 +940,7 @@ fun SquareApp(
         // What folds the bar, and what tells the glass the page is moving. Built
         // here rather than beside the bar because both of those are read at the
         // top of the app: the glass configuration is provided from this scope.
-        val tabBarScroll = rememberFloatingTabBarScrollConnection()
+        val tabBarScroll = rememberFluidFloatingTabBarScrollConnection()
         // Held as a lambda so a scroll starting or stopping costs no
         // recomposition of the app: the surfaces ask during draw.
         val pageMoving = remember(tabBarScroll) { { tabBarScroll.scrolling } }
@@ -957,7 +957,7 @@ fun SquareApp(
 
                 // A screen that leaves mid-gesture never delivers its fling,
                 // and the scroll-hold it started would freeze every glass
-                // capture in the app; see FloatingTabBarScrollConnection.settle.
+                // capture in the app; see FluidFloatingTabBarScrollConnection.settle.
                 LaunchedEffect(route) { tabBarScroll.settle() }
 
                 // Which tab the bar shows as the current one.
@@ -1867,7 +1867,7 @@ fun SquareApp(
                         if (searching || !barFolds) tabBarScroll.expand()
                     }
 
-                    FloatingTabBar(
+                    FluidFloatingTabBar(
                         // Always the tab the page belongs to, search included.
                         //
                         // Naming the search circle here instead left the search
@@ -1887,11 +1887,11 @@ fun SquareApp(
                         // bar is made of: transparent colours underneath, and
                         // every surface sampling the page through this.
                         tabBarContentModifier = barGlass,
-                        colors = FloatingTabBarDefaults.colors(
+                        colors = FluidFloatingTabBarDefaults.colors(
                             backgroundColor = Color.Transparent,
                             accessoryBackgroundColor = Color.Transparent,
                         ),
-                        sizes = FloatingTabBarDefaults.sizes(
+                        sizes = FluidFloatingTabBarDefaults.sizes(
                             tabBarContentPadding = PaddingValues(4.dp),
                             tabExpandedContentPadding = PaddingValues(vertical = 6.dp, horizontal = 6.dp),
                             tabInlineContentPadding = PaddingValues(8.dp),
@@ -1903,9 +1903,20 @@ fun SquareApp(
                             // matches the row, shorter with it.
                             tabWidth = (272.dp - 8.dp) / 2,
                         ),
+                        // The bar's own knobs, which are the ones the settings
+                        // screen moves. Everything else about its glass is the
+                        // engine's business now.
+                        glass = FluidFloatingTabBarGlass(
+                            blurRadius = barConfig.blurRadius.dp,
+                            puckColor = barConfig.puckColor,
+                            puckOpacity = barConfig.puckOpacity,
+                        ),
                         inlineAccessory = accessory,
                         expandedAccessory = accessory,
-                        backdrop = pageBackdrop,
+                        // The engine's record of the page, not the vendored one.
+                        // The bar lives in the engine now, and a surface can only
+                        // sample a layer the same stack recorded.
+                        backdrop = pageGlass,
                         accentColor = Ink,
                         searchMode = searching,
                         searchBarContent = if (searching) {
