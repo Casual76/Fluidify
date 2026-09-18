@@ -78,6 +78,30 @@ class MainActivity : ComponentActivity() {
                 android.graphics.Color.TRANSPARENT,
             ),
         )
+        // The window's own colour, from the app's setting rather than from the
+        // phone's.
+        //
+        // The starting window before this point is drawn by the system, which
+        // has never heard of the setting: with the phone dark and the app told
+        // to be light, a cold start began on black and corrected itself a frame
+        // later. Repainting here costs nothing and closes that gap — everything
+        // Compose draws on top is transparent down to this.
+        val dark = when (
+            (application as dev.lelonio.square.SquareApplication).preferences.readThemeMode()
+        ) {
+            dev.lelonio.square.data.AppThemeMode.Light -> false
+            dev.lelonio.square.data.AppThemeMode.Dark -> true
+            dev.lelonio.square.data.AppThemeMode.System ->
+                resources.configuration.uiMode and
+                    android.content.res.Configuration.UI_MODE_NIGHT_MASK ==
+                    android.content.res.Configuration.UI_MODE_NIGHT_YES
+        }
+        window.setBackgroundDrawable(
+            android.graphics.drawable.ColorDrawable(
+                getColor(if (dark) R.color.page_floor_dark else R.color.page_floor_light),
+            ),
+        )
+
         if (intent?.opensPlayer() == true) {
             openPlayer++
         }

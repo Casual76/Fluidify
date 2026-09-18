@@ -319,7 +319,7 @@ private fun LyricRow(
                             },
                         ),
                         fontWeight = FontWeight.Bold,
-                        color = Color.White,
+                        color = dev.lelonio.square.ui.theme.Ink,
                         textAlign = TextAlign.Start,
                         modifier = Modifier.graphicsLayer {
                             translationY = -4.dp.toPx() * lineBump
@@ -416,7 +416,7 @@ private fun LyricRow(
                         fontSize = 15.sp,
                         lineHeight = 19.sp,
                     ),
-                    color = Color.White.copy(alpha = 0.62f),
+                    color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.62f),
                     textAlign = TextAlign.Start,
                     modifier = Modifier
                         .then(if (blurRadius > 0.dp) Modifier.blur(blurRadius) else Modifier)

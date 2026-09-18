@@ -362,4 +362,9 @@
     <string name="offline_banner_no_network">Hors connexion — aucune connexion</string>
     <string name="offline_banner_slow">Hors connexion — le réseau est moins bon que vos téléchargements</string>
     <string name="offline_banner_manual">Hors connexion — vous l\'avez activé</string>
+    <string name="theme">Thème</string>
+    <string name="theme_system">Suivre le téléphone</string>
+    <string name="theme_light">Clair</string>
+    <string name="theme_dark">Sombre</string>
+    <string name="theme_note">Le clair tire la pochette vers le papier, le sombre la tire vers le noir. C&#8217;est la même page, lue dans deux sens.</string>
 </resources>

@@ -86,10 +86,14 @@ fun GlassChip(
 }
 
 /** The film every glass surface in the app is washed with. */
-private val FILM = Color.White.copy(alpha = 0.08f)
+private val FILM: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable get() =
+        dev.lelonio.square.ui.theme.glassFilm(0.08f)
 
 /** The hairline that catches the light along the edge. */
-private val RIM = Color.White.copy(alpha = 0.20f)
+private val RIM: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable get() =
+        dev.lelonio.square.ui.theme.glassEdge(0.2f)
 
 /** Enough accent to be unmistakable, little enough to still be the material. */
 private const val LIT_ALPHA = 0.42f

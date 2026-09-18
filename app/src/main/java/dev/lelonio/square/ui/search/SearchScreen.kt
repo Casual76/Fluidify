@@ -410,7 +410,9 @@ private fun StatusBox(content: @Composable () -> Unit) {
 }
 
 /** The chip that is lit, filled a little harder than the rest; see the home page. */
-private val SelectedFilm = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.26f)
+private val SelectedFilm: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable get() =
+        dev.lelonio.square.ui.theme.glassFilm(0.26f)
 
 /**
  * The pill behind "lyrics match": lighter than a lit chip.
@@ -418,7 +420,9 @@ private val SelectedFilm = androidx.compose.ui.graphics.Color.White.copy(alpha =
  * It labels a row rather than offering something to press, and at chip
  * strength a whole page of them reads as a page of buttons.
  */
-private val BadgeFilm = androidx.compose.ui.graphics.Color.White.copy(alpha = 0.16f)
+private val BadgeFilm: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable get() =
+        dev.lelonio.square.ui.theme.glassFilm(0.16f)
 
 /** How many of each kind the combined page shows before the chips take over. */
 private const val TOP_RESULTS = 4

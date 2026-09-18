@@ -122,7 +122,7 @@ fun GlassMenuItem(
     destructive: Boolean = false,
     onClick: () -> Unit,
 ) {
-    val tint = if (destructive) MaterialTheme.colorScheme.error else Color.White
+    val tint = if (destructive) MaterialTheme.colorScheme.error else dev.lelonio.square.ui.theme.Ink
     Row(
         Modifier
             .fillMaxWidth()
@@ -145,11 +145,25 @@ val MENU_WIDTH = 244.dp
 
 private val TopEnd = TransformOrigin(1f, 0f)
 
-/** Dark enough that a list of track titles does not read through it. */
-private val MenuSurface = Color(0xFF16161A)
+/**
+ * Opaque enough that a list of track titles does not read through it.
+ *
+ * The one surface in the app that is *not* glass, and deliberately: a menu is
+ * the thing you have opened, and anything readable behind it is an invitation to
+ * read the wrong line. So it takes the page's floor rather than the page's film.
+ */
+private val MenuSurface: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable get() =
+        if (dev.lelonio.square.ui.theme.LocalLightTheme.current) {
+            Color(0xFFFBFBFD)
+        } else {
+            Color(0xFF16161A)
+        }
 
 /** The hairline every other surface in the app catches light with. */
-private val MenuEdge = Color.White.copy(alpha = 0.14f)
+private val MenuEdge: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable get() =
+        dev.lelonio.square.ui.theme.glassEdge(0.14f)
 
 /**
  * The compact form: one row of icons in a glass capsule.
@@ -230,14 +244,16 @@ fun GlassIconMenuItem(
         Icon(
             icon,
             contentDescription = description,
-            tint = if (destructive) MaterialTheme.colorScheme.error else Color.White,
+            tint = if (destructive) MaterialTheme.colorScheme.error else dev.lelonio.square.ui.theme.Ink,
             modifier = Modifier.size(21.dp),
         )
     }
 }
 
 /** Light enough to stay glass; the capsule is small and never covers text. */
-private val CapsuleFilm = Color.White.copy(alpha = 0.14f)
+private val CapsuleFilm: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable get() =
+        dev.lelonio.square.ui.theme.glassFilm(0.14f)
 
 /**
  * A short list of choices, in glass, drawn inside the screen.
@@ -373,7 +389,7 @@ fun GlassMenuRule() {
             .fillMaxWidth()
             .padding(horizontal = 14.dp, vertical = 5.dp)
             .height(1.dp)
-            .background(Color.White.copy(alpha = 0.10f)),
+            .background(dev.lelonio.square.ui.theme.glassFilm(0.10f)),
     )
 }
 
@@ -393,7 +409,7 @@ fun GlassChoiceItem(
         Text(
             label,
             style = MaterialTheme.typography.bodyMedium,
-            color = if (selected) Color.White else Color.White.copy(alpha = 0.72f),
+            color = if (selected) dev.lelonio.square.ui.theme.Ink else dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.72f),
             maxLines = 1,
             modifier = Modifier.weight(1f),
         )
@@ -403,7 +419,7 @@ fun GlassChoiceItem(
             Icon(
                 CheckIcon,
                 contentDescription = null,
-                tint = Color.White,
+                tint = dev.lelonio.square.ui.theme.Ink,
                 modifier = Modifier.size(15.dp),
             )
         }

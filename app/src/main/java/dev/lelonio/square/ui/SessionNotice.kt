@@ -53,7 +53,7 @@ fun SessionExpiredNotice(
             backdrop = backdrop,
             shape = RoundedCornerShape(26.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            surfaceColor = Color.White.copy(alpha = 0.10f),
+            surfaceColor = dev.lelonio.square.ui.theme.glassFilm(0.10f),
         ) {
             Column(
                 Modifier.padding(horizontal = 20.dp, vertical = 16.dp),
@@ -63,12 +63,12 @@ fun SessionExpiredNotice(
                     stringResource(R.string.web_api_expired_title),
                     style = MaterialTheme.typography.titleSmall,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                    color = dev.lelonio.square.ui.theme.Ink,
                 )
                 Text(
                     stringResource(R.string.web_api_expired_body),
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.75f),
+                    color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.75f),
                 )
                 Row(
                     Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -79,13 +79,13 @@ fun SessionExpiredNotice(
                         stringResource(R.string.web_api_expired_action),
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
-                        color = Color.White,
+                        color = dev.lelonio.square.ui.theme.Ink,
                         modifier = Modifier.pressable(onClick = onReconnect),
                     )
                     Text(
                         stringResource(R.string.later),
                         style = MaterialTheme.typography.labelLarge,
-                        color = Color.White.copy(alpha = 0.6f),
+                        color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.6f),
                         modifier = Modifier.pressable(onClick = onDismiss),
                     )
                 }

@@ -181,20 +181,28 @@ fun CoroutineScope.settlePlayerMorph(
  * fifty-five levels of grey, and a step that size in one frame is precisely the
  * join this arrangement exists to hide.
  *
- * Dark, rather than the family's own floating film, for the reason the engine
- * gives for [dev.antigravity.fluidengine.ui.fluid.GlassDefaults.darkFloatingTint]:
- * that film is a *bright* material by design, and over a full-bleed cover it
- * raises the floor exactly where the transport has to stay legible.
+ * Which film, on the other hand, follows the side the app is on — and the two
+ * are not mirror images, because the material is not symmetric. The family's own
+ * film is a *bright* one by design, which is what makes a pane read as frosted
+ * glass; over a full-bleed cover on a **dark** page it does the opposite of its
+ * job and raises the floor exactly where the transport has to stay legible, so
+ * there the dark twin is right. On a **light** page the bright film is already
+ * pointing the right way, and darkening it would put a grey slab on paper —
+ * which is precisely what the first light build looked like.
  *
- * It used to be written out here by hand, because the engine decided light from
- * dark by the luminance of `colorScheme.surface` and this app files a
- * translucent white film in that slot. That is fixed at the root now — see
+ * The dark one used to be written out here by hand, because the engine decided
+ * light from dark by the luminance of `colorScheme.surface` and this app files a
+ * translucent film in that slot. That is fixed at the root now — see
  * `LocalFluidSurfaceSide`, provided by SquareTheme — so this is a name for a
  * decision rather than a way round a wrong answer.
  */
 @Composable
 fun rememberPillMorphTint(): GlassTint =
-    dev.antigravity.fluidengine.ui.fluid.GlassDefaults.darkFloatingTint()
+    if (dev.lelonio.square.ui.theme.LocalLightTheme.current) {
+        dev.antigravity.fluidengine.ui.fluid.GlassDefaults.floatingTint()
+    } else {
+        dev.antigravity.fluidengine.ui.fluid.GlassDefaults.darkFloatingTint()
+    }
 
 /**
  * Lays content on the frame of one end of the journey.

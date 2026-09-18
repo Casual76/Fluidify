@@ -133,7 +133,14 @@ private enum class Feed(@StringRes val label: Int) {
  * the strip an overscroll opens above the page, which is filled with this so the
  * two meet without a seam.
  */
-private val HEADER_SEAT = Color.Black.copy(alpha = 0.45f)
+private val HEADER_SEAT_DARK = Color.Black.copy(alpha = 0.45f)
+
+/** The same seat, on the other side: the page's own veil is white there. */
+private val HEADER_SEAT_LIGHT = Color.White.copy(alpha = 0.72f)
+
+private val headerSeat: Color
+    @Composable get() =
+        if (dev.lelonio.square.ui.theme.LocalLightTheme.current) HEADER_SEAT_LIGHT else HEADER_SEAT_DARK
 
 private const val FILTER_FADE_MS = 180
 
@@ -316,11 +323,12 @@ fun HomeScreen(
                 // where the engine's `fluidOverscrollContent` says an opaque
                 // background belongs. Zero-height at rest, so nothing is drawn
                 // twice.
+                val seat = headerSeat
                 androidx.compose.foundation.Canvas(Modifier.fillMaxSize()) {
                     val band = overscroll.offsetPx
                     if (band > 0f) {
                         drawRect(
-                            color = HEADER_SEAT,
+                            color = seat,
                             size = androidx.compose.ui.geometry.Size(size.width, band),
                         )
                     }
@@ -759,7 +767,7 @@ private fun Header(
             // whatever the list has scrolled underneath it.
             .background(
                 Brush.verticalGradient(
-                    0f to HEADER_SEAT,
+                    0f to headerSeat,
                     1f to Color.Transparent,
                 ),
             )
@@ -1256,7 +1264,9 @@ private fun greeting(): Int = when (Calendar.getInstance().get(Calendar.HOUR_OF_
 }
 
 /** A harder film for the chip that is on; see the note at the call site. */
-private val SelectedFilm = Color.White.copy(alpha = 0.26f)
+private val SelectedFilm: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable get() =
+        dev.lelonio.square.ui.theme.glassFilm(0.26f)
 
 /** Comfortably under the 640px Spotify serves, so it is never upscaled. */
 private val COVER_SIZE = 210.dp

@@ -59,7 +59,7 @@ fun OfflineNotice(modifier: Modifier = Modifier, onTurnOff: () -> Unit = {}) {
                 .fillMaxWidth()
                 .padding(horizontal = 18.dp, vertical = 6.dp)
                 .clip(RoundedCornerShape(12.dp))
-                .background(Color.White.copy(alpha = 0.08f))
+                .background(dev.lelonio.square.ui.theme.glassFilm(0.08f))
                 // Only when there is something a tap can do. Offline because
                 // the network is gone is not something to be talked out of.
                 .then(

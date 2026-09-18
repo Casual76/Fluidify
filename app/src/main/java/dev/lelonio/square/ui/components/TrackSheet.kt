@@ -132,14 +132,14 @@ fun BoxScope.TrackSheet(
                         Text(
                             title,
                             style = MaterialTheme.typography.titleMedium,
-                            color = Color.White,
+                            color = dev.lelonio.square.ui.theme.Ink,
                             maxLines = 2,
                             overflow = TextOverflow.Ellipsis,
                         )
                         Text(
                             subtitle,
                             style = MaterialTheme.typography.bodySmall,
-                            color = Color.White.copy(alpha = 0.66f),
+                            color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.66f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -152,7 +152,7 @@ fun BoxScope.TrackSheet(
                         .fillMaxWidth()
                         .padding(horizontal = 22.dp)
                         .size(width = 0.dp, height = 1.dp)
-                        .background(Color.White.copy(alpha = 0.12f)),
+                        .background(dev.lelonio.square.ui.theme.glassFilm(0.12f)),
                 )
 
                 actions()
@@ -187,4 +187,6 @@ fun TrackSheetAction(
 }
 
 /** Light: the page behind is already blurred, so this only has to be a surface. */
-private val SheetFilm = Color.White.copy(alpha = 0.16f)
+private val SheetFilm: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable get() =
+        dev.lelonio.square.ui.theme.glassFilm(0.16f)

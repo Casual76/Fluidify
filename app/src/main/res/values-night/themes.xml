@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The starting window, for a phone that is in dark mode. See values/themes.xml. -->
+    <style name="Theme.Fluidify" parent="android:Theme.Material.NoActionBar">
+        <item name="android:statusBarColor">@android:color/transparent</item>
+        <item name="android:navigationBarColor">@android:color/transparent</item>
+        <item name="android:windowBackground">@color/page_floor_dark</item>
+    </style>
+</resources>

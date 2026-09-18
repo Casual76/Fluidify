@@ -132,4 +132,6 @@ fun GlassSurface(
 internal const val BarHighlightAlpha = 0.3f
 
 /** What a pane looks like with the refraction switched off. */
-private val FallbackFilm = Color.White.copy(alpha = 0.12f)
+private val FallbackFilm: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable get() =
+        dev.lelonio.square.ui.theme.glassFilm(0.12f)

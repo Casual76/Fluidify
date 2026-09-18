@@ -1,10 +1,15 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- Compose draws the whole UI, so the platform theme only has to survive
-         the window between process start and the first frame. -->
+         the window between process start and the first frame.
+
+         Paper here and the floor in values-night: this is the starting window,
+         drawn by the system before the process exists, so it can only follow the
+         phone. MainActivity repaints the window from the app's own setting the
+         moment it has one, which is what covers the two disagreeing. -->
     <style name="Theme.Fluidify" parent="android:Theme.Material.NoActionBar">
         <item name="android:statusBarColor">@android:color/transparent</item>
         <item name="android:navigationBarColor">@android:color/transparent</item>
-        <item name="android:windowBackground">@android:color/black</item>
+        <item name="android:windowBackground">@color/page_floor_light</item>
     </style>
 </resources>

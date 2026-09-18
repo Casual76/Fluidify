@@ -118,4 +118,6 @@ private fun DialogAction(label: String, color: Color, onClick: () -> Unit) {
 }
 
 
-private val FieldFill = Color.White.copy(alpha = 0.08f)
+private val FieldFill: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable get() =
+        dev.lelonio.square.ui.theme.glassFilm(0.08f)

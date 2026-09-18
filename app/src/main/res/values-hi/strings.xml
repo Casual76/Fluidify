@@ -377,4 +377,9 @@
     <string name="offline_banner_no_network">ऑफ़लाइन — कोई कनेक्शन नहीं</string>
     <string name="offline_banner_slow">ऑफ़लाइन — कनेक्शन डाउनलोड से ख़राब है</string>
     <string name="offline_banner_manual">ऑफ़लाइन — आपने चालू किया</string>
+    <string name="theme">थीम</string>
+    <string name="theme_system">फ़ोन के अनुसार</string>
+    <string name="theme_light">हल्का</string>
+    <string name="theme_dark">गहरा</string>
+    <string name="theme_note">हल्का कवर को कागज़ की ओर ले जाता है, गहरा उसे अंधेरे की ओर। एक ही पृष्ठ, दो दिशाओं में पढ़ा हुआ।</string>
 </resources>

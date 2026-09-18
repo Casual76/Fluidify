@@ -66,6 +66,7 @@ import com.adamglin.phosphoricons.regular.CaretUp
 import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.BuildConfig
 import dev.lelonio.square.R
+import dev.lelonio.square.data.AppThemeMode
 import dev.lelonio.square.ui.components.ConfirmDialog
 import dev.lelonio.square.data.AppLanguages
 import dev.lelonio.square.data.CrossfadeSteps
@@ -312,6 +313,13 @@ fun SettingsScreen(
         // The effects run on our own output, so this one holds for both backends.
         if (open == SettingsPage.Playback) item("effect-quality") {
             EffectQualitySection()
+        }
+
+        // First under App, and deliberately above the glass: this is the one
+        // choice that changes every screen at once, and the glass numbers below
+        // it are read against whichever side it has chosen.
+        if (open == SettingsPage.App) item("theme") {
+            ThemeSection()
         }
 
         // How the app looks and what that costs, so under the app rather than
@@ -578,6 +586,45 @@ private fun EffectQualitySection() {
         RowDivider()
         Text(
             stringResource(chosen.note),
+            style = MaterialTheme.typography.bodySmall,
+            color = InkDim,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+        )
+    }
+}
+
+/**
+ * Light, dark, or the phone's own answer.
+ *
+ * Three rows rather than a switch, because "follow the system" is a real third
+ * answer and not the absence of the other two — and it is the one most people
+ * want, so it goes first and is the default.
+ */
+@Composable
+private fun ThemeSection() {
+    val context = LocalContext.current
+    val store = remember(context) {
+        (context.applicationContext as dev.lelonio.square.SquareApplication).preferences
+    }
+    val chosen by store.themeMode.collectAsStateWithLifecycle()
+
+    Section(stringResource(R.string.theme)) {
+        AppThemeMode.entries.forEachIndexed { index, mode ->
+            if (index > 0) RowDivider()
+            ChoiceRow(
+                label = stringResource(
+                    when (mode) {
+                        AppThemeMode.System -> R.string.theme_system
+                        AppThemeMode.Light -> R.string.theme_light
+                        AppThemeMode.Dark -> R.string.theme_dark
+                    },
+                ),
+                selected = mode == chosen,
+            ) { store.setThemeMode(mode) }
+        }
+        RowDivider()
+        Text(
+            stringResource(R.string.theme_note),
             style = MaterialTheme.typography.bodySmall,
             color = InkDim,
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),

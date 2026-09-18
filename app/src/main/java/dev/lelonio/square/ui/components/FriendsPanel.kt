@@ -110,7 +110,7 @@ fun BoxScope.FriendsPanel(
         GlassSurface(
             backdrop = backdrop,
             shape = shape,
-            surfaceColor = Color.White.copy(alpha = 0.08f),
+            surfaceColor = dev.lelonio.square.ui.theme.glassFilm(0.08f),
             blurScale = 23.0f,
             modifier = Modifier
                 .padding(horizontal = 22.dp)
@@ -124,7 +124,7 @@ fun BoxScope.FriendsPanel(
                     stringResource(R.string.friends_listening),
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.SemiBold,
-                    color = Color.White,
+                    color = dev.lelonio.square.ui.theme.Ink,
                     modifier = Modifier.padding(horizontal = 22.dp),
                 )
 
@@ -134,7 +134,7 @@ fun BoxScope.FriendsPanel(
                     Text(
                         stringResource(R.string.friends_none),
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.6f),
+                        color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.6f),
                         modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
                     )
                     AddFriendField(addState, onAddFriend)
@@ -182,21 +182,21 @@ private fun AddFriendField(
                 onValueChange = { typed = it },
                 singleLine = true,
                 enabled = !working,
-                textStyle = MaterialTheme.typography.bodyMedium.copy(color = Color.White),
-                cursorBrush = SolidColor(Color.White),
+                textStyle = MaterialTheme.typography.bodyMedium.copy(color = dev.lelonio.square.ui.theme.Ink),
+                cursorBrush = SolidColor(dev.lelonio.square.ui.theme.Ink),
                 keyboardOptions = KeyboardOptions(imeAction = ImeAction.Done),
                 keyboardActions = KeyboardActions(onDone = { onAdd(typed) }),
                 modifier = Modifier
                     .weight(1f)
                     .clip(RoundedCornerShape(14.dp))
-                    .background(Color.White.copy(alpha = 0.10f))
+                    .background(dev.lelonio.square.ui.theme.glassFilm(0.10f))
                     .padding(horizontal = 14.dp, vertical = 11.dp),
                 decorationBox = { field ->
                     if (typed.isEmpty()) {
                         Text(
                             stringResource(R.string.add_friend_hint),
                             style = MaterialTheme.typography.bodyMedium,
-                            color = Color.White.copy(alpha = 0.45f),
+                            color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.45f),
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis,
                         )
@@ -227,7 +227,7 @@ private fun AddFriendField(
             Text(
                 stringResource(message),
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.6f),
+                color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.6f),
                 modifier = Modifier.padding(top = 8.dp),
             )
         }
@@ -277,14 +277,14 @@ private fun FriendRow(friend: FriendListen, onClick: () -> Unit) {
                 friend.userName,
                 style = MaterialTheme.typography.bodyMedium,
                 fontWeight = FontWeight.Medium,
-                color = Color.White,
+                color = dev.lelonio.square.ui.theme.Ink,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
             Text(
                 "${friend.trackName} · ${friend.artist}",
                 style = MaterialTheme.typography.bodySmall,
-                color = Color.White.copy(alpha = 0.7f),
+                color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.7f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
@@ -298,7 +298,7 @@ private fun FriendRow(friend: FriendListen, onClick: () -> Unit) {
                 Text(
                     detail,
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.45f),
+                    color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.45f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                 )

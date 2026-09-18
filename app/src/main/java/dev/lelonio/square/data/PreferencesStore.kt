@@ -6,6 +6,19 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
+ * Light, dark, or whatever the phone is doing.
+ *
+ * Stored by its [key] rather than by ordinal, so reordering this enum — or
+ * dropping a value — cannot silently turn somebody's setting into a different
+ * one.
+ */
+enum class AppThemeMode(val key: String) {
+    System("system"),
+    Light("light"),
+    Dark("dark"),
+}
+
+/**
  * Small UI choices that should survive the screen being left.
  *
  * Kept as strings rather than as an enum so this module does not have to know
@@ -134,8 +147,30 @@ class PreferencesStore(context: Context) {
         prefs.edit().putBoolean(KEY_LOCAL_FILES, value).apply()
     }
 
+    private val _themeMode = MutableStateFlow(readThemeMode())
+
+    /** Which side the app paints on, and whether it is the phone's decision. */
+    val themeMode: StateFlow<AppThemeMode> = _themeMode.asStateFlow()
+
+    fun setThemeMode(value: AppThemeMode) {
+        _themeMode.value = value
+        prefs.edit().putString(KEY_THEME, value.key).apply()
+    }
+
+    /**
+     * Read straight, without the flow.
+     *
+     * The theme has to be decided on the very first composition or the app opens
+     * on the wrong side and corrects itself a frame later, which is a flash of
+     * the other colour on every cold start. Same reason [playerWasOpen] exists.
+     */
+    fun readThemeMode(): AppThemeMode =
+        AppThemeMode.entries.firstOrNull { it.key == prefs.getString(KEY_THEME, null) }
+            ?: AppThemeMode.System
+
     private companion object {
         const val FILE_NAME = "square_preferences"
+        const val KEY_THEME = "theme_mode"
         const val KEY_LOCAL_FILES = "show_local_files"
         const val KEY_CANVAS = "canvas"
         const val KEY_TRACK_SORT = "track_sort"

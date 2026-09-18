@@ -362,4 +362,9 @@
     <string name="offline_banner_no_network">Offline — sem conexão</string>
     <string name="offline_banner_slow">Offline — a conexão está pior que seus downloads</string>
     <string name="offline_banner_manual">Offline — você ativou isso</string>
+    <string name="theme">Tema</string>
+    <string name="theme_system">Seguir o telefone</string>
+    <string name="theme_light">Claro</string>
+    <string name="theme_dark">Escuro</string>
+    <string name="theme_note">O claro leva a capa para o papel, o escuro leva-a para o escuro. É a mesma página, lida em dois sentidos.</string>
 </resources>

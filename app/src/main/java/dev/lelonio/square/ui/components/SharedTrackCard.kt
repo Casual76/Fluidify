@@ -107,7 +107,7 @@ fun BoxScope.SharedTrackCard(
         GlassSurface(
             backdrop = backdrop,
             shape = shape,
-            surfaceColor = Color.White.copy(alpha = 0.07f),
+            surfaceColor = dev.lelonio.square.ui.theme.glassFilm(0.07f),
             blurScale = 23.0f,
             modifier = Modifier
                 .padding(horizontal = 26.dp)
@@ -144,7 +144,7 @@ fun BoxScope.SharedTrackCard(
                 Text(
                     stringResource(R.string.shared_song),
                     style = MaterialTheme.typography.labelSmall,
-                    color = Color.White.copy(alpha = 0.55f),
+                    color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.55f),
                     letterSpacing = 1.6.sp,
                 )
 
@@ -163,7 +163,7 @@ fun BoxScope.SharedTrackCard(
                     track?.name.orEmpty(),
                     style = MaterialTheme.typography.headlineSmall,
                     fontWeight = FontWeight.Bold,
-                    color = Color.White,
+                    color = dev.lelonio.square.ui.theme.Ink,
                     textAlign = TextAlign.Center,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -172,7 +172,7 @@ fun BoxScope.SharedTrackCard(
                 Text(
                     track?.artist.orEmpty(),
                     style = MaterialTheme.typography.bodyLarge,
-                    color = Color.White.copy(alpha = 0.72f),
+                    color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.72f),
                     textAlign = TextAlign.Center,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -184,7 +184,7 @@ fun BoxScope.SharedTrackCard(
                     Text(
                         album,
                         style = MaterialTheme.typography.bodySmall,
-                        color = Color.White.copy(alpha = 0.45f),
+                        color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.45f),
                         textAlign = TextAlign.Center,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
@@ -238,7 +238,7 @@ private fun CardButton(
         modifier
             .clip(shape)
             .background(
-                if (filled) Color.White else Color.White.copy(alpha = 0.12f),
+                if (filled) dev.lelonio.square.ui.theme.Ink else dev.lelonio.square.ui.theme.glassFilm(0.12f),
                 shape,
             )
             .pressable(onClick = onClick, pressedScale = 0.94f)
@@ -249,14 +249,14 @@ private fun CardButton(
         Icon(
             icon,
             contentDescription = null,
-            tint = if (filled) Color.Black else Color.White,
+            tint = if (filled) dev.lelonio.square.ui.theme.InkInverse else dev.lelonio.square.ui.theme.Ink,
             modifier = Modifier.size(18.dp),
         )
         Text(
             label,
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
-            color = if (filled) Color.Black else Color.White,
+            color = if (filled) dev.lelonio.square.ui.theme.InkInverse else dev.lelonio.square.ui.theme.Ink,
             maxLines = 1,
             modifier = Modifier.padding(start = 8.dp),
         )

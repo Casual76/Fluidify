@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.player
 
+import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 
 /**
@@ -17,6 +18,17 @@ import androidx.compose.ui.graphics.Color
  * wire it back up.
  */
 
-/** Fixed light ink for the pill, which always sits over darkened artwork. */
-internal val MiniPlayerInk = Color(0xFFF7F8FA)
-internal val MiniPlayerInkDim = Color(0xFFF7F8FA).copy(alpha = 0.66f)
+/**
+ * The pill's ink.
+ *
+ * It was fixed light for as long as the pill always sat over *darkened*
+ * artwork, and that stopped being true the day the app grew a light side: the
+ * veil goes up towards paper there, the film on the pill goes with it, and white
+ * letters on it are white letters on white. It is the page's ink now, like
+ * everything else written on the page.
+ */
+internal val MiniPlayerInk: Color
+    @Composable get() = dev.lelonio.square.ui.theme.Ink
+
+internal val MiniPlayerInkDim: Color
+    @Composable get() = dev.lelonio.square.ui.theme.InkDim

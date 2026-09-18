@@ -3,4 +3,11 @@
     <!-- Sampled from the icon's own plate by tools/icon.py, so the
          adaptive icon's background and its artwork meet invisibly. -->
     <color name="ic_launcher_background">#222222</color>
+
+    <!-- Where the artwork does not reach. Kept in step with PageFloorDark and
+         PageFloorLight in SquareApp.kt: the starting window and the first frame
+         Compose draws have to be the same colour, or every cold start begins
+         with a flash of the other one. -->
+    <color name="page_floor_dark">#FF0A0A0C</color>
+    <color name="page_floor_light">#FFF1F2F6</color>
 </resources>

@@ -252,7 +252,8 @@ fun PlaylistScreen(
     // are usually different things, and colouring an album page after an
     // unrelated track makes the page look like it belongs to something else.
     val accent by rememberArtworkColor(state.artworkUrl)
-    val pageColor = remember(accent) { pageColorFor(accent) }
+    val floor = PageFloor
+    val pageColor = remember(accent, floor) { pageColorFor(accent, floor) }
 
     // What the glass on this screen refracts.
     //
@@ -371,6 +372,13 @@ fun PlaylistScreen(
             kind = state.kind,
             description = state.description,
             pageColor = pageColor,
+            // What the header is written on is the cover, not the page: the
+            // title and the buttons sit on the artwork at full strength, while
+            // everything below them stands on the veiled page. So the ink up
+            // there is decided by the cover and the ink down here by the theme,
+            // and a record whose cover is dark keeps white letters on a phone
+            // set to light.
+            heroInk = dev.lelonio.square.ui.theme.inkOn(accent ?: pageColor),
             saved = state.saved,
             onToggleSaved = onToggleSaved,
             following = state.following.takeIf {
@@ -664,7 +672,7 @@ fun PlaylistScreen(
                 Modifier
                     .height(20.dp)
                     .width(1.dp)
-                    .background(Color.White.copy(alpha = 0.22f)),
+                    .background(dev.lelonio.square.ui.theme.glassFilm(0.22f)),
             )
             CapsuleAction(
                 icon = PhosphorIcons.Regular.DotsThree,
@@ -690,7 +698,7 @@ fun PlaylistScreen(
             Icon(
                 PhosphorIcons.Regular.ArrowLeft,
                 contentDescription = stringResource(R.string.back),
-                tint = Color.White,
+                tint = dev.lelonio.square.ui.theme.Ink,
                 modifier = Modifier.size(20.dp),
             )
         }
@@ -756,6 +764,8 @@ private fun DetailHeader(
     description: String,
     /** The page's own colour; the solid Play button prints its label in it. */
     pageColor: Color,
+    /** What can be read against the cover this header is written on. */
+    heroInk: Color,
     /** Whether the page is kept in the library; null hides the button. */
     saved: Boolean?,
     onToggleSaved: () -> Unit,
@@ -795,6 +805,9 @@ private fun DetailHeader(
     val heroPx = with(density) { HERO_HEIGHT.roundToPx() }
     val collapsedPx = with(density) { collapsedHeight.roundToPx() }
 
+    androidx.compose.runtime.CompositionLocalProvider(
+        dev.lelonio.square.ui.theme.LocalInkOverride provides heroInk,
+    ) {
     Box(
         Modifier
             .fillMaxWidth()
@@ -821,7 +834,7 @@ private fun DetailHeader(
                 text = name,
                 style = MaterialTheme.typography.headlineMedium,
                 fontWeight = FontWeight.Bold,
-                color = Color.White,
+                color = dev.lelonio.square.ui.theme.Ink,
                 textAlign = TextAlign.Center,
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -834,7 +847,7 @@ private fun DetailHeader(
                     ""
                 },
                 style = MaterialTheme.typography.labelMedium,
-                color = Color.White.copy(alpha = 0.72f),
+                color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.72f),
                 modifier = Modifier.padding(top = 4.dp),
             )
 
@@ -866,7 +879,12 @@ private fun DetailHeader(
                     Modifier
                         .softShadow(CircleShape, elevation = 18.dp, spot = 0.3f)
                         .clip(CircleShape)
-                        .background(Color.White)
+                        // The ink, filled. It was a literal white, which is the
+                        // same thing on a dark page and is a white button with
+                        // white letters on a light one: the fill and what is
+                        // written on it have to be each other's opposite, not
+                        // two constants that happened to be.
+                        .background(dev.lelonio.square.ui.theme.Ink)
                         .pressable(onPlay, pressedScale = 0.95f)
                         // Narrower with a word button beside it. Three controls
                         // and two labels do not fit across a phone at the width
@@ -881,14 +899,14 @@ private fun DetailHeader(
                     Icon(
                         if (playing) PhosphorIcons.Fill.Pause else PhosphorIcons.Fill.Play,
                         contentDescription = null,
-                        tint = pageColor,
+                        tint = dev.lelonio.square.ui.theme.InkInverse,
                         modifier = Modifier.size(22.dp),
                     )
                     Text(
                         stringResource(if (playing) R.string.pause else R.string.play),
                         style = MaterialTheme.typography.titleMedium,
                         fontWeight = FontWeight.SemiBold,
-                        color = pageColor,
+                        color = dev.lelonio.square.ui.theme.InkInverse,
                     )
                 }
                 // Keeping the page, which is what the reference puts here.
@@ -933,7 +951,7 @@ private fun DetailHeader(
                 Text(
                     description,
                     style = MaterialTheme.typography.bodySmall,
-                    color = Color.White.copy(alpha = 0.62f),
+                    color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.62f),
                     textAlign = TextAlign.Center,
                     maxLines = 2,
                     overflow = TextOverflow.Ellipsis,
@@ -973,14 +991,14 @@ private fun DetailHeader(
                 Icon(
                     PhosphorIcons.Regular.ArrowLeft,
                     contentDescription = stringResource(R.string.back),
-                    tint = Color.White,
+                    tint = dev.lelonio.square.ui.theme.Ink,
                     modifier = Modifier.size(20.dp),
                 )
             }
             Text(
                 name,
                 style = MaterialTheme.typography.titleMedium,
-                color = Color.White,
+                color = dev.lelonio.square.ui.theme.Ink,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = Modifier
@@ -991,7 +1009,7 @@ private fun DetailHeader(
                 Icon(
                     if (searching) PhosphorIcons.Regular.X else PhosphorIcons.Fill.MagnifyingGlass,
                     contentDescription = stringResource(R.string.search_in_tracks),
-                    tint = Color.White,
+                    tint = dev.lelonio.square.ui.theme.Ink,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -999,7 +1017,7 @@ private fun DetailHeader(
                 Icon(
                     PhosphorIcons.Regular.Shuffle,
                     contentDescription = stringResource(R.string.shuffle),
-                    tint = if (shuffleOn) MaterialTheme.colorScheme.primary else Color.White,
+                    tint = if (shuffleOn) MaterialTheme.colorScheme.primary else dev.lelonio.square.ui.theme.Ink,
                     modifier = Modifier.size(18.dp),
                 )
             }
@@ -1030,11 +1048,12 @@ private fun DetailHeader(
                 Icon(
                     if (playing) PhosphorIcons.Fill.Pause else PhosphorIcons.Fill.Play,
                     contentDescription = stringResource(if (playing) R.string.pause else R.string.play),
-                    tint = Color.White,
+                    tint = dev.lelonio.square.ui.theme.Ink,
                     modifier = Modifier.size(22.dp),
                 )
             }
         }
+    }
     }
 }
 
@@ -1149,19 +1168,19 @@ fun CapsuleFace() {
         Icon(
             PhosphorIcons.Regular.Export,
             contentDescription = null,
-            tint = Color.White,
+            tint = dev.lelonio.square.ui.theme.Ink,
             modifier = Modifier.padding(horizontal = 13.dp).size(19.dp),
         )
         Box(
             Modifier
                 .height(20.dp)
                 .width(1.dp)
-                .background(Color.White.copy(alpha = 0.22f)),
+                .background(dev.lelonio.square.ui.theme.glassFilm(0.22f)),
         )
         Icon(
             PhosphorIcons.Regular.DotsThree,
             contentDescription = null,
-            tint = Color.White,
+            tint = dev.lelonio.square.ui.theme.Ink,
             modifier = Modifier.padding(horizontal = 13.dp).size(19.dp),
         )
     }
@@ -1186,7 +1205,7 @@ private fun GlassCapsule(
             )
             // The rim comes with the material now; this is the drawn edge that
             // separates the two halves' pane from the artwork behind it.
-            .border(0.6.dp, Color.White.copy(alpha = 0.30f), shape),
+            .border(0.6.dp, dev.lelonio.square.ui.theme.glassEdge(0.30f), shape),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
     )
@@ -1210,7 +1229,7 @@ private fun CapsuleAction(
         Icon(
             icon,
             contentDescription = description,
-            tint = Color.White,
+            tint = dev.lelonio.square.ui.theme.Ink,
             modifier = Modifier.size(19.dp),
         )
     }
@@ -1229,7 +1248,7 @@ private fun CircleAction(
     // Animated, because this one is now a switch: a state that changes under
     // the finger has to be seen changing.
     val tint by androidx.compose.animation.animateColorAsState(
-        if (active) MaterialTheme.colorScheme.primary else Color.White,
+        if (active) MaterialTheme.colorScheme.primary else dev.lelonio.square.ui.theme.Ink,
         label = "circle action",
     )
     GlassButton(
@@ -1238,7 +1257,7 @@ private fun CircleAction(
         // nothing to bend, and only the film and the rim say this is glass.
         modifier = Modifier
             .size(size)
-            .border(0.6.dp, Color.White.copy(alpha = 0.30f), CircleShape),
+            .border(0.6.dp, dev.lelonio.square.ui.theme.glassEdge(0.30f), CircleShape),
         contentHeight = size,
         contentPadding = 0.dp,
     ) {
@@ -1357,7 +1376,7 @@ private fun DownloadAction(
     val lit = kept || running != null
 
     val tint by androidx.compose.animation.animateColorAsState(
-        if (lit) accent else Color.White,
+        if (lit) accent else dev.lelonio.square.ui.theme.Ink,
         label = "download action",
     )
     // Eased, so a ring that jumps a track at a time still reads as travel.
@@ -1372,7 +1391,7 @@ private fun DownloadAction(
             onClick = onClick,
             modifier = Modifier
                 .size(size)
-                .border(0.6.dp, Color.White.copy(alpha = 0.30f), CircleShape),
+                .border(0.6.dp, dev.lelonio.square.ui.theme.glassEdge(0.30f), CircleShape),
             contentHeight = size,
             contentPadding = 0.dp,
         ) {
@@ -1390,6 +1409,9 @@ private fun DownloadAction(
             )
         }
         if (running != null) {
+            // Read out here: a draw block is not a composition, and the page's
+            // ink is a composition local.
+            val ink = dev.lelonio.square.ui.theme.Ink
             // Drawn over the button, never inside it: the glass samples the
             // page's backdrop, and anything painted into that layer would be
             // sampled by the very surface drawing it.
@@ -1405,7 +1427,7 @@ private fun DownloadAction(
                 // comes from a dark cover that is nearly nowhere: the button
                 // read as an ordinary circle that had stopped doing anything.
                 drawArc(
-                    color = Color.White.copy(alpha = 0.22f),
+                    color = ink.copy(alpha = 0.22f),
                     startAngle = 0f,
                     sweepAngle = 360f,
                     useCenter = false,
@@ -1418,7 +1440,7 @@ private fun DownloadAction(
                     // the cover, and on a dark one it is a grey barely brighter
                     // than the track behind it: the ring was there and could not
                     // be seen filling, which is the only thing it exists to do.
-                    color = Color.White,
+                    color = ink,
                     startAngle = -90f,
                     // Never quite nothing: a queue that has just been told to
                     // start has no bytes to show for it yet, and an empty ring
@@ -1534,7 +1556,19 @@ private val COLLAPSED_BAR_HEIGHT = 56.dp
 private val HERO_HEIGHT = 420.dp
 
 /** Where the page ends up once the cover's colour has faded out of it. */
-private val PageFloor = Color(0xFF0A0A0C)
+private val PageFloorDark = Color(0xFF0A0A0C)
+private val PageFloorLight = Color(0xFFF1F2F6)
+
+/**
+ * The colour a record's page ends on.
+ *
+ * Follows the app, not the record: the cover's own colour is at the top and this
+ * is what it fades into, so it has to be the page under it rather than a second
+ * opinion about the record.
+ */
+private val PageFloor: Color
+    @Composable get() =
+        if (dev.lelonio.square.ui.theme.LocalLightTheme.current) PageFloorLight else PageFloorDark
 
 /**
  * The page tone for a cover.
@@ -1544,8 +1578,8 @@ private val PageFloor = Color(0xFF0A0A0C)
  * fluorescent field. Most of the way to black keeps the hue recognisable and
  * nothing else. A null cover falls back to the floor rather than to grey.
  */
-private fun pageColorFor(accent: Color?): Color =
-    accent?.let { lerp(it, PageFloor, 0.78f) } ?: PageFloor
+private fun pageColorFor(accent: Color?, floor: Color): Color =
+    accent?.let { lerp(it, floor, 0.78f) } ?: floor
 
 @Composable
 private fun TrackRow(
@@ -1646,7 +1680,7 @@ private fun TrackRow(
                     Icon(
                         PhosphorIcons.Fill.Waveform,
                         contentDescription = stringResource(R.string.now_playing),
-                        tint = Color.White,
+                        tint = dev.lelonio.square.ui.theme.Ink,
                         modifier = Modifier.size(20.dp),
                     )
                 }
@@ -1834,7 +1868,7 @@ private fun FollowPill(following: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
             .clip(shape)
-            .background(if (following) Color.Transparent else Color.White, shape)
+            .background(if (following) Color.Transparent else dev.lelonio.square.ui.theme.Ink, shape)
             .then(
                 if (following) {
                     Modifier.border(1.dp, Color.White.copy(alpha = 0.4f), shape)
@@ -1850,7 +1884,7 @@ private fun FollowPill(following: Boolean, onClick: () -> Unit) {
             stringResource(if (following) R.string.following else R.string.follow),
             style = MaterialTheme.typography.labelLarge,
             fontWeight = FontWeight.SemiBold,
-            color = if (following) Color.White else Color.Black,
+            color = if (following) dev.lelonio.square.ui.theme.Ink else dev.lelonio.square.ui.theme.InkInverse,
             maxLines = 1,
         )
     }

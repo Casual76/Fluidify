@@ -1978,23 +1978,34 @@ private fun ToggleIcon(
 }
 
 /**
- * Fixed light, not themed.
+ * The page's ink, which is what it should have been all along.
  *
- * What sits behind every control here is album art under a dark wash, not the
- * app's page colour, so the light/dark scheme says nothing about what is
- * readable.
+ * It was fixed light, with a note saying that what sits behind every control
+ * here is album art under a dark wash rather than the app's page colour. That
+ * was true of an app with one side. It is not true of one with two: the wash
+ * goes up towards paper on the light side, and white letters on it are white
+ * letters on white.
+ *
+ * What the note was really protecting against is a control landing on a bright
+ * patch of a cover, and that is the veil's job — see AppBackdrop, where it is
+ * denser at the bottom precisely because that is where the transport is.
  */
-internal val GlassInk = Color.White
-internal val GlassInkDim = Color.White.copy(alpha = 0.68f)
+internal val GlassInk: Color
+    @Composable get() = dev.lelonio.square.ui.theme.Ink
+
+internal val GlassInkDim: Color
+    @Composable get() = GlassInk.copy(alpha = 0.68f)
 
 /**
  * The film every glass surface is tinted with.
  *
  * One value, shared, because the surfaces looked like different materials when
  * each picked its own: the tab bar came out noticeably paler than the mini
- * player and the search button beside it.
+ * player and the search button beside it. It is the scheme's own `surface` now,
+ * which is that one value for the whole app rather than for this file.
  */
-internal val GlassFilm = Color.White.copy(alpha = 0.12f)
+internal val GlassFilm: Color
+    @Composable get() = MaterialTheme.colorScheme.surface
 
 /**
  * The lyrics, centre stage.

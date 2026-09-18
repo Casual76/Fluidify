@@ -874,7 +874,9 @@ private fun Centered(content: @Composable () -> Unit) {
 }
 
 /** A harder film for the chip that is on, matching the home page. */
-private val SelectedFilm = Color.White.copy(alpha = 0.26f)
+private val SelectedFilm: androidx.compose.ui.graphics.Color
+    @androidx.compose.runtime.Composable get() =
+        dev.lelonio.square.ui.theme.glassFilm(0.26f)
 
 /**
  * The artists the account follows, along the top of the library.

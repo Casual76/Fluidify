@@ -362,4 +362,9 @@
     <string name="offline_banner_no_network">Offline — keine Verbindung</string>
     <string name="offline_banner_slow">Offline — die Verbindung ist schlechter als deine Downloads</string>
     <string name="offline_banner_manual">Offline — von dir eingeschaltet</string>
+    <string name="theme">Design</string>
+    <string name="theme_system">Dem Telefon folgen</string>
+    <string name="theme_light">Hell</string>
+    <string name="theme_dark">Dunkel</string>
+    <string name="theme_note">Hell zieht das Cover Richtung Papier, dunkel zieht es Richtung Dunkelheit. Dieselbe Seite, in zwei Richtungen gelesen.</string>
 </resources>

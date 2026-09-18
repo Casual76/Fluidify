@@ -2357,10 +2357,15 @@ fun SquareApp(
  */
 @Composable
 private fun AppBackdrop(artworkUrl: String?, alive: Boolean) {
+    val light = dev.lelonio.square.ui.theme.LocalLightTheme.current
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color(0xFF0A0A0C)),
+            // The floor under the cover. Near-black one way and paper the other:
+            // it is what shows where the artwork does not reach, and a black
+            // border round a light page is the one thing that would give the
+            // whole arrangement away as a dark design wearing light colours.
+            .background(if (light) PageFloorLight else PageFloorDark),
     ) {
         if (artworkUrl == null) {
             // Nothing playing yet: instead of a flat black page, the app's own
@@ -2425,15 +2430,44 @@ private fun AppBackdrop(artworkUrl: String?, alive: Boolean) {
             Modifier
                 .fillMaxSize()
                 .background(
-                    Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.45f),
-                        0.5f to Color.Black.copy(alpha = 0.60f),
-                        1f to Color.Black.copy(alpha = 0.78f),
-                    ),
+                    // The veil, and it is the same veil taken in two
+                    // directions: down towards the floor, or up towards paper.
+                    // It exists because a cover can be anything — the palette
+                    // cannot be built for the page when the page is a photograph
+                    // nobody chose — so the veil is what makes the ink a safe bet
+                    // whatever is playing. Denser at the bottom on both sides,
+                    // because that is where the bar and the pill have to stay
+                    // legible.
+                    Brush.verticalGradient(*veilStops(light)),
                 ),
         )
     }
 }
+
+/** Where the artwork does not reach. See [AppBackdrop]. */
+private val PageFloorDark = Color(0xFF0A0A0C)
+private val PageFloorLight = Color(0xFFF1F2F6)
+
+private val VeilDark = arrayOf(
+    0f to Color.Black.copy(alpha = 0.45f),
+    0.5f to Color.Black.copy(alpha = 0.60f),
+    1f to Color.Black.copy(alpha = 0.78f),
+)
+
+/**
+ * Denser than its dark twin, and it has to be.
+ *
+ * Dark ink on a cover needs more of the cover taken away than light ink does:
+ * the bright parts of a photograph are much brighter than a dark veil ever lets
+ * them be, and it is the bright parts that swallow dark letters.
+ */
+private val VeilLight = arrayOf(
+    0f to Color.White.copy(alpha = 0.62f),
+    0.5f to Color.White.copy(alpha = 0.72f),
+    1f to Color.White.copy(alpha = 0.84f),
+)
+
+private fun veilStops(light: Boolean) = if (light) VeilLight else VeilDark
 
 /**
  * One blurred cover, drifting.
