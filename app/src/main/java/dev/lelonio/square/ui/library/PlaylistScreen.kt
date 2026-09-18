@@ -1626,7 +1626,7 @@ private fun TrackRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 2.dp)
+            .padding(start = 18.dp, end = 18.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current, top = 2.dp, bottom = 2.dp)
             // The playing row lifts onto its own card. With covers gone from the
             // list, a tint alone was too quiet to find while scrolling.
             .clip(shape)

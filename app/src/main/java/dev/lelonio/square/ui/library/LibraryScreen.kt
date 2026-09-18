@@ -344,7 +344,10 @@ fun LibraryScreen(
 
             val listPadding = PaddingValues(
                     start = 20.dp,
-                    end = 20.dp,
+                    // The panel, when there is one. Content padding, so the page
+                    // goes on drawing under it and only what you reach stops
+                    // short; see LocalPageEndInset.
+                    end = 20.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current,
                     top = FluidScreenDefaults.topBarHeight(),
                     bottom = contentPadding.calculateBottomPadding(),
                 )

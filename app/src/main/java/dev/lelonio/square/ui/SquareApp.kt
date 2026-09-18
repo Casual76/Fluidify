@@ -49,7 +49,6 @@ import dev.antigravity.fluidengine.ui.fluid.glassSurface
 import dev.antigravity.fluidengine.ui.fluid.FluidFoldingTabBarDefaults
 import dev.antigravity.fluidengine.ui.fluid.FluidTabBarDefaults
 import dev.antigravity.fluidengine.ui.fluid.FluidTabItem
-import dev.antigravity.fluidengine.ui.fluid.FluidTabRail
 import dev.antigravity.fluidengine.ui.fluid.rememberFluidBarFold
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
@@ -1019,19 +1018,15 @@ fun SquareApp(
                 // resize in split screen without the app restarting.
                 val windowWidth = LocalConfiguration.current.screenWidthDp.dp
                 val wide = windowWidth >= TabletWidth
-                // Rail on the left instead of a bar at the bottom, once there is
-                // room for one. A bar at the bottom of a twelve-inch screen is a
-                // long way from a thumb that is holding the edge, and it spends
-                // the one dimension a tablet has spare — the vertical — on
-                // chrome.
-                val railWidth = if (wide) FluidTabBarDefaults.RailWidth else 0.dp
-                // Pages get room around them rather than a line of text as long
-                // as the window. Everything here is written against a phone's
-                // gutters, and this is the one place that can widen them all.
-                val pageGutter = when {
-                    windowWidth >= WideTabletWidth -> 32.dp
-                    wide -> 20.dp
-                    else -> 0.dp
+                // Wide enough for what is playing to stay on screen beside the
+                // page rather than be compressed into a strip at the bottom of
+                // it. See NowPlayingPanel.
+                val showPanel = windowWidth >= dev.lelonio.square.ui.player.NowPlayingPanelMinWindow &&
+                    playback.hasItem
+                val panelWidth = if (showPanel) {
+                    dev.lelonio.square.ui.player.NowPlayingPanelWidth
+                } else {
+                    0.dp
                 }
 
                 val statusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -1056,7 +1051,20 @@ fun SquareApp(
                 // measured height already has it in. Adding it again left a
                 // pill-sized strip of nothing at the end of every list, on
                 // exactly the screens where music was playing.
-                val listPadding = PaddingValues(top = statusBar, bottom = barHeight)
+                val listPadding = PaddingValues(
+                    top = statusBar,
+                    bottom = barHeight,
+                    // Content padding, not a margin on the page.
+                    //
+                    // The page goes on drawing to the edge of the window and only
+                    // its *contents* stop short of the panel. Padding the
+                    // container instead is how the first tablet build grew a
+                    // stripe of unveiled backdrop down one side and a step where
+                    // the header's veil ran out: that veil is a rectangle drawn
+                    // inside the page, so a page that is not the window's width
+                    // leaves the window's edges bare.
+                    end = panelWidth,
+                )
 
                 // Nothing floats over settings, so nothing has to be left free
                 // beneath it either.
@@ -1128,10 +1136,11 @@ fun SquareApp(
                         AppBackdrop(playback.artworkUrl, alive = playback.isPlaying)
                     }
 
+                    androidx.compose.runtime.CompositionLocalProvider(
+                        dev.lelonio.square.ui.theme.LocalPageEndInset provides panelWidth,
+                    ) {
                     Box(
                         Modifier
-                            .padding(start = railWidth)
-                            .padding(horizontal = pageGutter)
                             .nestedScroll(barFold.connection)
                             .nestedScroll(pageScroll)
                             // Touching the page puts the keyboard away.
@@ -1622,6 +1631,7 @@ fun SquareApp(
                         }
 
                     }
+                    }
                 }
 
                 }
@@ -1667,7 +1677,21 @@ fun SquareApp(
                     role = GlassRole.Floating,
                 )
 
-                val accessory: (@Composable () -> Unit)? = if (playback.hasItem) {
+                // The same material, on a shape that is not a capsule: the panel
+                // is a pane the height of the page, and a capsule that tall is a
+                // lozenge.
+                val panelGlass = Modifier.glassSurface(
+                    state = pageGlass,
+                    tint = rememberPillMorphTint(),
+                    shape = dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape(
+                        dev.antigravity.fluidengine.ui.fluid.FluidRadius.Sheet,
+                    ),
+                    role = GlassRole.Floating,
+                )
+
+                // No pill while the panel is up: they are two ways of saying the
+                // same thing, and the window can only grow out of one of them.
+                val accessory: (@Composable () -> Unit)? = if (playback.hasItem && !showPanel) {
                     {
                       Box(
                           Modifier
@@ -1754,10 +1778,15 @@ fun SquareApp(
                     null
                 }
 
-                if (chrome > 0.01f && !wide) Box(
+                if (chrome > 0.01f) Box(
                     Modifier
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
+                        // Out from under the panel. A margin on the bar and not
+                        // on the page, deliberately: the bar is chrome that ends
+                        // where it ends, while the page has to go on drawing to
+                        // the edge of the window or its veil stops short of one.
+                        .padding(end = panelWidth)
                         // The bar is where you type now, so it has to be above
                         // the keyboard: the search field lived on the page until
                         // a moment ago, where the keyboard covering the bottom of
@@ -1921,85 +1950,79 @@ fun SquareApp(
                     )
                 }
 
-                // The tablet's own chrome: a rail down the side, and a dock at
-                // the foot of the page.
+
+                // What is playing, beside the page, on a window with room for it.
                 //
-                // Not the same bar moved. A bar at the bottom of a twelve-inch
-                // screen is a long way from the hand holding the edge, and it
-                // spends the one dimension a tablet has spare — the vertical —
-                // on navigation. The rail gives that back and costs width, which
-                // is the dimension there is plenty of.
-                //
-                // Search joins the rail as a third destination here, instead of
-                // being the circle that grows into a field. On a phone the field
-                // has to live in the chrome because the chrome is the only thing
-                // above the keyboard; on a tablet it can be a place you go, the
-                // way the rest of the world does it.
-                if (chrome > 0.01f && wide) {
-                    val homeLabel = stringResource(R.string.home)
-                    val libraryLabel = stringResource(R.string.library)
-                    val searchLabel = stringResource(R.string.search)
-                    val railTabs = remember(homeLabel, libraryLabel, searchLabel) {
-                        listOf(
-                            FluidTabItem(Routes.HOME, homeLabel, PhosphorIcons.Regular.House),
-                            FluidTabItem(Routes.LIBRARY, libraryLabel, PhosphorIcons.Regular.MusicNotes),
-                            FluidTabItem(
-                                Routes.SEARCH,
-                                searchLabel,
-                                PhosphorIcons.Regular.MagnifyingGlass,
-                            ),
-                        )
-                    }
+                // The panel stands in for the pill, and stands in *exactly*: it
+                // is the surface the window grows out of, it reports the same
+                // rectangle, and it takes the same vertical drag. Everything in
+                // PlayerMorph and NowPlayingSheet goes on working without
+                // knowing which of the two it started from.
+                if (showPanel && chrome > 0.01f) {
                     Box(
                         Modifier
-                            .align(Alignment.CenterStart)
-                            // Inside the safe area, and centred in what is left:
-                            // the rail is a capsule floating beside the page, not
-                            // a sidebar, and one that starts at the top of the
-                            // screen is a sidebar with the clock on it.
-                            .padding(top = statusBar, bottom = navBar)
-                            .padding(start = 10.dp)
-                            // Told its height, because it is not told to wrap:
-                            // the rail paints its glass on a Column that fills
-                            // whatever it is given, which is right for a rail
-                            // that runs the height of a window and wrong for one
-                            // that holds three destinations.
-                            .height(FluidTabBarDefaults.Height * railTabs.size)
+                            .align(Alignment.CenterEnd)
+                            .width(panelWidth)
+                            .padding(top = statusBar + 12.dp, bottom = navBar + 12.dp)
+                            .padding(end = 14.dp)
+                            // Cut, not faded: the picture carries on inside the
+                            // travelling surface, and a hand-over has nothing to
+                            // show.
                             .graphicsLayer {
-                                alpha = (1f - expand.value * 3f).coerceIn(0f, 1f) * chrome
-                            },
-                    ) {
-                        FluidTabRail(
-                            items = railTabs,
-                            // The route itself here, not `activeTab`: search is a
-                            // destination of its own on this side, so the rail
-                            // can light it.
-                            selectedRoute = if (route in railTabs.map { it.route }) route else activeTab,
-                            onSelect = { navController.switchTab(it.route) },
-                            onReselect = { navController.switchTab(it.route) },
-                            backdrop = pageGlass,
-                        )
-                    }
-
-                    // The dock. Same pill, same measured rectangle, so the window
-                    // still grows out of it exactly as it does on a phone — it is
-                    // simply sitting at the foot of the page instead of over the
-                    // whole width of the screen.
-                    if (accessory != null) {
-                        Box(
-                            Modifier
-                                .align(Alignment.BottomCenter)
-                                .fillMaxWidth()
-                                .padding(start = railWidth)
-                                .padding(horizontal = pageGutter + 12.dp)
-                                .padding(bottom = navBar + 12.dp)
-                                .imePadding()
-                                .graphicsLayer {
-                                    alpha = (1f - expand.value * 3f).coerceIn(0f, 1f) * chrome
+                                alpha = if (pillHidden) 0f else 1f
+                            }
+                            // Measured HERE, outside the press-scale layer that
+                            // lives inside the panel, for the reason the pill's
+                            // own note gives: bounds taken under that layer
+                            // arrive a few percent large in the very instant a
+                            // finger presses to open.
+                            .onGloballyPositioned { coordinates ->
+                                val bounds = coordinates.boundsInRoot()
+                                if (bounds != pillBounds &&
+                                    bounds.width > 0f && bounds.height > 0f
+                                ) {
+                                    pillBounds = bounds
                                 }
-                                .onSizeChanged { barHeight = with(density) { it.height.toDp() } },
-                        ) {
-                            Box(Modifier.height(MiniPlayerHeight)) { accessory() }
+                            }
+                            .draggable(
+                                state = rememberDraggableState { delta ->
+                                    scope.dragPlayerMorph(expand, delta, travelPx)
+                                },
+                                orientation = androidx.compose.foundation.gestures.Orientation.Vertical,
+                                onDragStopped = { velocity ->
+                                    scope.settlePlayerMorph(expand, velocity, travelPx, haptics)
+                                },
+                            )
+                            .then(panelGlass),
+                    ) {
+                        dev.lelonio.square.ui.theme.ArtworkAccentTheme(seed = accent) {
+                            dev.lelonio.square.ui.player.NowPlayingPanel(
+                                state = playback,
+                                positionMs = positionMs,
+                                playingOn = remote?.deviceName?.takeIf { it.isNotEmpty() },
+                                onOpen = {
+                                    scope.launch { expand.animateTo(1f, PlayerMorphSpec) }
+                                },
+                                onTogglePlay = {
+                                    if (remote != null) {
+                                        val playing = remote?.playing == true
+                                        onRemote { id ->
+                                            if (playing) RemoteConnect.pause(id)
+                                            else RemoteConnect.play(id)
+                                        }
+                                    } else {
+                                        player?.togglePlay()
+                                    }
+                                },
+                                onNext = {
+                                    if (remote != null) onRemote(RemoteConnect::next)
+                                    else player?.seekToNextMediaItem()
+                                },
+                                onPrevious = {
+                                    if (remote != null) onRemote(RemoteConnect::previous)
+                                    else player?.seekToPreviousMediaItem()
+                                },
+                            )
                         }
                     }
                 }
@@ -2012,8 +2035,32 @@ fun SquareApp(
                         // The page it is leaving, which is what a window growing
                         // out of that page has to refract.
                         backdrop = pageGlass,
+                        // The panel is a pane with corners; the pill is a capsule.
+                        startCornerRadius = if (showPanel) {
+                            dev.antigravity.fluidengine.ui.fluid.FluidRadius.Sheet
+                        } else {
+                            null
+                        },
                         pillFace = {
                             dev.lelonio.square.ui.theme.ArtworkAccentTheme(seed = accent) {
+                                // Whichever of the two the journey started from.
+                                // The copy has to be the face of the surface that
+                                // is travelling, or the first frame of the
+                                // opening is a picture of something else.
+                                if (showPanel) {
+                                    dev.lelonio.square.ui.player.NowPlayingPanel(
+                                        state = playback,
+                                        positionMs = positionMs,
+                                        playingOn = remote?.deviceName?.takeIf { it.isNotEmpty() },
+                                        modifier = Modifier.fillMaxSize(),
+                                        interactive = false,
+                                        onOpen = {},
+                                        onTogglePlay = {},
+                                        onNext = {},
+                                        onPrevious = {},
+                                    )
+                                    return@ArtworkAccentTheme
+                                }
                                 // Inert on purpose. Three more gestures on the
                                 // same axis as the one driving the journey is not
                                 // a detail, and this copy is a picture rather than

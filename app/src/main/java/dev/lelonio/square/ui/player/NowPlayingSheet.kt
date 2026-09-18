@@ -26,6 +26,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.Density
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import dev.antigravity.fluidengine.ui.fluid.GlassBackdropState
 import dev.antigravity.fluidengine.ui.fluid.GlassRole
@@ -92,6 +93,17 @@ fun NowPlayingSheet(
      */
     pillFace: @Composable () -> Unit,
     /**
+     * The corner the journey *starts* on, when the thing it starts from is not a
+     * capsule.
+     *
+     * Null is the pill, and a pill is a capsule: its ends are as round as they
+     * can be and there is no other answer. A panel the height of the page is a
+     * pane with corners, and starting it as a capsule turns the first frames of
+     * the opening into a lozenge growing out of a rectangle — the one shape
+     * nothing on screen ever had.
+     */
+    startCornerRadius: Dp? = null,
+    /**
      * The artwork wash under the player, which is also the window's floor.
      *
      * The player used to be a destination stacked over the app's own backdrop
@@ -112,8 +124,14 @@ fun NowPlayingSheet(
     if (pillBounds.width > 0f) lastPill = pillBounds
 
     val ready = lastPill.width > 0f && hostBounds.width > 0f
-    val from = remember(lastPill, hostBounds) {
-        FluidFormPresets.capsule(lastPill.translate(-hostBounds.left, -hostBounds.top))
+    val startDensity = LocalDensity.current
+    val from = remember(lastPill, hostBounds, startCornerRadius, startDensity) {
+        val rect = lastPill.translate(-hostBounds.left, -hostBounds.top)
+        if (startCornerRadius == null) {
+            FluidFormPresets.capsule(rect)
+        } else {
+            FluidForm.Slab(rect, FluidCornerRadii.all(with(startDensity) { startCornerRadius.toPx() }))
+        }
     }
     // The window's corners are the *phone's* corners, not square ones.
     //

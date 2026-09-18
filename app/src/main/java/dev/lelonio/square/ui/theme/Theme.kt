@@ -316,6 +316,24 @@ val Ink: Color
     @Composable get() = LocalInkOverride.current ?: MaterialTheme.colorScheme.onSurface
 
 /**
+ * How much room at the end of a page is already spoken for.
+ *
+ * The now-playing panel, on a window wide enough to have one. It is handed to
+ * the *rows* — the carousels, the grids, the lists — rather than to the page,
+ * and that distinction is the whole reason it exists as a local instead of as a
+ * margin on the page's container.
+ *
+ * A margin on the container is what the first tablet build used, and it grew a
+ * stripe of unveiled backdrop down the side with a visible step where the
+ * header's veil ran out: that veil is a rectangle drawn *inside* the page, so a
+ * page narrower than the window leaves the window's edges bare. The page has to
+ * go on being the width of the window and carry on under the panel, the way it
+ * already carries on under the bar. Only what you are meant to reach stops
+ * short.
+ */
+val LocalPageEndInset = staticCompositionLocalOf { 0.dp }
+
+/**
  * The ink a given colour can be read against.
  *
  * For the pages that carry a colour of their own — a record, an artist — where

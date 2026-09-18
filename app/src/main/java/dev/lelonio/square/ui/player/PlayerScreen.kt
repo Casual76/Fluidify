@@ -32,6 +32,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.aspectRatio
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -781,11 +784,30 @@ fun PlayerScreen(
                         // — is there any cover left to draw — stays up here,
                         // and derived so it fires twice a change rather than
                         // sixty times a second.
-                        val coverPresent by remember(phase) {
-                            derivedStateOf { phase.value < 0.5f }
+                        // Side by side instead of one instead of the other,
+                        // when there is room for both.
+                        //
+                        // On a phone the cover and whatever is open are the same
+                        // square foot of screen and the app has to choose; on a
+                        // window twice as wide, choosing is the app pretending it
+                        // is still on a phone. The cross-fade between them is
+                        // what goes: there is nothing to fade between when both
+                        // are there.
+                        val twoPane = androidx.compose.ui.platform.LocalConfiguration.current
+                            .screenWidthDp.dp >= TwoPaneWidth && panel != PlayerPanel.NONE
+
+                        val coverPresent by remember(phase, twoPane) {
+                            derivedStateOf { twoPane || phase.value < 0.5f }
                         }
 
-                        Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                        BoxWithConstraints(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                            // Half the slot, shifted to its own side. Placed by
+                            // arithmetic rather than by an alignment: the two
+                            // panes are the *same* box at two positions, and an
+                            // alignment would have them agree about the middle
+                            // and disagree about everything else.
+                            val paneWidth = maxWidth / 2f
+                            val paneShift = maxWidth / 4f
                             // Says so in words, over whatever the slot is
                             // showing.
                             //
@@ -815,10 +837,22 @@ fun PlayerScreen(
                             if (coverPresent) {
                                 Box(
                                     Modifier
-                                        .fillMaxSize()
+                                        .then(
+                                            if (twoPane) {
+                                                Modifier
+                                                    .fillMaxHeight()
+                                                    .width(paneWidth)
+                                                    .offset(x = -paneShift)
+                                            } else {
+                                                Modifier.fillMaxSize()
+                                            },
+                                        )
                                         .graphicsLayer {
-                                            alpha = (1f - phase.value * 2f)
-                                                .coerceIn(0f, 1f)
+                                            alpha = if (twoPane) {
+                                                1f
+                                            } else {
+                                                (1f - phase.value * 2f).coerceIn(0f, 1f)
+                                            }
                                         },
                                     contentAlignment = Alignment.Center,
                                 ) {
@@ -879,10 +913,23 @@ fun PlayerScreen(
                             },
                             label = "stage",
                             modifier = Modifier
-                                .fillMaxSize()
+                                .then(
+                                    if (twoPane) {
+                                        Modifier
+                                            .fillMaxHeight()
+                                            .width(paneWidth)
+                                            .offset(x = paneShift)
+                                            .padding(start = 20.dp)
+                                    } else {
+                                        Modifier.fillMaxSize()
+                                    },
+                                )
                                 .graphicsLayer {
-                                    alpha = ((phase.value - 0.5f) * 2f)
-                                        .coerceIn(0f, 1f)
+                                    alpha = if (twoPane) {
+                                        1f
+                                    } else {
+                                        ((phase.value - 0.5f) * 2f).coerceIn(0f, 1f)
+                                    }
                                 },
                         ) { stage ->
                             when (stage) {
@@ -2329,3 +2376,13 @@ private enum class InfoPage(@StringRes val label: Int) {
     ARTIST(R.string.artist),
     CREDITS(R.string.credits),
 }
+
+/**
+ * Where the player stops choosing between the cover and what is open, and shows
+ * both.
+ *
+ * Nine hundred, the same width the now-playing panel needs beside a page: below
+ * it two halves are each narrower than a phone, and a cover that size next to
+ * lyrics that size is worse than either of them alone.
+ */
+private val TwoPaneWidth = 900.dp

@@ -563,7 +563,7 @@ fun HomeScreen(
                         Row(
                             Modifier
                                 .fillMaxWidth()
-                                .padding(horizontal = 20.dp, vertical = 8.dp),
+                                .padding(start = 20.dp, end = 20.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current, top = 8.dp, bottom = 8.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
                         ) {
                             row.forEach { artist ->
@@ -584,7 +584,7 @@ fun HomeScreen(
                         LazyRow(
                             contentPadding = PaddingValues(horizontal = 20.dp),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.padding(top = 14.dp),
+                            modifier = Modifier.padding(top = 14.dp).padding(end = dev.lelonio.square.ui.theme.LocalPageEndInset.current),
                         ) {
                             itemsIndexed(recent, key = { _, track -> track.uri }) { index, track ->
                                 TrackTile(track) { onPlayRecent(recent, index) }
@@ -886,7 +886,7 @@ private fun FilterRow(selected: Feed, backdrop: Backdrop, onSelect: (Feed) -> Un
     LazyRow(
         contentPadding = PaddingValues(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(top = 14.dp, bottom = 10.dp),
+        modifier = Modifier.padding(top = 14.dp, bottom = 10.dp).padding(end = dev.lelonio.square.ui.theme.LocalPageEndInset.current),
     ) {
         items(Feed.entries.toList(), key = { it.name }) { entry ->
             // The app's own glass, so the row reads as part of the chrome
@@ -914,7 +914,7 @@ private fun FeedCard(item: SearchItem, onClick: () -> Unit) {
     val shape = RoundedCornerShape(28.dp)
     Box(
         Modifier
-            .padding(horizontal = 20.dp, vertical = 8.dp)
+            .padding(start = 20.dp, end = 20.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current, top = 8.dp, bottom = 8.dp)
             .fillMaxWidth()
             .softShadow(shape, elevation = 26.dp, spot = 0.55f)
             .clip(shape)
@@ -1140,7 +1140,7 @@ private fun SkeletonSection(
         // Stands in for the heading.
         Box(
             Modifier
-                .padding(horizontal = 20.dp)
+                .padding(start = 20.dp, end = 20.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current)
                 .width(140.dp)
                 .height(20.dp)
                 .clip(RoundedCornerShape(6.dp))
@@ -1149,7 +1149,7 @@ private fun SkeletonSection(
         if (card) {
             Box(
                 Modifier
-                    .padding(horizontal = 20.dp, vertical = 14.dp)
+                    .padding(start = 20.dp, end = 20.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current, top = 14.dp, bottom = 14.dp)
                     .fillMaxWidth()
                     .height(tileHeight)
                     .clip(RoundedCornerShape(28.dp))
@@ -1184,7 +1184,7 @@ private fun TrackRow(tracks: List<CatalogTrack>, onPlay: (Int) -> Unit) {
     LazyRow(
         contentPadding = PaddingValues(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.padding(top = 14.dp),
+        modifier = Modifier.padding(top = 14.dp).padding(end = dev.lelonio.square.ui.theme.LocalPageEndInset.current),
     ) {
         itemsIndexed(tracks, key = { _, track -> track.uri }) { index, track ->
             TrackTile(track) { onPlay(index) }
@@ -1235,7 +1235,7 @@ private fun <T> Carousel(
     LazyRow(
         contentPadding = PaddingValues(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.padding(top = 14.dp),
+        modifier = Modifier.padding(top = 14.dp).padding(end = dev.lelonio.square.ui.theme.LocalPageEndInset.current),
     ) {
         items(items, key = key) { item(it) }
     }

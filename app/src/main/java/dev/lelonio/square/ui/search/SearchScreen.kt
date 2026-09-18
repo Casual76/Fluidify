@@ -274,7 +274,7 @@ private fun HistoryTitle(onClear: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 24.dp, end = 12.dp, top = 22.dp, bottom = 6.dp),
+            .padding(start = 24.dp, end = 12.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current, top = 22.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -326,7 +326,7 @@ private fun ResultRow(
         Modifier
             .fillMaxWidth()
             .pressable(onClick, shape = RoundedCornerShape(16.dp), pressedScale = 0.98f)
-            .padding(start = 24.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
+            .padding(start = 24.dp, end = 12.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Artwork(
