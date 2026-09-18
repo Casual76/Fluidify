@@ -366,5 +366,12 @@
     <string name="theme_system">Dem Telefon folgen</string>
     <string name="theme_light">Hell</string>
     <string name="theme_dark">Dunkel</string>
+    <string name="theme_amoled">Reines Schwarz</string>
     <string name="theme_note">Hell zieht das Cover Richtung Papier, dunkel zieht es Richtung Dunkelheit. Dieselbe Seite, in zwei Richtungen gelesen.</string>
+    <string name="sleep_timer">Sleeptimer</string>
+    <string name="sleep_timer_minutes">%1$d Min.</string>
+    <string name="sleep_timer_track_end">Ende des Titels</string>
+    <string name="sleep_timer_left">Stoppt in %1$s</string>
+    <string name="sleep_timer_track_end_active">Stoppt am Ende dieses Titels</string>
+    <string name="sleep_timer_note">Zaehlt bei ausgeschaltetem Bildschirm weiter. Die Musik blendet vorher aus.</string>
 </resources>

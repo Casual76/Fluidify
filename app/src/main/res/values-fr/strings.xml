@@ -366,5 +366,12 @@
     <string name="theme_system">Suivre le téléphone</string>
     <string name="theme_light">Clair</string>
     <string name="theme_dark">Sombre</string>
+    <string name="theme_amoled">Noir absolu</string>
     <string name="theme_note">Le clair tire la pochette vers le papier, le sombre la tire vers le noir. C&#8217;est la même page, lue dans deux sens.</string>
+    <string name="sleep_timer">Minuteur</string>
+    <string name="sleep_timer_minutes">%1$d min</string>
+    <string name="sleep_timer_track_end">Fin du morceau</string>
+    <string name="sleep_timer_left">S&#8217;arrete dans %1$s</string>
+    <string name="sleep_timer_track_end_active">S&#8217;arrete a la fin de ce morceau</string>
+    <string name="sleep_timer_note">Continue de compter ecran eteint. La musique s&#8217;estompe avant de s&#8217;arreter.</string>
 </resources>

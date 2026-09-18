@@ -77,16 +77,17 @@ class GlassGalleryActivity : ComponentActivity() {
         enableEdgeToEdge()
         setContent {
             Row(Modifier.fillMaxSize()) {
-                GallerySide(dark = false, modifier = Modifier.weight(1f))
-                GallerySide(dark = true, modifier = Modifier.weight(1f))
+                GallerySide(dark = false, amoled = false, modifier = Modifier.weight(1f))
+                GallerySide(dark = true, amoled = false, modifier = Modifier.weight(1f))
+                GallerySide(dark = true, amoled = true, modifier = Modifier.weight(1f))
             }
         }
     }
 }
 
 @Composable
-private fun GallerySide(dark: Boolean, modifier: Modifier = Modifier) {
-    SquareTheme(darkTheme = dark) {
+private fun GallerySide(dark: Boolean, amoled: Boolean, modifier: Modifier = Modifier) {
+    SquareTheme(darkTheme = dark, amoled = amoled) {
         val cover = rememberLayerBackdrop()
         Box(modifier.fillMaxSize().background(pageFloor)) {
             // What the glass has to see through. Recorded into its own layer for
@@ -117,7 +118,7 @@ private fun GallerySide(dark: Boolean, modifier: Modifier = Modifier) {
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
                 Text(
-                    if (dark) "Dark" else "Light",
+                    if (!dark) "Light" else if (amoled) "Black" else "Dark",
                     style = MaterialTheme.typography.titleMedium,
                     fontWeight = FontWeight.Bold,
                     color = Ink,

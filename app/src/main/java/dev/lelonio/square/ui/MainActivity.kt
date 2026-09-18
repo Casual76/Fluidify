@@ -90,7 +90,9 @@ class MainActivity : ComponentActivity() {
             (application as dev.lelonio.square.SquareApplication).preferences.readThemeMode()
         ) {
             dev.lelonio.square.data.AppThemeMode.Light -> false
-            dev.lelonio.square.data.AppThemeMode.Dark -> true
+            dev.lelonio.square.data.AppThemeMode.Dark,
+            dev.lelonio.square.data.AppThemeMode.Amoled,
+            -> true
             dev.lelonio.square.data.AppThemeMode.System ->
                 resources.configuration.uiMode and
                     android.content.res.Configuration.UI_MODE_NIGHT_MASK ==

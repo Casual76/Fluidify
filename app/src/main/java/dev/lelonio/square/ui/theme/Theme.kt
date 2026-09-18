@@ -66,6 +66,15 @@ private val Amethyst = AccentPreset(
 val LocalLightTheme = staticCompositionLocalOf { false }
 
 /**
+ * True when the dark side is standing on true black rather than on near-black.
+ *
+ * Only [pageFloor] and the backdrop's own veil ask: everything else is glass, and glass does not
+ * care what is under it — which is exactly why this is one local and four colours rather than a
+ * second theme. See [dev.lelonio.square.data.AppThemeMode.Amoled].
+ */
+val LocalAmoledTheme = staticCompositionLocalOf { false }
+
+/**
  * A colour the page imposes on everything written on it.
  *
  * A record's page does not follow the phone. The artwork files a colour, the
@@ -106,11 +115,17 @@ fun SquareTheme(
      * frame of the other one.
      */
     darkTheme: Boolean = rememberThemeIsDark(),
+    /** True for the dark side standing on true black. See [LocalAmoledTheme]. */
+    amoled: Boolean = rememberThemeIsAmoled(),
     content: @Composable () -> Unit,
 ) {
     FluidTheme(
         settings = EngineSettings(
-            themeMode = if (darkTheme) EngineThemeMode.DARK else EngineThemeMode.LIGHT,
+            themeMode = when {
+                !darkTheme -> EngineThemeMode.LIGHT
+                amoled -> EngineThemeMode.AMOLED
+                else -> EngineThemeMode.DARK
+            },
             accentMode = AccentMode.BRAND,
             dynamicColorEnabled = false,
         ),
@@ -169,6 +184,7 @@ fun SquareTheme(
         MaterialTheme(colorScheme = scheme) {
             CompositionLocalProvider(
                 LocalLightTheme provides !darkTheme,
+                LocalAmoledTheme provides (darkTheme && amoled),
                 // Said out loud rather than guessed: the engine asks
                 // `colorScheme.surface.luminance()`, and the surface this app
                 // files there is a translucent film. Luminance ignores alpha, so
@@ -191,6 +207,18 @@ fun SquareTheme(
  * the flow is what makes the setting take effect without leaving the screen.
  */
 @Composable
+fun rememberThemeIsAmoled(): Boolean {
+    val context = LocalContext.current
+    val store = remember(context) {
+        (context.applicationContext as SquareApplication).preferences
+    }
+    val mode by store.themeMode.collectAsStateWithLifecycle(
+        initialValue = remember(store) { store.readThemeMode() },
+    )
+    return mode == AppThemeMode.Amoled
+}
+
+@Composable
 fun rememberThemeIsDark(): Boolean {
     val context = LocalContext.current
     val store = remember(context) {
@@ -202,7 +230,7 @@ fun rememberThemeIsDark(): Boolean {
     val systemDark = isSystemInDarkTheme()
     return when (mode) {
         AppThemeMode.Light -> false
-        AppThemeMode.Dark -> true
+        AppThemeMode.Dark, AppThemeMode.Amoled -> true
         AppThemeMode.System -> systemDark
     }
 }
@@ -409,7 +437,11 @@ val LocalPageEndInset = staticCompositionLocalOf { 0.dp }
  * about to offer.
  */
 val pageFloor: Color
-    @Composable get() = if (LocalLightTheme.current) PageFloorLight else PageFloorDark
+    @Composable get() = when {
+        LocalLightTheme.current -> PageFloorLight
+        LocalAmoledTheme.current -> Color.Black
+        else -> PageFloorDark
+    }
 
 private val PageFloorDark = Color(0xFF0A0A0C)
 private val PageFloorLight = Color(0xFFF1F2F6)

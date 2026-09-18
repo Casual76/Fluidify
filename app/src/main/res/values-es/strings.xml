@@ -366,5 +366,12 @@
     <string name="theme_system">Seguir el teléfono</string>
     <string name="theme_light">Claro</string>
     <string name="theme_dark">Oscuro</string>
+    <string name="theme_amoled">Negro puro</string>
     <string name="theme_note">El claro lleva la portada hacia el papel, el oscuro la lleva hacia la sombra. Es la misma página, leída en dos sentidos.</string>
+    <string name="sleep_timer">Temporizador</string>
+    <string name="sleep_timer_minutes">%1$d min</string>
+    <string name="sleep_timer_track_end">Fin de la cancion</string>
+    <string name="sleep_timer_left">Se para en %1$s</string>
+    <string name="sleep_timer_track_end_active">Se para al final de esta cancion</string>
+    <string name="sleep_timer_note">Sigue contando con la pantalla apagada. La musica se desvanece antes de parar.</string>
 </resources>

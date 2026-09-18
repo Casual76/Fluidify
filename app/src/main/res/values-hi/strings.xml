@@ -381,5 +381,12 @@
     <string name="theme_system">फ़ोन के अनुसार</string>
     <string name="theme_light">हल्का</string>
     <string name="theme_dark">गहरा</string>
+    <string name="theme_amoled">शुद्ध काला</string>
     <string name="theme_note">हल्का कवर को कागज़ की ओर ले जाता है, गहरा उसे अंधेरे की ओर। एक ही पृष्ठ, दो दिशाओं में पढ़ा हुआ।</string>
+    <string name="sleep_timer">स्लीप टाइमर</string>
+    <string name="sleep_timer_minutes">%1$d मिनट</string>
+    <string name="sleep_timer_track_end">ट्रैक का अंत</string>
+    <string name="sleep_timer_left">%1$s में रुकेगा</string>
+    <string name="sleep_timer_track_end_active">इस ट्रैक के अंत में रुकेगा</string>
+    <string name="sleep_timer_note">स्क्रीन बंद होने पर भी चलता रहता है।</string>
 </resources>

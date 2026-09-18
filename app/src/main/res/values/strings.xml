@@ -387,5 +387,12 @@
     <string name="theme_system">Follow the phone</string>
     <string name="theme_light">Light</string>
     <string name="theme_dark">Dark</string>
+    <string name="theme_amoled">Pure black</string>
     <string name="theme_note">Light takes the cover up towards paper, dark takes it down towards the floor. It is the same page, read in two directions.</string>
+    <string name="sleep_timer">Sleep timer</string>
+    <string name="sleep_timer_minutes">%1$d min</string>
+    <string name="sleep_timer_track_end">End of track</string>
+    <string name="sleep_timer_left">Stops in %1$s</string>
+    <string name="sleep_timer_track_end_active">Stops at the end of this track</string>
+    <string name="sleep_timer_note">Keeps counting with the screen off. The music fades before it stops.</string>
 </resources>

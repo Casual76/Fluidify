@@ -2637,7 +2637,9 @@ private fun AppBackdrop(artworkUrl: String?, alive: Boolean) {
                     // whatever is playing. Denser at the bottom on both sides,
                     // because that is where the bar and the pill have to stay
                     // legible.
-                    Brush.verticalGradient(*veilStops(light)),
+                    Brush.verticalGradient(
+                        *veilStops(light, dev.lelonio.square.ui.theme.LocalAmoledTheme.current),
+                    ),
                 ),
         )
     }
@@ -2647,6 +2649,20 @@ private val VeilDark = arrayOf(
     0f to Color.Black.copy(alpha = 0.45f),
     0.5f to Color.Black.copy(alpha = 0.60f),
     1f to Color.Black.copy(alpha = 0.78f),
+)
+
+/**
+ * The dark veil, taken as far as it goes.
+ *
+ * On a panel where black is an unlit pixel, a cover left at three quarters is a bright rectangle in
+ * a room that is otherwise off — and the point of the setting is that the screen goes dark. Not all
+ * the way to opaque, though: a cover that cannot be seen at all is a page that has lost the one
+ * thing telling you what is playing.
+ */
+private val VeilAmoled = arrayOf(
+    0f to Color.Black.copy(alpha = 0.70f),
+    0.5f to Color.Black.copy(alpha = 0.82f),
+    1f to Color.Black.copy(alpha = 0.93f),
 )
 
 /**
@@ -2662,7 +2678,11 @@ private val VeilLight = arrayOf(
     1f to Color.White.copy(alpha = 0.84f),
 )
 
-private fun veilStops(light: Boolean) = if (light) VeilLight else VeilDark
+private fun veilStops(light: Boolean, amoled: Boolean) = when {
+    light -> VeilLight
+    amoled -> VeilAmoled
+    else -> VeilDark
+}
 
 /**
  * One blurred cover, drifting.

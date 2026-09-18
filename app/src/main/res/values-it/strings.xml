@@ -367,5 +367,12 @@
     <string name="theme_system">Come il telefono</string>
     <string name="theme_light">Chiaro</string>
     <string name="theme_dark">Scuro</string>
+    <string name="theme_amoled">Nero pieno</string>
     <string name="theme_note">Il chiaro porta la copertina verso la carta, lo scuro la porta verso il buio. È la stessa pagina, letta in due versi.</string>
+    <string name="sleep_timer">Timer di spegnimento</string>
+    <string name="sleep_timer_minutes">%1$d min</string>
+    <string name="sleep_timer_track_end">Fine del brano</string>
+    <string name="sleep_timer_left">Si ferma fra %1$s</string>
+    <string name="sleep_timer_track_end_active">Si ferma alla fine di questo brano</string>
+    <string name="sleep_timer_note">Continua a contare a schermo spento. La musica sfuma prima di fermarsi.</string>
 </resources>

@@ -24,6 +24,7 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.annotation.StringRes
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -304,6 +305,16 @@ fun SettingsScreen(
         // Also librespot's: the crossfade is mixed by the engine's own player.
         if (open == SettingsPage.Playback) item("crossfade") {
             CrossfadeSection()
+        }
+
+        // Under Playback and not in the player, which is where the app this fork
+        // comes from put it. That player has a panel of things that change how it
+        // sounds and this fits at the end of it; ours does not, and inventing one
+        // for a single row would have been a panel with one thing in it. What
+        // matters is that it is set before sleep and that it survives the screen
+        // going off, and both of those are true wherever the row lives.
+        if (open == SettingsPage.Playback) item("sleep") {
+            SleepTimerSection()
         }
 
         if (open == SettingsPage.Playback) item("canvas") {
@@ -616,6 +627,7 @@ private fun ThemeSection() {
                         AppThemeMode.System -> R.string.theme_system
                         AppThemeMode.Light -> R.string.theme_light
                         AppThemeMode.Dark -> R.string.theme_dark
+                        AppThemeMode.Amoled -> R.string.theme_amoled
                     },
                 ),
                 selected = mode == chosen,
@@ -630,6 +642,70 @@ private fun ThemeSection() {
         )
     }
 }
+
+/**
+ * When the music is to stop on its own.
+ *
+ * The rows say what was asked for; the line under them says what is left, and
+ * they are not the same question — a lit row is a length, and a countdown is a
+ * clock. What it sets lives in the playback service, which outlives this screen:
+ * see [dev.lelonio.square.playback.SleepTimer].
+ */
+@Composable
+private fun SleepTimerSection() {
+    val endsAt by dev.lelonio.square.playback.SleepTimer.endsAt.collectAsStateWithLifecycle()
+    val chosen by dev.lelonio.square.playback.SleepTimer.minutes.collectAsStateWithLifecycle()
+    val atTrackEnd by
+        dev.lelonio.square.playback.SleepTimer.atTrackEnd.collectAsStateWithLifecycle()
+
+    // Read once a second while something is running, and not at all otherwise: a
+    // clock nobody set should cost nothing.
+    var left by remember { mutableStateOf(dev.lelonio.square.playback.SleepTimer.remaining()) }
+    LaunchedEffect(endsAt) {
+        while (endsAt != null) {
+            left = dev.lelonio.square.playback.SleepTimer.remaining()
+            kotlinx.coroutines.delay(1_000)
+        }
+        left = null
+    }
+
+    Section(stringResource(R.string.sleep_timer)) {
+        ChoiceRow(
+            label = stringResource(R.string.off),
+            selected = endsAt == null && !atTrackEnd,
+        ) { dev.lelonio.square.playback.SleepTimer.cancel() }
+        SleepLengths.forEach { minutes ->
+            RowDivider()
+            ChoiceRow(
+                label = stringResource(R.string.sleep_timer_minutes, minutes),
+                selected = chosen == minutes,
+            ) { dev.lelonio.square.playback.SleepTimer.inMinutes(minutes) }
+        }
+        RowDivider()
+        ChoiceRow(
+            label = stringResource(R.string.sleep_timer_track_end),
+            selected = atTrackEnd,
+        ) { dev.lelonio.square.playback.SleepTimer.atEndOfTrack() }
+        RowDivider()
+        val running = left
+        Text(
+            when {
+                atTrackEnd -> stringResource(R.string.sleep_timer_track_end_active)
+                running != null -> stringResource(
+                    R.string.sleep_timer_left,
+                    dev.lelonio.square.ui.library.formatDuration(running),
+                )
+                else -> stringResource(R.string.sleep_timer_note)
+            },
+            style = MaterialTheme.typography.bodySmall,
+            color = InkDim,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+        )
+    }
+}
+
+/** The lengths offered, which are the ones every player offers. */
+private val SleepLengths = listOf(5, 15, 30, 45, 60)
 
 @Composable
 private fun CrossfadeSection() {

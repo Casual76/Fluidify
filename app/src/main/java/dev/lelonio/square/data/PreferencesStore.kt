@@ -16,6 +16,16 @@ enum class AppThemeMode(val key: String) {
     System("system"),
     Light("light"),
     Dark("dark"),
+
+    /**
+     * Dark, with the page floor at true black.
+     *
+     * Not a fourth palette but the dark one standing on nothing: on an OLED panel a black pixel is
+     * an *unlit* pixel, so the page stops being a very dark grey and starts being the edge of the
+     * screen. Everything glass keeps working, and keeps working better — a translucent film reads
+     * more clearly against black than against near-black, which is the whole trick.
+     */
+    Amoled("amoled"),
 }
 
 /**

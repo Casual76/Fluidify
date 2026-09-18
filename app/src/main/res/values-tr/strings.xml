@@ -381,5 +381,12 @@
     <string name="theme_system">Telefonu izle</string>
     <string name="theme_light">Açık</string>
     <string name="theme_dark">Koyu</string>
+    <string name="theme_amoled">Saf siyah</string>
     <string name="theme_note">Açık, kapağı kâğıda doğru çeker; koyu ise karanlığa. Aynı sayfa, iki yönde okunuyor.</string>
+    <string name="sleep_timer">Uyku zamanlayicisi</string>
+    <string name="sleep_timer_minutes">%1$d dk</string>
+    <string name="sleep_timer_track_end">Parcanin sonu</string>
+    <string name="sleep_timer_left">%1$s sonra duracak</string>
+    <string name="sleep_timer_track_end_active">Bu parcanin sonunda duracak</string>
+    <string name="sleep_timer_note">Ekran kapaliyken saymaya devam eder. Muzik durmadan once kisilir.</string>
 </resources>
