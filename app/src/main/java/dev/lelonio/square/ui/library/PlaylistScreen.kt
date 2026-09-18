@@ -1038,7 +1038,7 @@ private fun DetailHeader(
                         tint = if (downloaded || busy) {
                             MaterialTheme.colorScheme.primary
                         } else {
-                            Color.White
+                            dev.lelonio.square.ui.theme.Ink
                         },
                         modifier = Modifier.size(if (busy) 14.dp else 18.dp),
                     )
@@ -1556,9 +1556,6 @@ private val COLLAPSED_BAR_HEIGHT = 56.dp
 private val HERO_HEIGHT = 420.dp
 
 /** Where the page ends up once the cover's colour has faded out of it. */
-private val PageFloorDark = Color(0xFF0A0A0C)
-private val PageFloorLight = Color(0xFFF1F2F6)
-
 /**
  * The colour a record's page ends on.
  *
@@ -1567,8 +1564,7 @@ private val PageFloorLight = Color(0xFFF1F2F6)
  * opinion about the record.
  */
 private val PageFloor: Color
-    @Composable get() =
-        if (dev.lelonio.square.ui.theme.LocalLightTheme.current) PageFloorLight else PageFloorDark
+    @androidx.compose.runtime.Composable get() = dev.lelonio.square.ui.theme.pageFloor
 
 /**
  * The page tone for a cover.
@@ -1674,7 +1670,7 @@ private fun TrackRow(
                     Modifier
                         .size(46.dp)
                         .clip(RoundedCornerShape(8.dp))
-                        .background(Color.Black.copy(alpha = 0.45f)),
+                        .background(dev.lelonio.square.ui.theme.pageWash(0.45f)),
                     contentAlignment = Alignment.Center,
                 ) {
                     Icon(
@@ -1871,7 +1867,7 @@ private fun FollowPill(following: Boolean, onClick: () -> Unit) {
             .background(if (following) Color.Transparent else dev.lelonio.square.ui.theme.Ink, shape)
             .then(
                 if (following) {
-                    Modifier.border(1.dp, Color.White.copy(alpha = 0.4f), shape)
+                    Modifier.border(1.dp, dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.4f), shape)
                 } else {
                     Modifier
                 },

@@ -111,7 +111,13 @@ fun OnboardingScreen(
             // the only thing on screen that is not about listening, and glass
             // over a home page the user has not configured yet would be showing
             // them the thing the tutorial exists to explain.
-            .background(Color(0xFF101012))
+            //
+            // Opaque, but not *dark*: this was a fixed near-black, and every word
+            // on it is drawn in the page's ink. The day the app grew a light side
+            // the first screen anyone sees became dark grey letters on a black
+            // page — the setting failing in front of the person before they had
+            // even been offered it.
+            .background(dev.lelonio.square.ui.theme.pageFloor)
             // Nothing behind this is meant to be reachable while it is up.
             .clickable(interactionSource = null, indication = null) {},
     ) {

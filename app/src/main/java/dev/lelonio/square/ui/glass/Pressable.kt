@@ -87,6 +87,12 @@ fun Modifier.pressable(
     val travel = (1f - pressedScale).coerceAtLeast(0.0001f)
     val tint = ((1f - scale.value) / travel).coerceIn(0f, 1f) * 0.10f
 
+    // Lightens on a dark page and darkens on a light one: a white flash on paper
+    // is no flash at all. Read here rather than in the draw block, which is not
+    // a place a theme can be asked from — the alpha it carries is the turn-over's
+    // own weight, and the press scales it.
+    val flash = dev.lelonio.square.ui.theme.glassEdge(1f)
+
     return this
         .graphicsLayer {
             scaleX = scale.value
@@ -101,7 +107,7 @@ fun Modifier.pressable(
                     if (tint > 0f) {
                         drawOutline(
                             outline = shape.createOutline(size, layoutDirection, this),
-                            color = Color.White.copy(alpha = tint),
+                            color = flash.copy(alpha = flash.alpha * tint),
                         )
                     }
                 }

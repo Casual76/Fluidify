@@ -51,6 +51,7 @@ import dev.lelonio.square.R
 import dev.lelonio.square.data.FriendListen
 import dev.lelonio.square.ui.glass.pressable
 import dev.lelonio.square.ui.player.GlassSurface
+import dev.lelonio.square.ui.theme.Ink
 import dev.lelonio.square.ui.theme.softShadow
 
 /**
@@ -208,7 +209,7 @@ private fun AddFriendField(
             Text(
                 stringResource(R.string.add_friend),
                 style = MaterialTheme.typography.labelLarge,
-                color = if (working) Color.White.copy(alpha = 0.4f) else Color.White,
+                color = if (working) Ink.copy(alpha = 0.4f) else Ink,
                 modifier = Modifier
                     .clip(RoundedCornerShape(14.dp))
                     .pressable(onClick = { if (!working) onAdd(typed) })

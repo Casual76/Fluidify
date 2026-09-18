@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  The gallery is a second launcher icon, and only in this build type.
+
+  A separate entry rather than a route inside the app, because the app's own
+  entry needs an account and the gallery deliberately does not: it is reachable
+  on an emulator that has never signed in, which is the whole reason it exists.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <application>
+        <activity
+            android:name="dev.lelonio.square.gallery.GlassGalleryActivity"
+            android:exported="true"
+            android:label="Fluidify glass"
+            android:theme="@style/Theme.Fluidify">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

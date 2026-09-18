@@ -19,6 +19,7 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.GraphicsLayerScope
@@ -57,9 +58,23 @@ data class GlassEffectConfig(
     val lensAmount: Float = 0.6f,
     val chromaticAberration: Boolean = false,
     val depthEffect: Boolean = false,
-    /** [Color.Unspecified] means adaptive: dark grey on dark. */
-    val surfaceTintColor: Color = Color(0xFF1A1A1A),
-    /** Specular rim ("pluck") colour. [Color.Unspecified] keeps the default white. */
+    /**
+     * The film this pane is tinted with.
+     *
+     * [Color.Unspecified] means adaptive: a grey chosen from how bright the
+     * artwork behind the page is. The default is *not* unspecified — it is the
+     * dark grey below, which is what this design settled on for a dark page —
+     * and that default has a light twin the renderer swaps in when the app is on
+     * its light side. A colour set by hand wins over both, which is what setting
+     * it is for.
+     */
+    val surfaceTintColor: Color = DefaultSurfaceTint,
+    /**
+     * Specular rim ("pluck") colour.
+     *
+     * [Color.Unspecified] follows the page: a white rim that catches the light on
+     * a dark one, a quieter dark line on a light one. Setting it wins over both.
+     */
     val highlightColor: Color = Color.Unspecified,
     /** Specular rim opacity, 0..1. */
     val highlightOpacity: Float = EdgeHighlightAlpha,
@@ -280,6 +295,10 @@ fun glassContentColorFor(behind: Color, tint: Color, opacity: Float): Color {
  * How bright what is behind the glass has to be before the film darkens, and
  * where it has finished darkening. See the use of it in [liquidGlass].
  */
+/** The film a pane takes on a dark page, and the one it takes on a light one. */
+internal val DefaultSurfaceTint = Color(0xFF1A1A1A)
+internal val DefaultSurfaceTintLight = Color(0xFFFAFAFA)
+
 private const val BRIGHT_FROM = 0.42f
 private const val BRIGHT_TO = 0.72f
 
@@ -442,10 +461,21 @@ fun Modifier.liquidGlass(
     // is how the library's own adaptive-luminance demo does it and why that
     // demo costs a capture and a pixel copy every frame.
     val backdropLuminance = LocalBackdropLuminance.current
-    val surfaceTintColor = if (config.surfaceTintColor.isSpecified) {
+    // Which side the app is on, asked rather than guessed.
+    //
+    // This used to read `colorScheme.surface.luminance()`, and every surface in
+    // this design is a translucent film: luminance ignores alpha, so that test
+    // said "light" on both sides and the branch under it was dead. See
+    // LocalLightTheme.
+    val lightPage = dev.lelonio.square.ui.theme.LocalLightTheme.current
+    val surfaceTintColor = if (lightPage && config.surfaceTintColor == DefaultSurfaceTint) {
+        // The default's light twin. The default itself is a dark grey — right
+        // for a page that is artwork under a dark veil, and on a light page a
+        // dark slab sitting on paper, which is what every pill in the app looked
+        // like the first time this had two sides.
+        DefaultSurfaceTintLight
+    } else if (config.surfaceTintColor.isSpecified) {
         config.surfaceTintColor
-    } else if (MaterialTheme.colorScheme.surface.luminance() > 0.5f) {
-        Color(0xFFFAFAFA)
     } else {
         // Between the two across the middle of the range rather than at a line,
         // so a cover that is merely light does not flip the chrome.
@@ -476,8 +506,11 @@ fun Modifier.liquidGlass(
         // a stroked outline.
         val flatRim = (highlightAlpha * (config.highlightOpacity / EdgeHighlightAlpha))
             .coerceIn(0f, 1f)
-        val flatRimColor =
-            if (config.highlightColor.isSpecified) config.highlightColor else Color.White
+        val flatRimColor = if (config.highlightColor.isSpecified) {
+            config.highlightColor.copy(alpha = flatRim)
+        } else {
+            dev.lelonio.square.ui.theme.glassEdge(flatRim)
+        }
         return this
             .clip(shape)
             .background(surfaceTintColor.copy(alpha = config.surfaceOpacity.coerceIn(0f, 1f)))
@@ -497,7 +530,7 @@ fun Modifier.liquidGlass(
                     Modifier
                 },
             )
-            .border(EdgeHighlightWidth, flatRimColor.copy(alpha = flatRim), shape)
+            .border(EdgeHighlightWidth, flatRimColor, shape)
     }
 
     // ponytail: frozen mid-sweep. The drift described at [HighlightAngleMin] was a
@@ -571,22 +604,44 @@ fun Modifier.liquidGlass(
         }
     }
 
-    // The rim's own colour, independent of the surface tint: on a tinted pill a
-    // white rim is what reads as "lit glass", but a coloured one is the difference
-    // between chrome and neon, so it is worth exposing rather than assuming.
-    val rimColor = if (config.highlightColor.isSpecified) config.highlightColor else Color.White
     // Call sites pass a per-component alpha (the nav bar wants a dimmer rim than a
     // button). Scale the user's setting by it rather than replacing it, so both the
     // per-component tuning and the preference still mean something.
     val rimAlpha = (highlightAlpha * (config.highlightOpacity / EdgeHighlightAlpha)).coerceIn(0f, 1f)
+    // The rim's own colour, independent of the surface tint: on a tinted pill a
+    // white rim is what reads as "lit glass", but a coloured one is the difference
+    // between chrome and neon, so it is worth exposing rather than assuming.
+    //
+    // Unconditionally white was the whole app's edge light, and on a light page
+    // that is a white line on white paper: every pill, sheet, capsule and button
+    // lost its rim at once, which is most of what says "glass" at a glance. The
+    // turn-over lives in the theme rather than here so that the flat fallback
+    // above, and the call sites that draw their own edge, all say it once.
+    val rimColor = if (config.highlightColor.isSpecified) {
+        config.highlightColor.copy(alpha = rimAlpha)
+    } else {
+        dev.lelonio.square.ui.theme.glassEdge(rimAlpha)
+    }
+    // And the blend has to turn over with it, which is the part that does not
+    // announce itself. A specular highlight is drawn *additively* — that is what
+    // makes a rim read as light caught on an edge rather than as a line painted
+    // along one — and adding a dark colour adds nothing at all. Turning the
+    // colour over on its own compiled, ran, and drew no rim whatsoever on the
+    // light side; the panes simply ended where their film ended.
+    val rimBlend = if (dev.lelonio.square.ui.theme.onDarkPage) {
+        BlendMode.Plus
+    } else {
+        BlendMode.SrcOver
+    }
 
-    val highlightBlock: (() -> Highlight?)? = remember(applyEdgeEffects, plainBlur, rimColor, rimAlpha, animatedHighlightAngle) {
+    val highlightBlock: (() -> Highlight?)? = remember(applyEdgeEffects, plainBlur, rimColor, rimBlend, animatedHighlightAngle) {
         if (applyEdgeEffects && !plainBlur) {
             {
                 Highlight(
                     width = EdgeHighlightWidth,
                     style = HighlightStyle.Default(
-                        color = rimColor.copy(alpha = rimAlpha),
+                        color = rimColor,
+                        blendMode = rimBlend,
                         angle = animatedHighlightAngle,
                     ),
                 )

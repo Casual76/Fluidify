@@ -62,7 +62,7 @@ fun LazyScrollBar(
      */
     startAfter: Any? = null,
     thumbHeight: Dp = 52.dp,
-    color: Color = Color.White.copy(alpha = 0.55f),
+    color: Color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.55f),
 ) {
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()

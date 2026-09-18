@@ -610,6 +610,17 @@ fun PlayerScreen(
                     animationSpec = tween(420),
                     label = "canvasVeil",
                 )
+                // The page's own wash, on top of the one the app's backdrop
+                // already lays down, and denser at the foot because that is
+                // where the transport is. Read out here because a draw block is
+                // not a place a theme can be asked from — and it has to be
+                // asked: this was black on both sides, so a light page washed
+                // its cover *away* from the paper its ink had turned into, and
+                // the result was near-black letters on a mid grey.
+                val washTop = dev.lelonio.square.ui.theme.pageWash(0.28f)
+                val washMid = dev.lelonio.square.ui.theme.pageWash(0.18f)
+                val washFoot = dev.lelonio.square.ui.theme.pageWash(0.52f)
+                val washPaused = dev.lelonio.square.ui.theme.pageWash(1f)
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -618,14 +629,14 @@ fun PlayerScreen(
                             drawRect(
                                 brush = Brush.verticalGradient(
                                     listOf(
-                                        Color.Black.copy(alpha = 0.28f * shade),
-                                        Color.Black.copy(alpha = 0.18f * shade),
-                                        Color.Black.copy(alpha = 0.52f * shade),
+                                        washTop.copy(alpha = washTop.alpha * shade),
+                                        washMid.copy(alpha = washMid.alpha * shade),
+                                        washFoot.copy(alpha = washFoot.alpha * shade),
                                     ),
                                 ),
                             )
                             drawContent()
-                            drawRect(Color.Black, alpha = dim.value * PAUSED_DIM * shade)
+                            drawRect(washPaused, alpha = dim.value * PAUSED_DIM * shade)
                         },
                 )
             }
@@ -1960,15 +1971,15 @@ private fun KaraokeBadge(amount: Float, backdrop: Backdrop, onClick: () -> Unit)
         Icon(
             PhosphorIcons.Fill.MicrophoneStage,
             contentDescription = null,
-            // White, like the control it refers to: an accent pulled from the
-            // cover lands anywhere, including on the cover itself.
-            tint = Color.White,
+            // The page's ink, like the control it refers to: an accent pulled
+            // from the cover lands anywhere, including on the cover itself.
+            tint = GlassInk,
             modifier = Modifier.size(13.dp),
         )
         Text(
             stringResource(R.string.karaoke_on, (amount * 100).toInt()),
             style = MaterialTheme.typography.labelMedium,
-            color = Color.White,
+            color = GlassInk,
             modifier = Modifier.padding(start = 6.dp),
         )
     }

@@ -116,7 +116,7 @@ fun TranslationToggle(
         contentAlignment = Alignment.Center,
     ) {
         if (lit > 0f) {
-            Box(Modifier.fillMaxSize().background(Color.White.copy(alpha = lit)))
+            Box(Modifier.fillMaxSize().background(GlassInk.copy(alpha = lit)))
         }
 
         // A turning ring while the lines are away, in place of the glyph: the
@@ -125,7 +125,7 @@ fun TranslationToggle(
         // registered the press.
         if (busy) {
             androidx.compose.material3.CircularProgressIndicator(
-                color = Color.White,
+                color = GlassInk,
                 strokeWidth = 2.dp,
                 modifier = Modifier.size(18.dp),
             )
@@ -133,9 +133,10 @@ fun TranslationToggle(
             Icon(
                 if (on) PhosphorIcons.Fill.Translate else PhosphorIcons.Regular.Translate,
                 contentDescription = stringResource(R.string.translation),
-                // White throughout, as the dial is: the filled glyph is what
-                // says it is on, and a coloured one competes with the artwork.
-                tint = Color.White,
+                // The page's ink throughout, as the dial is: the filled glyph
+                // is what says it is on, and a coloured one competes with the
+                // artwork.
+                tint = GlassInk,
                 modifier = Modifier.size(20.dp),
             )
         }

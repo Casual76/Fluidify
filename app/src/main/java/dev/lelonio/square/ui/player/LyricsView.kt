@@ -385,10 +385,11 @@ private fun LyricRow(
                                 },
                             ),
                             fontWeight = FontWeight.Bold,
-                            // White rather than the artwork accent. These sit over
-                            // a Canvas now, and an accent pulled from the cover can
-                            // land anywhere — including on the clip's own colours.
-                            color = Color.White.copy(
+                            // The page's ink rather than the artwork accent. These
+                            // sit over a Canvas now, and an accent pulled from the
+                            // cover can land anywhere — including on the clip's own
+                            // colours.
+                            color = GlassInk.copy(
                                 alpha = if (isActive) {
                                     DIM_WORD_ALPHA + (1f - DIM_WORD_ALPHA) * eased
                                 } else {

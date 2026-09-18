@@ -243,7 +243,7 @@ fun KaraokeDial(
                 Modifier
                     .fillMaxWidth()
                     .height(height)
-                    .background(Color.White.copy(alpha = lit)),
+                    .background(GlassInk.copy(alpha = lit)),
             )
         }
 
@@ -252,7 +252,7 @@ fun KaraokeDial(
                 Modifier
                     .fillMaxWidth()
                     .height(height * fill)
-                    .background(Color.White.copy(alpha = 0.24f)),
+                    .background(GlassInk.copy(alpha = 0.24f)),
             )
         }
 
@@ -260,9 +260,9 @@ fun KaraokeDial(
             if (amount > 0f) PhosphorIcons.Fill.MicrophoneStage
             else PhosphorIcons.Regular.MicrophoneStage,
             contentDescription = stringResource(R.string.karaoke),
-            // White throughout: the filled glyph is what says it is on, and a
-            // coloured one competed with the artwork behind it.
-            tint = Color.White,
+            // The page's ink throughout: the filled glyph is what says it is
+            // on, and a coloured one competed with the artwork behind it.
+            tint = GlassInk,
             modifier = Modifier
                 .align(if (open) Alignment.BottomCenter else Alignment.Center)
                 .padding(bottom = if (open) 11.dp else 0.dp)

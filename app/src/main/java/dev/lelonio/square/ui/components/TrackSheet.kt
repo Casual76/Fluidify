@@ -33,6 +33,7 @@ import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.ui.glass.backdrop.drawBackdrop
 import dev.lelonio.square.ui.glass.backdrop.effects.blur
 import dev.lelonio.square.ui.player.GlassSurface
+import dev.lelonio.square.ui.theme.Ink
 import dev.lelonio.square.ui.theme.softShadow
 
 /**
@@ -168,7 +169,7 @@ fun TrackSheetAction(
     destructive: Boolean = false,
     onClick: () -> Unit,
 ) {
-    val tint = if (destructive) MaterialTheme.colorScheme.error else Color.White
+    val tint = if (destructive) MaterialTheme.colorScheme.error else Ink
     Row(
         Modifier
             .fillMaxWidth()
