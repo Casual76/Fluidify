@@ -127,7 +127,10 @@ fun FloatingMiniPlayer(
     // The same finger-tracking glow the tab bar's puck has. Its gesture tracking
     // never consumes pointer events, so it is safe stacked alongside the swipe
     // detector and the click below.
-    val glow = remember(scope) { InteractiveHighlight(animationScope = scope) }
+    val onDark = dev.lelonio.square.ui.theme.onDarkPage
+    val glow = remember(scope, onDark) {
+        InteractiveHighlight(animationScope = scope, onDarkSurface = onDark)
+    }
 
     val offsetX = remember { Animatable(0f) }
     var dragStart by remember { mutableStateOf(0L) }

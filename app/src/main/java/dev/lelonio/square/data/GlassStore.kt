@@ -188,17 +188,15 @@ class GlassStore(context: Context) {
             playerEnabled = prefs.getBoolean(KEY_PLAYER, base.playerEnabled),
             miniPlayerEnabled = prefs.getBoolean(KEY_MINI_PLAYER, base.miniPlayerEnabled),
             navBarEnabled = prefs.getBoolean(KEY_NAV_BAR, base.navBarEnabled),
-            // A wash of light, and one you can see: at the 0.12 this started on,
-            // over artwork with anything bright in it, a selection was a guess.
+            // Deliberately NOT set here.
             //
-            // It was written out by hand because the vendored library asked the
-            // Material scheme whether it was light or dark and here got the
-            // wrong answer — a translucent white film in `surface`, and
-            // luminance does not look at alpha. Both halves of that are gone:
-            // the tab bar this washed is the engine's now, and the detection is
-            // told the answer (LocalFluidSurfaceSide). What is left reaches only
-            // the glass settings' own preview.
-            puckColor = androidx.compose.ui.graphics.Color.White,
+            // It was a hardcoded white, and hardcoding it is what made the two
+            // branches under it dead code — including the one that asks which
+            // side the app is on. On the light side that produced a white wash on
+            // white glass: the selected tab had no wash at all, on every screen,
+            // all the time. Unset means "follow the page", which is what a
+            // selection wash has always meant. A colour chosen by hand in the
+            // settings still wins.
             puckOpacity = prefs.getFloat(KEY_PUCK, DEFAULT_PUCK_OPACITY),
         )
     }

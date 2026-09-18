@@ -288,13 +288,75 @@ fun glassFilm(darkAlpha: Float): Color = if (LocalLightTheme.current) {
  * on a light one, so on the light side it turns over and becomes a dark line —
  * quieter than its white twin, because a dark line on paper is read at a lower
  * contrast than a light line in the dark.
+ *
+ * Asks the ink and not the theme, for [InkInverse]'s reason: a record's page
+ * paints itself and imposes its own ink, so a phone set to light can be showing
+ * a pane that stands on a dark cover. The rim has to turn over with the page it
+ * is drawn on, not with the setting.
  */
 @Composable
-fun glassEdge(darkAlpha: Float): Color = if (LocalLightTheme.current) {
-    Color.Black.copy(alpha = darkAlpha * 0.55f)
-} else {
+fun glassEdge(darkAlpha: Float): Color = if (onDarkPage) {
     Color.White.copy(alpha = darkAlpha)
+} else {
+    Color.Black.copy(alpha = darkAlpha * 0.55f)
 }
+
+/**
+ * The top bar of a page, on whichever side of the page it has to sit.
+ *
+ * Both of the app's collapsing bars named the engine's dark tint by hand, under
+ * a comment that said "the app is locked to a dark theme" — which stopped being
+ * true. On a light page that tint is a black scrim with dark letters on it.
+ *
+ * The dark branch stays exactly what it was, and it is not the theme being asked
+ * twice: over a full-bleed cover the family's own film *lightens*, so the bar
+ * ends up the brightest thing on the screen. That argument only holds on the
+ * dark side. On paper the bar is meant to be lighter than the page, which is
+ * what the family already does.
+ *
+ * Asks the ink for [glassEdge]'s reason. Sibling of `rememberPillMorphTint`,
+ * which does the same for the floating family.
+ */
+@Composable
+fun pageBarTint(): dev.antigravity.fluidengine.ui.fluid.GlassTint =
+    if (onDarkPage) {
+        dev.antigravity.fluidengine.ui.fluid.GlassDefaults.darkBarTint()
+    } else {
+        dev.antigravity.fluidengine.ui.fluid.GlassDefaults.barTint()
+    }
+
+/**
+ * A wash laid over a picture, at the weight the side it is on asks for.
+ *
+ * [darkAlpha] is how much black the dark side wants. The light side gets white
+ * instead, and more of it, for the reason the app's own backdrop veil gives:
+ * the bright parts of a photograph are far brighter than a dark wash ever lets
+ * them be, so dark ink needs more of the cover taken away than light ink does.
+ *
+ * Not the same thing as the scrim behind a dialog, which darkens on both sides
+ * because its job is to push a page away rather than to carry ink.
+ */
+@Composable
+fun pageWash(darkAlpha: Float): Color = if (onDarkPage) {
+    Color.Black.copy(alpha = darkAlpha)
+} else {
+    Color.White.copy(alpha = (darkAlpha * 1.35f).coerceAtMost(0.92f))
+}
+
+/**
+ * Which side the page under your finger is on.
+ *
+ * Derived from the ink rather than from the theme setting, and that is the whole
+ * point of it — the same argument [InkInverse] makes. A record's page paints
+ * itself and imposes its own ink, so a phone set to light can be showing a page
+ * that is, for every purpose a surface has, a dark one. Ask the setting and half
+ * the answers are wrong exactly where it matters most.
+ *
+ * It is the predicate behind [glassEdge], [pageWash] and [pageBarTint], and it
+ * is spelled out once so that those three cannot drift apart.
+ */
+val onDarkPage: Boolean
+    @Composable get() = Ink.luminance() > 0.5f
 
 /** How much white a film starts from before its own weight is added. See [glassFilm]. */
 private const val LightFilmFloor = 0.45f
@@ -334,6 +396,25 @@ val Ink: Color
 val LocalPageEndInset = staticCompositionLocalOf { 0.dp }
 
 /**
+ * The colour a page ends on, where nothing else has been painted.
+ *
+ * Near-black one way and paper the other. It is what shows through wherever the
+ * artwork does not reach, so it has to be the page's own floor and not a
+ * neutral: a black border round a light page is the one thing that would give
+ * the whole arrangement away as a dark design wearing light colours.
+ *
+ * One definition, because it was three — in the app's backdrop, in a record's
+ * page, and (as a single dark constant) in the first-run tutorial, which is how
+ * the tutorial ended up being the one page that ignored the theme setting it was
+ * about to offer.
+ */
+val pageFloor: Color
+    @Composable get() = if (LocalLightTheme.current) PageFloorLight else PageFloorDark
+
+private val PageFloorDark = Color(0xFF0A0A0C)
+private val PageFloorLight = Color(0xFFF1F2F6)
+
+/**
  * The ink a given colour can be read against.
  *
  * For the pages that carry a colour of their own — a record, an artist — where
@@ -364,7 +445,7 @@ fun inkOn(background: Color): Color =
  * prevent.
  */
 val InkInverse: Color
-    @Composable get() = if (Ink.luminance() > 0.5f) LightInk else DarkInk
+    @Composable get() = if (onDarkPage) LightInk else DarkInk
 
 /** The same, for what is said quietly. */
 val InkDim: Color

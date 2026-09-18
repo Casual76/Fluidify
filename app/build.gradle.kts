@@ -8,13 +8,26 @@ plugins {
 }
 
 /**
- * ABIs to build the native core for.
+ * ABIs the native core is *built* for.
  *
  * arm64 covers every phone made in the last decade, and each extra ABI is a full
- * extra Rust build (~2 min from cold), so the default is deliberately just the
- * one. Add "x86_64" for the emulator and "armeabi-v7a" for pre-2015 hardware.
+ * extra Rust build (~2 min from cold). x86_64 is here for one reason: without it
+ * no emulator on an ordinary PC can run this app at all, and an app whose whole
+ * argument is how it moves cannot be developed without ever seeing it move.
+ *
+ * Built is not the same as shipped — see [shippedAbis]. The .so for both lands
+ * in `jniLibs`, and the release build type packages only the phone's.
  */
-val nativeAbis = listOf("arm64-v8a")
+val nativeAbis = listOf("arm64-v8a", "x86_64")
+
+/**
+ * ABIs the *release* APK carries.
+ *
+ * Only arm64: the store's APK has no reason to be several megabytes heavier for
+ * an architecture no phone that installs it will ever have. `dev` and `debug`
+ * take everything in [nativeAbis], which is what puts the app on an emulator.
+ */
+val shippedAbis = listOf("arm64-v8a")
 
 /** NDK used for both AGP and the Cargo cross-build; keep the two in step. */
 val ndkVersionForCargo = "28.2.13676358"
@@ -105,6 +118,11 @@ android {
         release {
             isMinifyEnabled = true
             isShrinkResources = true
+            // The phone's architecture only; see shippedAbis.
+            ndk {
+                abiFilters.clear()
+                abiFilters += shippedAbis
+            }
             proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
             // The real key when there is one, the debug key otherwise — see
             // keystoreProperties above. A build signed with the debug key runs
@@ -137,6 +155,14 @@ android {
             initWith(getByName("release"))
             isMinifyEnabled = false
             isShrinkResources = false
+            // `initWith` copies release's ABI filter along with everything else,
+            // and release ships arm64 alone — so without this the one build type
+            // that exists to be run while working on the app is the one that
+            // cannot be run on an emulator.
+            ndk {
+                abiFilters.clear()
+                abiFilters += nativeAbis
+            }
             // The engine modules only declare debug/release; without a fallback
             // Gradle cannot pick a variant of them for this build type.
             matchingFallbacks += "release"

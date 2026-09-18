@@ -1,14 +1,13 @@
-// Vendored from the Backdrop catalog app, Apache-2.0.
-//
-//   https://github.com/Kyant0/AndroidLiquidGlass
-//   commit b18eb0ff12c616546a68c72e7d0097f1ab286c87
-//
-// These are the library author's own example components rather than part of the
-// published artifact, so there is nothing to depend on — they have to be copied.
-// Kept as close to upstream as possible (package line and a few Material
-// swaps aside) so a later upstream fix can be diffed in; see LICENSE-backdrop.txt.
-
-package dev.lelonio.square.ui.glass
+/*
+ * Vendored from Kyant0/AndroidLiquidGlass (kmp branch)
+ * https://github.com/Kyant0/AndroidLiquidGlass — Copyright 2025 Kyant0, Apache License 2.0
+ * app/src/commonMain/kotlin/com/kyant/backdrop/catalog/utils/InteractiveHighlight.kt
+ *
+ * Not published as a library — ported straight from the catalog demo app that
+ * showcases Kyant0/backdrop, source-only. Package renamed and RuntimeShader
+ * imports repointed at this app's vendored dev.lelonio.square.ui.glass.backdrop.
+ */
+package dev.lelonio.square.ui.glass.backdrop.catalog.utils
 
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.VectorConverter
@@ -32,6 +31,12 @@ import kotlinx.coroutines.launch
 class InteractiveHighlight(
     val animationScope: CoroutineScope,
     val position: (size: Size, offset: Offset) -> Offset = { _, offset -> offset },
+    // Glow radius = size.minDimension * radiusScale. Fine on the small components
+    // this was designed for (mini player pill, nav bar row) where minDimension is
+    // naturally small; on a tall, narrow container (the side panel) minDimension
+    // is still the panel's full width, so the default blows the glow up to
+    // several rows across and visually buries whatever's under the finger.
+    val radiusScale: Float = 1.5f,
     /**
      * Whether the surface under the finger is a dark one.
      *
@@ -96,7 +101,7 @@ half4 main(float2 coord) {
                         val position = position(size, positionAnimation.value)
                         setFloatUniform("size", size.width, size.height)
                         setColorUniform("color", glowTone.copy(0.15f * progress))
-                        setFloatUniform("radius", size.minDimension * 1.5f)
+                        setFloatUniform("radius", size.minDimension * radiusScale)
                         setFloatUniform(
                             "position",
                             position.x.fastCoerceIn(0f, size.width),
