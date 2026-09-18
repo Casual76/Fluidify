@@ -374,4 +374,10 @@
     <string name="sleep_timer_left">S&#8217;arrete dans %1$s</string>
     <string name="sleep_timer_track_end_active">S&#8217;arrete a la fin de ce morceau</string>
     <string name="sleep_timer_note">Continue de compter ecran eteint. La musique s&#8217;estompe avant de s&#8217;arreter.</string>
+    <string name="shortcut_resume">Reprendre</string>
+    <string name="shortcut_resume_short">Reprendre</string>
+    <string name="shortcut_search">Rechercher</string>
+    <string name="shortcut_search_short">Recherche</string>
+    <string name="shortcut_library">Votre bibliotheque</string>
+    <string name="shortcut_library_short">Bibliotheque</string>
 </resources>

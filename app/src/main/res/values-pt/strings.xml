@@ -374,4 +374,10 @@
     <string name="sleep_timer_left">Para daqui a %1$s</string>
     <string name="sleep_timer_track_end_active">Para no fim desta faixa</string>
     <string name="sleep_timer_note">Continua a contar com o ecra desligado. A musica desvanece antes de parar.</string>
+    <string name="shortcut_resume">Retomar</string>
+    <string name="shortcut_resume_short">Retomar</string>
+    <string name="shortcut_search">Procurar</string>
+    <string name="shortcut_search_short">Procurar</string>
+    <string name="shortcut_library">A tua biblioteca</string>
+    <string name="shortcut_library_short">Biblioteca</string>
 </resources>

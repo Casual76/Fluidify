@@ -389,4 +389,10 @@
     <string name="sleep_timer_left">%1$s sonra duracak</string>
     <string name="sleep_timer_track_end_active">Bu parcanin sonunda duracak</string>
     <string name="sleep_timer_note">Ekran kapaliyken saymaya devam eder. Muzik durmadan once kisilir.</string>
+    <string name="shortcut_resume">Devam et</string>
+    <string name="shortcut_resume_short">Devam et</string>
+    <string name="shortcut_search">Ara</string>
+    <string name="shortcut_search_short">Ara</string>
+    <string name="shortcut_library">Kitapligin</string>
+    <string name="shortcut_library_short">Kitaplik</string>
 </resources>

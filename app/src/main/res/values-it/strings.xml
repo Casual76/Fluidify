@@ -375,4 +375,10 @@
     <string name="sleep_timer_left">Si ferma fra %1$s</string>
     <string name="sleep_timer_track_end_active">Si ferma alla fine di questo brano</string>
     <string name="sleep_timer_note">Continua a contare a schermo spento. La musica sfuma prima di fermarsi.</string>
+    <string name="shortcut_resume">Riprendi</string>
+    <string name="shortcut_resume_short">Riprendi</string>
+    <string name="shortcut_search">Cerca</string>
+    <string name="shortcut_search_short">Cerca</string>
+    <string name="shortcut_library">La tua libreria</string>
+    <string name="shortcut_library_short">Libreria</string>
 </resources>

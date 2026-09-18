@@ -66,6 +66,11 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- What a long press on the icon offers; see res/xml/shortcuts.xml. -->
+            <meta-data
+                android:name="android.app.shortcuts"
+                android:resource="@xml/shortcuts" />
+
             <!--
               What makes this a music app to the rest of the phone. "Open the
               music app" — from a launcher, an assistant, a keyboard's media

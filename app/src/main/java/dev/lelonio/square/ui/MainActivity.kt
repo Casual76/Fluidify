@@ -64,6 +64,40 @@ class MainActivity : ComponentActivity() {
      */
     private var link by mutableStateOf<LinkRequest?>(null)
 
+    /**
+     * The tab a launcher shortcut asked for, and how many times it has asked.
+     *
+     * A pair for the same reason [openPlayer] is a counter: long-pressing the
+     * icon and picking Search twice is two requests, and a plain route would
+     * look unchanged the second time.
+     *
+     * Static shortcuts cannot carry extras — the XML has no element for one — so
+     * the destination rides in the action and is unpacked here.
+     */
+    private var shortcut by mutableStateOf<Pair<String, Int>?>(null)
+
+    private fun takeShortcut(intent: android.content.Intent) {
+        val route = when (intent.action) {
+            ACTION_SHORTCUT_SEARCH -> Routes.SEARCH
+            ACTION_SHORTCUT_LIBRARY -> Routes.LIBRARY
+            ACTION_SHORTCUT_RESUME -> {
+                // Whatever was left, playing, with the player open on it. The
+                // controller may not have connected yet on a cold start, so the
+                // play is asked for once it has.
+                openPlayer++
+                lifecycleScope.launch {
+                    val player = awaitController() ?: return@launch
+                    if (!player.isPlaying) player.play()
+                }
+                null
+            }
+            else -> return
+        }
+        // Consumed: a rotation must not do it again.
+        intent.action = android.content.Intent.ACTION_MAIN
+        if (route != null) shortcut = route to ((shortcut?.second ?: 0) + 1)
+    }
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Transparent bars; SquareTheme sets the icon colour, because it is the
@@ -109,6 +143,7 @@ class MainActivity : ComponentActivity() {
         }
         intent?.let(::takeLink)
         intent?.let(::takeVoiceRequest)
+        intent?.let(::takeShortcut)
 
         setContent {
             SquareApp(
@@ -117,6 +152,7 @@ class MainActivity : ComponentActivity() {
                 onEnqueue = ::enqueue,
                 openPlayer = openPlayer,
                 link = link,
+                shortcut = shortcut,
             )
         }
     }
@@ -241,6 +277,7 @@ class MainActivity : ComponentActivity() {
         }
         takeLink(intent)
         takeVoiceRequest(intent)
+        takeShortcut(intent)
     }
 
     /**
@@ -468,6 +505,17 @@ class MainActivity : ComponentActivity() {
 data class LinkRequest(val uri: String, val n: Int)
 
 /** Key for the context URI carried in a media item's metadata extras. */
+/**
+ * The three things a launcher offers under a long press on the icon.
+ *
+ * Actions rather than extras because a static shortcut cannot carry an extra:
+ * `res/xml/shortcuts.xml` has an `<intent>` element with a target and an action
+ * and nothing else. See `MainActivity.takeShortcut`.
+ */
+const val ACTION_SHORTCUT_RESUME = "dev.lelonio.square.SHORTCUT_RESUME"
+const val ACTION_SHORTCUT_SEARCH = "dev.lelonio.square.SHORTCUT_SEARCH"
+const val ACTION_SHORTCUT_LIBRARY = "dev.lelonio.square.SHORTCUT_LIBRARY"
+
 const val EXTRA_CONTEXT_URI = "dev.lelonio.square.CONTEXT_URI"
 
 /** Whether that queue is the context in its own order; see SquareApp's `onPlay`. */

@@ -389,4 +389,10 @@
     <string name="sleep_timer_left">%1$s में रुकेगा</string>
     <string name="sleep_timer_track_end_active">इस ट्रैक के अंत में रुकेगा</string>
     <string name="sleep_timer_note">स्क्रीन बंद होने पर भी चलता रहता है।</string>
+    <string name="shortcut_resume">फिर से चलाएं</string>
+    <string name="shortcut_resume_short">जारी</string>
+    <string name="shortcut_search">खोजें</string>
+    <string name="shortcut_search_short">खोज</string>
+    <string name="shortcut_library">आपकी लाइब्रेरी</string>
+    <string name="shortcut_library_short">लाइब्रेरी</string>
 </resources>

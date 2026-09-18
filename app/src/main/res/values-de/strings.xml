@@ -374,4 +374,10 @@
     <string name="sleep_timer_left">Stoppt in %1$s</string>
     <string name="sleep_timer_track_end_active">Stoppt am Ende dieses Titels</string>
     <string name="sleep_timer_note">Zaehlt bei ausgeschaltetem Bildschirm weiter. Die Musik blendet vorher aus.</string>
+    <string name="shortcut_resume">Fortsetzen</string>
+    <string name="shortcut_resume_short">Fortsetzen</string>
+    <string name="shortcut_search">Suchen</string>
+    <string name="shortcut_search_short">Suche</string>
+    <string name="shortcut_library">Deine Bibliothek</string>
+    <string name="shortcut_library_short">Bibliothek</string>
 </resources>

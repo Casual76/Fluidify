@@ -395,4 +395,10 @@
     <string name="sleep_timer_left">Stops in %1$s</string>
     <string name="sleep_timer_track_end_active">Stops at the end of this track</string>
     <string name="sleep_timer_note">Keeps counting with the screen off. The music fades before it stops.</string>
+    <string name="shortcut_resume">Resume</string>
+    <string name="shortcut_resume_short">Resume</string>
+    <string name="shortcut_search">Search</string>
+    <string name="shortcut_search_short">Search</string>
+    <string name="shortcut_library">Your library</string>
+    <string name="shortcut_library_short">Library</string>
 </resources>

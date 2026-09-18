@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.lerp
@@ -1577,6 +1578,10 @@ private val PageFloor: Color
 private fun pageColorFor(accent: Color?, floor: Color): Color =
     accent?.let { lerp(it, floor, 0.78f) } ?: floor
 
+/** The playing row's film and rim, in the page's ink. */
+private const val PLAYING_FILM = 0.08f
+private const val PLAYING_RIM = 0.10f
+
 @Composable
 private fun TrackRow(
     track: CatalogTrack,
@@ -1619,6 +1624,7 @@ private fun TrackRow(
         animationSpec = tween(260),
         label = "row",
     )
+    val rowInk = MaterialTheme.colorScheme.onSurface
     Row(
         modifier = Modifier
             .fillMaxWidth()
@@ -1626,15 +1632,24 @@ private fun TrackRow(
             // The playing row lifts onto its own card. With covers gone from the
             // list, a tint alone was too quiet to find while scrolling.
             .clip(shape)
-            // `surface` is already a 10%-alpha white film. Passing the animation
-            // value to `copy(alpha = …)` *replaced* that alpha instead of
-            // scaling it, so the playing row finished the animation as solid
-            // white — a paper card in the middle of a glass UI.
-            .background(
-                MaterialTheme.colorScheme.surface.copy(
-                    alpha = MaterialTheme.colorScheme.surface.alpha * highlight,
-                ),
-            )
+            // Made of the page's own ink, as the app's flat panes are: a film
+            // and a hairline rim. It was the theme's surface, which follows the
+            // phone rather than the record, so a dark record in the light
+            // setting got the light setting's half-white film and the playing
+            // row turned into a milky slab over the page.
+            .drawBehind {
+                if (highlight <= 0f) return@drawBehind
+                val radius = androidx.compose.ui.geometry.CornerRadius(14.dp.toPx())
+                drawRoundRect(rowInk.copy(alpha = PLAYING_FILM * highlight), cornerRadius = radius)
+                val rim = 0.8.dp.toPx()
+                drawRoundRect(
+                    rowInk.copy(alpha = PLAYING_RIM * highlight),
+                    topLeft = androidx.compose.ui.geometry.Offset(rim / 2, rim / 2),
+                    size = androidx.compose.ui.geometry.Size(size.width - rim, size.height - rim),
+                    cornerRadius = androidx.compose.ui.geometry.CornerRadius(radius.x - rim / 2),
+                    style = androidx.compose.ui.graphics.drawscope.Stroke(rim),
+                )
+            }
             .fluidContextMenuAnchor(contextMenu)
             .pressable(
                 // Inert rather than disabled: `enabled = false` would take the
@@ -1691,12 +1706,11 @@ private fun TrackRow(
             Text(
                 text = track.name,
                 style = MaterialTheme.typography.titleMedium,
-                color = if (isCurrent) {
-                    MaterialTheme.colorScheme.primary
-                } else {
-                    MaterialTheme.colorScheme.onSurface
-                },
-                fontWeight = if (isCurrent) FontWeight.SemiBold else FontWeight.Medium,
+                // The page's ink, bolder, rather than the accent: the accent is
+                // taken from whatever is playing, and on a record's own page it
+                // was the record's colour written on the record's colour.
+                color = MaterialTheme.colorScheme.onSurface,
+                fontWeight = if (isCurrent) FontWeight.Bold else FontWeight.SemiBold,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )

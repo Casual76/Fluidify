@@ -374,4 +374,10 @@
     <string name="sleep_timer_left">Se para en %1$s</string>
     <string name="sleep_timer_track_end_active">Se para al final de esta cancion</string>
     <string name="sleep_timer_note">Sigue contando con la pantalla apagada. La musica se desvanece antes de parar.</string>
+    <string name="shortcut_resume">Reanudar</string>
+    <string name="shortcut_resume_short">Reanudar</string>
+    <string name="shortcut_search">Buscar</string>
+    <string name="shortcut_search_short">Buscar</string>
+    <string name="shortcut_library">Tu biblioteca</string>
+    <string name="shortcut_library_short">Biblioteca</string>
 </resources>

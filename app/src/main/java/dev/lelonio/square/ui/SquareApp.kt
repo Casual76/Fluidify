@@ -281,6 +281,13 @@ fun SquareApp(
     openPlayer: Int = 0,
     /** A Spotify link the app was opened with; see [LinkRequest]. */
     link: LinkRequest? = null,
+    /**
+     * A tab a launcher shortcut asked for, and which request it is.
+     *
+     * The number is what makes a second identical request a request. See
+     * `MainActivity.shortcut`.
+     */
+    shortcut: Pair<String, Int>? = null,
     viewModel: MainViewModel = viewModel(),
 ) {
     val state by viewModel.state.collectAsStateWithLifecycle()
@@ -953,6 +960,13 @@ fun SquareApp(
             Box(Modifier.fillMaxSize()) {
                 val navController = rememberNavController()
                 val currentEntry by navController.currentBackStackEntryAsState()
+
+                // A tab a launcher shortcut asked for. Here rather than higher up
+                // because this is where the controller it drives is made.
+                LaunchedEffect(shortcut) {
+                    val wanted = shortcut?.first ?: return@LaunchedEffect
+                    navController.switchTab(wanted)
+                }
                 val route = currentEntry?.destination?.route
 
                 // A screen that leaves mid-gesture never delivers its fling,

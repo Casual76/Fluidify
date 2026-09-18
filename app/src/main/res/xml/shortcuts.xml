@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  What a long press on the icon offers.
+
+  Three, and no more: a launcher shows four at most and the fourth would push
+  one of these off on the phones that show three. They are the three things
+  somebody opens the app to do without looking at a page first.
+
+  Static rather than dynamic, so they are there before the app has ever been
+  opened. A static shortcut cannot carry an extra - there is no element for one
+  - so each destination rides in its own action; see MainActivity.takeShortcut.
+-->
+<shortcuts xmlns:android="http://schemas.android.com/apk/res/android">
+
+    <shortcut
+        android:shortcutId="resume"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_resume"
+        android:shortcutShortLabel="@string/shortcut_resume_short"
+        android:shortcutLongLabel="@string/shortcut_resume">
+        <intent
+            android:action="dev.lelonio.square.SHORTCUT_RESUME"
+            android:targetPackage="dev.pampa.fluidify"
+            android:targetClass="dev.lelonio.square.ui.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="search"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_search"
+        android:shortcutShortLabel="@string/shortcut_search_short"
+        android:shortcutLongLabel="@string/shortcut_search">
+        <intent
+            android:action="dev.lelonio.square.SHORTCUT_SEARCH"
+            android:targetPackage="dev.pampa.fluidify"
+            android:targetClass="dev.lelonio.square.ui.MainActivity" />
+    </shortcut>
+
+    <shortcut
+        android:shortcutId="library"
+        android:enabled="true"
+        android:icon="@drawable/ic_shortcut_library"
+        android:shortcutShortLabel="@string/shortcut_library_short"
+        android:shortcutLongLabel="@string/shortcut_library">
+        <intent
+            android:action="dev.lelonio.square.SHORTCUT_LIBRARY"
+            android:targetPackage="dev.pampa.fluidify"
+            android:targetClass="dev.lelonio.square.ui.MainActivity" />
+    </shortcut>
+</shortcuts>

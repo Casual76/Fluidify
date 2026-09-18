@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?><!-- See ic_shortcut_resume for the disc. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="48dp" android:height="48dp"
+    android:viewportWidth="256" android:viewportHeight="256">
+    <path android:fillColor="#FF8B5CF6"
+        android:pathData="M128,0A128,128 0,1,1 127.99,0Z" />
+    <path android:strokeColor="#FFFFFFFF" android:strokeWidth="16"
+        android:strokeLineCap="round" android:fillColor="#00000000"
+        android:pathData="M104,170 L104,70 L188,54 L188,154" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M104,170a24,20 0,1,1 -0.01,0" />
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M188,154a24,20 0,1,1 -0.01,0" />
+</vector>
