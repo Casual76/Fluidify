@@ -86,7 +86,7 @@ import dev.lelonio.square.ui.components.GlassChoiceItem
 import dev.lelonio.square.ui.components.GlassChoiceMenu
 import dev.lelonio.square.ui.components.LazyScrollBar
 import dev.lelonio.square.ui.components.SwipeToQueue
-import dev.lelonio.square.ui.glass.LiquidButton
+import dev.lelonio.square.ui.components.GlassButton
 import dev.lelonio.square.ui.glass.pressable
 import dev.lelonio.square.ui.theme.InkDim
 import dev.lelonio.square.ui.theme.rememberArtworkColor
@@ -483,9 +483,8 @@ fun PlaylistScreen(
                                 textAlign = TextAlign.Center,
                             )
                             Spacer(Modifier.height(14.dp))
-                            LiquidButton(
+                            GlassButton(
                                 onClick = onAskLocalPermission,
-                                backdrop = pageBackdrop,
                                 contentPadding = 18.dp,
                             ) {
                                 Text(
@@ -678,9 +677,8 @@ fun PlaylistScreen(
         // Floating rather than a top bar: the list scrolls under it, so the
         // picture stays uninterrupted. It gives way to the collapsed bar, which
         // carries a back button of its own.
-        LiquidButton(
+        GlassButton(
             onClick = onBack,
-            backdrop = pageBackdrop,
             modifier = Modifier
                 .padding(top = contentPadding.calculateTopPadding() + 8.dp, start = 14.dp)
                 .align(Alignment.TopStart)
@@ -1234,9 +1232,8 @@ private fun CircleAction(
         if (active) MaterialTheme.colorScheme.primary else Color.White,
         label = "circle action",
     )
-    LiquidButton(
+    GlassButton(
         onClick = onClick,
-        backdrop = backdrop,
         // See GlassCapsule: over the page's flat colour the refraction has
         // nothing to bend, and only the film and the rim say this is glass.
         modifier = Modifier
@@ -1371,9 +1368,8 @@ private fun DownloadAction(
     )
 
     Box(contentAlignment = Alignment.Center) {
-        LiquidButton(
+        GlassButton(
             onClick = onClick,
-            backdrop = backdrop,
             modifier = Modifier
                 .size(size)
                 .border(0.6.dp, Color.White.copy(alpha = 0.30f), CircleShape),

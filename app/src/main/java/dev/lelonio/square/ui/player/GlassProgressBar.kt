@@ -26,7 +26,7 @@ import kotlin.math.roundToInt
 /**
  * The playback position, as a thin capsule.
  *
- * Not [dev.lelonio.square.ui.glass.LiquidSlider], and not the waveform this
+ * Not a slider, and not the waveform this
  * replaced. The waveform looked good but invented its shape, and the reference
  * this screen follows uses a plain bar. The library's slider is the wrong tool
  * for a different reason: it reports every intermediate value, and each one here

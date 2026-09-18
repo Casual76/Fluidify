@@ -34,6 +34,20 @@ import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
+import androidx.compose.runtime.Stable
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.unit.Velocity
+import dev.antigravity.fluidengine.ui.fluid.FluidFoldingTabBar
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
+import dev.antigravity.fluidengine.ui.fluid.GlassDefaults
+import dev.antigravity.fluidengine.ui.fluid.GlassRole
+import dev.antigravity.fluidengine.ui.fluid.glassSurface
+import dev.antigravity.fluidengine.ui.fluid.FluidFoldingTabBarDefaults
+import dev.antigravity.fluidengine.ui.fluid.FluidTabItem
+import dev.antigravity.fluidengine.ui.fluid.rememberFluidBarFold
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -67,9 +81,6 @@ import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import com.adamglin.phosphoricons.fill.XCircle
-import dev.lelonio.square.ui.glass.floatingtabbar.FloatingTabBar
-import dev.lelonio.square.ui.glass.floatingtabbar.FloatingTabBarDefaults
-import dev.lelonio.square.ui.glass.floatingtabbar.rememberFloatingTabBarScrollConnection
 import androidx.compose.ui.unit.sp
 import dev.lelonio.square.ui.glass.liquidGlass
 import dev.lelonio.square.ui.glass.pressable
@@ -115,13 +126,9 @@ import dev.lelonio.square.data.CatalogPlaylist
 import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.data.Lyrics
 import dev.lelonio.square.playback.AudioEffects
-import dev.lelonio.square.ui.glass.LiquidBottomTab
-import dev.lelonio.square.ui.glass.LiquidBottomTabs
-import dev.lelonio.square.ui.glass.LiquidButton
 import dev.lelonio.square.ui.home.HomeScreen
 import dev.lelonio.square.ui.library.LibraryScreen
 import dev.lelonio.square.ui.library.PlaylistScreen
-import dev.lelonio.square.ui.player.GlassFilm
 import dev.lelonio.square.ui.player.AddToPlaylistSheet
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.IntOffset
@@ -149,6 +156,7 @@ import dev.lelonio.square.ui.player.MorphEpsilon
 import dev.lelonio.square.ui.player.PlayerMorphSpec
 import dev.lelonio.square.ui.player.dragPlayerMorph
 import dev.lelonio.square.ui.player.settlePlayerMorph
+import dev.lelonio.square.ui.player.rememberPillMorphTint
 import dev.lelonio.square.ui.player.asPlaybackState
 import dev.lelonio.square.ui.player.rememberRemotePositionMs
 import kotlinx.coroutines.Dispatchers
@@ -198,7 +206,16 @@ object Routes {
     const val SETTINGS = "settings"
 }
 
-private val BottomBarHeight = 62.dp
+/**
+ * What the lists leave free at the bottom until the bar has been measured.
+ *
+ * A first guess only — [SquareApp] replaces it with the real height on the first
+ * layout — but it has to be a guess on the generous side: too small and the
+ * first frame of a cold start puts the end of the list under the bar, which is
+ * visible as a jump the moment the measurement lands.
+ */
+private val BottomBarHeight =
+    FluidFoldingTabBarDefaults.contentInsetWithAccessory(MiniPlayerHeight)
 
 /**
  * Decode size of the page backdrop, in pixels.
@@ -869,6 +886,12 @@ fun SquareApp(
         dev.lelonio.square.ui.glass.LocalBackdropLuminance provides backdropLuminance,
         dev.antigravity.fluidengine.ui.fluid.LocalFluidGlassModalHostState provides modalHost,
         dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides pageGlass,
+        // The ambient canvas: the ground, recorded *before* the page stands on
+        // it, so a control inside the page can refract it without refracting
+        // itself. A pane drawn inside the layer it samples recurses on the
+        // render thread until the process dies — and that is not a figure of
+        // speech, it is a stack of four hundred RenderNodes and a SIGSEGV.
+        dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop provides groundGlass,
     ) {
     SquareTheme {
         // Material's default content colour is black, and it used to arrive from
@@ -899,10 +922,11 @@ fun SquareApp(
         // What folds the bar, and what tells the glass the page is moving. Built
         // here rather than beside the bar because both of those are read at the
         // top of the app: the glass configuration is provided from this scope.
-        val tabBarScroll = rememberFloatingTabBarScrollConnection()
+        val barFold = rememberFluidBarFold()
+        val pageScroll = remember { PageScrollSignal() }
         // Held as a lambda so a scroll starting or stopping costs no
         // recomposition of the app: the surfaces ask during draw.
-        val pageMoving = remember(tabBarScroll) { { tabBarScroll.scrolling } }
+        val pageMoving = remember(pageScroll) { { pageScroll.scrolling } }
 
         CompositionLocalProvider(
             LocalContentColor provides Ink,
@@ -916,8 +940,8 @@ fun SquareApp(
 
                 // A screen that leaves mid-gesture never delivers its fling,
                 // and the scroll-hold it started would freeze every glass
-                // capture in the app; see FloatingTabBarScrollConnection.settle.
-                LaunchedEffect(route) { tabBarScroll.settle() }
+                // capture in the app; see PageScrollSignal.settle.
+                LaunchedEffect(route) { pageScroll.settle() }
 
                 // Which tab the bar shows as the current one.
                 //
@@ -979,12 +1003,16 @@ fun SquareApp(
                     label = "chrome",
                 )
 
-                // Lists end above the bottom bar and the mini player rather than
-                // scrolling behind them.
-                val listPadding = PaddingValues(
-                    top = statusBar,
-                    bottom = barHeight + if (playback.hasItem) MiniPlayerHeight else 0.dp,
-                )
+                // Lists end above the bottom bar rather than scrolling behind
+                // it.
+                //
+                // The mini player is not added on top any more, and that is not
+                // a tightening: it used to be a separate thing floating above
+                // the bar, and it is now the bar's own accessory band — so the
+                // measured height already has it in. Adding it again left a
+                // pill-sized strip of nothing at the end of every list, on
+                // exactly the screens where music was playing.
+                val listPadding = PaddingValues(top = statusBar, bottom = barHeight)
 
                 // Nothing floats over settings, so nothing has to be left free
                 // beneath it either.
@@ -1058,7 +1086,8 @@ fun SquareApp(
 
                     Box(
                         Modifier
-                            .nestedScroll(tabBarScroll)
+                            .nestedScroll(barFold.connection)
+                            .nestedScroll(pageScroll)
                             // Touching the page puts the keyboard away.
                             //
                             // The field is in the bar at the bottom of the screen
@@ -1596,63 +1625,34 @@ fun SquareApp(
                     androidx.compose.runtime.CompositionLocalProvider(
                         dev.lelonio.square.ui.glass.LocalAppBackdrop provides pageBackdrop,
                     ) {
-                    // One pane of glass, given to both the bar and the pill
-                    // above it — which is how the reference does it: the tab bar
-                    // component paints no background of its own, the caller
-                    // hands it the material.
-                    // Where the glass is allowed to be, from the settings. Off
-                    // is not "no surface" — a transparent bar swallows the taps
-                    // meant for the page under it and reads as nothing at all —
-                    // but the film, which is the same thing a phone without the
-                    // hardware blur gets.
-                    val flat = dev.lelonio.square.ui.glass.GlassStyle.TRANSPARENT
-                    val barConfig = if (glassConfig.navBarEnabled) {
-                        glassConfig
-                    } else {
-                        glassConfig.copy(style = flat)
-                    }
-                    val pillConfig = if (glassConfig.miniPlayerEnabled) {
-                        glassConfig
-                    } else {
-                        glassConfig.copy(style = flat)
-                    }
-                    // Nothing special while the bar changes shape.
+                    // The material is the engine's now, and that is the point of
+                    // this pass. The bar, the pill and the window the pill
+                    // becomes were three panes of glass from two different
+                    // stacks — and the window has been the engine's ever since
+                    // the morph was built, which is why the hand-over between
+                    // them never quite matched.
                     //
-                    // Two things were tried there and both were worse than what
-                    // they fixed. Taking the glass away for the length of the
-                    // fold was the cheapest and you could see it go. Holding the
-                    // last capture instead was invisible while it lasted, but
-                    // the bar's two states are two different pieces of
-                    // composition, so the fresh capture arrives on a node that
-                    // has just been created and the correction is a cut nothing
-                    // can fade. The glass simply keeps working.
-                    val barShape = androidx.compose.foundation.shape.RoundedCornerShape(percent = 50)
-
-                    val barGlass = Modifier.liquidGlass(
-                        config = barConfig,
-                        shape = barShape,
-                        highlightAlpha = 0.3f,
+                    // The settings page goes on tuning the vendored renderer,
+                    // which is still what every other surface in the app is made
+                    // of. It simply no longer reaches the bar: the engine's
+                    // material is described in physical terms rather than in
+                    // blur radii, and there is nothing honest to map the one
+                    // onto the other.
+                    val pillGlass = Modifier.glassSurface(
+                        state = pageGlass,
+                        // The same film as the bar under it and as the window it
+                        // becomes: see rememberPillMorphTint, which is now one
+                        // name for a decision the three of them share.
+                        tint = rememberPillMorphTint(),
+                        shape = FluidCapsuleShape,
+                        role = GlassRole.Floating,
                     )
-                    // The same pane, on the pill above it, unless the settings
-                    // have singled that one out.
-                    val pillGlass = if (glassConfig.miniPlayerEnabled == glassConfig.navBarEnabled) {
-                        barGlass
-                    } else {
-                        Modifier.liquidGlass(
-                            config = pillConfig,
-                            shape = barShape,
-                            highlightAlpha = 0.3f,
-                        )
-                    }
 
-                    val accessory: (@Composable androidx.compose.animation.SharedTransitionScope.(
-                        Modifier,
-                        androidx.compose.animation.AnimatedVisibilityScope,
-                    ) -> Unit)? = if (playback.hasItem) {
-                        { accessoryModifier, _ ->
+                    val accessory: (@Composable () -> Unit)? = if (playback.hasItem) {
+                        {
                           Box(
                               Modifier
-                                  .fillMaxWidth()
+                                  .fillMaxSize()
                                   // Cut, not faded: the picture carries on inside
                                   // the travelling surface, and a hand-over has
                                   // nothing to show.
@@ -1700,10 +1700,10 @@ fun SquareApp(
                                 // a node. The pill's own detector locks to the
                                 // horizontal after the touch slop, which is why a
                                 // vertical pull never reached it in the first place.
-                                modifier = accessoryModifier
-                                    .fillMaxWidth()
+                                modifier = Modifier
+                                    .fillMaxSize()
                                     .then(pillGlass),
-                                inline = tabBarScroll.isInline,
+                                inline = barFold.folded,
                                 onClick = {
                                     scope.launch { expand.animateTo(1f, PlayerMorphSpec) }
                                 },
@@ -1737,17 +1737,11 @@ fun SquareApp(
 
                     // Before anything is drawn for real; see GlassWarmUp.
                     dev.lelonio.square.ui.glass.GlassWarmUp(pageBackdrop)
-                    // Two tabs and a circle beside them: the capsule takes what
-                    // is left of the row once the circle has its 80dp, and never
-                    // more than the 88dp a tab is designed for. Without this the
-                    // bar stretched to the screen and the tabs floated in it.
-                    // Measured off the reference, at its own density: a tab is
-                    // 88dp wide, the row is inset 16 while folded and 26 while
-                    // open, and everything is spaced by 8. Two tabs make a
-                    // narrower capsule than its three do, and the row centres
-                    // itself — which is the point of measuring the parts rather
-                    // than the whole.
-                    val barMargin = if (tabBarScroll.isInline) 16.dp else 26.dp
+
+                    // Folded the bar is a capsule the width of one tab and wants
+                    // to be nearer the edge; open it wants room. Both measured
+                    // off the reference, at its own density.
+                    val barMargin = if (barFold.folded) 16.dp else 26.dp
 
                     // Searching opens the bar and keeps it open.
                     //
@@ -1766,111 +1760,127 @@ fun SquareApp(
                     // mid-flight moves the very thing the window is growing out
                     // of.
                     LaunchedEffect(searching, barFolds, pillHidden) {
-                        tabBarScroll.locked = searching || !barFolds || pillHidden
-                        if (searching || !barFolds) tabBarScroll.expand()
+                        barFold.locked = searching || !barFolds || pillHidden
+                        if (searching || !barFolds) barFold.unfold()
                     }
 
-                    FloatingTabBar(
-                        // Always the tab the page belongs to, search included.
-                        //
-                        // Naming the search circle here instead left the search
-                        // bar with no tab beside it: the bar keeps one tab in
-                        // search mode — the one you came from, so you can go
-                        // back by tapping it — and it finds it by matching this
-                        // key against the regular tabs. A key belonging to none
-                        // of them matched nothing and the tab disappeared,
-                        // leaving the back gesture as the only way out.
-                        selectedTabKey = activeTab,
-                        scrollConnection = tabBarScroll,
+                    val homeLabel = stringResource(R.string.home)
+                    val libraryLabel = stringResource(R.string.library)
+                    // Remembered, and it matters: the bar keeps the indicator's
+                    // spring and the drag animation keyed on this list, so a
+                    // fresh list on every recomposition throws both away — which
+                    // is the bug where the lens arrives at the new tab without
+                    // ever having travelled there.
+                    val tabs = remember(homeLabel, libraryLabel) {
+                        listOf(
+                            FluidTabItem(
+                                route = Routes.HOME,
+                                label = homeLabel,
+                                icon = PhosphorIcons.Regular.House,
+                            ),
+                            FluidTabItem(
+                                route = Routes.LIBRARY,
+                                label = libraryLabel,
+                                icon = PhosphorIcons.Regular.MusicNotes,
+                            ),
+                        )
+                    }
+
+                    FluidFoldingTabBar(
+                        items = tabs,
+                        // Always the tab the page belongs to, search included: a
+                        // playlist opened from the library is still the library,
+                        // and the bar has to keep saying so.
+                        selectedRoute = activeTab,
+                        onSelect = { navController.switchTab(it.route) },
+                        // Reselect goes the same way, and that is not laziness.
+                        // On a detail page the selected tab is the one it was
+                        // opened from, so tapping it is a reselect in the bar's
+                        // eyes and "take me back to the library" in everyone
+                        // else's.
+                        onReselect = { navController.switchTab(it.route) },
+                        // The page as it is, without the bar: a pane drawn inside
+                        // the layer it samples recurses on the render thread until
+                        // the process dies.
+                        backdrop = pageGlass,
+                        fold = { barFold.progress.value },
                         modifier = Modifier
                             .fillMaxWidth()
                             .padding(horizontal = barMargin)
                             .padding(bottom = navBar + 8.dp),
-                        // The glass is the caller's to apply, and it is what the
-                        // bar is made of: transparent colours underneath, and
-                        // every surface sampling the page through this.
-                        tabBarContentModifier = barGlass,
-                        colors = FloatingTabBarDefaults.colors(
-                            backgroundColor = Color.Transparent,
-                            accessoryBackgroundColor = Color.Transparent,
-                        ),
-                        sizes = FloatingTabBarDefaults.sizes(
-                            tabBarContentPadding = PaddingValues(4.dp),
-                            tabExpandedContentPadding = PaddingValues(vertical = 6.dp, horizontal = 6.dp),
-                            tabInlineContentPadding = PaddingValues(8.dp),
-                            // The reference's capsule is 272dp wide whatever
-                            // is in it: three tabs at 88 there, two at 132
-                            // here. Keeping the tab width instead would have
-                            // made this app's bar visibly shorter than the one
-                            // it is copying — and the accessory above it, which
-                            // matches the row, shorter with it.
-                            tabWidth = (272.dp - 8.dp) / 2,
-                        ),
-                        inlineAccessory = accessory,
-                        expandedAccessory = accessory,
-                        backdrop = pageBackdrop,
-                        accentColor = Ink,
-                        searchMode = searching,
-                        searchBarContent = if (searching) {
-                            { fieldModifier ->
-                                BarSearchField(
-                                    query = search.query,
-                                    onQuery = viewModel::onSearchQuery,
-                                    modifier = fieldModifier,
-                                )
-                            }
-                        } else {
-                            null
+                        // Folded, the one tab left is the way back to the whole
+                        // bar rather than a reselect that would throw the page
+                        // to the top on the way.
+                        onExpandRequest = { barFold.unfold() },
+                        // Weight carries the selection as well as colour: a
+                        // filled glyph beside an outlined one survives at a
+                        // glance, and for anyone who cannot separate two tints
+                        // it is the only difference there is.
+                        tabIcon = { item, selected ->
+                            Icon(
+                                imageVector = when {
+                                    item.route == Routes.HOME && selected -> PhosphorIcons.Fill.House
+                                    item.route == Routes.HOME -> PhosphorIcons.Regular.House
+                                    selected -> PhosphorIcons.Fill.MusicNotes
+                                    else -> PhosphorIcons.Regular.MusicNotes
+                                },
+                                contentDescription = null,
+                                tint = if (selected) Ink else Ink.copy(alpha = 0.62f),
+                                modifier = Modifier.size(26.dp),
+                            )
                         },
-                    ) {
-                        tab(
-                            key = Routes.HOME,
-                            title = { Text(stringResource(R.string.home), fontSize = 10.sp) },
-                            icon = {
-                                Icon(
-                                    if (activeTab == Routes.HOME) PhosphorIcons.Fill.House
-                                    else PhosphorIcons.Regular.House,
-                                    contentDescription = stringResource(R.string.home),
-                                    tint = Ink,
-                                    modifier = Modifier.size(30.dp),
-                                )
-                            },
-                            onClick = { navController.switchTab(Routes.HOME) },
-                        )
-                        tab(
-                            key = Routes.LIBRARY,
-                            title = { Text(stringResource(R.string.library), fontSize = 10.sp) },
-                            icon = {
-                                Icon(
-                                    if (activeTab == Routes.LIBRARY) PhosphorIcons.Fill.MusicNotes
-                                    else PhosphorIcons.Regular.MusicNotes,
-                                    contentDescription = stringResource(R.string.library),
-                                    tint = Ink,
-                                    modifier = Modifier.size(30.dp),
-                                )
-                            },
-                            onClick = { navController.switchTab(Routes.LIBRARY) },
-                        )
-                        // Search is a standalone circle rather than a third tab,
-                        // which is what lets it grow into the field: you go there
-                        // to do something and come back, and the bar treats it as
-                        // that kind of destination.
-                        standaloneTab(
-                            key = Routes.SEARCH,
-                            icon = {
-                                Icon(
-                                    PhosphorIcons.Regular.MagnifyingGlass,
-                                    contentDescription = stringResource(R.string.search),
-                                    tint = Ink,
-                                    modifier = Modifier.size(26.dp),
-                                )
-                            },
-                            onClick = {
-                                if (searching) navController.switchTab(Routes.HOME)
-                                else navController.switchTab(Routes.SEARCH)
-                            },
-                        )
-                    }
+                        // Search is a circle of its own rather than a third tab,
+                        // and that is what lets it grow into the field: you go
+                        // there to do something and come back, and the bar treats
+                        // it as that kind of destination.
+                        trailing = {
+                            Box(
+                                Modifier
+                                    .fillMaxSize()
+                                    .glassSurface(
+                                        state = pageGlass,
+                                        tint = rememberPillMorphTint(),
+                                        shape = FluidCapsuleShape,
+                                        role = GlassRole.Floating,
+                                    )
+                                    .clickable(
+                                        indication = null,
+                                        interactionSource = remember { MutableInteractionSource() },
+                                    ) {
+                                        if (searching) navController.switchTab(Routes.HOME)
+                                        else navController.switchTab(Routes.SEARCH)
+                                    },
+                                contentAlignment = Alignment.Center,
+                            ) {
+                                // Gone while the field is there, because the field
+                                // brings its own: two magnifiers in one capsule is
+                                // what it looked like otherwise.
+                                if (!searching) {
+                                    Icon(
+                                        PhosphorIcons.Regular.MagnifyingGlass,
+                                        contentDescription = stringResource(R.string.search),
+                                        tint = Ink,
+                                        modifier = Modifier.size(26.dp),
+                                    )
+                                }
+                            }
+                        },
+                        accessory = accessory,
+                        accessoryHeight = MiniPlayerHeight,
+                        // Every pane of this bar is the same film, and that is
+                        // not a preference: the window grows out of the pill,
+                        // the pill sits on the bar, and a family that darkens
+                        // two of the three has built the join it was hiding.
+                        tint = rememberPillMorphTint(),
+                        searchMode = searching,
+                        searchContent = { fieldModifier ->
+                            BarSearchField(
+                                query = search.query,
+                                onQuery = viewModel::onSearchQuery,
+                                modifier = fieldModifier,
+                            )
+                        },
+                    )
                     }
                 }
 
@@ -1893,7 +1903,7 @@ fun SquareApp(
                                     positionMs = positionMs,
                                     playingOn = remote?.deviceName?.takeIf { it.isNotEmpty() },
                                     modifier = Modifier.fillMaxSize(),
-                                    inline = tabBarScroll.isInline,
+                                    inline = barFold.folded,
                                     interactive = false,
                                     onClick = {},
                                     onTogglePlay = {},
@@ -2570,145 +2580,6 @@ private const val DRIFT_SHIFT = 0.018f
 /** How long one cover takes to become the next. */
 private const val BACKDROP_FADE_MS = 900
 
-@Composable
-private fun BottomBar(
-    route: String?,
-    bottomInset: Dp,
-    backdrop: Backdrop,
-    onSelect: (String) -> Unit,
-) {
-    // Search sits outside the capsule as its own round button, the way the
-    // reference has it: it is a different kind of destination — you go there to
-    // do something and come back — and giving it the same weight as Home and
-    // Library made all three read as places.
-    val routes = remember { listOf(Routes.HOME, Routes.LIBRARY) }
-
-    // The last tab that was actually on screen, held across screens that are not
-    // tabs at all — a playlist, the search page.
-    //
-    // Falling back to Home instead, which is what this did, navigated the user
-    // away: the bar reports every change of its selected index through
-    // `onTabSelected`, so opening a playlist from Library moved the index 1 -> 0
-    // and the bar promptly "selected" Home. That was the playlist opening and
-    // then bouncing back.
-    var lastTab by remember { mutableStateOf(0) }
-    val routeIndex = routes.indexOf(route)
-    if (routeIndex >= 0 && routeIndex != lastTab) lastTab = routeIndex
-    val selected = if (routeIndex >= 0) routeIndex else lastTab
-
-    // A *stable* lambda, deliberately. LiquidBottomTabs keys its internal state
-    // on this reference, so a fresh closure on every recomposition threw that
-    // state away and the indicator arrived at the new tab without ever
-    // animating — which is exactly the bug where tapping snapped and only
-    // dragging moved.
-    val selectedState = rememberUpdatedState(selected)
-    val selectedTabIndex = remember { { selectedState.value } }
-
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 16.dp)
-            .padding(bottom = bottomInset + 8.dp, top = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Box(Modifier.weight(1f)) {
-            LiquidBottomTabs(
-            selectedTabIndex = selectedTabIndex,
-            onTabSelected = { onSelect(routes[it]) },
-            backdrop = backdrop,
-            tabsCount = routes.size,
-            // Both upstream defaults are wrong here: the accent is a system blue
-            // that belongs to no part of this palette, and the container is a
-            // 40% fill that made the bar a solid slab beside the other glass.
-            accentColor = Ink,
-            containerColor = GlassFilm,
-            indicatorVisible = routeIndex >= 0,
-        ) {
-            BottomItem(
-                stringResource(R.string.home),
-                PhosphorIcons.Fill.House,
-                PhosphorIcons.Regular.House,
-                // Nothing is lit while the page on screen is not one of these
-                // two: search is a destination of its own, and leaving Home
-                // filled behind it said the app was somewhere it was not.
-                routeIndex >= 0 && selected == 0,
-            ) {
-                onSelect(Routes.HOME)
-            }
-            BottomItem(
-                stringResource(R.string.library),
-                PhosphorIcons.Fill.MusicNotes,
-                PhosphorIcons.Regular.MusicNotes,
-                routeIndex >= 0 && selected == 1,
-            ) { onSelect(Routes.LIBRARY) }
-            }
-        }
-
-        Spacer(Modifier.width(10.dp))
-
-        val searching = route == Routes.SEARCH
-        LiquidButton(
-            onClick = { onSelect(Routes.SEARCH) },
-            backdrop = backdrop,
-            tint = if (searching) MaterialTheme.colorScheme.primary else Color.Unspecified,
-            modifier = Modifier.size(64.dp),
-            contentHeight = 64.dp,
-            contentPadding = 0.dp,
-            // The same film the capsule beside it uses, or the round button
-            // reads as clearer glass than the bar it sits next to.
-        ) {
-            Icon(
-                imageVector = if (searching) PhosphorIcons.Fill.MagnifyingGlass else PhosphorIcons.Regular.MagnifyingGlass,
-                contentDescription = stringResource(R.string.search),
-                tint = Ink,
-                modifier = Modifier.size(24.dp),
-            )
-        }
-    }
-}
-
-/**
- * Selected tabs switch to the filled icon as well as to ink.
- *
- * Weight carries the selection, not just colour: the difference between a
- * filled and an outlined glyph survives at a glance and for anyone who cannot
- * separate the two tints.
- */
-@Composable
-private fun RowScope.BottomItem(
-    label: String,
-    filled: ImageVector,
-    outlined: ImageVector,
-    selected: Boolean,
-    onClick: () -> Unit,
-) {
-    // Fixed ink rather than the artwork accent. Tinting the label after the
-    // playing track put an arbitrary colour on the one control that has to stay
-    // readable, and some of those colours have almost no contrast against the
-    // glass.
-    val tint = if (selected) Ink else Ink.copy(alpha = 0.62f)
-    // `LiquidBottomTab` rather than a Column of our own, and this is not
-    // cosmetic: it takes an equal share of the row, and the sliding indicator is
-    // positioned as `index * (barWidth / tabsCount)`. A tab sized by its own
-    // padding leaves the two disagreeing — labels packed to the left with the
-    // indicator sitting under empty space.
-    LiquidBottomTab(onClick = onClick) {
-        Icon(
-            imageVector = if (selected) filled else outlined,
-            contentDescription = label,
-            tint = tint,
-            modifier = Modifier.size(23.dp),
-        )
-        Text(
-            label,
-            style = MaterialTheme.typography.bodySmall,
-            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
-            color = tint,
-            modifier = Modifier.padding(top = 3.dp),
-        )
-    }
-}
-
 /** Loads the playlist and shows it, from whichever tab asked. */
 private fun NavHostController.openPlaylist(viewModel: MainViewModel, playlist: CatalogPlaylist) {
     viewModel.openPlaylist(playlist)
@@ -2973,3 +2844,45 @@ private const val CANVAS_RETRY_MS = 2_000L
 
 /** How long the extras wait for the song; see [awaitAudible]. */
 private const val AUDIBLE_TIMEOUT_MS = 12_000L
+
+/**
+ * True while the page under the chrome is moving.
+ *
+ * Every vendored glass surface samples a recording of the screen, and a recording of a scrolling
+ * screen is a new recording sixty times a second — so each pane re-captures and re-runs its blur
+ * and lens on every frame of every scroll. Measured on the home page: 57 ms a frame with the glass
+ * live, 25 ms with it held. Nobody can read a refraction through a surface while what is behind it
+ * is flying past, so during the scroll they keep the last capture.
+ *
+ * Its own object since the bar became the engine's. The fold and this are two different questions
+ * asked of the same gesture — *should the bar get out of the way* and *is it worth re-recording the
+ * screen* — and only the first of them is the engine's business. Both connections are chained onto
+ * the same node.
+ */
+@Stable
+private class PageScrollSignal : NestedScrollConnection {
+    var scrolling by mutableStateOf(false)
+        private set
+
+    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+        if (available.y != 0f) scrolling = true
+        return Offset.Zero
+    }
+
+    override suspend fun onPreFling(available: Velocity): Velocity {
+        scrolling = false
+        return Velocity.Zero
+    }
+
+    /**
+     * Ends the hold by decree.
+     *
+     * [scrolling] is set in `onPreScroll` and cleared only in `onPreFling` — and a list disposed
+     * mid-gesture (a navigation, a page swap) never delivers its fling, so the flag stayed up and
+     * every glass surface replayed its last capture for good: the "content is not there when I come
+     * back" bug. The app calls this on every route change.
+     */
+    fun settle() {
+        scrolling = false
+    }
+}

@@ -45,9 +45,8 @@ import androidx.compose.ui.unit.dp
 import dev.lelonio.square.R
 import dev.lelonio.square.data.Lyrics
 import androidx.compose.foundation.layout.RowScope
-import dev.lelonio.square.ui.glass.LiquidBottomTab
-import dev.lelonio.square.ui.glass.LiquidBottomTabs
-import dev.lelonio.square.ui.glass.LiquidSlider
+import dev.lelonio.square.ui.components.GlassButton
+import dev.antigravity.fluidengine.ui.fluid.FluidSegmentedControl
 import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -119,51 +118,49 @@ fun PlayerPanelSection(
         val karaokeOn = karaoke > 0f
 
         val views = remember { listOf(PlayerPanel.NONE, PlayerPanel.LYRICS) }
-        val selected = views.indexOf(panel).coerceAtLeast(0)
-        // Stable, or LiquidBottomTabs throws away the state it keys on this and
-        // the indicator stops animating; see the note in SquareApp.
-        val selectedState = rememberUpdatedState(selected)
-        val selectedTabIndex = remember { { selectedState.value } }
+        val coverLabel = stringResource(R.string.cover)
+        val lyricsLabel = stringResource(R.string.lyrics)
 
-        LiquidBottomTabs(
-            selectedTabIndex = selectedTabIndex,
-            onTabSelected = { onSelect(views[it]) },
-            backdrop = backdrop,
-            tabsCount = views.size,
-            accentColor = GlassInk,
-            containerColor = GlassFilm,
-            // Slimmer than the tab bar, and icon-only. This one sits under the
-            // transport rather than at the edge of the window, so it has to
-            // read as a smaller thing than the app's own navigation.
-            height = 42.dp,
-            // Under half the height, or the refraction from the two long edges
-            // meets in the middle and draws a seam across the capsule.
-            lensDepth = 12.dp,
+        // The engine's segmented control, which is the same three-surface
+        // arrangement the tab bar uses stood down to the size of a control: the
+        // chosen view is *seen through* the lens rather than painted a different
+        // colour. It arrived with a content slot in 1.33.0 for exactly this — a
+        // control whose segments are glyphs and not words — and `label` stays,
+        // because with a glyph in the segment it is the only thing a screen
+        // reader has to go on.
+        FluidSegmentedControl(
+            options = views,
+            // INFO is not one of the two: opening the credits leaves the switch
+            // showing the cover, which is what is behind the panel anyway.
+            selected = if (panel == PlayerPanel.LYRICS) PlayerPanel.LYRICS else PlayerPanel.NONE,
+            onSelect = onSelect,
             modifier = Modifier.fillMaxWidth(0.46f),
-        ) {
-            PanelTab(
-                icon = PhosphorIcons.Regular.VinylRecord,
-                activeIcon = PhosphorIcons.Fill.VinylRecord,
-                label = stringResource(R.string.cover),
-                selected = selected == 0,
-            ) { onSelect(PlayerPanel.NONE) }
-            PanelTab(
-                icon = PhosphorIcons.Regular.TextAlignLeft,
-                activeIcon = PhosphorIcons.Fill.TextAlignLeft,
-                label = stringResource(R.string.lyrics),
-                selected = selected == 1,
-                // The karaoke lives in this view and keeps working with the
-                // panel shut, so the halo says so from outside it.
-                marked = karaokeOn,
-            ) { onSelect(PlayerPanel.LYRICS) }
-        }
+            content = { option, isSelected ->
+                if (option == PlayerPanel.LYRICS) {
+                    PanelTab(
+                        icon = PhosphorIcons.Regular.TextAlignLeft,
+                        activeIcon = PhosphorIcons.Fill.TextAlignLeft,
+                        label = lyricsLabel,
+                        selected = isSelected,
+                        // The karaoke lives in this view and keeps working with
+                        // the panel shut, so the halo says so from outside it.
+                        marked = karaokeOn,
+                    )
+                } else {
+                    PanelTab(
+                        icon = PhosphorIcons.Regular.VinylRecord,
+                        activeIcon = PhosphorIcons.Fill.VinylRecord,
+                        label = coverLabel,
+                        selected = isSelected,
+                    )
+                }
+            },
+            label = { if (it == PlayerPanel.LYRICS) lyricsLabel else coverLabel },
+        )
 
         Spacer(Modifier.width(10.dp))
 
-        InfoButton(
-            selected = panel == PlayerPanel.INFO,
-            backdrop = backdrop,
-        ) {
+        InfoButton(selected = panel == PlayerPanel.INFO) {
             // A second press closes it. The button is lit while its page is
             // showing, so pressing a lit button and having nothing happen is
             // the one thing a lit button promises will not happen.
@@ -183,12 +180,10 @@ fun PlayerPanelSection(
 @Composable
 private fun InfoButton(
     selected: Boolean,
-    backdrop: dev.lelonio.square.ui.glass.backdrop.Backdrop,
     onClick: () -> Unit,
 ) {
-    dev.lelonio.square.ui.glass.LiquidButton(
+    GlassButton(
         onClick = onClick,
-        backdrop = backdrop,
         modifier = Modifier.size(42.dp),
         contentHeight = 42.dp,
         contentPadding = 0.dp,
@@ -203,7 +198,7 @@ private fun InfoButton(
 }
 
 @Composable
-private fun RowScope.PanelTab(
+private fun PanelTab(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     /** The filled cut of the same glyph, for the view being shown. */
     activeIcon: androidx.compose.ui.graphics.vector.ImageVector,
@@ -217,10 +212,8 @@ private fun RowScope.PanelTab(
      * looks, from this row, exactly like a song playing normally.
      */
     marked: Boolean = false,
-    onClick: () -> Unit,
 ) {
-    LiquidBottomTab(onClick = onClick) {
-        androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
+    androidx.compose.foundation.layout.Box(contentAlignment = Alignment.Center) {
         if (marked) {
             // A halo rather than a badge stuck to the corner: the tabs are
             // small and round-ended, and a dot on the edge of one reads as
@@ -250,7 +243,6 @@ private fun RowScope.PanelTab(
             },
             modifier = Modifier.size(19.dp),
         )
-        }
     }
 }
 

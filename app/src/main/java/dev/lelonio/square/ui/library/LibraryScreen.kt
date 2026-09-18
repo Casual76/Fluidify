@@ -70,7 +70,7 @@ import dev.lelonio.square.data.withPinnedFirst
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.Artwork
 import dev.lelonio.square.ui.components.PlaylistCover
-import dev.lelonio.square.ui.glass.LiquidButton
+import dev.lelonio.square.ui.components.GlassButton
 import dev.lelonio.square.ui.glass.pressable
 import dev.lelonio.square.ui.player.GlassFilm
 import dev.lelonio.square.ui.theme.Ink
@@ -661,9 +661,8 @@ private fun Header(
                 Spacer(Modifier.width(8.dp))
             }
 
-            LiquidButton(
+            GlassButton(
                 onClick = onSort,
-                backdrop = backdrop,
                 flat = true,
                 contentHeight = 36.dp,
                 contentPadding = 12.dp,
@@ -855,9 +854,8 @@ private fun PinMark(modifier: Modifier = Modifier) {
 /** A glass pill, for the handful of places that need a button at all. */
 @Composable
 private fun GlassAction(label: String, backdrop: Backdrop, onClick: () -> Unit) {
-    LiquidButton(
+    GlassButton(
         onClick = onClick,
-        backdrop = backdrop,
         contentHeight = 50.dp,
         contentPadding = 26.dp,
     ) {

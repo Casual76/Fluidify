@@ -47,8 +47,8 @@ import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.data.GlassProfile
 import dev.lelonio.square.ui.glass.GlassEffectConfig
 import dev.lelonio.square.ui.glass.GlassStyle
-import dev.lelonio.square.ui.glass.LiquidSlider
-import dev.lelonio.square.ui.glass.LiquidToggle
+import dev.antigravity.fluidengine.ui.fluid.FluidSlider
+import dev.antigravity.fluidengine.ui.fluid.FluidSwitch
 import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.ui.glass.backdrop.backdrops.layerBackdrop
 import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberLayerBackdrop
@@ -146,7 +146,6 @@ fun GlassSection(backdrop: Backdrop) {
                     value = config.vibrancy,
                     range = 0f..2f,
                     readout = { "${(it * 50).roundToInt()}%" },
-                    backdrop = backdrop,
                     onChange = store::setVibrancy,
                 )
 
@@ -161,7 +160,6 @@ fun GlassSection(backdrop: Backdrop) {
                         value = config.blurRadius,
                         range = 0f..24f,
                         readout = { "${it.roundToInt()} dp" },
-                        backdrop = backdrop,
                     onChange = store::setBlur,
                     )
                     SettingsDivider()
@@ -170,7 +168,6 @@ fun GlassSection(backdrop: Backdrop) {
                         value = config.lensHeight,
                         range = 0f..1f,
                         readout = { "${(it * LENS_MAX_DP).roundToInt()} dp" },
-                        backdrop = backdrop,
                     onChange = store::setLensHeight,
                     )
                     SettingsDivider()
@@ -179,7 +176,6 @@ fun GlassSection(backdrop: Backdrop) {
                         value = config.lensAmount,
                         range = 0f..1f,
                         readout = { "${(it * LENS_MAX_DP).roundToInt()} dp" },
-                        backdrop = backdrop,
                     onChange = store::setLensAmount,
                     )
                     SettingsDivider()
@@ -188,7 +184,6 @@ fun GlassSection(backdrop: Backdrop) {
                         value = config.highlightOpacity,
                         range = 0f..1f,
                         readout = { "${(it * 100).roundToInt()}%" },
-                        backdrop = backdrop,
                     onChange = store::setHighlightOpacity,
                     )
                 }
@@ -199,7 +194,6 @@ fun GlassSection(backdrop: Backdrop) {
                     value = config.puckOpacity,
                     range = 0f..1f,
                     readout = { "${(it * 100).roundToInt()}%" },
-                    backdrop = backdrop,
                     onChange = store::setPuckOpacity,
                 )
 
@@ -209,7 +203,6 @@ fun GlassSection(backdrop: Backdrop) {
                     value = config.surfaceOpacity,
                     range = 0f..1f,
                     readout = { "${(it * 100).roundToInt()}%" },
-                    backdrop = backdrop,
                     onChange = store::setSurfaceOpacity,
                 )
 
@@ -219,7 +212,6 @@ fun GlassSection(backdrop: Backdrop) {
                         label = stringResource(R.string.glass_dispersion),
                         note = stringResource(R.string.glass_dispersion_note),
                         checked = config.chromaticAberration,
-                    backdrop = backdrop,
                     onChange = store::setChromaticAberration,
                     )
                     SettingsDivider()
@@ -227,7 +219,6 @@ fun GlassSection(backdrop: Backdrop) {
                         label = stringResource(R.string.glass_depth),
                         note = stringResource(R.string.glass_depth_note),
                         checked = config.depthEffect,
-                    backdrop = backdrop,
                     onChange = store::setDepthEffect,
                     )
                 }
@@ -241,7 +232,6 @@ fun GlassSection(backdrop: Backdrop) {
                     label = stringResource(R.string.glass_where_bar),
                     note = null,
                     checked = config.navBarEnabled,
-                    backdrop = backdrop,
                     onChange = store::setNavBarEnabled,
                 )
                 SettingsDivider()
@@ -249,7 +239,6 @@ fun GlassSection(backdrop: Backdrop) {
                     label = stringResource(R.string.glass_where_mini_player),
                     note = null,
                     checked = config.miniPlayerEnabled,
-                    backdrop = backdrop,
                     onChange = store::setMiniPlayerEnabled,
                 )
                 SettingsDivider()
@@ -257,7 +246,6 @@ fun GlassSection(backdrop: Backdrop) {
                     label = stringResource(R.string.glass_where_player),
                     note = null,
                     checked = config.playerEnabled,
-                    backdrop = backdrop,
                     onChange = store::setPlayerEnabled,
                 )
 
@@ -267,7 +255,6 @@ fun GlassSection(backdrop: Backdrop) {
                     label = stringResource(R.string.bar_folds),
                     note = stringResource(R.string.bar_folds_note),
                     checked = folds,
-                    backdrop = backdrop,
                     onChange = store::setBarFolds,
                 )
 
@@ -488,7 +475,6 @@ private fun GlassSlider(
     value: Float,
     range: ClosedFloatingPointRange<Float>,
     readout: (Float) -> String,
-    backdrop: Backdrop,
     onChange: (Float) -> Unit,
 ) {
     Column(Modifier.padding(horizontal = 18.dp, vertical = 10.dp)) {
@@ -504,19 +490,15 @@ private fun GlassSlider(
                 color = InkDim,
             )
         }
-        // The app's own slider rather than Material's, which is the argument
-        // this whole page is about: a screen for tuning glass, made of chrome
-        // that is not glass, is showing you somebody else's material while you
-        // adjust yours.
-        LiquidSlider(
-            value = { value },
+        // The engine's slider rather than Material's, which is the argument this
+        // whole page is about: a screen for tuning glass, made of chrome that is
+        // not glass, is showing you somebody else's material while you adjust
+        // yours. It is the family's own now instead of the vendored one, so the
+        // handle here is the same lens as the thumb of the switch below it.
+        FluidSlider(
+            value = value,
             onValueChange = onChange,
             valueRange = range,
-            // The smallest step worth animating the thumb to.
-            visibilityThreshold = 0.001f,
-            backdrop = backdrop,
-            accentColor = MaterialTheme.colorScheme.primary,
-            trackColor = Ink.copy(alpha = 0.22f),
             modifier = Modifier.padding(top = 6.dp, bottom = 2.dp),
         )
     }
@@ -527,7 +509,6 @@ private fun GlassSwitch(
     label: String,
     note: String?,
     checked: Boolean,
-    backdrop: Backdrop,
     onChange: (Boolean) -> Unit,
 ) {
     Row(
@@ -544,11 +525,17 @@ private fun GlassSwitch(
                 Text(note, style = MaterialTheme.typography.bodySmall, color = InkDim)
             }
         }
-        LiquidToggle(
-            selected = { checked },
-            onSelect = onChange,
-            backdrop = backdrop,
-            accent = MaterialTheme.colorScheme.primary,
+        // The engine's own switch, which is what the rest of the settings has
+        // always shown: SettingsScreen draws a FluidSwitch two files away, and
+        // this page drew a different one under the same heading.
+        //
+        // What goes with the old one is the drag — this is tapped, not pulled —
+        // and a thumb that refracted the page instead of its own track. What
+        // arrives with it is the haptics, the reduced-motion setting, and one
+        // switch in the app instead of two.
+        FluidSwitch(
+            checked = checked,
+            onCheckedChange = onChange,
         )
     }
 }

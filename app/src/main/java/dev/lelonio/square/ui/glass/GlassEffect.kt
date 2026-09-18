@@ -170,7 +170,7 @@ enum class GlassComponent {
 /**
  * Maximum lens refraction in dp when the 0..1 preference sliders are at 1. The
  * defaults (0.5) land on the 24dp height/amount used by the library author's
- * Apple-matched LiquidBottomTabs recipe.
+ * Apple-matched tab-bar recipe.
  */
 internal const val LENS_MAX_DP = 48f
 

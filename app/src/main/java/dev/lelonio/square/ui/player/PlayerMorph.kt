@@ -173,30 +173,28 @@ fun CoroutineScope.settlePlayerMorph(
 }
 
 /**
- * What the travelling surface is made of.
+ * What the travelling surface is made of — and the pill, and the bar under it.
  *
- * Not the family's own floating film, and the reason is a measurement. The
- * engine picks between a light material and a dark one by the luminance of
- * `colorScheme.surface`, and this app puts a *translucent white film* in that
- * slot — luminance ignores alpha, so the answer is always "light". Every engine
- * glass surface in the app therefore gets the bright material, which is right
- * over a page and wrong here: the pill it grows out of is a dark capsule, and
- * sampled at the hand-over the two differed by about fifty-five levels of grey.
- * A step that size in one frame is exactly the join this whole arrangement
- * exists to hide.
+ * One function for all three, which is the whole point: the window grows out of
+ * the pill, and at the hand-over the two are on screen together for exactly one
+ * frame. Sampled when they were two different films they differed by about
+ * fifty-five levels of grey, and a step that size in one frame is precisely the
+ * join this arrangement exists to hide.
  *
- * So the film darkens. Fixed rather than derived, for the same reason the bar's
- * own dark tint is: deriving it would put it back through the detection that is
- * already fooled.
+ * Dark, rather than the family's own floating film, for the reason the engine
+ * gives for [dev.antigravity.fluidengine.ui.fluid.GlassDefaults.darkFloatingTint]:
+ * that film is a *bright* material by design, and over a full-bleed cover it
+ * raises the floor exactly where the transport has to stay legible.
+ *
+ * It used to be written out here by hand, because the engine decided light from
+ * dark by the luminance of `colorScheme.surface` and this app files a
+ * translucent white film in that slot. That is fixed at the root now — see
+ * `LocalFluidSurfaceSide`, provided by SquareTheme — so this is a name for a
+ * decision rather than a way round a wrong answer.
  */
 @Composable
-fun rememberPillMorphTint(): GlassTint = remember {
-    GlassTint(
-        overlay = Color.Black.copy(alpha = 0.62f),
-        fallback = Color(0xFF141416).copy(alpha = 0.94f),
-        hairline = Color.White.copy(alpha = 0.18f),
-    )
-}
+fun rememberPillMorphTint(): GlassTint =
+    dev.antigravity.fluidengine.ui.fluid.GlassDefaults.darkFloatingTint()
 
 /**
  * Lays content on the frame of one end of the journey.

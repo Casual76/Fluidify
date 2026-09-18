@@ -119,7 +119,19 @@ fun SquareTheme(
         }
 
         MaterialTheme(colorScheme = scheme) {
-            if (seed == null) content() else ArtworkAccentTheme(seed, content)
+            // Which side the app is on, said out loud rather than guessed.
+            //
+            // The engine asks `colorScheme.surface.luminance()`, and the surface
+            // this app files there is a translucent *white film* — luminance
+            // ignores alpha, so the answer came back "light" for the blackest
+            // app in the house, and every pane of engine glass took the bright
+            // branch at once. Every workaround in this app that names the bar's
+            // tint by hand was paying for that one line.
+            androidx.compose.runtime.CompositionLocalProvider(
+                dev.antigravity.fluidengine.ui.fluid.LocalFluidSurfaceSide provides true,
+            ) {
+                if (seed == null) content() else ArtworkAccentTheme(seed, content)
+            }
         }
     }
 }

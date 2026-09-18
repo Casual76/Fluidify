@@ -86,7 +86,7 @@ import dev.lelonio.square.ui.components.Artwork
 import dev.lelonio.square.ui.components.PlaylistCover
 import dev.lelonio.square.ui.components.FluidifyWordmark
 import androidx.compose.ui.layout.layout
-import dev.lelonio.square.ui.glass.LiquidButton
+import dev.lelonio.square.ui.components.GlassButton
 import dev.lelonio.square.ui.glass.pressable
 import dev.lelonio.square.ui.player.GlassFilm
 import dev.lelonio.square.ui.theme.Ink
@@ -1229,9 +1229,8 @@ private fun Heading(text: String) {
 /** A glass pill, for the handful of places that need a button at all. */
 @Composable
 private fun GlassAction(label: String, backdrop: Backdrop, onClick: () -> Unit) {
-    LiquidButton(
+    GlassButton(
         onClick = onClick,
-        backdrop = backdrop,
         contentHeight = 50.dp,
         contentPadding = 26.dp,
     ) {

@@ -154,9 +154,8 @@ fun AppPlate(
     // The light on the plate, tinted by the accent rather than plain white:
     // what catches the edge is the app's own glow coming from behind.
     val glint = androidx.compose.ui.graphics.lerp(accent, Color.White, 0.55f)
-    dev.lelonio.square.ui.glass.LiquidButton(
+    GlassButton(
         onClick = {},
-        backdrop = backdrop,
         isInteractive = false,
         flat = true,
         modifier = modifier

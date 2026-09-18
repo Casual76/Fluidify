@@ -100,7 +100,7 @@ import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberLayerBackdrop
 import dev.lelonio.square.R
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.Artwork
-import dev.lelonio.square.ui.glass.LiquidButton
+import dev.lelonio.square.ui.components.GlassButton
 import dev.lelonio.square.ui.library.formatDuration
 import dev.lelonio.square.ui.theme.softShadow
 import com.adamglin.phosphoricons.regular.MonitorPlay
@@ -1502,7 +1502,7 @@ private fun TopBar(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        GlassButton(backdrop, onClick = onCollapse) {
+        PlayerGlassButton(backdrop, onClick = onCollapse) {
             Icon(PhosphorIcons.Regular.CaretDown, contentDescription = stringResource(R.string.close))
         }
         // Names whatever the middle of the screen is currently showing, so the
@@ -1547,7 +1547,7 @@ private fun TopBar(
         // is the thing this app cannot do itself — so it hands the track over
         // at the position it had reached rather than pretending otherwise.
         if (onWatchVideo != null) {
-            GlassButton(backdrop, onClick = onWatchVideo) {
+            PlayerGlassButton(backdrop, onClick = onWatchVideo) {
                 Icon(
                     PhosphorIcons.Regular.YoutubeLogo,
                     contentDescription = stringResource(R.string.watch_video),
@@ -1558,7 +1558,7 @@ private fun TopBar(
             }
         }
         if (connectAvailable) {
-            GlassButton(backdrop, onClick = onOpenDevices) {
+            PlayerGlassButton(backdrop, onClick = onOpenDevices) {
                 Icon(
                     PhosphorIcons.Regular.Devices,
                     contentDescription = stringResource(R.string.devices),
@@ -1869,15 +1869,6 @@ internal fun Controls(
 }
 
 /**
- * A disc of glass that answers a press.
- *
- * Built on the catalog's `LiquidButton` rather than on [GlassSurface]: the
- * squash-and-settle when you push it is the same animation the tab indicator
- * uses, and hand-rolling a second version of it would drift from the one the
- * bar has. A capsule with equal sides is a circle, so no separate shape is
- * needed.
- */
-/**
  * A word for the setting that is quietly changing the record.
  *
  * Small, unclickable and out of the way: it is a note to self, not a control.
@@ -1931,9 +1922,8 @@ private fun RoundGlassButton(
     onClick: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    LiquidButton(
+    GlassButton(
         onClick = { if (enabled) onClick() },
-        backdrop = backdrop,
         modifier = modifier
             .size(size)
             // Dimmed rather than removed when there is nowhere to go: a control
@@ -1941,16 +1931,22 @@ private fun RoundGlassButton(
             .graphicsLayer { alpha = if (enabled) 1f else 0.4f },
         contentHeight = size,
         contentPadding = 0.dp,
-        // Matched to the bottom bar and the mini player. At the upstream 2dp
-        // these were the one place in the app where the glass barely frosted
-        // what was behind it.
     ) {
         content()
     }
 }
 
+/**
+ * A disc of glass that answers a press, at the size the player's transport uses.
+ *
+ * Named apart from [dev.lelonio.square.ui.components.GlassButton] because it is
+ * not the same thing: that one is the app's button, this one is a fixed 44 dp
+ * circle wired to [RoundGlassButton] and to the player's own backdrop. They
+ * used to be able to share a name because they lived in different files; they
+ * cannot, because they live in the same package.
+ */
 @Composable
-private fun GlassButton(
+private fun PlayerGlassButton(
     backdrop: Backdrop,
     onClick: () -> Unit,
     content: @Composable () -> Unit,

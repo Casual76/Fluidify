@@ -44,7 +44,6 @@ import dev.lelonio.square.data.SearchItem
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.Artwork
 import dev.lelonio.square.ui.components.SwipeToQueue
-import dev.lelonio.square.ui.glass.LiquidButton
 import dev.lelonio.square.ui.glass.pressable
 import dev.lelonio.square.ui.player.GlassFilm
 import dev.lelonio.square.ui.settings.WebApiSetup

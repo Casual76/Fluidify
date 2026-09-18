@@ -188,13 +188,16 @@ class GlassStore(context: Context) {
             playerEnabled = prefs.getBoolean(KEY_PLAYER, base.playerEnabled),
             miniPlayerEnabled = prefs.getBoolean(KEY_MINI_PLAYER, base.miniPlayerEnabled),
             navBarEnabled = prefs.getBoolean(KEY_NAV_BAR, base.navBarEnabled),
-            // Square has one appearance, and it is dark glass over artwork. The
-            // library's own default asks the Material scheme whether it is light
-            // or dark and washes the selection puck accordingly, which here
-            // answered "light" and put a solid white slab under the chosen tab.
-            // A wash of light instead — but a wash you can see: at the 0.12 this
-            // started on, over artwork with anything bright in it, the selected
-            // tab was a guess.
+            // A wash of light, and one you can see: at the 0.12 this started on,
+            // over artwork with anything bright in it, a selection was a guess.
+            //
+            // It was written out by hand because the vendored library asked the
+            // Material scheme whether it was light or dark and here got the
+            // wrong answer — a translucent white film in `surface`, and
+            // luminance does not look at alpha. Both halves of that are gone:
+            // the tab bar this washed is the engine's now, and the detection is
+            // told the answer (LocalFluidSurfaceSide). What is left reaches only
+            // the glass settings' own preview.
             puckColor = androidx.compose.ui.graphics.Color.White,
             puckOpacity = prefs.getFloat(KEY_PUCK, DEFAULT_PUCK_OPACITY),
         )

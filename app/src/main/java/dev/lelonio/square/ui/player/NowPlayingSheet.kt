@@ -197,15 +197,17 @@ fun NowPlayingSheet(
                         state = physics,
                         backdrop = backdrop,
                         tint = rememberPillMorphTint(),
+                        // The family's floating optics, untouched, because that
+                        // is now what the pill is wearing too.
+                        //
+                        // The saturation boost used to be turned off here: it
+                        // lifts what it refracts, and the pill it takes over
+                        // from was a different renderer that did not lift. Both
+                        // ends are the engine's glass now, so the way to be
+                        // indistinguishable from the pill is to be made of
+                        // exactly what the pill is made of — and turning
+                        // anything off is how the two stopped matching.
                         role = GlassRole.Floating,
-                        // The family's floating optics, with the saturation
-                        // boost off: it lifts what it refracts, which reads
-                        // right for a control standing over a page and wrong for
-                        // a surface that has to be indistinguishable, in one
-                        // frame, from the pill it took over from.
-                        optics = dev.antigravity.fluidengine.ui.fluid.GlassDefaults
-                            .optics(GlassRole.Floating)
-                            .copy(vibrancy = 1f),
                         // Sampled once for the whole journey, and the intensity
                         // held constant to make that possible: intensity scales
                         // the blur radius, the radius is the capture's padding,

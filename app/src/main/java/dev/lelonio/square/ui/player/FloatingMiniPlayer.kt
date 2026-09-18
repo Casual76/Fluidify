@@ -326,8 +326,17 @@ fun progressOf(positionMs: Long, durationMs: Long): Float =
     if (durationMs <= 0) 0f else (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
 
 /**
- * 52dp, measured off the reference: the pill above the tabs is shorter than the
- * tab capsule under it, and a mini player as tall as the bar made the two read
- * as one slab.
+ * What the pill actually lays out to: 40 dp of artwork with 8 dp above and
+ * below it.
+ *
+ * It said 48 for a long time, and 52 in the comment above it, and neither was
+ * ever the height of anything — the pill floated above the bar and simply took
+ * the room it needed, so the number only ever fed a content inset that could
+ * afford to be wrong. It is the bar's accessory band now, and the band is
+ * measured to exactly this: short by eight and the artist's name is cut off.
+ *
+ * Still shorter than the tab capsule under it, which is the point the old
+ * comment was making and is still true: a mini player as tall as the bar makes
+ * the two read as one slab.
  */
-val MiniPlayerHeight = 48.dp
+val MiniPlayerHeight = 56.dp

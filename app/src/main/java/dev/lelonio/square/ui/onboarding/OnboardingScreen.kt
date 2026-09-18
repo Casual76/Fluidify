@@ -59,7 +59,7 @@ import dev.lelonio.square.R
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.AppIcon
 import dev.lelonio.square.ui.components.FluidifyWordmark
-import dev.lelonio.square.ui.glass.LiquidButton
+import dev.lelonio.square.ui.components.GlassButton
 import dev.lelonio.square.ui.settings.WebApiSetupInline
 import dev.lelonio.square.ui.theme.Ink
 import dev.lelonio.square.ui.theme.InkDim
@@ -127,7 +127,7 @@ fun OnboardingScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (step > 0) {
-                    LiquidButton(onClick = { step-- }, backdrop = backdrop) {
+                    GlassButton(onClick = { step-- }) {
                         Icon(PhosphorIcons.Regular.ArrowLeft, contentDescription = stringResource(R.string.back))
                     }
                 }
@@ -194,9 +194,8 @@ fun OnboardingScreen(
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                LiquidButton(
+                GlassButton(
                     onClick = { if (step == last) onFinish() else step++ },
-                    backdrop = backdrop,
                     tint = MaterialTheme.colorScheme.primary,
                     contentHeight = 52.dp,
                     contentPadding = 26.dp,
@@ -244,9 +243,8 @@ private fun LogIn(
     if (loggedIn) {
         DoneRow(stringResource(R.string.onboarding_login_done))
     } else {
-        LiquidButton(
+        GlassButton(
             onClick = { if (!connecting) onLogIn() },
-            backdrop = backdrop,
             tint = MaterialTheme.colorScheme.primary,
             contentHeight = 52.dp,
         ) {

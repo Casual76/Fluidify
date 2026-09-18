@@ -22,7 +22,7 @@ import androidx.compose.ui.unit.dp
 import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.R
 import dev.lelonio.square.ui.MainViewModel
-import dev.lelonio.square.ui.glass.LiquidButton
+import dev.lelonio.square.ui.components.GlassButton
 
 /**
  * One-time setup for the Web API.
@@ -110,9 +110,8 @@ internal fun WebApiSetupInline(
             )
         }
 
-        LiquidButton(
+        GlassButton(
             onClick = { if (!state.connecting) onConnect() },
-            backdrop = backdrop,
             tint = MaterialTheme.colorScheme.primary,
             modifier = Modifier
                 .padding(top = 16.dp)
