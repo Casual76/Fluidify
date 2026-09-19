@@ -336,27 +336,41 @@ fun glassEdge(darkAlpha: Float): Color = if (onDarkPage) {
 }
 
 /**
- * The top bar of a page, on whichever side of the page it has to sit.
+ * The top bar of a page that is a picture, on whichever side that page is.
  *
- * Both of the app's collapsing bars named the engine's dark tint by hand, under
- * a comment that said "the app is locked to a dark theme" — which stopped being
- * true. On a light page that tint is a black scrim with dark letters on it.
+ * Both arms are scrims now, and the second one is new. The first version of this
+ * picked the engine's dark scrim on a dark page and the *family* tint on a light
+ * one, on the argument that the family's film already lightens and so is already
+ * pointing the right way on paper. That argument is true and insufficient: the
+ * family film is built for a flat page, and a bar over a cover has two failures
+ * it does not cover.
  *
- * The dark branch stays exactly what it was, and it is not the theme being asked
- * twice: over a full-bleed cover the family's own film *lightens*, so the bar
- * ends up the brightest thing on the screen. That argument only holds on the
- * dark side. On paper the bar is meant to be lighter than the page, which is
- * what the family already does.
+ * Over a bright cover it lands within a percent of the page and the bar is gone.
+ * Over a dark one it lands at a middling grey and the dark letters on it are the
+ * hardest thing in the app to read — which is most of what made the light theme
+ * impractical, and it is visible in one frame on the bench under `Mosaico`,
+ * beside a dark column whose scrim holds its text across a white tile and a
+ * black one.
  *
- * Asks the ink for [glassEdge]'s reason. Sibling of `rememberPillMorphTint`,
- * which does the same for the floating family.
+ * So the light arm is a scrim too, only a white one: see `lightBarTint`. Not a
+ * darkening of paper — that really would be a grey slab — but more white than
+ * the family lays down, which is what dark ink needs before a photograph stops
+ * swallowing it.
+ *
+ * Asks the ink rather than the theme, for [glassEdge]'s reason, and that is also
+ * why it picks the arms by hand instead of calling the engine's own
+ * `barTintOnPhoto()`: that one asks the theme, which is the right question for
+ * an app without a page that paints itself, and the wrong one here.
+ *
+ * Sibling of `rememberPillMorphTint`, which does the same for the floating
+ * family. The two move together or the morph builds its own seam.
  */
 @Composable
 fun pageBarTint(): dev.antigravity.fluidengine.ui.fluid.GlassTint =
     if (onDarkPage) {
         dev.antigravity.fluidengine.ui.fluid.GlassDefaults.darkBarTint()
     } else {
-        dev.antigravity.fluidengine.ui.fluid.GlassDefaults.barTint()
+        dev.antigravity.fluidengine.ui.fluid.GlassDefaults.lightBarTint()
     }
 
 /**

@@ -676,7 +676,12 @@ private fun HomeTopBar(
                 .fillMaxSize()
                 .glassSurface(
                     state = backdrop,
-                    tint = dev.antigravity.fluidengine.ui.fluid.GlassDefaults.barTint(),
+                    // The page tint and not the family's, like the other two collapsing
+                    // bars. This was the one that still named `barTint()` by hand, and it is
+                    // the bar with the strongest case for not doing that: it sits at the top
+                    // of the home page, which is where the backdrop's veil is thinnest and the
+                    // cover behind it brightest.
+                    tint = dev.lelonio.square.ui.theme.pageBarTint(),
                     edge = dev.antigravity.fluidengine.ui.fluid.GlassEdge.None,
                     falloff = dev.antigravity.fluidengine.ui.fluid.GlassFalloff.FadeDown,
                     // A dead zone first: a bar that frosts on the first pixel of

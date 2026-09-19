@@ -299,6 +299,17 @@ fun glassContentColorFor(behind: Color, tint: Color, opacity: Float): Color {
 internal val DefaultSurfaceTint = Color(0xFF1A1A1A)
 internal val DefaultSurfaceTintLight = Color(0xFFFAFAFA)
 
+/**
+ * How much more film paper needs than a dark page does. See `filmAlpha`.
+ *
+ * The same number `pageWash` uses, and for the same stated reason: the bright parts of a photograph
+ * are far brighter than a dark wash ever lets them be, and it is the bright parts that swallow dark
+ * letters. It is also what keeps this renderer and the engine's on one material — the pill is drawn
+ * by one of them and the window it grows into by the other, and at the hand-over they are on screen
+ * together for exactly one frame.
+ */
+private const val PaperFilmRatio = 1.35f
+
 private const val BRIGHT_FROM = 0.42f
 private const val BRIGHT_TO = 0.72f
 
@@ -484,6 +495,26 @@ fun Modifier.liquidGlass(
         lerp(Color(0xFF4A4A4E), Color(0xFF23232A), bright)
     }
 
+    /**
+     * How much of that film goes on — the setting, put through the side it is laid on.
+     *
+     * The colour turns over above and the weight did not, and that is only half a material. A film
+     * is a *bright* one on both sides here, so on paper it has nothing to push against: at the
+     * default half it leaves a pane sitting on a dark cover at a middling grey, with dark letters on
+     * it, which is the hardest thing in the app to read. On a dark page the same half is plenty,
+     * because there the film's job is to lift a surface off a floor and a little goes a long way.
+     *
+     * Multiplied rather than floored, so the setting keeps doing what it says: a slider dragged to
+     * nothing still gives nothing, and one dragged up still thickens. [PaperFilmRatio] is not
+     * invented for this — it is the ratio the page's own wash uses for the same reason, and the one
+     * the backdrop's two veils were hand-tuned to.
+     */
+    val filmAlpha = if (lightPage) {
+        (config.surfaceOpacity * PaperFilmRatio).coerceIn(0f, 0.92f)
+    } else {
+        config.surfaceOpacity.coerceIn(0f, 1f)
+    }
+
     // Translucent style short-circuits everything below: no backdrop is sampled and
     // no RenderEffect runs, so there is nothing to configure. Content behind shows
     // through the tint directly, which is the point — the alternative when glass is
@@ -513,7 +544,7 @@ fun Modifier.liquidGlass(
         }
         return this
             .clip(shape)
-            .background(surfaceTintColor.copy(alpha = config.surfaceOpacity.coerceIn(0f, 1f)))
+            .background(surfaceTintColor.copy(alpha = filmAlpha))
             // What this control adds to the shared film, which this path used
             // to drop on the floor.
             //
@@ -657,11 +688,11 @@ fun Modifier.liquidGlass(
 
     // RenderEffect is guaranteed supported past this point — the unsupported
     // case already returned the translucent-tint fallback above.
-    val surfaceBlock: DrawScope.() -> Unit = remember(surfaceTintColor, config.surfaceOpacity, onDrawTint) {
+    val surfaceBlock: DrawScope.() -> Unit = remember(surfaceTintColor, filmAlpha, onDrawTint) {
         {
-            if (config.surfaceOpacity > 0f) {
+            if (filmAlpha > 0f) {
                 drawRect(
-                    color = surfaceTintColor.copy(alpha = config.surfaceOpacity),
+                    color = surfaceTintColor.copy(alpha = filmAlpha),
                     size = size,
                 )
             }

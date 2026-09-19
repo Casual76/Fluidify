@@ -181,25 +181,32 @@ fun CoroutineScope.settlePlayerMorph(
  * fifty-five levels of grey, and a step that size in one frame is precisely the
  * join this arrangement exists to hide.
  *
- * Which film, on the other hand, follows the side the app is on — and the two
- * are not mirror images, because the material is not symmetric. The family's own
- * film is a *bright* one by design, which is what makes a pane read as frosted
- * glass; over a full-bleed cover on a **dark** page it does the opposite of its
- * job and raises the floor exactly where the transport has to stay legible, so
- * there the dark twin is right. On a **light** page the bright film is already
- * pointing the right way, and darkening it would put a grey slab on paper —
- * which is precisely what the first light build looked like.
+ * Which film follows the side the page is on, and both arms are scrims: the
+ * family's own film is built for a flat page, and this pill spends its life over
+ * covers.
+ *
+ * The light arm used to be that family film, on the argument that it lightens
+ * anyway and so is already pointing the right way on paper. It is pointing the
+ * right way and it does not go far enough — over a dark cover the pill settles
+ * at a middling grey with dark letters on it, and over a bright one it vanishes
+ * into the page. `lightFloatingTint` is the same white, laid on at the weight a
+ * photograph asks for.
  *
  * The dark one used to be written out here by hand, because the engine decided
  * light from dark by the luminance of `colorScheme.surface` and this app files a
  * translucent film in that slot. That is fixed at the root now — see
  * `LocalFluidSurfaceSide`, provided by SquareTheme — so this is a name for a
  * decision rather than a way round a wrong answer.
+ *
+ * Asks the ink rather than the theme, like its sibling `pageBarTint`, and the
+ * two have to pick the same way: the bar, the pill it carries and the window
+ * that grows out of that pill are one material, and an app that moves one of the
+ * three has built the join the morph exists to hide.
  */
 @Composable
 fun rememberPillMorphTint(): GlassTint =
     if (!dev.lelonio.square.ui.theme.onDarkPage) {
-        dev.antigravity.fluidengine.ui.fluid.GlassDefaults.floatingTint()
+        dev.antigravity.fluidengine.ui.fluid.GlassDefaults.lightFloatingTint()
     } else {
         dev.antigravity.fluidengine.ui.fluid.GlassDefaults.darkFloatingTint()
     }
