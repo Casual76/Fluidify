@@ -2091,34 +2091,42 @@ fun SquareApp(
                     // built to stand on nothing looks like a hole cut in the clip.
                     //
                     // Declared here rather than in the slot that discovers it, because the window's
-                    // floor has to turn over with its contents and that is a different slot. It is
-                    // also where it is forgotten: this whole block leaves composition once the
-                    // player is closed, so collapsing puts the page back on its own side with
-                    // nobody having to say so.
+                    // floor has to turn over with its contents, and that is a different slot.
+                    //
+                    // Which means it is not forgotten on its own. This block outlives the open
+                    // window by a long way — it is alive whenever anything is playing, collapsed
+                    // pill included, since `chrome` only falls on the settings route — so the
+                    // player closing has to be *said*, and PlayerScreen says it on the way out.
                     var canvasVisible by remember { mutableStateOf(false) }
                     val themeIsDark = dev.lelonio.square.ui.theme.rememberThemeIsDark()
                     val themeIsAmoled = dev.lelonio.square.ui.theme.rememberThemeIsAmoled()
                     val playerDark = canvasVisible || themeIsDark
 
-                    // The system bars' glyphs, on the way out.
+                    // The system bars' glyphs, set from here rather than left to the theme below.
                     //
-                    // SquareTheme flips them in a SideEffect, which runs when *that theme*
-                    // recomposes — and the one underneath has no reason to recompose merely because
-                    // this one stopped existing. Without this, closing a player that had been over
-                    // a Canvas on a light page left white glyphs on white. A Canvas simply ending
-                    // is already covered: that recomposes this theme instead of removing it.
+                    // SquareTheme does set them, in a SideEffect that runs when that theme
+                    // recomposes — which covers a theme changing, and not a theme *ending*. Both
+                    // of the slots this flip wraps live inside the open window and are dropped
+                    // whole when it closes, so the dark one is never asked to recompose light and
+                    // never puts the glyphs back. Closing a player that had been over a Canvas
+                    // left white on white, in a status bar over a paper page.
+                    //
+                    // So the side is applied where it is decided. The theme's own SideEffect runs
+                    // after this one and agrees with it while the window is open; when the window
+                    // goes, this is the only one left, and it is still here — nothing collapses
+                    // this block but playback itself ending, which is what the disposal covers.
                     val hostView = androidx.compose.ui.platform.LocalView.current
-                    DisposableEffect(hostView, themeIsDark) {
-                        onDispose {
-                            val hostWindow = (hostView.context as? android.app.Activity)?.window
-                            if (hostWindow != null && !hostView.isInEditMode) {
-                                androidx.core.view.WindowCompat
-                                    .getInsetsController(hostWindow, hostView)
-                                    .apply {
-                                        isAppearanceLightStatusBars = !themeIsDark
-                                        isAppearanceLightNavigationBars = !themeIsDark
-                                    }
+                    DisposableEffect(hostView, playerDark, themeIsDark) {
+                        val controller = (hostView.context as? android.app.Activity)?.window
+                            ?.takeIf { !hostView.isInEditMode }
+                            ?.let {
+                                androidx.core.view.WindowCompat.getInsetsController(it, hostView)
                             }
+                        controller?.isAppearanceLightStatusBars = !playerDark
+                        controller?.isAppearanceLightNavigationBars = !playerDark
+                        onDispose {
+                            controller?.isAppearanceLightStatusBars = !themeIsDark
+                            controller?.isAppearanceLightNavigationBars = !themeIsDark
                         }
                     }
 

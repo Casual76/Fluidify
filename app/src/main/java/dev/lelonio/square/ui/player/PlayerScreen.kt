@@ -679,10 +679,19 @@ fun PlayerScreen(
         // half, which is the one moment in the change where nothing on screen is definitely one
         // thing or the other, and the snap disappears into it. At either end it lands on a settled
         // picture and reads as a flash.
+        val reportCanvas by rememberUpdatedState(onCanvasVisible)
         LaunchedEffect(overCanvas) {
             kotlinx.coroutines.delay(CLIP_FADE_MS / 2L)
-            onCanvasVisible(overCanvas)
+            reportCanvas(overCanvas)
         }
+        // Closing the player is also news, and nobody else is in a position to send it.
+        //
+        // This screen is composed only while the window is open, and leaving composition cancels
+        // the effect above rather than running it — so a `true` sent on the way in was the last
+        // word, and the page it had turned over stayed turned over behind the collapsed pill. It
+        // showed up as white glyphs in the status bar of a light page, and as the next track
+        // opening dark for a quarter of a second because it had never been told otherwise.
+        DisposableEffect(Unit) { onDispose { reportCanvas(false) } }
 
         CompositionLocalProvider(
             LocalContentColor provides GlassInk,
