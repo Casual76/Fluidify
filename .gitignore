@@ -32,3 +32,6 @@ keystore.properties
 # named: a capture saved as .txt is still a capture.
 *.har
 *.har.txt
+
+# Cartella di sessione del compilatore Kotlin, rigenerata a ogni build.
+.kotlin/
