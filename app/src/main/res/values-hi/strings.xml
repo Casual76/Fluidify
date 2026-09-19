@@ -397,7 +397,15 @@
     <string name="shortcut_library_short">लाइब्रेरी</string>
     <string name="reorder">क्रम बदलें</string>
     <string name="widget_label">अभी चल रहा है</string>
-    <string name="widget_description">कवर, जो चल रहा है, और तीन बटन।</string>
     <string name="widget_nothing_playing">कुछ नहीं चल रहा</string>
-    <string name="widget_add">होम स्क्रीन पर जोड़ें</string>
+    <string name="widget_label_row">अभी चल रहा है</string>
+    <string name="widget_label_square">अभी चल रहा है, वर्ग</string>
+    <string name="widget_label_tall">अभी चल रहा है, लंबा</string>
+    <string name="widget_description_row">कवर, जो चल रहा है, और तीन बटन।</string>
+    <string name="widget_description_square">कवर, शीर्षक, और तीन बटन।</string>
+    <string name="widget_description_tall">बड़ा कवर, जो चल रहा है, और तीन बटन।</string>
+    <string name="widget_add_row">पंक्ति जोड़ें</string>
+    <string name="widget_add_square">वर्ग जोड़ें</string>
+    <string name="widget_add_tall">लंबा जोड़ें</string>
+    <string name="widget_add_note">पीछे कवर, जो चल रहा है, और तीन बटन।</string>
 </resources>

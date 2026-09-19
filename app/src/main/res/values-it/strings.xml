@@ -383,7 +383,15 @@
     <string name="shortcut_library_short">Libreria</string>
     <string name="reorder">Riordina</string>
     <string name="widget_label">In riproduzione</string>
-    <string name="widget_description">La copertina, cosa sta suonando, e i tre tasti.</string>
     <string name="widget_nothing_playing">Non sta suonando niente</string>
-    <string name="widget_add">Aggiungi alla schermata iniziale</string>
+    <string name="widget_label_row">In riproduzione</string>
+    <string name="widget_label_square">In riproduzione, quadrato</string>
+    <string name="widget_label_tall">In riproduzione, alto</string>
+    <string name="widget_description_row">La copertina, cosa sta suonando, e i tre tasti.</string>
+    <string name="widget_description_square">La copertina, il titolo, e i tre tasti.</string>
+    <string name="widget_description_tall">Una copertina grande, cosa sta suonando, e i tre tasti.</string>
+    <string name="widget_add_row">Aggiungi la riga alla schermata iniziale</string>
+    <string name="widget_add_square">Aggiungi il quadrato</string>
+    <string name="widget_add_tall">Aggiungi quello alto</string>
+    <string name="widget_add_note">La copertina dietro, cosa sta suonando, e i tre tasti. Segue il tema dell&#8217;app.</string>
 </resources>

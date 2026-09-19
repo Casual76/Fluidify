@@ -403,7 +403,15 @@
     <string name="shortcut_library_short">Library</string>
     <string name="reorder">Reorder</string>
     <string name="widget_label">Now playing</string>
-    <string name="widget_description">The cover, what is playing, and the three buttons.</string>
     <string name="widget_nothing_playing">Nothing playing</string>
-    <string name="widget_add">Add to the home screen</string>
+    <string name="widget_label_row">Now playing</string>
+    <string name="widget_label_square">Now playing, square</string>
+    <string name="widget_label_tall">Now playing, tall</string>
+    <string name="widget_description_row">The cover, what is playing, and the three buttons.</string>
+    <string name="widget_description_square">The cover, the title, and the three buttons.</string>
+    <string name="widget_description_tall">A big cover, what is playing, and the three buttons.</string>
+    <string name="widget_add_row">Add the row to the home screen</string>
+    <string name="widget_add_square">Add the square</string>
+    <string name="widget_add_tall">Add the tall one</string>
+    <string name="widget_add_note">The cover behind, what is playing, and the three buttons. It follows the app&#8217;s theme.</string>
 </resources>

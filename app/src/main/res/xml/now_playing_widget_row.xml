@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  La riga: copertina, brano, tre tasti. Larga e bassa.
+
+  `configure` non c'e' apposta: un widget che chiede qualcosa prima di comparire
+  e' un widget che meta' delle persone non finisce di aggiungere. E
+  `updatePeriodMillis` e' zero perche' questo widget non si aggiorna da solo: glielo
+  dice il servizio quando cambia qualcosa. Vedi NowPlayingWidget.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_description_row"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:previewLayout="@layout/now_playing_widget_preview_row"
+    android:minWidth="250dp"
+    android:minHeight="60dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="60dp"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="4"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

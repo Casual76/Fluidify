@@ -382,7 +382,15 @@
     <string name="shortcut_library_short">Bibliothek</string>
     <string name="reorder">Neu ordnen</string>
     <string name="widget_label">Wird gespielt</string>
-    <string name="widget_description">Das Cover, was laeuft, und die drei Tasten.</string>
     <string name="widget_nothing_playing">Nichts laeuft</string>
-    <string name="widget_add">Zum Startbildschirm hinzufuegen</string>
+    <string name="widget_label_row">Wird gespielt</string>
+    <string name="widget_label_square">Wird gespielt, quadratisch</string>
+    <string name="widget_label_tall">Wird gespielt, hoch</string>
+    <string name="widget_description_row">Das Cover, was laeuft, und die drei Tasten.</string>
+    <string name="widget_description_square">Das Cover, der Titel, und die drei Tasten.</string>
+    <string name="widget_description_tall">Ein grosses Cover, was laeuft, und die drei Tasten.</string>
+    <string name="widget_add_row">Die Zeile zum Startbildschirm hinzufuegen</string>
+    <string name="widget_add_square">Das Quadrat hinzufuegen</string>
+    <string name="widget_add_tall">Das hohe hinzufuegen</string>
+    <string name="widget_add_note">Das Cover dahinter, was laeuft, und die drei Tasten. Folgt dem Thema der App.</string>
 </resources>

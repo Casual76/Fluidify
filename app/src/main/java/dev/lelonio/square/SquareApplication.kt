@@ -10,7 +10,6 @@ import dev.lelonio.square.data.PreferencesStore
 import dev.lelonio.square.data.RecentStore
 import dev.lelonio.square.data.ApiFactory
 import dev.lelonio.square.data.SpotifyApi
-import androidx.glance.appwidget.updateAll
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import dev.lelonio.square.nativecore.NativeBridge
@@ -65,10 +64,8 @@ class SquareApplication : Application() {
             kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default,
         ).launch {
             preferences.themeMode.drop(1).collect {
-                runCatching {
-                    dev.lelonio.square.widget.NowPlayingWidget()
-                        .updateAll(this@SquareApplication)
-                }
+                dev.lelonio.square.widget.NowPlayingWidgetBridge
+                    .redraw(this@SquareApplication)
             }
         }
 

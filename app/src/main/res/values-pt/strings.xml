@@ -382,7 +382,15 @@
     <string name="shortcut_library_short">Biblioteca</string>
     <string name="reorder">Reordenar</string>
     <string name="widget_label">A reproduzir</string>
-    <string name="widget_description">A capa, o que esta a tocar, e os tres botoes.</string>
     <string name="widget_nothing_playing">Nada a tocar</string>
-    <string name="widget_add">Adicionar ao ecra inicial</string>
+    <string name="widget_label_row">A reproduzir</string>
+    <string name="widget_label_square">A reproduzir, quadrado</string>
+    <string name="widget_label_tall">A reproduzir, alto</string>
+    <string name="widget_description_row">A capa, o que esta a tocar, e os tres botoes.</string>
+    <string name="widget_description_square">A capa, o titulo, e os tres botoes.</string>
+    <string name="widget_description_tall">Uma capa grande, o que esta a tocar, e os tres botoes.</string>
+    <string name="widget_add_row">Adicionar a linha ao ecra inicial</string>
+    <string name="widget_add_square">Adicionar o quadrado</string>
+    <string name="widget_add_tall">Adicionar o alto</string>
+    <string name="widget_add_note">A capa atras, o que esta a tocar, e os tres botoes. Segue o tema da aplicacao.</string>
 </resources>

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  Il ritratto: la copertina grande, e sotto tutto il resto.
+
+  `configure` non c'e' apposta: un widget che chiede qualcosa prima di comparire
+  e' un widget che meta' delle persone non finisce di aggiungere. E
+  `updatePeriodMillis` e' zero perche' questo widget non si aggiorna da solo: glielo
+  dice il servizio quando cambia qualcosa. Vedi NowPlayingWidget.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_description_tall"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:previewLayout="@layout/now_playing_widget_preview_tall"
+    android:minWidth="130dp"
+    android:minHeight="200dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="170dp"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="2"
+    android:targetCellHeight="3"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

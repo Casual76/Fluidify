@@ -382,7 +382,15 @@
     <string name="shortcut_library_short">Bibliotheque</string>
     <string name="reorder">Reordonner</string>
     <string name="widget_label">Lecture en cours</string>
-    <string name="widget_description">La pochette, ce qui joue, et les trois boutons.</string>
     <string name="widget_nothing_playing">Rien en lecture</string>
-    <string name="widget_add">Ajouter a l&#8217;ecran d&#8217;accueil</string>
+    <string name="widget_label_row">Lecture en cours</string>
+    <string name="widget_label_square">Lecture en cours, carre</string>
+    <string name="widget_label_tall">Lecture en cours, haut</string>
+    <string name="widget_description_row">La pochette, ce qui joue, et les trois boutons.</string>
+    <string name="widget_description_square">La pochette, le titre, et les trois boutons.</string>
+    <string name="widget_description_tall">Une grande pochette, ce qui joue, et les trois boutons.</string>
+    <string name="widget_add_row">Ajouter la ligne a l&#8217;ecran d&#8217;accueil</string>
+    <string name="widget_add_square">Ajouter le carre</string>
+    <string name="widget_add_tall">Ajouter le haut</string>
+    <string name="widget_add_note">La pochette derriere, ce qui joue, et les trois boutons. Il suit le theme de l&#8217;application.</string>
 </resources>

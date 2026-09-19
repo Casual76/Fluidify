@@ -397,7 +397,15 @@
     <string name="shortcut_library_short">Kitaplik</string>
     <string name="reorder">Yeniden sirala</string>
     <string name="widget_label">Calaniyor</string>
-    <string name="widget_description">Kapak, calan parca ve uc dugme.</string>
     <string name="widget_nothing_playing">Hicbir sey calmiyor</string>
-    <string name="widget_add">Ana ekrana ekle</string>
+    <string name="widget_label_row">Calaniyor</string>
+    <string name="widget_label_square">Calaniyor, kare</string>
+    <string name="widget_label_tall">Calaniyor, uzun</string>
+    <string name="widget_description_row">Kapak, calan parca ve uc dugme.</string>
+    <string name="widget_description_square">Kapak, baslik ve uc dugme.</string>
+    <string name="widget_description_tall">Buyuk bir kapak, calan parca ve uc dugme.</string>
+    <string name="widget_add_row">Satiri ana ekrana ekle</string>
+    <string name="widget_add_square">Kareyi ekle</string>
+    <string name="widget_add_tall">Uzun olani ekle</string>
+    <string name="widget_add_note">Arkada kapak, calan parca ve uc dugme. Uygulamanin temasini izler.</string>
 </resources>

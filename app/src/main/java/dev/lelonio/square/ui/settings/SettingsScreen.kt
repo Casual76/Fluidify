@@ -735,27 +735,33 @@ private fun WidgetSection() {
     if (!supported) return
 
     Section(stringResource(R.string.widget_label)) {
-        ActionRow(stringResource(R.string.widget_add), destructive = false) {
-            runCatching {
-                manager.requestPinAppWidget(
-                    ComponentName(
-                        context,
-                        dev.lelonio.square.widget.NowPlayingWidgetReceiver::class.java,
-                    ),
-                    null,
-                    null,
-                )
+        // One row per shape, because the shape is the choice. A single row would have to pick one
+        // for the listener, and the whole reason there are three is that a home screen is a grid
+        // somebody has already arranged.
+        WidgetShapes.forEachIndexed { index, (label, receiver) ->
+            if (index > 0) RowDivider()
+            ActionRow(stringResource(label), destructive = false) {
+                runCatching {
+                    manager.requestPinAppWidget(ComponentName(context, receiver), null, null)
+                }
             }
         }
         RowDivider()
         Text(
-            stringResource(R.string.widget_description),
+            stringResource(R.string.widget_add_note),
             style = MaterialTheme.typography.bodySmall,
             color = InkDim,
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
         )
     }
 }
+
+/** The three the picker offers, in the order they are offered. */
+private val WidgetShapes = listOf(
+    R.string.widget_add_row to dev.lelonio.square.widget.NowPlayingWidgetRowReceiver::class.java,
+    R.string.widget_add_square to dev.lelonio.square.widget.NowPlayingWidgetSquareReceiver::class.java,
+    R.string.widget_add_tall to dev.lelonio.square.widget.NowPlayingWidgetTallReceiver::class.java,
+)
 
 @Composable
 private fun CrossfadeSection() {
