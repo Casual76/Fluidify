@@ -6,7 +6,6 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.scaleIn
 import androidx.compose.animation.scaleOut
-import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,8 +16,8 @@ import dev.lelonio.square.ui.theme.softShadow
 import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.ui.glass.shapes.ContinuousCapsule
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.BoxScope
@@ -45,103 +44,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.Check
-import androidx.compose.ui.window.Popup
-import androidx.compose.ui.window.PopupProperties
-
-/**
- * A context menu, in a window of its own so nothing can be drawn over it.
- *
- * It went through both other options first, and both are worse. Material's
- * `DropdownMenu` is an opaque elevated card — the one surface in the app that
- * announces it came from a different design system. Drawing it inside the
- * screen instead let it refract the page properly, and put it *under* the mini
- * player and the tab bar, which are drawn above the whole navigation host: a
- * menu with the now-playing bar across it.
- *
- * So: a popup. A popup is its own window and cannot sample a layer belonging to
- * another one, which means no real refraction, which in turn is why this is
- * opaque rather than a pane of glass with nothing behind it. It keeps the shape,
- * the corner radius and the hairline of the rest of the app, and gives up the
- * one property it cannot honestly have.
- *
- * @param anchor where the menu's top-left corner goes, in pixels from the top
- *   left of the window. See [MENU_WIDTH] for placing it by its right edge.
- */
-@Composable
-fun GlassMenu(
-    visible: Boolean,
-    anchor: IntOffset,
-    onDismiss: () -> Unit,
-    content: @Composable ColumnScope.() -> Unit,
-) {
-    // Kept so the exit animation has something to play. `visible` going false
-    // is the *start* of the closing, not the end of it.
-    val open = remember { MutableTransitionState(false) }
-    open.targetState = visible
-    if (!open.currentState && !open.targetState) return
-
-    Popup(
-        onDismissRequest = onDismiss,
-        offset = anchor,
-        properties = PopupProperties(focusable = true),
-    ) {
-        AnimatedVisibility(
-            visibleState = open,
-            // Grows out of the corner it was opened from, which is the only
-            // thing tying it to the button that was tapped.
-            enter = scaleIn(tween(170), initialScale = 0.86f, transformOrigin = TopEnd) +
-                fadeIn(tween(120)),
-            exit = scaleOut(tween(130), targetScale = 0.9f, transformOrigin = TopEnd) +
-                fadeOut(tween(110)),
-        ) {
-            val shape = RoundedCornerShape(20.dp)
-            // Opaque, because a popup is its own window and cannot sample a
-            // layer belonging to another one — see the note on this function.
-            // What it can do is be the same colour as the menu that does have
-            // glass, so the two read as one thing rather than two designs: the
-            // settings' own tint, over a base dark enough to stand alone.
-            Column(
-                Modifier
-                    .width(MENU_WIDTH)
-                    .clip(shape)
-                    .background(MenuSurface)
-                    .background(menuFilm())
-                    .border(1.dp, MenuEdge, shape)
-                    .padding(vertical = 6.dp),
-                content = content,
-            )
-        }
-    }
-}
-
-@Composable
-fun GlassMenuItem(
-    label: String,
-    icon: ImageVector,
-    /** Drawn in the error colour: this one takes something away. */
-    destructive: Boolean = false,
-    onClick: () -> Unit,
-) {
-    val tint = if (destructive) MaterialTheme.colorScheme.error else dev.lelonio.square.ui.theme.Ink
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 13.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(19.dp))
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = tint,
-            modifier = Modifier.padding(start = 14.dp),
-        )
-    }
-}
-
-/** How wide a menu is, so a caller can place it by its right edge. */
-val MENU_WIDTH = 244.dp
 
 private val TopEnd = TransformOrigin(1f, 0f)
 

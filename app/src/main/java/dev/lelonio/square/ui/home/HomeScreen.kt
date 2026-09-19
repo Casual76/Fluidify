@@ -1300,11 +1300,6 @@ private fun greeting(): Int = when (Calendar.getInstance().get(Calendar.HOUR_OF_
     else -> R.string.good_evening
 }
 
-/** A harder film for the chip that is on; see the note at the call site. */
-private val SelectedFilm: androidx.compose.ui.graphics.Color
-    @androidx.compose.runtime.Composable get() =
-        dev.lelonio.square.ui.theme.glassFilm(0.26f)
-
 /** Comfortably under the 640px Spotify serves, so it is never upscaled. */
 private val COVER_SIZE = 210.dp
 

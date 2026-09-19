@@ -63,7 +63,6 @@ import com.adamglin.phosphoricons.fill.Play
 import com.adamglin.phosphoricons.fill.SkipForward
 import dev.lelonio.square.R
 import dev.antigravity.fluidengine.ui.glass.interaction.GlassTouchHighlight
-import dev.lelonio.square.ui.glass.ScrollingWaveformSeekBar
 import dev.lelonio.square.ui.components.Artwork
 import kotlinx.coroutines.launch
 import kotlin.math.abs

@@ -153,7 +153,15 @@ fun AppPlate(
     val accent = androidx.compose.material3.MaterialTheme.colorScheme.primary
     // The light on the plate, tinted by the accent rather than plain white:
     // what catches the edge is the app's own glow coming from behind.
-    val glint = androidx.compose.ui.graphics.lerp(accent, Color.White, 0.55f)
+    //
+    // Which way the accent is pushed follows the page, for the reason `glassEdge` gives: an edge
+    // works by being unlike what it ends. Pushed towards white on both sides it was a pale ring on
+    // a pale plate, which is a rim that has stopped being one.
+    val glint = androidx.compose.ui.graphics.lerp(
+        accent,
+        if (dev.lelonio.square.ui.theme.onDarkPage) Color.White else Color.Black,
+        0.55f,
+    )
     GlassButton(
         onClick = {},
         isInteractive = false,

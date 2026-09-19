@@ -89,7 +89,7 @@ fun BoxScope.SharedTrackCard(
                     backdrop = backdrop,
                     shape = { RectangleShape },
                     effects = { blur(30f.dp.toPx()) },
-                    onDrawSurface = { drawRect(Color.Black.copy(alpha = 0.52f)) },
+                    onDrawSurface = { drawRect(dev.lelonio.square.ui.theme.sheetScrim(0.52f)) },
                 )
                 .clickable(interactionSource = null, indication = null, onClick = onDismiss),
         )

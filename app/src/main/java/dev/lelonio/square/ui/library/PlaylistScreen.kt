@@ -64,7 +64,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.runtime.mutableFloatStateOf
 import dev.lelonio.square.ui.player.GlassSurface
-import dev.lelonio.square.ui.components.MENU_WIDTH
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalDensity
@@ -1181,7 +1180,13 @@ private fun HeroArt(
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        0f to Color.Black.copy(alpha = 0.35f),
+                        // Turns over with the page, because what it is protecting turns over
+                        // too. This darkens the top of the sleeve so that what sits on it stays
+                        // legible — and on a light phone what sits on it is the system clock in
+                        // near-black glyphs, which a black wash was making harder to read rather
+                        // than easier. `pageWash` is the helper for exactly this and it was the
+                        // one stop of this gradient not going through it.
+                        0f to dev.lelonio.square.ui.theme.pageWash(0.35f),
                         0.28f to Color.Transparent,
                         0.58f to pageColor.copy(alpha = 0.55f),
                         0.82f to pageColor.copy(alpha = 0.94f),

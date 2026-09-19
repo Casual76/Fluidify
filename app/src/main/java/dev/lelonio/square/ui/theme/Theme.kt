@@ -135,6 +135,9 @@ fun SquareTheme(
     content: @Composable () -> Unit,
 ) {
     FluidTheme(
+        // Handed through, not only applied above: FluidTheme sets the bars itself, so a theme that
+        // does not claim them has to say so twice or the engine claims them on its behalf.
+        systemBars = systemBars,
         settings = EngineSettings(
             themeMode = when {
                 !darkTheme -> EngineThemeMode.LIGHT
@@ -489,6 +492,18 @@ private val PageFloorLight = Color(0xFFF1F2F6)
  */
 fun inkOn(background: Color): Color =
     if (background.luminance() > 0.42f) LightInk else DarkInk
+
+/**
+ * The wash behind a sheet, and the one wash in the app that does *not* turn over.
+ *
+ * [pageWash] exists to carry ink over a picture, so it follows the side. This one exists to push a
+ * page away — to say "what you were reading is behind this now" — and pushing away is darkening on
+ * both sides. A light page washed lighter does not recede, it merely goes flat.
+ *
+ * Written out by hand at four call sites, all agreeing, which is three opportunities for the next
+ * person to notice the inconsistency and "fix" it. The decision belongs somewhere it can be read.
+ */
+fun sheetScrim(alpha: Float): Color = Color.Black.copy(alpha = alpha)
 
 /**
  * A page that paints its own ground, and therefore has to say so.

@@ -83,7 +83,7 @@ fun AddToPlaylistSheet(
                     backdrop = backdrop,
                     shape = { RectangleShape },
                     effects = { blur(28f.dp.toPx()) },
-                    onDrawSurface = { drawRect(Color.Black.copy(alpha = 0.42f)) },
+                    onDrawSurface = { drawRect(dev.lelonio.square.ui.theme.sheetScrim(0.42f)) },
                 )
                 .clickable(interactionSource = null, indication = null, onClick = onDismiss),
         )

@@ -409,11 +409,6 @@ private fun StatusBox(content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** The chip that is lit, filled a little harder than the rest; see the home page. */
-private val SelectedFilm: androidx.compose.ui.graphics.Color
-    @androidx.compose.runtime.Composable get() =
-        dev.lelonio.square.ui.theme.glassFilm(0.26f)
-
 /**
  * The pill behind "lyrics match": lighter than a lit chip.
  *

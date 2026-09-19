@@ -86,61 +86,11 @@ data class GlassEffectConfig(
     /** Puck wash opacity at rest. It eases toward clear while pressed. */
     val puckOpacity: Float = 0.8f,
     val surfaceOpacity: Float = 0.5f,
-    val textColor: Color = Color.White,
     val playerEnabled: Boolean = true,
     val miniPlayerEnabled: Boolean = true,
     val navBarEnabled: Boolean = true,
-    /** Tablet side panel — split from [navBarEnabled] so it can differ from the
-     *  phone bottom bar's glass setting instead of always mirroring it. */
-    val sidePanelEnabled: Boolean = true,
-    /** Side panel gets its own effect tuning (unlike the other components,
-     *  which all share [vibrancy]/[blurRadius]/[lensHeight]/[lensAmount]) —
-     *  defaults match those shared values so it looks identical until
-     *  explicitly customized. */
-    val sidePanelVibrancy: Float = 1.2f,
-    val sidePanelBlurRadius: Float = 2f,
-    val sidePanelLensHeight: Float = 0.4f,
-    val sidePanelLensAmount: Float = 0.6f,
-    val sidePanelColor: Color = Color.Unspecified,
-    val sidePanelSurfaceOpacity: Float = 0.5f,
-    val sidePanelTextColor: Color = Color.White,
-) {
-    /** A copy of this config with the shared effect fields swapped for the
-     *  side panel's own — pass this to Modifier.liquidGlass for the side
-     *  panel instead of the raw config, since liquidGlass always reads the
-     *  shared fields generically. */
-    fun forSidePanel(): GlassEffectConfig = copy(
-        vibrancy = sidePanelVibrancy,
-        blurRadius = sidePanelBlurRadius,
-        lensHeight = sidePanelLensHeight,
-        lensAmount = sidePanelLensAmount,
-        surfaceTintColor = sidePanelColor,
-        surfaceOpacity = sidePanelSurfaceOpacity,
-        textColor = sidePanelTextColor,
-    )
-    /**
-     * Whether the glass effect should be rendered for [component], taking the master
-     * switch and the per-component switch into account.
-     */
-    fun isEnabledFor(component: GlassComponent): Boolean =
-        globalEnabled && when (component) {
-            GlassComponent.PLAYER -> playerEnabled
-            GlassComponent.MINI_PLAYER -> miniPlayerEnabled
-            GlassComponent.NAV_BAR -> navBarEnabled
-            GlassComponent.SIDE_PANEL -> sidePanelEnabled
-        }
+)
 
-    /**
-     * True when at least one surface would render glass. Used to decide whether
-     * capturing the app backdrop is worth anything at all — with every component
-     * off, nothing samples it and recording it is pure cost.
-     */
-    val anyComponentEnabled: Boolean
-        get() = globalEnabled &&
-            (playerEnabled || miniPlayerEnabled || navBarEnabled || sidePanelEnabled)
-}
-
-/** UI surfaces that can individually opt in or out of the liquid glass effect. */
 /**
  * How a glass surface is rendered.
  *
@@ -260,32 +210,6 @@ fun isGlassAllowed(): Boolean = isGlassSupported() && !isLowRamDevice()
 fun glassSaturation(vibrancy: Float): Float = 1f + 0.5f * vibrancy.coerceIn(0f, 2f)
 
 /**
- * A content colour guaranteed to read against the glass it sits on.
- *
- * Picking purely from the app theme is not enough: what a glass pill actually
- * shows is the content behind it, tinted by [tint] at [opacity]. A dark tint at
- * high opacity is dark even in light mode, and a light tint is light even in
- * dark mode — so theme-derived text goes invisible at exactly the settings a
- * user is most likely to reach for. This composites the same two layers the
- * surface draws and picks from the result.
- *
- * @param behind the colour behind the glass — the theme surface, or the screen's
- * artwork tint where one is known.
- * @param tint the glass surface tint; [Color.Unspecified] means untinted.
- * @param opacity how strongly [tint] covers [behind], matching surfaceOpacity.
- */
-fun glassContentColorFor(behind: Color, tint: Color, opacity: Float): Color {
-    val effective = if (tint.isSpecified) {
-        lerp(behind, tint, opacity.coerceIn(0f, 1f))
-    } else {
-        behind
-    }
-    // Same targets the rest of the app uses for on-surface text, so glass chrome
-    // matches ordinary content rather than being its own special case.
-    return if (effective.luminance() > 0.5f) Color(0xFF1A1A1A) else Color.White
-}
-
-/**
  * Apple's floating pills have a thin, subtle specular line along the top edge — a
  * hint of light, not a bold ring. The library's [Highlight.Default] (0.5dp, white @
  * 0.5 alpha) reads as near-invisible at typical density, but a wide bright rim
@@ -395,13 +319,6 @@ val LocalAppBackdrop = staticCompositionLocalOf<Backdrop> { error("No AppBackdro
  * Null (default) keeps every surface's existing single-layer behavior.
  */
 val LocalBackdropLoopBucket = staticCompositionLocalOf<(() -> Int)?> { null }
-
-/**
- * Whether the Apple Music-styled UI (iOS 26/27 liquid glass look, SF-style tab icons,
- * denser glass) is active. Read by [com.convx.music.ui.screens.Screens] consumers to pick
- * between the classic and iOS icon sets.
- */
-val LocalAppleMusicUi = staticCompositionLocalOf { false }
 
 /**
  * Renders this composable as a liquid glass surface sampling [LocalAppBackdrop].

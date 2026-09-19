@@ -308,9 +308,17 @@ private fun LyricRow(
                     Text(
                         text = text,
                         style = style.copy(
+                            // The line's own bloom, in the ink's colour.
+                            //
+                            // White on both sides was a bloom on a dark page and, on a light one,
+                            // a white blur behind near-black letters — which does not merely
+                            // vanish, it eats into them. Taking the ink keeps it identical where
+                            // it worked and turns it into weight where it did not: a soft dark
+                            // halo is what "this line is lit" looks like on paper.
                             shadow = if (lineBump > 0.05f) {
                                 androidx.compose.ui.graphics.Shadow(
-                                    color = Color.White.copy(alpha = 0.4f * lineBump),
+                                    color = dev.lelonio.square.ui.theme.Ink
+                                        .copy(alpha = 0.4f * lineBump),
                                     offset = androidx.compose.ui.geometry.Offset.Zero,
                                     blurRadius = 16f * lineBump,
                                 )
@@ -374,9 +382,11 @@ private fun LyricRow(
                         Text(
                             text = piece,
                             style = style.copy(
+                                // Word by word, the same bloom as the line above.
                                 shadow = if (bump > 0.05f) {
                                     androidx.compose.ui.graphics.Shadow(
-                                        color = Color.White.copy(alpha = 0.4f * bump),
+                                        color = dev.lelonio.square.ui.theme.Ink
+                                            .copy(alpha = 0.4f * bump),
                                         offset = androidx.compose.ui.geometry.Offset.Zero,
                                         blurRadius = 16f * bump,
                                     )
