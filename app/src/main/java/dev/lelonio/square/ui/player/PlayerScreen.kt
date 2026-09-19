@@ -614,17 +614,21 @@ fun PlayerScreen(
                     animationSpec = tween(420),
                     label = "canvasVeil",
                 )
-                // The page's own wash, on top of the one the app's backdrop
-                // already lays down, and denser at the foot because that is
-                // where the transport is. Read out here because a draw block is
-                // not a place a theme can be asked from — and it has to be
-                // asked: this was black on both sides, so a light page washed
-                // its cover *away* from the paper its ink had turned into, and
-                // the result was near-black letters on a mid grey.
-                val washTop = dev.lelonio.square.ui.theme.pageWash(0.28f)
-                val washMid = dev.lelonio.square.ui.theme.pageWash(0.18f)
-                val washFoot = dev.lelonio.square.ui.theme.pageWash(0.52f)
-                val washPaused = dev.lelonio.square.ui.theme.pageWash(1f)
+                // Black on both sides, and this one does not turn over.
+                //
+                // It is the odd one out and it is worth saying why. Everywhere
+                // else a wash over a picture exists to carry the page's ink, so
+                // on paper it has to push towards paper — see pageWash. This one
+                // is grading a video. A moving picture put behind controls gets
+                // darkened, in every player there has ever been, because that is
+                // what the eye reads as "this is behind something"; lightening
+                // it washes the clip out and looks, in the one word that decided
+                // it, unnatural.
+                //
+                // What follows the page instead is the ink: see the override
+                // below, which puts the letters on the light side of a surface
+                // this has just made dark. The wash and the ink both moved, and
+                // only one of them had to.
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -633,21 +637,36 @@ fun PlayerScreen(
                             drawRect(
                                 brush = Brush.verticalGradient(
                                     listOf(
-                                        washTop.copy(alpha = washTop.alpha * shade),
-                                        washMid.copy(alpha = washMid.alpha * shade),
-                                        washFoot.copy(alpha = washFoot.alpha * shade),
+                                        Color.Black.copy(alpha = 0.28f * shade),
+                                        Color.Black.copy(alpha = 0.18f * shade),
+                                        Color.Black.copy(alpha = 0.52f * shade),
                                     ),
                                 ),
                             )
                             drawContent()
-                            drawRect(washPaused, alpha = dim.value * PAUSED_DIM * shade)
+                            drawRect(Color.Black, alpha = dim.value * PAUSED_DIM * shade)
                         },
                 )
             }
         }
 
+        // Over a Canvas the player is a dark page, whatever the phone is set to.
+        //
+        // The clip is darkened for the controls' sake (see the wash above), so
+        // the surface everything here stands on is dark by construction — and a
+        // page that paints itself has to impose its own ink, which is the
+        // argument LocalInkOverride exists for and the same one a record's page
+        // makes. Without it the light side put near-black letters on a darkened
+        // video, which is the pair of changes that has to move together.
+        //
+        // It reaches further than the letters: onDarkPage is derived from the
+        // ink, so the rims, the films and the inverted ink of every pane on the
+        // player follow from this one line.
+        val overCanvas = canvas != null && canvasReady
         CompositionLocalProvider(
             LocalContentColor provides GlassInk,
+            dev.lelonio.square.ui.theme.LocalInkOverride provides
+                if (overCanvas) dev.lelonio.square.ui.theme.inkOn(Color.Black) else null,
             dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides playerGlass,
         ) {
             PlayerCollapseDrag(
