@@ -189,6 +189,13 @@ fun PlayerScreen(
     onTogglePlay: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
+    /**
+     * True while a Canvas is playing behind the controls.
+     *
+     * The caller turns the page dark on it; see the note at the call. A callback and not something
+     * read from here because the thing that has to react to it is the theme, which *wraps* this.
+     */
+    onCanvasVisible: (Boolean) -> Unit = {},
     onSeek: (Long) -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeat: () -> Unit,
@@ -625,10 +632,11 @@ fun PlayerScreen(
                 // it washes the clip out and looks, in the one word that decided
                 // it, unnatural.
                 //
-                // What follows the page instead is the ink: see the override
-                // below, which puts the letters on the light side of a surface
-                // this has just made dark. The wash and the ink both moved, and
-                // only one of them had to.
+                // What follows the picture instead is the page: standing on a
+                // clip this has just darkened, the player asks its caller for
+                // the dark theme whatever the phone is set to, and the letters,
+                // the films and the rims all turn over together. See the note
+                // under `overCanvas` below.
                 Box(
                     Modifier
                         .fillMaxSize()
@@ -650,39 +658,35 @@ fun PlayerScreen(
             }
         }
 
-        // Over a Canvas the player is a dark page, whatever the phone is set to.
+        // Said out loud rather than fixed here, because what has to change is the *theme*.
         //
-        // The clip is darkened for the controls' sake (see the wash above), so
-        // the surface everything here stands on is dark by construction — and a
-        // page that paints itself has to impose its own ink, which is the
-        // argument LocalInkOverride exists for and the same one a record's page
-        // makes. Without it the light side put near-black letters on a darkened
-        // video, which is the pair of changes that has to move together.
+        // A Canvas is a video graded for its own sake and darkened for the controls' sake, so the
+        // player standing on one is a dark page whatever the phone is set to. Turning the ink over
+        // here and leaving everything else was the first attempt and it was worse than the problem:
+        // white letters landed on a white film, because a film asks the theme and not the ink. Two
+        // half-measures make a mess where one whole one is easy — the caller wraps this in the dark
+        // theme, which is a side the whole app already knows how to look right on.
         //
-        // It reaches further than the letters: onDarkPage is derived from the
-        // ink, so the rims, the films and the inverted ink of every pane on the
-        // player follow from this one line.
+        // Reported rather than decided, because the theme is applied a level up, where the cover's
+        // accent is known: an accent is derived for the side it will be read on, and one worked out
+        // for paper is not the one this page wants.
         val overCanvas = canvas != null && canvasReady
-        val canvasInk =
-            if (overCanvas) dev.lelonio.square.ui.theme.inkOn(Color.Black) else null
-
-        // `canvasInk ?: GlassInk`, and the `?:` is the whole point of this line.
+        // Halfway through the clip's own crossfade, and not at the start of it.
         //
-        // A CompositionLocalProvider's arguments are evaluated **outside** the scope it creates, so
-        // `GlassInk` here reads the ink from before the override on the next line — which is how
-        // the player over a Canvas came out with a black title and a white artist, in the same
-        // capsule. The artist names `GlassInkDim` inside the subtree and got the new ink; the title
-        // has no colour of its own and inherits this, which still had the old one.
+        // A theme cannot dissolve — it is a set of tokens and it changes between one frame and the
+        // next — so the only thing left to choose is *when*, and the answer is the instant the
+        // picture underneath is least itself. At the midpoint the cover and the clip are each at
+        // half, which is the one moment in the change where nothing on screen is definitely one
+        // thing or the other, and the snap disappears into it. At either end it lands on a settled
+        // picture and reads as a flash.
+        LaunchedEffect(overCanvas) {
+            kotlinx.coroutines.delay(CLIP_FADE_MS / 2L)
+            onCanvasVisible(overCanvas)
+        }
+
         CompositionLocalProvider(
-            LocalContentColor provides (canvasInk ?: GlassInk),
-            dev.lelonio.square.ui.theme.LocalInkOverride provides canvasInk,
+            LocalContentColor provides GlassInk,
             dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides playerGlass,
-            // And the surfaces with the letters. Over a Canvas this player is a dark page whatever
-            // the phone is set to, so its glass has to take its dark form too — otherwise the ink
-            // turns white and lands on a white film. The engine asks this local; the app's own
-            // films ask `onDarkPage`, which is derived from the ink and therefore already right.
-            dev.antigravity.fluidengine.ui.fluid.LocalFluidSurfaceSide provides
-                if (overCanvas) true else null,
         ) {
             PlayerCollapseDrag(
                 onDrag = onMorphDrag,

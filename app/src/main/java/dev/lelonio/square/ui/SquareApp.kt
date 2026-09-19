@@ -2076,6 +2076,52 @@ fun SquareApp(
 
                 if (playback.hasItem && chrome > 0.01f) {
                     Box(Modifier.fillMaxSize().graphicsLayer { alpha = chrome }) {
+                    // Dark while a Canvas is playing, whatever the phone is set to.
+                    //
+                    // A Canvas is a video, darkened for the controls to be legible on it, so the
+                    // page standing on one is a dark page, and the light side has nothing to do
+                    // there — near-black letters over a darkened clip, which is what it was.
+                    // Turning the whole theme over rather than the ink alone is the difference
+                    // between a side the app is already good at and a pile of corrections that each
+                    // fix one symptom: a film asks the theme, a rim asks the ink, and half of them
+                    // turning over looks worse than none of them.
+                    //
+                    // Not AMOLED, whatever the setting says. True black is a page with the light
+                    // switched off; this one has a film of video playing on it, and a pane of glass
+                    // built to stand on nothing looks like a hole cut in the clip.
+                    //
+                    // Declared here rather than in the slot that discovers it, because the window's
+                    // floor has to turn over with its contents and that is a different slot. It is
+                    // also where it is forgotten: this whole block leaves composition once the
+                    // player is closed, so collapsing puts the page back on its own side with
+                    // nobody having to say so.
+                    var canvasVisible by remember { mutableStateOf(false) }
+                    val themeIsDark = dev.lelonio.square.ui.theme.rememberThemeIsDark()
+                    val themeIsAmoled = dev.lelonio.square.ui.theme.rememberThemeIsAmoled()
+                    val playerDark = canvasVisible || themeIsDark
+
+                    // The system bars' glyphs, on the way out.
+                    //
+                    // SquareTheme flips them in a SideEffect, which runs when *that theme*
+                    // recomposes — and the one underneath has no reason to recompose merely because
+                    // this one stopped existing. Without this, closing a player that had been over
+                    // a Canvas on a light page left white glyphs on white. A Canvas simply ending
+                    // is already covered: that recomposes this theme instead of removing it.
+                    val hostView = androidx.compose.ui.platform.LocalView.current
+                    DisposableEffect(hostView, themeIsDark) {
+                        onDispose {
+                            val hostWindow = (hostView.context as? android.app.Activity)?.window
+                            if (hostWindow != null && !hostView.isInEditMode) {
+                                androidx.core.view.WindowCompat
+                                    .getInsetsController(hostWindow, hostView)
+                                    .apply {
+                                        isAppearanceLightStatusBars = !themeIsDark
+                                        isAppearanceLightNavigationBars = !themeIsDark
+                                    }
+                            }
+                        }
+                    }
+
                     NowPlayingSheet(
                         progress = expand,
                         pillBounds = pillBounds,
@@ -2127,8 +2173,27 @@ fun SquareApp(
                                 )
                             }
                         },
-                        background = { AppBackdrop(playback.artworkUrl, alive = playback.isPlaying) },
+                        // Inside the same flip as the content above it, and that is not a
+                        // detail: this floor is opaque — near-black one way and paper the other —
+                        // and it is what shows wherever the clip does not reach. Left on the app's
+                        // own side it put a paper border round a player that had just gone dark.
+                        background = {
+                            SquareTheme(
+                                darkTheme = playerDark,
+                                amoled = themeIsAmoled && !canvasVisible,
+                            ) {
+                                AppBackdrop(playback.artworkUrl, alive = playback.isPlaying)
+                            }
+                        },
                         expandedContent = {
+                         // Outside ArtworkAccentTheme on purpose. The accent is derived for the side
+                         // it is about to be read on — lifted towards the light on a dark page,
+                         // deepened on a paper one — so the order matters: the side is settled
+                         // first, and the cover's colour is worked out against it.
+                         SquareTheme(
+                             darkTheme = playerDark,
+                             amoled = themeIsAmoled && !canvasVisible,
+                         ) {
                          dev.lelonio.square.ui.theme.ArtworkAccentTheme(seed = accent) {
                           // The player is the largest glass surface in the app by
                           // a wide margin, so the settings' switch for it is the
@@ -2142,6 +2207,7 @@ fun SquareApp(
                             PlayerScreen(
                                 state = playerState,
                                 positionMs = positionMs,
+                                onCanvasVisible = { canvasVisible = it },
                                 videoFileId = videoFileId,
                                 videoMode = spotifyVideoOn,
                                 onToggleVideo = {
@@ -2304,6 +2370,7 @@ fun SquareApp(
                                 videoAttachKey = spotifyVideoGeneration,
                             )
                           }
+                         }
                          }
                         },
                     )
