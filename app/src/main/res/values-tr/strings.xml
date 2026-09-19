@@ -408,4 +408,5 @@
     <string name="widget_add_square">Kareyi ekle</string>
     <string name="widget_add_tall">Uzun olani ekle</string>
     <string name="widget_add_note">Arkada kapak, calan parca ve uc dugme. Uygulamanin temasini izler.</string>
+    <string name="widget_nothing_playing_hint">Fluidify&#8217;i ac ve oynata bas</string>
 </resources>

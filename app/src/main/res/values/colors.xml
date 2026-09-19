@@ -20,4 +20,14 @@
     <color name="widget_preview_ink_dim">#FF6B6873</color>
     <color name="widget_preview_accent">#FFE9DDFF</color>
     <color name="widget_preview_on_accent">#FF25005B</color>
+
+    <!-- I colori di partenza della scheda del widget, portati da Pampa Widgets insieme a lei.
+         Sono le tinte dei glifi e dei riempimenti prima che il disegnatore li ricolori dal
+         quadro: vivono qui perche' i vettori dei tasti li nominano, e il disegnatore applica
+         il proprio sopra. Vedi MediaWidgetUpdater. -->
+    <color name="widget_on_surface">#F8FFFB</color>
+    <color name="widget_on_surface_variant">#DDE7E0</color>
+    <color name="widget_primary">#F5FFF9</color>
+    <color name="widget_on_primary">#102018</color>
+    <color name="widget_accent">#DDFBEA</color>
 </resources>

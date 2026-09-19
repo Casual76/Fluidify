@@ -467,7 +467,7 @@ fun Modifier.liquidGlass(
     // this design is a translucent film: luminance ignores alpha, so that test
     // said "light" on both sides and the branch under it was dead. See
     // LocalLightTheme.
-    val lightPage = dev.lelonio.square.ui.theme.LocalLightTheme.current
+    val lightPage = !dev.lelonio.square.ui.theme.onDarkPage
     val surfaceTintColor = if (lightPage && config.surfaceTintColor == DefaultSurfaceTint) {
         // The default's light twin. The default itself is a dark grey — right
         // for a page that is artwork under a dark veil, and on a light page a

@@ -267,9 +267,6 @@ dependencies {
     // e aggiornamento in-app via Pampa Store.
     implementation(project(":engine-ui"))
     implementation(project(":engine-update"))
-    // Il widget in riproduzione: la tavolozza esce dalle stesse impostazioni del tema, cosi' la
-    // schermata iniziale non mostra i colori del mese scorso.
-    implementation(project(":engine-widget"))
 
     coreLibraryDesugaring(libs.desugaring)
 }

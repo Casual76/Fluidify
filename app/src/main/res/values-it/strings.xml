@@ -394,4 +394,5 @@
     <string name="widget_add_square">Aggiungi il quadrato</string>
     <string name="widget_add_tall">Aggiungi quello alto</string>
     <string name="widget_add_note">La copertina dietro, cosa sta suonando, e i tre tasti. Segue il tema dell&#8217;app.</string>
+    <string name="widget_nothing_playing_hint">Apri Fluidify e premi play</string>
 </resources>

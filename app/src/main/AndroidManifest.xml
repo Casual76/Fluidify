@@ -127,52 +127,29 @@
         </activity>
 
         <!--
-          Il widget in riproduzione, in tre forme.
+          Il widget in riproduzione.
 
-          Tre provider e non uno ridimensionabile, perche' l'utente le sceglie dal
-          selettore: un widget solo con tre misure suggerite compare una volta
-          sola, e chi lo aggiunge si ritrova la forma predefinita da trascinare.
-          La composizione e' la stessa per tutti e tre - vedi NowPlayingWidget,
-          che sceglie la disposizione dalla misura vera della cella, cosi' uno
-          trascinato in un'altra forma diventa quello giusto per lei.
+          La scheda e' quella di Pampa Widgets, portata qui con il suo disegno; vedi
+          NowPlayingWidget. Lo stato glielo scrive il servizio, perche' il launcher
+          la disegna in un processo suo e magari ore dopo che il nostro e' morto.
 
-          Lo stato glielo scrive il servizio, perche' il launcher lo disegna in un
-          processo suo e magari ore dopo che il nostro e' morto.
+          `exported` vero perche' il launcher gli manda APPWIDGET_UPDATE, e le tre
+          azioni dei tasti arrivano dai PendingIntent della scheda stessa.
         -->
         <receiver
-            android:name=".widget.NowPlayingWidgetRowReceiver"
-            android:exported="false"
+            android:name=".widget.media.NowPlayingWidget"
+            android:exported="true"
             android:label="@string/widget_label_row">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+                <action android:name="dev.lelonio.square.widget.media.action.TOGGLE_PLAY_PAUSE" />
+                <action android:name="dev.lelonio.square.widget.media.action.NEXT" />
+                <action android:name="dev.lelonio.square.widget.media.action.PREVIOUS" />
+                <action android:name="dev.lelonio.square.widget.media.action.REFRESH" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
-                android:resource="@xml/now_playing_widget_row" />
-        </receiver>
-
-        <receiver
-            android:name=".widget.NowPlayingWidgetSquareReceiver"
-            android:exported="false"
-            android:label="@string/widget_label_square">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/now_playing_widget_square" />
-        </receiver>
-
-        <receiver
-            android:name=".widget.NowPlayingWidgetTallReceiver"
-            android:exported="false"
-            android:label="@string/widget_label_tall">
-            <intent-filter>
-                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-            </intent-filter>
-            <meta-data
-                android:name="android.appwidget.provider"
-                android:resource="@xml/now_playing_widget_tall" />
+                android:resource="@xml/now_playing_widget" />
         </receiver>
 
         <service

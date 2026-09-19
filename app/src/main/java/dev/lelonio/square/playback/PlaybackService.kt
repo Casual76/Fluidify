@@ -233,12 +233,10 @@ class PlaybackService : MediaLibraryService() {
             ) = pushWidget()
 
             private fun pushWidget() {
-                scope.launch {
-                    dev.lelonio.square.widget.NowPlayingWidgetBridge.push(
-                        this@PlaybackService,
-                        player,
-                    )
-                }
+                dev.lelonio.square.widget.media.NowPlayingWidgetBridge.push(
+                    this@PlaybackService,
+                    player,
+                )
             }
 
             /**

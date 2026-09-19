@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  Il widget in riproduzione.
+
+  Preso da Pampa Widgets insieme alla scheda, meno la schermata di
+  configurazione: li' serve a scegliere quale lettore guardare, e qui il lettore
+  e' l'app stessa. Ridimensionabile nelle due direzioni da 110 dp in su - la
+  scheda decide da sola quanto mostrare alla misura che riceve.
+
+  `updatePeriodMillis` e' zero perche' questo widget non si aggiorna da solo:
+  glielo dice il servizio quando cambia qualcosa.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_description_row"
+    android:initialLayout="@layout/widget_media_controls"
+    android:previewLayout="@layout/widget_media_controls"
+    android:minWidth="110dp"
+    android:minHeight="110dp"
+    android:minResizeWidth="110dp"
+    android:minResizeHeight="110dp"
+    android:resizeMode="horizontal|vertical"
+    android:targetCellWidth="4"
+    android:targetCellHeight="2"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

@@ -198,7 +198,7 @@ fun CoroutineScope.settlePlayerMorph(
  */
 @Composable
 fun rememberPillMorphTint(): GlassTint =
-    if (dev.lelonio.square.ui.theme.LocalLightTheme.current) {
+    if (!dev.lelonio.square.ui.theme.onDarkPage) {
         dev.antigravity.fluidengine.ui.fluid.GlassDefaults.floatingTint()
     } else {
         dev.antigravity.fluidengine.ui.fluid.GlassDefaults.darkFloatingTint()

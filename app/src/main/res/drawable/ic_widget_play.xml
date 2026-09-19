@@ -1,7 +1,10 @@
-<?xml version="1.0" encoding="utf-8"?><!-- Phosphor Fill/Play, for the home screen. Tinted by the widget. -->
+<?xml version="1.0" encoding="utf-8"?>
 <vector xmlns:android="http://schemas.android.com/apk/res/android"
-    android:width="24dp" android:height="24dp"
-    android:viewportWidth="256" android:viewportHeight="256">
-    <path android:fillColor="#FFFFFFFF"
-        android:pathData="M232,128a15.76,15.76,0,0,1-7.33,13.34L88.09,229.9A15.91,15.91,0,0,1,64,216.56V39.44A15.91,15.91,0,0,1,88.09,26.1l136.58,88.56A15.76,15.76,0,0,1,232,128Z" />
+  android:width="28dp"
+  android:height="28dp"
+  android:viewportWidth="24"
+  android:viewportHeight="24">
+  <path
+    android:fillColor="@color/widget_on_primary"
+    android:pathData="M8,5.14v13.72c0,0.8 0.9,1.28 1.56,0.84l10.08,-6.86c0.58,-0.4 0.58,-1.26 0,-1.66L9.56,4.3C8.9,3.86 8,4.34 8,5.14z" />
 </vector>

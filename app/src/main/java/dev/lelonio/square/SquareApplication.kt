@@ -64,7 +64,7 @@ class SquareApplication : Application() {
             kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default,
         ).launch {
             preferences.themeMode.drop(1).collect {
-                dev.lelonio.square.widget.NowPlayingWidgetBridge
+                dev.lelonio.square.widget.media.NowPlayingWidgetBridge
                     .redraw(this@SquareApplication)
             }
         }

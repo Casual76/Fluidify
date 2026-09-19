@@ -154,7 +154,7 @@ private val TopEnd = TransformOrigin(1f, 0f)
  */
 private val MenuSurface: androidx.compose.ui.graphics.Color
     @androidx.compose.runtime.Composable get() =
-        if (dev.lelonio.square.ui.theme.LocalLightTheme.current) {
+        if (!dev.lelonio.square.ui.theme.onDarkPage) {
             Color(0xFFFBFBFD)
         } else {
             Color(0xFF16161A)

@@ -139,16 +139,14 @@ private fun GallerySide(dark: Boolean, amoled: Boolean, modifier: Modifier = Mod
                                     .clip(RoundedCornerShape(percent = 50))
                                     .background(glassFilm(0.16f))
                                     .clickable {
-                                        scope.launch {
-                                            dev.lelonio.square.widget.NowPlayingWidgetBridge.push(
+                                        dev.lelonio.square.widget.media.NowPlayingWidgetBridge
+                                            .preview(
                                                 context = context,
                                                 title = "Un brano di prova",
                                                 artist = "Fluidify",
                                                 artworkUrl = SampleCover,
                                                 playing = playing,
-                                                hasItem = true,
                                             )
-                                        }
                                     }
                                     .padding(horizontal = 10.dp, vertical = 6.dp),
                             )

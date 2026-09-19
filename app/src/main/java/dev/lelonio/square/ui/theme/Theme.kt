@@ -308,10 +308,10 @@ private val LightFilmStrong = Color.White.copy(alpha = 0.72f)
  * actually depend on.
  */
 @Composable
-fun glassFilm(darkAlpha: Float): Color = if (LocalLightTheme.current) {
-    Color.White.copy(alpha = (LightFilmFloor + darkAlpha).coerceAtMost(0.92f))
-} else {
+fun glassFilm(darkAlpha: Float): Color = if (onDarkPage) {
     Color.White.copy(alpha = darkAlpha)
+} else {
+    Color.White.copy(alpha = (LightFilmFloor + darkAlpha).coerceAtMost(0.92f))
 }
 
 /**

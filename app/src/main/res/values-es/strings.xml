@@ -393,4 +393,5 @@
     <string name="widget_add_square">Anadir el cuadrado</string>
     <string name="widget_add_tall">Anadir el alto</string>
     <string name="widget_add_note">La portada detras, lo que suena, y los tres botones. Sigue el tema de la aplicacion.</string>
+    <string name="widget_nothing_playing_hint">Abre Fluidify y pulsa play</string>
 </resources>

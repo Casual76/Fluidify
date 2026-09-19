@@ -663,11 +663,26 @@ fun PlayerScreen(
         // ink, so the rims, the films and the inverted ink of every pane on the
         // player follow from this one line.
         val overCanvas = canvas != null && canvasReady
+        val canvasInk =
+            if (overCanvas) dev.lelonio.square.ui.theme.inkOn(Color.Black) else null
+
+        // `canvasInk ?: GlassInk`, and the `?:` is the whole point of this line.
+        //
+        // A CompositionLocalProvider's arguments are evaluated **outside** the scope it creates, so
+        // `GlassInk` here reads the ink from before the override on the next line — which is how
+        // the player over a Canvas came out with a black title and a white artist, in the same
+        // capsule. The artist names `GlassInkDim` inside the subtree and got the new ink; the title
+        // has no colour of its own and inherits this, which still had the old one.
         CompositionLocalProvider(
-            LocalContentColor provides GlassInk,
-            dev.lelonio.square.ui.theme.LocalInkOverride provides
-                if (overCanvas) dev.lelonio.square.ui.theme.inkOn(Color.Black) else null,
+            LocalContentColor provides (canvasInk ?: GlassInk),
+            dev.lelonio.square.ui.theme.LocalInkOverride provides canvasInk,
             dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides playerGlass,
+            // And the surfaces with the letters. Over a Canvas this player is a dark page whatever
+            // the phone is set to, so its glass has to take its dark form too — otherwise the ink
+            // turns white and lands on a white film. The engine asks this local; the app's own
+            // films ask `onDarkPage`, which is derived from the ink and therefore already right.
+            dev.antigravity.fluidengine.ui.fluid.LocalFluidSurfaceSide provides
+                if (overCanvas) true else null,
         ) {
             PlayerCollapseDrag(
                 onDrag = onMorphDrag,

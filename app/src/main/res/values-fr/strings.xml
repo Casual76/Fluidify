@@ -393,4 +393,5 @@
     <string name="widget_add_square">Ajouter le carre</string>
     <string name="widget_add_tall">Ajouter le haut</string>
     <string name="widget_add_note">La pochette derriere, ce qui joue, et les trois boutons. Il suit le theme de l&#8217;application.</string>
+    <string name="widget_nothing_playing_hint">Ouvre Fluidify et appuie sur lecture</string>
 </resources>

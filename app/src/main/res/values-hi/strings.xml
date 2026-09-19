@@ -408,4 +408,5 @@
     <string name="widget_add_square">वर्ग जोड़ें</string>
     <string name="widget_add_tall">लंबा जोड़ें</string>
     <string name="widget_add_note">पीछे कवर, जो चल रहा है, और तीन बटन।</string>
+    <string name="widget_nothing_playing_hint">Fluidify खोलें और प्ले दबाएं</string>
 </resources>
