@@ -314,6 +314,37 @@ private const val BRIGHT_FROM = 0.42f
 private const val BRIGHT_TO = 0.72f
 
 /**
+ * The colour of the film a pane is tinted with, on the side it is being drawn on.
+ *
+ * Pulled out of [liquidGlass] because it had a second caller that did not know it existed. A menu
+ * is not glass — it is a separate window and cannot sample anything — but it is meant to be the
+ * same *design*, so it tops its own base up with a film taken from the same settings. It read
+ * `config.surfaceTintColor` raw, which is the dark grey the default is, and never saw the swap
+ * below. The result was every dialog and every choice menu coming out as a middling grey slab on
+ * paper, with dark letters on it: the one thing in this app you cannot miss once you have seen it.
+ *
+ * So there is one answer and both callers ask for it.
+ */
+@Composable
+internal fun glassFilmColor(config: GlassEffectConfig): Color {
+    val lightPage = !dev.lelonio.square.ui.theme.onDarkPage
+    return if (lightPage && config.surfaceTintColor == DefaultSurfaceTint) {
+        // The default's light twin. The default itself is a dark grey — right for a page that is
+        // artwork under a dark veil, and on a light page a dark slab sitting on paper, which is
+        // what every pill in the app looked like the first time this had two sides.
+        DefaultSurfaceTintLight
+    } else if (config.surfaceTintColor.isSpecified) {
+        config.surfaceTintColor
+    } else {
+        // Between the two across the middle of the range rather than at a line, so a cover that is
+        // merely light does not flip the chrome.
+        val bright = ((LocalBackdropLuminance.current - BRIGHT_FROM) / (BRIGHT_TO - BRIGHT_FROM))
+            .coerceIn(0f, 1f)
+        lerp(Color(0xFF4A4A4E), Color(0xFF23232A), bright)
+    }
+}
+
+/**
  * How bright the thing behind this app's glass is, 0 to 1.
  *
  * Provided once, near the top of the tree, from the palette of the artwork
@@ -471,7 +502,6 @@ fun Modifier.liquidGlass(
     // already reads a palette from — no per-frame readback of the screen, which
     // is how the library's own adaptive-luminance demo does it and why that
     // demo costs a capture and a pixel copy every frame.
-    val backdropLuminance = LocalBackdropLuminance.current
     // Which side the app is on, asked rather than guessed.
     //
     // This used to read `colorScheme.surface.luminance()`, and every surface in
@@ -479,21 +509,7 @@ fun Modifier.liquidGlass(
     // said "light" on both sides and the branch under it was dead. See
     // LocalLightTheme.
     val lightPage = !dev.lelonio.square.ui.theme.onDarkPage
-    val surfaceTintColor = if (lightPage && config.surfaceTintColor == DefaultSurfaceTint) {
-        // The default's light twin. The default itself is a dark grey — right
-        // for a page that is artwork under a dark veil, and on a light page a
-        // dark slab sitting on paper, which is what every pill in the app looked
-        // like the first time this had two sides.
-        DefaultSurfaceTintLight
-    } else if (config.surfaceTintColor.isSpecified) {
-        config.surfaceTintColor
-    } else {
-        // Between the two across the middle of the range rather than at a line,
-        // so a cover that is merely light does not flip the chrome.
-        val bright = ((backdropLuminance - BRIGHT_FROM) / (BRIGHT_TO - BRIGHT_FROM))
-            .coerceIn(0f, 1f)
-        lerp(Color(0xFF4A4A4E), Color(0xFF23232A), bright)
-    }
+    val surfaceTintColor = glassFilmColor(config)
 
     /**
      * How much of that film goes on — the setting, put through the side it is laid on.

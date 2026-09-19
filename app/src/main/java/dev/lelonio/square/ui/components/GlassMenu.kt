@@ -369,7 +369,13 @@ fun Modifier.menuSkin(shape: androidx.compose.ui.graphics.Shape): Modifier =
 private fun menuFilm(): Color {
     val config = dev.lelonio.square.ui.glass.LocalGlassEffectConfig.current
     val missing = (MENU_FLOOR_OPACITY - config.surfaceOpacity).coerceAtLeast(0f)
-    return config.surfaceTintColor.copy(alpha = missing)
+    // The film for the side this is drawn on, not the raw setting.
+    //
+    // Asking `config.surfaceTintColor` handed back the default, which is a dark grey chosen for a
+    // dark page, and laid it at better than four tenths over a near-white base. Every dialog and
+    // every choice menu in the app came out a middling grey with dark letters on it. The renderer
+    // has always swapped that colour for its light twin; it just did it privately.
+    return dev.lelonio.square.ui.glass.glassFilmColor(config).copy(alpha = missing)
 }
 
 /** The coverage a menu needs before its own rows stop competing with the page. */

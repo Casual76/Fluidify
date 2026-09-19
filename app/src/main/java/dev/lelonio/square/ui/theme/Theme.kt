@@ -482,6 +482,37 @@ fun inkOn(background: Color): Color =
     if (background.luminance() > 0.42f) LightInk else DarkInk
 
 /**
+ * A page that paints its own ground, and therefore has to say so.
+ *
+ * A record's header is the case: a cover is full-bleed and unveiled behind it, so the side that
+ * page is on is decided by the cover and not by the phone. [inkOn] has always answered that for the
+ * *letters*, through [LocalInkOverride] — and that was only ever half an answer, because this app
+ * draws its glass with two renderers and only one of them was being told.
+ *
+ * The app's own helpers all descend from [onDarkPage], which reads the ink and therefore followed.
+ * Everything the engine draws — a `GlassButton`, a `FluidSwitch`, the rim and the tint inside
+ * `glassSurface` — asks `LocalFluidSurfaceSide`, which SquareTheme sets from the *setting*. So with
+ * a phone on the light side and a dark cover on screen, two controls a finger apart were on
+ * opposite sides: one with a white rim over the cover, the other with a black one, in the same
+ * header.
+ *
+ * Hence one door for both. Taking the ground rather than the ink is deliberate — a caller says what
+ * it painted, which it knows, instead of working out a consequence it can get backwards — and the
+ * side is then derived from the ink, so the two are the same answer by construction.
+ */
+@Composable
+fun SelfPaintedPage(ground: Color, content: @Composable () -> Unit) {
+    val ink = inkOn(ground)
+    CompositionLocalProvider(
+        LocalInkOverride provides ink,
+        // Read off the ink and not off `ground`, so this can never disagree with `onDarkPage`,
+        // which is the predicate every app-side helper below it is going to ask.
+        dev.antigravity.fluidengine.ui.fluid.LocalFluidSurfaceSide provides (ink.luminance() > 0.5f),
+        content = content,
+    )
+}
+
+/**
  * Ink's opposite, for the one control that inverts.
  *
  * A "following" chip, a filled play button: the background becomes the ink and

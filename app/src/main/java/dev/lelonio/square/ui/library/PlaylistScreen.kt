@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.library
 
+import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
 import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
@@ -264,6 +265,21 @@ fun PlaylistScreen(
     // cover.
     val pageBackdrop = rememberLayerBackdrop()
 
+    /**
+     * The same picture again, for the renderer that cannot read the one above.
+     *
+     * `pageBackdrop` is the app's own vendored layer, and the capsule in the header samples it. The
+     * back arrow beside that capsule is a `GlassButton`, which is the engine's material and reads a
+     * `GlassBackdropState` — so with only the vendored layer recorded it fell through to the root
+     * canvas and refracted the blurred cover of *whatever was playing*. Two controls a finger apart,
+     * reflecting two different records.
+     *
+     * Recorded over the same box and handed down as the canvas, which is the one the engine says to
+     * use for glass standing *inside* a page: it holds the ground only, recorded before the body, so
+     * nothing that samples it can ever be inside it.
+     */
+    val pageGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
+
     /** The rows, for the one piece of glass that opens over them. */
     val listBackdrop = rememberLayerBackdrop()
 
@@ -354,7 +370,8 @@ fun PlaylistScreen(
                         1f to PageFloor,
                     ),
                 )
-                .layerBackdrop(pageBackdrop),
+                .layerBackdrop(pageBackdrop)
+                .glassBackdropSource(pageGlass),
         ) {
             HeroArt(
                 uri = state.uri,
@@ -367,6 +384,9 @@ fun PlaylistScreen(
             )
         }
 
+        androidx.compose.runtime.CompositionLocalProvider(
+            dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop provides pageGlass,
+        ) {
         Column(Modifier.fillMaxSize()) {
         DetailHeader(
             name = state.name,
@@ -379,7 +399,7 @@ fun PlaylistScreen(
             // there is decided by the cover and the ink down here by the theme,
             // and a record whose cover is dark keeps white letters on a phone
             // set to light.
-            heroInk = dev.lelonio.square.ui.theme.inkOn(accent ?: pageColor),
+            heroGround = accent ?: pageColor,
             saved = state.saved,
             onToggleSaved = onToggleSaved,
             following = state.following.takeIf {
@@ -628,6 +648,7 @@ fun PlaylistScreen(
             }
         }
         }
+        }
 
         LazyScrollBar(
             state = listState,
@@ -766,7 +787,8 @@ private fun DetailHeader(
     /** The page's own colour; the solid Play button prints its label in it. */
     pageColor: Color,
     /** What can be read against the cover this header is written on. */
-    heroInk: Color,
+    /** What the header is painted on — the cover's own colour. It decides the side. */
+    heroGround: Color,
     /** Whether the page is kept in the library; null hides the button. */
     saved: Boolean?,
     onToggleSaved: () -> Unit,
@@ -806,9 +828,12 @@ private fun DetailHeader(
     val heroPx = with(density) { HERO_HEIGHT.roundToPx() }
     val collapsedPx = with(density) { collapsedHeight.roundToPx() }
 
-    androidx.compose.runtime.CompositionLocalProvider(
-        dev.lelonio.square.ui.theme.LocalInkOverride provides heroInk,
-    ) {
+    // The cover decides this header's side, for the engine as well as for the app.
+    //
+    // Providing the ink alone left the two renderers disagreeing: the share capsule took its rim
+    // from the page and the back arrow beside it from the phone's setting, and with a dark cover on
+    // a light phone one of them was drawing a white line and the other a black one.
+    dev.lelonio.square.ui.theme.SelfPaintedPage(ground = heroGround) {
     Box(
         Modifier
             .fillMaxWidth()

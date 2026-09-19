@@ -67,6 +67,7 @@ import dev.lelonio.square.ui.player.rememberPillMorphTint
 import dev.lelonio.square.ui.theme.Ink
 import dev.lelonio.square.ui.theme.InkDim
 import dev.lelonio.square.ui.theme.InkInverse
+import dev.lelonio.square.ui.theme.SelfPaintedPage
 import dev.lelonio.square.ui.theme.SquareTheme
 import dev.lelonio.square.ui.theme.glassEdge
 import dev.lelonio.square.ui.theme.glassFilm
@@ -131,13 +132,13 @@ class GlassGalleryActivity : ComponentActivity() {
  *   twelve times per screen.
  * - [Canvas] — the player's stage, the brightest backdrop the app can produce.
  */
-private enum class Stage(val label: String) {
+private enum class Stage(val label: String, val ground: Color? = null) {
     Floor("Pavimento"),
     VeiledPage("Velata"),
-    DarkCover("Cop. scura"),
-    BrightCover("Cop. chiara"),
+    DarkCover("Cop. scura", Color(0xFF1A2030)),
+    BrightCover("Cop. chiara", Color(0xFFF3E8D8)),
     Mosaic("Mosaico"),
-    Canvas("Canvas"),
+    Canvas("Canvas", Color(0xFFC9B87A)),
 }
 
 /**
@@ -205,7 +206,7 @@ private fun GallerySide(
                 LocalGlassBackdrop provides engineGlass,
                 LocalFluidCanvasBackdrop provides engineGlass,
             ) {
-                Specimens(dark, amoled, engineGlass)
+                Specimens(dark, amoled, stage, engineGlass)
             }
         }
     }
@@ -264,7 +265,12 @@ private fun Mosaic() {
 }
 
 @Composable
-private fun Specimens(dark: Boolean, amoled: Boolean, engineGlass: dev.antigravity.fluidengine.ui.fluid.GlassBackdropState) {
+private fun Specimens(
+    dark: Boolean,
+    amoled: Boolean,
+    stage: Stage,
+    engineGlass: dev.antigravity.fluidengine.ui.fluid.GlassBackdropState,
+) {
     Column(
         Modifier
             .fillMaxSize()
@@ -370,6 +376,44 @@ private fun Specimens(dark: Boolean, amoled: Boolean, engineGlass: dev.antigravi
                 contentAlignment = Alignment.Center,
             ) {
                 Text("↓", color = Ink, style = MaterialTheme.typography.titleMedium)
+            }
+        }
+
+        // The case both renderers used to answer differently.
+        //
+        // A record's header paints its own ground, so the side is the cover's and not the phone's.
+        // The app's capsule has always followed that, through the ink; the engine's button beside
+        // it followed the theme, so with a dark cover on a light phone one drew a white rim and the
+        // other a black one, a finger apart. Inside SelfPaintedPage they are one page again.
+        val ground = stage.ground
+        if (ground != null) {
+            Label("Testata che si dipinge — app | engine")
+            SelfPaintedPage(ground = ground) {
+                Row(
+                    Modifier.fillMaxWidth().background(ground).padding(8.dp),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    Box(
+                        Modifier
+                            .liquidGlass(
+                                config = LocalGlassEffectConfig.current,
+                                shape = RoundedCornerShape(percent = 50),
+                            )
+                            .headerRim(RoundedCornerShape(percent = 50)),
+                        contentAlignment = Alignment.Center,
+                    ) {
+                        Text(
+                            "Condividi",
+                            color = Ink,
+                            style = MaterialTheme.typography.labelLarge,
+                            modifier = Modifier.padding(horizontal = 14.dp, vertical = 10.dp),
+                        )
+                    }
+                    GlassButton(onClick = {}, contentHeight = 42.dp) {
+                        Text("Segui", style = MaterialTheme.typography.labelLarge)
+                    }
+                }
             }
         }
 
