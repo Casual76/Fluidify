@@ -84,6 +84,13 @@ fun GlassButton(
             .height(contentHeight)
             .defaultMinSize(minWidth = contentHeight)
             .glassControlSurface(
+                // Denser on a cover than on a page. See LocalOnPicture: a control's own film is
+                // almost nothing by design, which is right on a bar and not enough on a picture.
+                tint = if (dev.lelonio.square.ui.theme.LocalOnPicture.current) {
+                    GlassDefaults.floatingTintOnPhoto()
+                } else {
+                    GlassDefaults.controlTint()
+                },
                 // The ambient canvas first, and it is not a preference. This
                 // button lives *in* the page, and `LocalGlassBackdrop` is the
                 // record of that page: a pane drawn inside the layer it samples

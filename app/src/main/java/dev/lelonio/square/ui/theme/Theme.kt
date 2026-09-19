@@ -123,6 +123,15 @@ fun SquareTheme(
     darkTheme: Boolean = rememberThemeIsDark(),
     /** True for the dark side standing on true black. See [LocalAmoledTheme]. */
     amoled: Boolean = rememberThemeIsAmoled(),
+    /**
+     * Whether this theme also claims the status and navigation bars.
+     *
+     * True for a theme that *is* the page. False for one applied to a patch of it — a header
+     * standing on a cover, say, which is a dark page for the purpose of the controls on it and has
+     * no business deciding what the clock looks like. Left true the innermost theme on screen wins
+     * the window's glyphs, which for a patch is whichever patch happened to recompose last.
+     */
+    systemBars: Boolean = true,
     content: @Composable () -> Unit,
 ) {
     FluidTheme(
@@ -175,7 +184,7 @@ fun SquareTheme(
         // System bar icons have to flip with the theme; left alone they are
         // drawn for the system's own theme and disappear against ours.
         val view = LocalView.current
-        if (!view.isInEditMode) {
+        if (systemBars && !view.isInEditMode) {
             SideEffect {
                 val window = (view.context as android.app.Activity).window
                 // The bars sit over the artwork taken in whichever direction was
@@ -503,14 +512,46 @@ fun inkOn(background: Color): Color =
 @Composable
 fun SelfPaintedPage(ground: Color, content: @Composable () -> Unit) {
     val ink = inkOn(ground)
-    CompositionLocalProvider(
-        LocalInkOverride provides ink,
-        // Read off the ink and not off `ground`, so this can never disagree with `onDarkPage`,
-        // which is the predicate every app-side helper below it is going to ask.
-        dev.antigravity.fluidengine.ui.fluid.LocalFluidSurfaceSide provides (ink.luminance() > 0.5f),
-        content = content,
-    )
+    // Read off the ink rather than off `ground`, so this cannot disagree with `onDarkPage`, which
+    // is the predicate every app-side helper below is about to ask.
+    val dark = ink.luminance() > 0.5f
+    // The whole side, and the first version of this gave two thirds of it.
+    //
+    // Providing the ink and `LocalFluidSurfaceSide` looks like enough and is not. That local flips
+    // which *branch* the engine's tints take; the colours those branches mix from come out of the
+    // ColorScheme, which was still the phone's. So `controlTint()` took its dark branch and stirred
+    // it into a light palette, and the back arrow on a dark cover came out a pale disc with a white
+    // glyph on it — the one arrangement worse than the bug being fixed.
+    //
+    // Hence the theme, which is the one thing in this app that knows how to build a side. Seeded
+    // with the ground because an accent is derived for the side it will be read on, and this page's
+    // ground *is* its accent. Never AMOLED: true black is a page with the light off, and this one
+    // has a photograph on it. And it does not touch the window's bars — see `systemBars`.
+    SquareTheme(seed = ground, darkTheme = dark, amoled = false, systemBars = false) {
+        CompositionLocalProvider(
+            LocalInkOverride provides ink,
+            LocalOnPicture provides true,
+            content = content,
+        )
+    }
 }
+
+/**
+ * True for the controls standing directly on a picture.
+ *
+ * The side is not the whole question. A control's own film is *almost nothing* by design — a
+ * button is a lens sitting on a surface that is already glass, and a second opaque wash there is
+ * what made the old ones read as grey pills stuck onto a bar. That reasoning holds on a bar and
+ * collapses on a cover: there the ground is the loudest thing on screen and a third of a film does
+ * not stand between it and a label. A back arrow on a full-bleed sleeve came out a pale disc with
+ * a white glyph on it, at a contrast of two to one, *after* the side had been correctly turned
+ * over — which is how it became clear that the side was not the only thing being asked wrongly.
+ *
+ * So the ground says what it is, once, and the controls on it take the tint meant for a
+ * photograph. Set by [SelfPaintedPage] and by nothing else: a page that has not said it is a
+ * picture is a page with a quiet ground, which is what the default is for.
+ */
+val LocalOnPicture = staticCompositionLocalOf { false }
 
 /**
  * Ink's opposite, for the one control that inverts.

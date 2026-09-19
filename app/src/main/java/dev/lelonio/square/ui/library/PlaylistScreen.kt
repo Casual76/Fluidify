@@ -257,6 +257,29 @@ fun PlaylistScreen(
     val floor = PageFloor
     val pageColor = remember(accent, floor) { pageColorFor(accent, floor) }
 
+    /**
+     * The sleeve, for the two controls that genuinely float on it.
+     *
+     * The back arrow and the capsule of actions sit in the top corners, over the cover at full
+     * strength, and they fade out as the hero rolls up. Their side is the cover's.
+     */
+    val coverGround = accent ?: pageColor
+
+    /**
+     * And the page colour, for the header's own words, which are not on the cover at all.
+     *
+     * This is the correction that matters. The header used to take its ink from the *cover*, and
+     * its title does not stand on the cover: the hero's gradient has faded to [pageColor] long
+     * before the name starts, by construction — the seam has to be uncatchable, so the fade is
+     * slow and it is finished by the bottom third. A dark sleeve on a light phone therefore asked
+     * for white letters and then put them on a page that is `lerp(accent, floor, 0.78)`, which on
+     * paper is a pale lilac. White on pale lilac is a contrast of about one and a half to one, on
+     * the title of every record in the app.
+     *
+     * So a band asks what *it* stands on, and there are two bands.
+     */
+    val headerGround = pageColor
+
     // What the glass on this screen refracts.
     //
     // Not the app's backdrop: that is the blurred cover of whatever is playing,
@@ -340,6 +363,15 @@ fun PlaylistScreen(
     val heroPx = with(density) { HERO_HEIGHT.roundToPx() }
     val collapsedPx = with(density) { collapsedHeight.roundToPx() }
 
+    // Everything on this screen that is glass refracts *this* page, not the app's.
+    //
+    // Wrapped around the whole screen rather than around the list: the capsule of actions and the
+    // back arrow float over the hero as siblings of the list, so a provider around the list alone
+    // left exactly the two controls standing on the cover reading the root canvas — which is the
+    // blurred sleeve of whatever happens to be playing.
+    androidx.compose.runtime.CompositionLocalProvider(
+        dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop provides pageGlass,
+    ) {
     Box(Modifier.fillMaxSize()) {
         // The page, without the things that sample it.
         //
@@ -356,23 +388,32 @@ fun PlaylistScreen(
         Box(
             Modifier
                 .fillMaxSize()
-                // Opaque, so the app-wide blurred artwork of the playing track
-                // does not show through and re-tint the page.
-                .background(
-                    Brush.verticalGradient(
-                        // Held flat over the top half rather than falling away
-                        // immediately: the header has to end on the same colour
-                        // the page starts with, and the list scrolls, so the
-                        // meeting point moves. A slow gradient makes that seam
-                        // impossible to catch.
-                        0f to pageColor,
-                        0.45f to pageColor,
-                        1f to PageFloor,
-                    ),
-                )
                 .layerBackdrop(pageBackdrop)
                 .glassBackdropSource(pageGlass),
         ) {
+            // A child of the recording rather than a modifier on it, which is how the app's own
+            // root does it. A draw modifier sitting before the two capture modifiers is painted by
+            // the node above them, so it is not in either recording — and a pane sampling a
+            // recording that holds only a transparent hero has nothing to bend and comes out a
+            // flat disc.
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    // Opaque, so the app-wide blurred artwork of the playing track
+                    // does not show through and re-tint the page.
+                    .background(
+                        Brush.verticalGradient(
+                            // Held flat over the top half rather than falling away
+                            // immediately: the header has to end on the same colour
+                            // the page starts with, and the list scrolls, so the
+                            // meeting point moves. A slow gradient makes that seam
+                            // impossible to catch.
+                            0f to pageColor,
+                            0.45f to pageColor,
+                            1f to PageFloor,
+                        ),
+                    ),
+            )
             HeroArt(
                 uri = state.uri,
                 artworkUrl = state.artworkUrl,
@@ -384,9 +425,6 @@ fun PlaylistScreen(
             )
         }
 
-        androidx.compose.runtime.CompositionLocalProvider(
-            dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop provides pageGlass,
-        ) {
         Column(Modifier.fillMaxSize()) {
         DetailHeader(
             name = state.name,
@@ -399,7 +437,7 @@ fun PlaylistScreen(
             // there is decided by the cover and the ink down here by the theme,
             // and a record whose cover is dark keeps white letters on a phone
             // set to light.
-            heroGround = accent ?: pageColor,
+            heroGround = headerGround,
             saved = state.saved,
             onToggleSaved = onToggleSaved,
             following = state.following.takeIf {
@@ -648,7 +686,6 @@ fun PlaylistScreen(
             }
         }
         }
-        }
 
         LazyScrollBar(
             state = listState,
@@ -661,6 +698,14 @@ fun PlaylistScreen(
                 ),
         )
 
+        // Both of these float over the cover, so the cover decides their side.
+        //
+        // They were outside the header's scope and therefore on the phone's side, which on a light
+        // phone over a dark cover is how a page came out with white letters in the middle and a
+        // pale back arrow with a dark glyph in the corner, six inches apart. They fade out as the
+        // hero rolls up (see the alphas below), so there is no second case to answer for: while
+        // they are visible they are on the picture.
+        dev.lelonio.square.ui.theme.SelfPaintedPage(ground = coverGround) {
         // Share and everything else, in one capsule opposite the back button.
         // Two round buttons side by side would have read as two destinations;
         // one pane with a divide down it reads as what it is, a place where the
@@ -724,6 +769,7 @@ fun PlaylistScreen(
                 modifier = Modifier.size(20.dp),
             )
         }
+        }
 
         // In the page rather than in a popup of its own: the sort button is up
         // by the header, well clear of the bars that would otherwise be drawn
@@ -754,6 +800,7 @@ fun PlaylistScreen(
                 onSortDescendingChange(descending)
             }
         }
+    }
     }
 }
 
