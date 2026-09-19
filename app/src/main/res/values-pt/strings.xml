@@ -381,4 +381,8 @@
     <string name="shortcut_library">A tua biblioteca</string>
     <string name="shortcut_library_short">Biblioteca</string>
     <string name="reorder">Reordenar</string>
+    <string name="widget_label">A reproduzir</string>
+    <string name="widget_description">A capa, o que esta a tocar, e os tres botoes.</string>
+    <string name="widget_nothing_playing">Nada a tocar</string>
+    <string name="widget_add">Adicionar ao ecra inicial</string>
 </resources>

@@ -402,4 +402,8 @@
     <string name="shortcut_library">Your library</string>
     <string name="shortcut_library_short">Library</string>
     <string name="reorder">Reorder</string>
+    <string name="widget_label">Now playing</string>
+    <string name="widget_description">The cover, what is playing, and the three buttons.</string>
+    <string name="widget_nothing_playing">Nothing playing</string>
+    <string name="widget_add">Add to the home screen</string>
 </resources>

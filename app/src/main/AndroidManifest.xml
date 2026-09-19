@@ -126,6 +126,23 @@
             </intent-filter>
         </activity>
 
+        <!--
+          Il widget in riproduzione. Vedi NowPlayingWidget: lo stato glielo
+          scrive il servizio, perche' il launcher lo disegna in un processo suo
+          e magari ore dopo che il nostro e' morto.
+        -->
+        <receiver
+            android:name=".widget.NowPlayingWidgetReceiver"
+            android:exported="false"
+            android:label="@string/widget_label">
+            <intent-filter>
+                <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
+            </intent-filter>
+            <meta-data
+                android:name="android.appwidget.provider"
+                android:resource="@xml/now_playing_widget" />
+        </receiver>
+
         <service
             android:name=".playback.PlaybackService"
             android:exported="true"

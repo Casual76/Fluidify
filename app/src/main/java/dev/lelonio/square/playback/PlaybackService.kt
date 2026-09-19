@@ -214,6 +214,33 @@ class PlaybackService : MediaLibraryService() {
 
             override fun onRepeatModeChanged(repeatMode: Int) = redrawButtons()
 
+            // The home screen, which cannot ask.
+            //
+            // A widget is drawn by the launcher's process out of state the
+            // system stored, possibly long after this one has died, so the only
+            // way for it to be right is for whatever knows the truth to write it
+            // down first. These three are every moment the truth changes: a
+            // different song, playing or not, and the queue arriving or emptying.
+            override fun onMediaMetadataChanged(
+                mediaMetadata: androidx.media3.common.MediaMetadata,
+            ) = pushWidget()
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) = pushWidget()
+
+            override fun onMediaItemTransition(
+                mediaItem: androidx.media3.common.MediaItem?,
+                reason: Int,
+            ) = pushWidget()
+
+            private fun pushWidget() {
+                scope.launch {
+                    dev.lelonio.square.widget.NowPlayingWidgetBridge.push(
+                        this@PlaybackService,
+                        player,
+                    )
+                }
+            }
+
             /**
              * Per controller, because the two layouts differ: the shade shows
              * radio where the car shows repeat, and one blanket update would

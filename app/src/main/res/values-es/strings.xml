@@ -381,4 +381,8 @@
     <string name="shortcut_library">Tu biblioteca</string>
     <string name="shortcut_library_short">Biblioteca</string>
     <string name="reorder">Reordenar</string>
+    <string name="widget_label">Reproduciendo</string>
+    <string name="widget_description">La portada, lo que suena, y los tres botones.</string>
+    <string name="widget_nothing_playing">No suena nada</string>
+    <string name="widget_add">Anadir a la pantalla de inicio</string>
 </resources>

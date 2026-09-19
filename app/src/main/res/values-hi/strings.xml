@@ -396,4 +396,8 @@
     <string name="shortcut_library">आपकी लाइब्रेरी</string>
     <string name="shortcut_library_short">लाइब्रेरी</string>
     <string name="reorder">क्रम बदलें</string>
+    <string name="widget_label">अभी चल रहा है</string>
+    <string name="widget_description">कवर, जो चल रहा है, और तीन बटन।</string>
+    <string name="widget_nothing_playing">कुछ नहीं चल रहा</string>
+    <string name="widget_add">होम स्क्रीन पर जोड़ें</string>
 </resources>

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The same six, for a phone in dark mode. See values/colors.xml. -->
+    <color name="widget_preview_background">#FF121215</color>
+    <color name="widget_preview_card">#FF1F1D24</color>
+    <color name="widget_preview_ink">#FFE6E1E9</color>
+    <color name="widget_preview_ink_dim">#FFC9C4D0</color>
+    <color name="widget_preview_accent">#FF4A3A6B</color>
+    <color name="widget_preview_on_accent">#FFE9DDFF</color>
+</resources>

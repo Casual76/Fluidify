@@ -39,7 +39,13 @@ import dev.lelonio.square.data.AppThemeMode
  * indigo pole, and without them the derived secondary family collapses into the
  * primary — the exact case the engine's colour tests exercise under this name.
  */
-private val Amethyst = AccentPreset(
+/**
+ * The app's own colour.
+ *
+ * Internal rather than private since the widget needs it too: the home screen and the app being the
+ * same colour is not a coincidence to be arranged twice.
+ */
+internal val Amethyst = AccentPreset(
     name = "amethyst",
     label = "Ametista",
     light = Color(0xFF9966CC),

@@ -396,4 +396,8 @@
     <string name="shortcut_library">Kitapligin</string>
     <string name="shortcut_library_short">Kitaplik</string>
     <string name="reorder">Yeniden sirala</string>
+    <string name="widget_label">Calaniyor</string>
+    <string name="widget_description">Kapak, calan parca ve uc dugme.</string>
+    <string name="widget_nothing_playing">Hicbir sey calmiyor</string>
+    <string name="widget_add">Ana ekrana ekle</string>
 </resources>

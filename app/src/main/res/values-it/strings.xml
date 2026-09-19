@@ -382,4 +382,8 @@
     <string name="shortcut_library">La tua libreria</string>
     <string name="shortcut_library_short">Libreria</string>
     <string name="reorder">Riordina</string>
+    <string name="widget_label">In riproduzione</string>
+    <string name="widget_description">La copertina, cosa sta suonando, e i tre tasti.</string>
+    <string name="widget_nothing_playing">Non sta suonando niente</string>
+    <string name="widget_add">Aggiungi alla schermata iniziale</string>
 </resources>

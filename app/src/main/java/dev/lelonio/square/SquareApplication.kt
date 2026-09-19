@@ -10,6 +10,8 @@ import dev.lelonio.square.data.PreferencesStore
 import dev.lelonio.square.data.RecentStore
 import dev.lelonio.square.data.ApiFactory
 import dev.lelonio.square.data.SpotifyApi
+import androidx.glance.appwidget.updateAll
+import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.launch
 import dev.lelonio.square.nativecore.NativeBridge
 
@@ -50,6 +52,24 @@ class SquareApplication : Application() {
             downloadSettings.offlineMode.collect(
                 dev.lelonio.square.playback.OfflineMode::setManual,
             )
+        }
+
+        // The home screen follows the theme setting, and it has to be told.
+        //
+        // A widget's colours are resolved when it composes, which it does when its state changes —
+        // and the theme is not part of its state, so a page that was black would have stayed light
+        // on the home screen until the next track. Here rather than in the preferences, which have
+        // no business knowing what a widget is, and rather than in the settings screen, which is not
+        // the only thing that can change this.
+        kotlinx.coroutines.CoroutineScope(
+            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default,
+        ).launch {
+            preferences.themeMode.drop(1).collect {
+                runCatching {
+                    dev.lelonio.square.widget.NowPlayingWidget()
+                        .updateAll(this@SquareApplication)
+                }
+            }
         }
 
         // Not a feature: a line in the log saying whether this install has been

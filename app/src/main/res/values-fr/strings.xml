@@ -381,4 +381,8 @@
     <string name="shortcut_library">Votre bibliotheque</string>
     <string name="shortcut_library_short">Bibliotheque</string>
     <string name="reorder">Reordonner</string>
+    <string name="widget_label">Lecture en cours</string>
+    <string name="widget_description">La pochette, ce qui joue, et les trois boutons.</string>
+    <string name="widget_nothing_playing">Rien en lecture</string>
+    <string name="widget_add">Ajouter a l&#8217;ecran d&#8217;accueil</string>
 </resources>

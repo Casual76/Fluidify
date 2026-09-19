@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?><!--
+  Il widget in riproduzione.
+
+  `minWidth` a 250 dp: sotto quella misura la riga non ha piu' spazio per la
+  copertina, le parole e i tre tasti insieme, e quello che si perde per primo
+  sono i due tasti di salto. Ridimensionabile in orizzontale, perche' la cosa
+  che cambia davvero con la larghezza e' quanto titolo si legge.
+
+  `configure` non c'e' apposta: un widget che chiede qualcosa prima di
+  comparire e' un widget che meta' delle persone non finisce di aggiungere.
+-->
+<appwidget-provider xmlns:android="http://schemas.android.com/apk/res/android"
+    android:description="@string/widget_description"
+    android:initialLayout="@layout/glance_default_loading_layout"
+    android:previewLayout="@layout/now_playing_widget_preview"
+    android:minWidth="250dp"
+    android:minHeight="70dp"
+    android:minResizeWidth="180dp"
+    android:minResizeHeight="70dp"
+    android:resizeMode="horizontal"
+    android:targetCellWidth="4"
+    android:targetCellHeight="1"
+    android:updatePeriodMillis="0"
+    android:widgetCategory="home_screen" />

@@ -381,4 +381,8 @@
     <string name="shortcut_library">Deine Bibliothek</string>
     <string name="shortcut_library_short">Bibliothek</string>
     <string name="reorder">Neu ordnen</string>
+    <string name="widget_label">Wird gespielt</string>
+    <string name="widget_description">Das Cover, was laeuft, und die drei Tasten.</string>
+    <string name="widget_nothing_playing">Nichts laeuft</string>
+    <string name="widget_add">Zum Startbildschirm hinzufuegen</string>
 </resources>

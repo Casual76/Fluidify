@@ -10,4 +10,14 @@
          with a flash of the other one. -->
     <color name="page_floor_dark">#FF0A0A0C</color>
     <color name="page_floor_light">#FFF1F2F6</color>
+
+    <!-- The widget's preview in the picker, which is a static layout and so cannot
+         ask the engine for its palette. Kept close to what engineWidgetPalette
+         resolves for the brand accent; see res/layout/now_playing_widget_preview.xml. -->
+    <color name="widget_preview_background">#FFF3F0F7</color>
+    <color name="widget_preview_card">#FFE7E2EE</color>
+    <color name="widget_preview_ink">#FF1B1B1F</color>
+    <color name="widget_preview_ink_dim">#FF6B6873</color>
+    <color name="widget_preview_accent">#FFE9DDFF</color>
+    <color name="widget_preview_on_accent">#FF25005B</color>
 </resources>

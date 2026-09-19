@@ -1248,6 +1248,7 @@ fun SquareApp(
                                 onRetry = { viewModel.refresh() },
                                 onLogOut = viewModel::logOut,
                                 onOpenPlaylist = { navController.openPlaylist(viewModel, it) },
+                                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                                 playlistOrder = playlistOrder,
                                 pinned = pinnedPlaylists,
                                 canEdit = viewModel.canEditPlaylists,

@@ -40,6 +40,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -157,6 +158,8 @@ fun LibraryScreen(
     onRetry: () -> Unit,
     onLogOut: () -> Unit,
     onOpenPlaylist: (CatalogPlaylist) -> Unit,
+    /** The way into the settings when signed out; see the note in the LoggedOut branch. */
+    onOpenSettings: () -> Unit = {},
     /** URIs most recently opened first; see PlaylistOrderStore. */
     playlistOrder: List<String>,
     /** URIs the listener pinned to the top; see PinnedPlaylistStore. */
@@ -201,6 +204,21 @@ fun LibraryScreen(
                 modifier = Modifier.padding(horizontal = 40.dp),
             )
             GlassAction(stringResource(R.string.log_in_with_spotify), backdrop, onLogIn)
+            // A way out of this page that is not the one button on it.
+            //
+            // Signed out there is no header, so there is no way into the settings at all: somebody
+            // who picked the wrong account, or skipped the guide, has exactly one door and it leads
+            // to a service they may not want. Quieter than the button above it, because it is not
+            // what most people came here to do.
+            Text(
+                stringResource(R.string.settings),
+                style = MaterialTheme.typography.labelLarge,
+                color = InkDim,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(percent = 50))
+                    .clickable(onClick = onOpenSettings)
+                    .padding(horizontal = 18.dp, vertical = 12.dp),
+            )
         }
 
         MainViewModel.UiState.Connecting,

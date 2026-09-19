@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="utf-8"?><!-- Phosphor Fill/SkipBack. See ic_widget_play. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="256" android:viewportHeight="256">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M208,58.13V197.87a15.92,15.92,0,0,1-24.16,13.62L64,135.86V208a8,8,0,0,1-16,0V48a8,8,0,0,1,16,0v72.14L183.84,44.51A15.92,15.92,0,0,1,208,58.13Z" />
+</vector>

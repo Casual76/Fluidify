@@ -23,6 +23,8 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.annotation.StringRes
+import android.appwidget.AppWidgetManager
+import android.content.ComponentName
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -342,6 +344,10 @@ fun SettingsScreen(
         // Under the app rather than under playback for the same reason: this
         // adds a shelf to the library, it does not change what anything sounds
         // like.
+        if (open == SettingsPage.App) item("widget") {
+            WidgetSection()
+        }
+
         if (open == SettingsPage.App) item("local-files") {
             Section(stringResource(R.string.local_files)) {
                 SwitchRow(
@@ -706,6 +712,50 @@ private fun SleepTimerSection() {
 
 /** The lengths offered, which are the ones every player offers. */
 private val SleepLengths = listOf(5, 15, 30, 45, 60)
+
+/**
+ * A way to put the widget on the home screen from inside the app.
+ *
+ * The long press on an empty part of a home screen, then Widgets, then finding the app in an
+ * alphabetical list of every app that has one — that is the path, and most people never walk it. One
+ * row here and the launcher asks the question itself.
+ *
+ * Only where the launcher says it will honour the request. Below Android 8 there is no such request
+ * at all, and above it plenty of launchers decline, so the row is only drawn when there is something
+ * behind it: a row that does nothing is worse than no row.
+ */
+@Composable
+private fun WidgetSection() {
+    val context = LocalContext.current
+    val manager = remember(context) { AppWidgetManager.getInstance(context) }
+    val supported = remember(manager) {
+        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+            runCatching { manager.isRequestPinAppWidgetSupported }.getOrDefault(false)
+    }
+    if (!supported) return
+
+    Section(stringResource(R.string.widget_label)) {
+        ActionRow(stringResource(R.string.widget_add), destructive = false) {
+            runCatching {
+                manager.requestPinAppWidget(
+                    ComponentName(
+                        context,
+                        dev.lelonio.square.widget.NowPlayingWidgetReceiver::class.java,
+                    ),
+                    null,
+                    null,
+                )
+            }
+        }
+        RowDivider()
+        Text(
+            stringResource(R.string.widget_description),
+            style = MaterialTheme.typography.bodySmall,
+            color = InkDim,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+        )
+    }
+}
 
 @Composable
 private fun CrossfadeSection() {

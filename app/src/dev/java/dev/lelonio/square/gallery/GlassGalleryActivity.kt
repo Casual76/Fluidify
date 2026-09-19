@@ -22,6 +22,9 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.clickable
+import androidx.compose.runtime.rememberCoroutineScope
+import kotlinx.coroutines.launch
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -117,6 +120,42 @@ private fun GallerySide(dark: Boolean, amoled: Boolean, modifier: Modifier = Mod
                     .padding(horizontal = 12.dp, vertical = 44.dp),
                 verticalArrangement = Arrangement.spacedBy(14.dp),
             ) {
+                // The widget's playing state, which is otherwise unreachable here.
+                //
+                // An emulator has no Spotify account, so nothing can be made to play, so the home
+                // screen can only ever be caught saying it has nothing. This writes a track into
+                // the widget's own state the way the playback service would, which is the only way
+                // to look at the layout that matters. Dev build only, like everything else here.
+                if (!dark) {
+                    val scope = rememberCoroutineScope()
+                    val context = androidx.compose.ui.platform.LocalContext.current
+                    Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        listOf(true, false).forEach { playing ->
+                            Text(
+                                if (playing) "widget ▶" else "widget ⏸",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = Ink,
+                                modifier = Modifier
+                                    .clip(RoundedCornerShape(percent = 50))
+                                    .background(glassFilm(0.16f))
+                                    .clickable {
+                                        scope.launch {
+                                            dev.lelonio.square.widget.NowPlayingWidgetBridge.push(
+                                                context = context,
+                                                title = "Un brano di prova",
+                                                artist = "Fluidify",
+                                                artworkUrl = SampleCover,
+                                                playing = playing,
+                                                hasItem = true,
+                                            )
+                                        }
+                                    }
+                                    .padding(horizontal = 10.dp, vertical = 6.dp),
+                            )
+                        }
+                    }
+                }
+
                 Text(
                     if (!dark) "Light" else if (amoled) "Black" else "Dark",
                     style = MaterialTheme.typography.titleMedium,
@@ -236,6 +275,10 @@ private fun Swatch(label: String, color: Color) {
  * between: a rim, a film or a wash that only works over a mid tone gives itself
  * away here in one screenshot instead of after twenty covers.
  */
+/** A real https image, so the cover path is exercised and not only the placeholder. */
+private const val SampleCover =
+    "https://raw.githubusercontent.com/Casual76/Fluidify/master/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png"
+
 private val GalleryCover = Brush.linearGradient(
     0.00f to Color(0xFFFFFFFF),
     0.22f to Color(0xFFFFC857),
