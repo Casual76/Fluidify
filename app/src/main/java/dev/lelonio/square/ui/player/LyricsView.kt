@@ -161,9 +161,15 @@ fun LyricsView(
  * words light up in visible jumps, which is exactly what this was. Between
  * reports the clock simply runs — playback does too — and every report snaps it
  * back to the truth, so it can never drift further than one poll.
+ *
+ * Internal rather than private because the one line the player shows on itself
+ * asks the same question; see SungLine. Each caller winds its own — a frame
+ * callback apiece, and only while something is playing — but both work the line
+ * out from a clock of the same shape, so a line never turns over at two
+ * different moments depending on which of the two is being read.
  */
 @Composable
-private fun rememberSmoothPosition(source: State<Long>, isPlaying: Boolean): State<Long> {
+internal fun rememberSmoothPosition(source: State<Long>, isPlaying: Boolean): State<Long> {
     val smoothed = remember { androidx.compose.runtime.mutableLongStateOf(source.value) }
     val reported = source.value
 

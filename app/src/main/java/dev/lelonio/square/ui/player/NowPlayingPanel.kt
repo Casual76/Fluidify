@@ -122,6 +122,15 @@ fun NowPlayingPanel(
     /** The track's Canvas, or null when it has none. Always null on the copy. */
     canvas: CanvasClip? = null,
     /**
+     * The words, for the one line of them the panel shows.
+     *
+     * Handed to the travelling copy as well, unlike the clip and the backdrop:
+     * those two are pictures that break while a layer is being scaled, and this
+     * is a string. A line that vanished for the length of the journey and came
+     * back at the other end is the one thing the morph is there to avoid.
+     */
+    lyrics: dev.lelonio.square.data.Lyrics? = null,
+    /**
      * False from the first pixel of the journey.
      *
      * A `State` and not a `Boolean` on purpose: read plainly at the call site
@@ -306,6 +315,19 @@ fun NowPlayingPanel(
                                 // step the eye catches.
                                 Modifier.insetBy(14.dp, 10.dp) { picture.value },
                             ) {
+                                // Above the title, as in the window: the panel
+                                // is the player in miniature, and the order
+                                // things are read in is part of being the same
+                                // screen. Inside this pane rather than on one
+                                // of its own — the glass that was put here for
+                                // a title on a clip is the glass a lyric on a
+                                // clip needs.
+                                SungLineLabel(
+                                    lyrics = lyrics,
+                                    positionMs = positionMs,
+                                    isPlaying = state.isPlaying,
+                                    modifier = Modifier.fillMaxWidth(),
+                                )
                                 Text(
                                     text = state.title,
                                     style = MaterialTheme.typography.titleLarge,

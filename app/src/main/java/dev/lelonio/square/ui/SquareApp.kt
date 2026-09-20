@@ -2382,6 +2382,9 @@ fun SquareApp(
                                 // decoder from opening behind the player.
                                 canvas = canvas,
                                 canvasLive = panelCanvasLive,
+                                // The same fetch the window reads: one request
+                                // per track, two places it is shown.
+                                lyrics = lyrics,
                                 // The ground, and not the page the pane itself
                                 // samples.
                                 //
@@ -2522,6 +2525,9 @@ fun SquareApp(
                                         state = playback,
                                         positionMs = positionMs,
                                         playingOn = remote?.deviceName?.takeIf { it.isNotEmpty() },
+                                        // Carried, where the clip and the
+                                        // backdrop are not: see the parameter.
+                                        lyrics = lyrics,
                                         modifier = Modifier.fillMaxSize(),
                                         interactive = false,
                                         onOpen = {},

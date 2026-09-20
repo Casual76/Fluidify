@@ -1181,6 +1181,26 @@ fun PlayerScreen(
                             }
                         }
 
+                        // The line being sung, above the name of the song it
+                        // comes from — where the official client puts it, and
+                        // for the same reason: the words are what a listener is
+                        // following, and the panel holding all of them is a
+                        // screen away.
+                        SungLineCapsule(
+                            lyrics = lyrics,
+                            positionMs = positionMs,
+                            isPlaying = state.isPlaying,
+                            // Nothing to add while the whole lyric is on the
+                            // stage above: the line this would show is the one
+                            // already lit in the middle of the screen.
+                            wanted = panel != PlayerPanel.LYRICS,
+                            backdrop = glassBackdrop,
+                            // The same question the title's own capsule asks,
+                            // asked the same way; see GlassSurface.
+                            onPicture = { canvas != null },
+                            onOpenLyrics = { panel = PlayerPanel.LYRICS },
+                        )
+
                         // Title and artist on their own capsule, with the two
                         // per-track actions on the right.
                         GlassSurface(
