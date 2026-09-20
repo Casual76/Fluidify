@@ -696,6 +696,24 @@ fun PlayerScreen(
         CompositionLocalProvider(
             LocalContentColor provides GlassInk,
             dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides playerGlass,
+            // And the canvas twin, which was the half that got forgotten.
+            //
+            // `LocalGlassBackdrop` is what chrome floating *over* a page refracts;
+            // `LocalFluidCanvasBackdrop` is what glass standing *inside* one refracts, and every
+            // engine control prefers the second — see `GlassButton`. Re-providing only the first
+            // left the transport buttons reading the app's root ground: the blurred sleeve of the
+            // playing track under the *page's* veil, which on the light side is a near-white wash.
+            // A control's film is a third of an alpha by design, so that wash came straight
+            // through and the buttons sat on the player as pale discs with white glyphs on them,
+            // while the capsule two inches above — drawn by the other renderer, with a film at a
+            // half — had turned dark with the rest of the page. Only a part of the player changing
+            // side is exactly what that looks like.
+            //
+            // The stage alone and not `playerGlass`: the combined one carries the app's ground
+            // with it, and the app's ground is the thing whose veil belongs to the page. The stage
+            // is this screen's own floor, recorded before its body, so nothing sampling it can be
+            // inside it.
+            dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop provides stageGlass,
         ) {
             PlayerCollapseDrag(
                 onDrag = onMorphDrag,
