@@ -415,4 +415,8 @@
     <string name="widget_add_tall">Add the tall one</string>
     <string name="widget_add_note">The cover behind, what is playing, and the three buttons. It follows the app&#8217;s theme.</string>
     <string name="widget_nothing_playing_hint">Open Fluidify and press play</string>
+    <string name="library_offline">Showing what is downloaded. Spotify has not answered yet.</string>
+    <string name="library_offline_action">Try again</string>
+    <string name="library_needs_app">Your followed artists and saved albums need your own Spotify application connected.</string>
+    <string name="library_needs_app_action">Connect</string>
 </resources>

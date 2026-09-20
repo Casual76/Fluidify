@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -15,6 +16,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
@@ -116,5 +118,44 @@ fun GlassButton(
     ) {
         val contentTint = if (tint.isSpecified) tint else MaterialTheme.colorScheme.onSurface
         CompositionLocalProvider(LocalContentColor provides contentTint, content = { content() })
+    }
+}
+/**
+ * The same glass, cut round, at whatever size the caller asks for.
+ *
+ * Lived in PlayerScreen while the player was the only screen with a transport.
+ * The now-playing panel has one too, and two hand-rolled copies of a disc are
+ * how the two ends of the same app stop matching — so it is here, beside the
+ * button it is made of.
+ *
+ * It takes no backdrop, for the reason [GlassButton] gives: the engine's
+ * controls find the page they stand on themselves, and the caller's job is to
+ * provide the right one around them rather than to thread it through.
+ */
+@Composable
+internal fun RoundGlassButton(
+    size: Dp,
+    modifier: Modifier = Modifier,
+    enabled: Boolean = true,
+    /** Draws the material without photographing anything; see [GlassButton.flat]. */
+    flat: Boolean = false,
+    /** False for a copy that is a picture of a control rather than a control. */
+    isInteractive: Boolean = true,
+    onClick: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    GlassButton(
+        onClick = { if (enabled) onClick() },
+        modifier = modifier
+            .size(size)
+            // Dimmed rather than removed when there is nowhere to go: a control
+            // that disappears makes the whole row jump.
+            .graphicsLayer { alpha = if (enabled) 1f else 0.4f },
+        isInteractive = isInteractive && enabled,
+        contentHeight = size,
+        contentPadding = 0.dp,
+        flat = flat,
+    ) {
+        content()
     }
 }

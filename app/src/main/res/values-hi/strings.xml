@@ -409,4 +409,8 @@
     <string name="widget_add_tall">लंबा जोड़ें</string>
     <string name="widget_add_note">पीछे कवर, जो चल रहा है, और तीन बटन।</string>
     <string name="widget_nothing_playing_hint">Fluidify खोलें और प्ले दबाएं</string>
+    <string name="library_offline">जो डाउनलोड है वही दिख रहा है. Spotify ने अभी जवाब नहीं दिया.</string>
+    <string name="library_offline_action">फिर कोशिश करें</string>
+    <string name="library_needs_app">आपके फ़ॉलो किए कलाकार और सहेजे गए एल्बम के लिए आपका अपना Spotify ऐप्लिकेशन जुड़ा होना ज़रूरी है.</string>
+    <string name="library_needs_app_action">जोड़ें</string>
 </resources>

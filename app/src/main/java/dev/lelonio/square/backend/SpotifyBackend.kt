@@ -131,7 +131,24 @@ class SpotifyBackend(private val container: SquareApplication) : MusicBackend {
 
     private suspend fun rootlist(): List<CatalogPlaylist> =
         runCatching { Catalog.playlists() }
+            // An empty rootlist is a failure, not an answer.
+            //
+            // The access point answers a request it cannot serve with an empty
+            // list as readily as with an error — a session that came up without
+            // finishing its handshake is the common way — and `runCatching`
+            // calls that a success. What the listener then saw was a library of
+            // exactly one row, Liked Songs, with nothing to say why. Turning it
+            // into a failure is what puts the Web API fallback below in play.
+            //
+            // An account really can have no playlists, so this only *tries* the
+            // other road: if the Web API comes back empty too, empty is the
+            // honest answer and the `recoverCatching` returns it.
+            .mapCatching { list ->
+                check(list.isNotEmpty()) { "rootlist vuoto" }
+                list
+            }
             .recoverCatching {
+                android.util.Log.w(TAG, "rootlist unusable, asking the Web API: ${it.message}")
                 check(container.webApi.isReady) { it.message ?: "rootlist non disponibile" }
                 container.api.playlists(limit = WEB_API_LIBRARY_PAGE).items.map { dto ->
                     CatalogPlaylist(
@@ -311,6 +328,9 @@ class SpotifyBackend(private val container: SquareApplication) : MusicBackend {
          * reported the second failure.
          */
         const val WEB_API_LIBRARY_PAGE = 50
+
+        /** The same tag the rest of the library load writes under. */
+        private const val TAG = "SquareUi"
 
         /**
          * The purple heart Spotify's own clients draw for Liked Songs.

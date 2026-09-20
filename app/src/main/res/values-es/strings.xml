@@ -394,4 +394,8 @@
     <string name="widget_add_tall">Anadir el alto</string>
     <string name="widget_add_note">La portada detras, lo que suena, y los tres botones. Sigue el tema de la aplicacion.</string>
     <string name="widget_nothing_playing_hint">Abre Fluidify y pulsa play</string>
+    <string name="library_offline">Se muestra lo descargado. Spotify aún no ha respondido.</string>
+    <string name="library_offline_action">Reintentar</string>
+    <string name="library_needs_app">Los artistas que sigues y los álbumes guardados necesitan tu propia aplicación de Spotify conectada.</string>
+    <string name="library_needs_app_action">Conectar</string>
 </resources>

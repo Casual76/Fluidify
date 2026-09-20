@@ -69,6 +69,21 @@ fun GlassSurface(
      * refraction cannot follow, or a moving player falls back to.
      */
     surfaceColor: Color = Color.Unspecified,
+    /**
+     * Whether this pane is standing on a picture rather than on a page.
+     *
+     * A lambda, and read *here* rather than at the call site, and that is the
+     * whole of why it exists. A pane deep inside the player sits in a scope that
+     * has already settled by the time a Canvas renders its first frame, so the
+     * same answer handed down as a value never arrived — it was correct where it
+     * was computed and stale where it was needed. Reading the state inside this
+     * composable subscribes *this* pane to it, which is a subscription nobody
+     * above has to remember to make.
+     *
+     * See [dev.lelonio.square.ui.theme.LocalOnPicture], which is the engine's
+     * half of the same sentence for its own controls.
+     */
+    onPicture: (() -> Boolean)? = null,
     content: @Composable () -> Unit,
 ) {
     // The same material the bottom bar is made of, so one app has one glass.
@@ -85,6 +100,14 @@ fun GlassSurface(
     // difference between a small pill and a panel covering half the screen; what
     // the material *is* is not.
     val config = dev.lelonio.square.ui.glass.LocalGlassEffectConfig.current
+    // The dark-page film, named out loud, for a pane on a clip. Not a darker
+    // one: what was wanted here is the material the app already wears in the
+    // dark — the mini player's glass — and not a slab painted over it.
+    val film = if (onPicture?.invoke() == true) {
+        dev.lelonio.square.ui.glass.DefaultSurfaceTint
+    } else {
+        Color.Unspecified
+    }
     // The refraction is part of that recipe now, and it is the reason this takes
     // a shape it can bend light along. Anything else keeps the film below.
     val blurDp = (config.blurRadius * blurScale).coerceAtLeast(0f)
@@ -116,6 +139,7 @@ fun GlassSurface(
             // Panes sit over their own backdrop: the player's is the artwork
             // behind it rather than the page under that.
             ownBackdrop = backdrop,
+            filmOverride = film,
         ),
     ) {
         content()

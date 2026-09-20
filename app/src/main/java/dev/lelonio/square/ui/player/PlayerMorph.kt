@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
@@ -15,6 +16,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.hapticfeedback.HapticFeedback
 import androidx.compose.ui.hapticfeedback.HapticFeedbackType
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.dp
 import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import dev.antigravity.fluidengine.ui.fluid.GlassTint
 import kotlinx.coroutines.CoroutineScope
@@ -136,6 +138,48 @@ fun playerMorphTarget(progress: Float, progressVelocity: Float): Float = when {
 }
 
 /**
+ * How far a finger has to run, per axis, for one whole journey.
+ *
+ * The travelling edge and nothing else: upwards it is `pillBounds.top`, to the
+ * left it is `pillBounds.left` — the distance that edge covers on its way to
+ * zero. Zero on an axis means the surface does not open that way at all, which
+ * is how the pill says that sideways is already the gesture for changing track.
+ */
+@Immutable
+data class PlayerMorphTravel(val up: Float, val left: Float = 0f) {
+    /** What a movement upwards is worth, in fractions of the journey. */
+    fun vertical(dy: Float): Float = if (up > 1f) -dy / up else 0f
+
+    /** And one to the left. Zero when this surface does not open that way. */
+    fun horizontal(dx: Float): Float = if (left > 1f) -dx / left else 0f
+
+    /**
+     * What a movement is worth along one axis, the other ignored.
+     *
+     * One axis and not both added together, which is what this did first and is
+     * the reason a pull to the left could not finish: the two runs are different
+     * lengths, so the drift every sideways gesture carries downwards counted
+     * against the journey four times harder than the sideways part counted for
+     * it. Past halfway the only way on was to start pulling upwards, which is
+     * precisely the gesture the sideways one exists to replace.
+     */
+    fun along(horizontal: Boolean, dx: Float, dy: Float): Float =
+        if (horizontal) horizontal(dx) else vertical(dy)
+}
+
+/**
+ * No journey is allowed to be shorter than a thumb.
+ *
+ * Not a preference. `pillBounds.top` on the side panel is the status bar plus
+ * twelve points, and a whole journey inside a hundred pixels is not a gesture,
+ * it is a touch that slipped — which is also why the full player on a tablet
+ * used to close on a hundred pixels of drag. On the pill this never bites: its
+ * own top edge is most of the screen, so a phone comes out of here exactly as
+ * it went in.
+ */
+val MinMorphTravel = 220.dp
+
+/**
  * The finger. `deltaPx` positive downwards, one formula for both ends.
  *
  * `snapTo` rather than an animation: while the finger is down it owns the
@@ -145,8 +189,33 @@ fun CoroutineScope.dragPlayerMorph(
     expand: Animatable<Float, AnimationVector1D>,
     deltaPx: Float,
     travelPx: Float,
+) = dragPlayerMorphBy(expand, -deltaPx / travelPx.coerceAtLeast(1f))
+
+/** The same finger, having already been asked what its movement was worth. */
+fun CoroutineScope.dragPlayerMorphBy(
+    expand: Animatable<Float, AnimationVector1D>,
+    units: Float,
 ) = launch {
-    expand.snapTo(expand.value - deltaPx / travelPx.coerceAtLeast(1f))
+    expand.snapTo(expand.value + units)
+}
+
+/**
+ * The release, for a gesture that came in more than one direction.
+ *
+ * The velocity arrives already in journeys per second — projected through the
+ * same [PlayerMorphTravel.units] the drag went through — so the sign and the
+ * scale are the ones [playerMorphTarget] is written against.
+ */
+fun CoroutineScope.settlePlayerMorphUnits(
+    expand: Animatable<Float, AnimationVector1D>,
+    velocityUnitsPerSec: Float,
+    haptics: HapticFeedback?,
+) = launch {
+    val target = playerMorphTarget(expand.value, velocityUnitsPerSec)
+    if (target == 0f && expand.value > MorphEpsilon) {
+        haptics?.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+    expand.animateTo(target, PlayerMorphSpec, initialVelocity = velocityUnitsPerSec)
 }
 
 /**

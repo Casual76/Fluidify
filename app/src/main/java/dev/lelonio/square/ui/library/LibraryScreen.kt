@@ -40,6 +40,7 @@ import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -93,7 +94,9 @@ import com.adamglin.phosphoricons.Fill
 import com.adamglin.phosphoricons.fill.PushPin
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.ArrowsDownUp
+import com.adamglin.phosphoricons.regular.CloudSlash
 import com.adamglin.phosphoricons.regular.ListBullets
+import com.adamglin.phosphoricons.regular.Plugs
 import com.adamglin.phosphoricons.regular.Plus
 import com.adamglin.phosphoricons.regular.SquaresFour
 
@@ -183,6 +186,15 @@ fun LibraryScreen(
     albums: List<CatalogPlaylist> = emptyList(),
     /** Which pages are kept offline, for the Downloads chip. */
     downloaded: Set<String> = emptySet(),
+    /**
+     * False when the account's own Spotify application is not connected.
+     *
+     * Two of the five chips are empty without it — followed artists and saved
+     * albums both come from the Web API — and empty with nothing said is
+     * indistinguishable from an account that follows nobody.
+     */
+    webApiConnected: Boolean = true,
+    onConnectWebApi: () -> Unit = {},
     /**
      * The shelf of songs downloaded on their own, or null when there are none.
      *
@@ -413,9 +425,14 @@ fun LibraryScreen(
                         .layerBackdrop(listBackdrop, frozen = { scrolling })
                         .glassBackdropSource(bodyGlass, frozen = { scrolling }),
                 ) { shownFilter ->
+                // `downloaded` and `downloadedSongs` belong in here as much
+                // as in the outer one: without them the Downloads chip went on
+                // showing the list it had when it was opened, and a download
+                // finishing under it changed nothing.
                 val playlists = remember(
                     state.playlists, albums, artistItems, shownFilter,
                     playlistOrder, pinned, order, descending,
+                    downloaded, downloadedSongs,
                 ) { sortedFor(shownFilter) }
                 when (layout) {
                     Layout.GRID -> LazyVerticalGrid(
@@ -442,12 +459,22 @@ fun LibraryScreen(
                         // The heading rides in the grid, spanning it, so it
                         // scrolls away with what it names. The grid stays a
                         // grid: only the row above it moved into the page.
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "notice") {
+                            LibraryNotices(
+                                offline = state.offline,
+                                onRetry = onRetry,
+                                webApiConnected = webApiConnected,
+                                onConnectWebApi = onConnectWebApi,
+                                filter = shownFilter,
+                            )
+                        }
+
                         item(span = { GridItemSpan(maxLineSpan) }, key = "header") {
                             Header(
                                 count = playlists.size,
                                 layout = layout,
                                 order = order,
-                                filter = filter,
+                                filter = shownFilter,
                                 backdrop = backdrop,
                                 title = title,
                                 collapse = collapse,
@@ -484,12 +511,22 @@ fun LibraryScreen(
                             .fluidOverscrollContent(overscroll),
                         overscrollEffect = null,
                     ) {
+                        item(key = "notice") {
+                            LibraryNotices(
+                                offline = state.offline,
+                                onRetry = onRetry,
+                                webApiConnected = webApiConnected,
+                                onConnectWebApi = onConnectWebApi,
+                                filter = shownFilter,
+                            )
+                        }
+
                         item(key = "header") {
                             Header(
                                 count = playlists.size,
                                 layout = layout,
                                 order = order,
-                                filter = filter,
+                                filter = shownFilter,
                                 backdrop = backdrop,
                                 title = title,
                                 collapse = collapse,
@@ -878,6 +915,93 @@ private fun PinMark(modifier: Modifier = Modifier) {
         tint = InkDim,
         modifier = modifier.size(14.dp),
     )
+}
+
+/**
+ * Why the library is shorter than the account is.
+ *
+ * Two different shortfalls, and the page used to show neither. One is the
+ * download index standing in because the session never answered; the other is
+ * two chips that cannot be filled without the listener's own Spotify
+ * application. Both looked, from the outside, like playlists going missing.
+ *
+ * A line rather than a dialog: the library still works, and what is on screen
+ * is real — it is just not all of it.
+ */
+@Composable
+private fun LibraryNotices(
+    offline: Boolean,
+    onRetry: () -> Unit,
+    webApiConnected: Boolean,
+    onConnectWebApi: () -> Unit,
+    filter: Filter,
+) {
+    // Only where it is the answer to what is on screen. Under Playlists a
+    // missing application changes nothing, and a standing warning that does not
+    // apply is how people learn to stop reading them.
+    val needsApp = !webApiConnected &&
+        !offline &&
+        (filter == Filter.ARTISTS || filter == Filter.ALBUMS)
+
+    Column(Modifier.fillMaxWidth()) {
+        if (offline) {
+            Notice(
+                icon = PhosphorIcons.Regular.CloudSlash,
+                text = stringResource(R.string.library_offline),
+                action = stringResource(R.string.library_offline_action),
+                onAction = onRetry,
+            )
+        }
+        if (needsApp) {
+            Notice(
+                icon = PhosphorIcons.Regular.Plugs,
+                text = stringResource(R.string.library_needs_app),
+                action = stringResource(R.string.library_needs_app_action),
+                onAction = onConnectWebApi,
+            )
+        }
+    }
+}
+
+@Composable
+private fun Notice(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    text: String,
+    action: String,
+    onAction: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(bottom = 10.dp)
+            .clip(RoundedCornerShape(16.dp))
+            .background(Ink.copy(alpha = 0.06f))
+            .padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            icon,
+            contentDescription = null,
+            tint = InkDim,
+            modifier = Modifier.size(18.dp),
+        )
+        Text(
+            text,
+            style = MaterialTheme.typography.bodySmall,
+            color = InkDim,
+            modifier = Modifier
+                .weight(1f)
+                .padding(start = 10.dp),
+        )
+        Text(
+            action,
+            style = MaterialTheme.typography.labelLarge,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier
+                .pressable(onAction, shape = RoundedCornerShape(12.dp), pressedScale = 0.96f)
+                .padding(horizontal = 12.dp, vertical = 6.dp),
+        )
+    }
 }
 
 /** A glass pill, for the handful of places that need a button at all. */

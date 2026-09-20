@@ -57,6 +57,16 @@ fun CanvasSurface(
      * cover used to be. The caller keeps the cover up until this fires.
      */
     onFirstFrame: () -> Unit = {},
+    /**
+     * The clip's shape, as width over height, once the decoder knows it.
+     *
+     * Canvases are nine by sixteen almost without exception, and the caller that
+     * needs this — the now-playing panel, which grows its slot to fit the clip —
+     * assumes that until this says otherwise. It is reported rather than
+     * assumed because "almost" is not "always", and a square clip in a slot cut
+     * for a tall one is a cropped picture with two empty bands.
+     */
+    onAspectRatio: (Float) -> Unit = {},
 ) {
     val context = LocalContext.current
 
@@ -97,8 +107,19 @@ fun CanvasSurface(
     }
 
     val ready = rememberUpdatedState(onFirstFrame)
+    val shape = rememberUpdatedState(onAspectRatio)
     DisposableEffect(exoPlayer) {
         val listener = object : Player.Listener {
+            override fun onVideoSizeChanged(size: androidx.media3.common.VideoSize) {
+                if (size.width <= 0 || size.height <= 0) return
+                // The pixels are not always square: the ratio the decoder
+                // reports is the one that turns stored pixels into displayed
+                // ones, and leaving it out is how a clip comes out subtly
+                // stretched on the one device that needed it.
+                val width = size.width * size.pixelWidthHeightRatio
+                shape.value(width / size.height)
+            }
+
             override fun onRenderedFirstFrame() {
                 // The picture exists now, so the clip goes back to following
                 // the music — and rewinds, since what it played to get here is

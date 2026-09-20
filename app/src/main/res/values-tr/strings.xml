@@ -409,4 +409,8 @@
     <string name="widget_add_tall">Uzun olani ekle</string>
     <string name="widget_add_note">Arkada kapak, calan parca ve uc dugme. Uygulamanin temasini izler.</string>
     <string name="widget_nothing_playing_hint">Fluidify&#8217;i ac ve oynata bas</string>
+    <string name="library_offline">İndirilenler gösteriliyor. Spotify henüz yanıt vermedi.</string>
+    <string name="library_offline_action">Yeniden dene</string>
+    <string name="library_needs_app">Takip ettiğin sanatçılar ve kaydettiğin albümler için kendi Spotify uygulamanın bağlı olması gerekir.</string>
+    <string name="library_needs_app_action">Bağla</string>
 </resources>

@@ -368,6 +368,20 @@ fun Modifier.liquidGlass(
      * take a fresh capture or it reflects the place it used to be.
      */
     heldWhileMoving: () -> Boolean = { false },
+    /**
+     * The film, when the caller knows it and the side cannot.
+     *
+     * [glassFilmColor] picks between the paper film and the dark-page one by
+     * reading the side of the page, and that is right everywhere except on a
+     * *picture*: a pane standing on a Canvas is on a dark floor whatever the
+     * phone is set to, and taking the paper answer there gives a near-white
+     * lozenge — with, in the one place it happens, white letters written on it.
+     *
+     * Specified means both halves: this colour, at the weight a dark page asks
+     * for, which is the setting's own rather than the heavier one paper needs.
+     * Everything else about the material stays the renderer's.
+     */
+    filmOverride: Color = Color.Unspecified,
     // Forwarded to drawBackdrop: see LocalBackdropLoopBucket's doc. Defaults to
     // whatever's provided in composition, so player control pills over a
     // looping video pick this up without every call site naming it explicitly.
@@ -426,7 +440,8 @@ fun Modifier.liquidGlass(
     // said "light" on both sides and the branch under it was dead. See
     // LocalLightTheme.
     val lightPage = !dev.lelonio.square.ui.theme.onDarkPage
-    val surfaceTintColor = glassFilmColor(config)
+    val namedFilm = filmOverride.isSpecified
+    val surfaceTintColor = if (namedFilm) filmOverride else glassFilmColor(config)
 
     /**
      * How much of that film goes on — the setting, put through the side it is laid on.
@@ -442,7 +457,7 @@ fun Modifier.liquidGlass(
      * invented for this — it is the ratio the page's own wash uses for the same reason, and the one
      * the backdrop's two veils were hand-tuned to.
      */
-    val filmAlpha = if (lightPage) {
+    val filmAlpha = if (lightPage && !namedFilm) {
         (config.surfaceOpacity * PaperFilmRatio).coerceIn(0f, 0.92f)
     } else {
         config.surfaceOpacity.coerceIn(0f, 1f)

@@ -74,6 +74,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val displayName: String,
             val playlists: List<CatalogPlaylist>,
             val avatarUrl: String? = null,
+            /**
+             * True when this library is the download index rather than the
+             * account's own; see [offlineLibrary].
+             *
+             * It used to be told apart by nothing at all, which is the whole of
+             * the bug it was written for: a handshake that timed out left a
+             * library of whatever happened to be downloaded, a blank name and no
+             * picture, looking exactly like an account that had lost most of its
+             * playlists overnight.
+             */
+            val offline: Boolean = false,
         ) : UiState
         data class Failed(val message: String) : UiState
     }
@@ -1367,6 +1378,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         dev.lelonio.square.auth.EngineCredentials.clear(getApplication())
         container.recentStore.clear()
         container.playlistOrder.clear()
+        container.preferences.clearLastProfile()
         // Somebody else's library must not be sitting in the cache when the
         // next account signs in.
         contextCache.clear()
@@ -1414,6 +1426,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // shelf for it is the one thing the listener came for.
             offlineLibrary()?.let {
                 _state.value = it
+                // And come back for the real one when the session turns up. This
+                // is the path that matters most: the handshake losing a race
+                // with a cold start is far the commonest way to get here, and it
+                // is usually over a second or two later.
+                watchForSession()
                 return@launch
             }
             _state.value = if (container.spotifySignedIn) {
@@ -1442,6 +1459,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 // could not be read, and the downloads are unaffected by that.
                 _state.value = offlineLibrary() ?: UiState.Failed(describe(it))
             }
+        watchForSession()
+    }
+
+    /** The watcher below, so a second offline load does not start a second one. */
+    private var sessionWatch: Job? = null
+
+    /**
+     * Comes back for the real library once the session turns up.
+     *
+     * Without this, a handshake that lost a race with a cold start left the
+     * downloads standing in for the library until somebody thought to pull the
+     * page down — and nothing on screen suggested that was the thing to do. The
+     * session's readiness is a JNI boolean with no callback behind it, so this
+     * asks, slowly, and only while there is something to ask for.
+     */
+    private fun watchForSession() {
+        val offline = (_state.value as? UiState.Ready)?.offline == true
+        if (!offline || !container.spotifySignedIn) {
+            sessionWatch?.cancel()
+            sessionWatch = null
+            return
+        }
+        if (sessionWatch?.isActive == true) return
+        sessionWatch = viewModelScope.launch {
+            var waited = 0L
+            while (waited < SESSION_WATCH_MS) {
+                delay(SESSION_WATCH_INTERVAL_MS)
+                waited += SESSION_WATCH_INTERVAL_MS
+                if ((_state.value as? UiState.Ready)?.offline != true) return@launch
+                if (!container.spotifySignedIn) return@launch
+                if (!NativeBridge.isConnected) continue
+                android.util.Log.i(TAG, "session arrived, asking for the library again")
+                refresh()
+                return@launch
+            }
+        }
     }
 
     /**
@@ -1477,9 +1530,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (everything.isEmpty()) return null
 
         android.util.Log.i(TAG, "offline library: ${everything.size} downloaded")
-        // The account name is not worth a request that cannot be made, and the
-        // phone's own files belong here as much as they do online.
-        return UiState.Ready("", withLocalFiles(everything))
+        // The account name is not worth a request that cannot be made — but it
+        // is worth remembering, so the header goes on saying who is signed in
+        // instead of going blank the moment a handshake is slow.
+        val profile = container.preferences.lastProfile()
+        // And the phone's own files belong here as much as they do online.
+        return UiState.Ready(
+            displayName = profile?.first.orEmpty(),
+            playlists = withLocalFiles(everything),
+            avatarUrl = profile?.second,
+            offline = true,
+        )
     }
 
     /**
@@ -1581,11 +1642,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (!container.webApi.isReady) return@launch
         runCatching { container.api.me() }
             .onSuccess { profile ->
+                // The largest image and not the smallest.
+                //
+                // Spotify returns `images` biggest first, so `last` was the
+                // 64-pixel one — drawn into a 46dp circle, which on a tablet is
+                // half as many pixels again as it has. Every other reader of
+                // this field in the app takes `first`.
+                val avatar = profile.images.firstOrNull()?.url
+                val name = profile.displayName?.takeIf(String::isNotBlank)
+                // Kept for the launches that come up without a session: the
+                // account is the same account, and blanking the header every
+                // time the handshake is slow is what made the name and the
+                // picture look like they went missing at random.
+                container.preferences.setLastProfile(
+                    name ?: (_state.value as? UiState.Ready)?.displayName.orEmpty(),
+                    avatar,
+                )
                 val ready = _state.value as? UiState.Ready ?: return@onSuccess
                 _state.value = ready.copy(
-                    displayName = profile.displayName?.takeIf(String::isNotBlank)
-                        ?: ready.displayName,
-                    avatarUrl = profile.images.lastOrNull()?.url,
+                    displayName = name ?: ready.displayName,
+                    avatarUrl = avatar,
                 )
                 // Kept for the one question the playlist menu asks: is this
                 // list mine. The id, not the display name — two accounts can
@@ -3313,6 +3389,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         const val ENGINE_TIMEOUT_MS = 30_000L
         const val POLL_INTERVAL_MS = 250L
+
+        /**
+         * How long, and how often, the offline library waits for a session.
+         *
+         * Two seconds apart rather than a quarter of one: nobody is watching a
+         * spinner here — the library is on screen and usable — so this is a
+         * background question, and the answer only has to arrive before the
+         * listener wonders where their playlists went. Five minutes is where it
+         * stops asking, which is the point at which a phone that has been out
+         * of signal that long will be refreshed by hand anyway.
+         */
+        const val SESSION_WATCH_INTERVAL_MS = 2_000L
+        const val SESSION_WATCH_MS = 300_000L
 
         /** librespot's volume scale, which is the one the cluster speaks. */
         const val MAX_VOLUME = 65_535

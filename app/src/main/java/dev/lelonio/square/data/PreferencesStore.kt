@@ -120,6 +120,34 @@ class PreferencesStore(context: Context) {
         prefs.edit().putBoolean(KEY_CANVAS, value).apply()
     }
 
+    /**
+     * The name and the picture the account was last seen wearing.
+     *
+     * Kept because the library can come up without a session — see
+     * `MainViewModel.offlineLibrary` — and the account is still the same
+     * account. Blanking the header on every bad handshake is what made the
+     * profile look like it went missing at random, which is exactly what it
+     * looked like from the outside.
+     *
+     * Read straight, like the player's own last pose: it decides what the first
+     * composed frame says.
+     */
+    fun lastProfile(): Pair<String, String?>? {
+        val name = prefs.getString(KEY_PROFILE_NAME, null) ?: return null
+        return name to prefs.getString(KEY_PROFILE_AVATAR, null)
+    }
+
+    fun setLastProfile(name: String, avatarUrl: String?) {
+        prefs.edit()
+            .putString(KEY_PROFILE_NAME, name)
+            .putString(KEY_PROFILE_AVATAR, avatarUrl)
+            .apply()
+    }
+
+    fun clearLastProfile() {
+        prefs.edit().remove(KEY_PROFILE_NAME).remove(KEY_PROFILE_AVATAR).apply()
+    }
+
     /** When the manifest was last asked about a newer release. See [UpdateChecker]. */
     fun lastUpdateCheck(): Long = prefs.getLong(KEY_LAST_UPDATE_CHECK, 0L)
 
@@ -190,5 +218,7 @@ class PreferencesStore(context: Context) {
         const val KEY_PLAYER_OPEN = "player_open"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
         const val KEY_SKIPPED_UPDATE = "skipped_update"
+        const val KEY_PROFILE_NAME = "profile_name"
+        const val KEY_PROFILE_AVATAR = "profile_avatar"
     }
 }

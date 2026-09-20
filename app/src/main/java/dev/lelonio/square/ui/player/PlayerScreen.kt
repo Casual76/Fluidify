@@ -106,7 +106,7 @@ import dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics
 import dev.lelonio.square.R
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.Artwork
-import dev.lelonio.square.ui.components.GlassButton
+import dev.lelonio.square.ui.components.RoundGlassButton
 import dev.lelonio.square.ui.library.formatDuration
 import dev.lelonio.square.ui.theme.softShadow
 import com.adamglin.phosphoricons.regular.MonitorPlay
@@ -1186,6 +1186,18 @@ fun PlayerScreen(
                         GlassSurface(
                             backdrop = glassBackdrop,
                             surfaceColor = GlassFilm,
+                            // On a clip, this pane is on a dark floor whatever
+                            // the phone is set to — so it takes the dark-page
+                            // film rather than paper's, which over a Canvas is a
+                            // near-white lozenge with white letters on it.
+                            //
+                            // Handed over as a lambda because `GlassSurface` has
+                            // to read it *itself*: this scope has already settled
+                            // by the time the first frame lands, which is why the
+                            // same answer passed as a value arrived when the
+                            // player opened at start-up and never arrived when it
+                            // was expanded from the side panel.
+                            onPicture = { canvas != null },
                             shape = RoundedCornerShape(50),
                             modifier = Modifier
                                 .fillMaxWidth()
@@ -1223,7 +1235,6 @@ fun PlayerScreen(
                                 // official client's own radio button does it.
                                 if (onRadio != null) {
                                     RoundGlassButton(
-                                        backdrop = glassBackdrop,
                                         size = 40.dp,
                                         onClick = onRadio,
                                     ) {
@@ -1241,7 +1252,6 @@ fun PlayerScreen(
                                 // it, which is why it sits here and not in the
                                 // segmented switch below.
                                 RoundGlassButton(
-                                    backdrop = glassBackdrop,
                                     size = 40.dp,
                                     onClick = {
                                         panel = if (panel == PlayerPanel.QUEUE) {
@@ -1265,7 +1275,6 @@ fun PlayerScreen(
                                 if (playlistEditAvailable) {
                                 Spacer(Modifier.size(8.dp))
                                 RoundGlassButton(
-                                    backdrop = glassBackdrop,
                                     size = 40.dp,
                                     onClick = {
                                         panel = if (panel == PlayerPanel.ADD_TO_PLAYLIST) {
@@ -1635,7 +1644,7 @@ private fun TopBar(
             .padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        PlayerGlassButton(backdrop, onClick = onCollapse) {
+        PlayerGlassButton(onClick = onCollapse) {
             Icon(PhosphorIcons.Regular.CaretDown, contentDescription = stringResource(R.string.close))
         }
         // Names whatever the middle of the screen is currently showing, so the
@@ -1680,7 +1689,7 @@ private fun TopBar(
         // is the thing this app cannot do itself — so it hands the track over
         // at the position it had reached rather than pretending otherwise.
         if (onWatchVideo != null) {
-            PlayerGlassButton(backdrop, onClick = onWatchVideo) {
+            PlayerGlassButton(onClick = onWatchVideo) {
                 Icon(
                     PhosphorIcons.Regular.YoutubeLogo,
                     contentDescription = stringResource(R.string.watch_video),
@@ -1691,7 +1700,7 @@ private fun TopBar(
             }
         }
         if (connectAvailable) {
-            PlayerGlassButton(backdrop, onClick = onOpenDevices) {
+            PlayerGlassButton(onClick = onOpenDevices) {
                 Icon(
                     PhosphorIcons.Regular.Devices,
                     contentDescription = stringResource(R.string.devices),
@@ -1951,7 +1960,6 @@ internal fun Controls(
         val transportHaptics = LocalFluidHaptics.current
 
         RoundGlassButton(
-            backdrop = backdrop,
             size = 62.dp,
             enabled = state.hasPrevious,
             onClick = {
@@ -1967,7 +1975,6 @@ internal fun Controls(
         }
 
         RoundGlassButton(
-            backdrop = backdrop,
             size = 76.dp,
             onClick = {
                 transportHaptics.play(
@@ -2009,7 +2016,6 @@ internal fun Controls(
         }
 
         RoundGlassButton(
-            backdrop = backdrop,
             size = 62.dp,
             enabled = state.hasNext,
             onClick = {
@@ -2082,45 +2088,21 @@ private fun KaraokeBadge(amount: Float, backdrop: Backdrop, onClick: () -> Unit)
     }
 }
 
-@Composable
-private fun RoundGlassButton(
-    backdrop: Backdrop,
-    size: Dp,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    onClick: () -> Unit,
-    content: @Composable () -> Unit,
-) {
-    GlassButton(
-        onClick = { if (enabled) onClick() },
-        modifier = modifier
-            .size(size)
-            // Dimmed rather than removed when there is nowhere to go: a control
-            // that disappears makes the whole row jump.
-            .graphicsLayer { alpha = if (enabled) 1f else 0.4f },
-        contentHeight = size,
-        contentPadding = 0.dp,
-    ) {
-        content()
-    }
-}
-
 /**
  * A disc of glass that answers a press, at the size the player's transport uses.
  *
  * Named apart from [dev.lelonio.square.ui.components.GlassButton] because it is
  * not the same thing: that one is the app's button, this one is a fixed 44 dp
- * circle wired to [RoundGlassButton] and to the player's own backdrop. They
- * used to be able to share a name because they lived in different files; they
- * cannot, because they live in the same package.
+ * circle wired to [dev.lelonio.square.ui.components.RoundGlassButton]. They used
+ * to be able to share a name because they lived in different files; they cannot,
+ * because they live in the same package.
  */
 @Composable
 private fun PlayerGlassButton(
-    backdrop: Backdrop,
     onClick: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    RoundGlassButton(backdrop = backdrop, size = 44.dp, onClick = onClick) { content() }
+    RoundGlassButton(size = 44.dp, onClick = onClick) { content() }
 }
 
 /** A control that opened the panel currently showing is coloured, not just lit. */

@@ -598,9 +598,18 @@ fun HomeScreen(
                     item(contentType = Feed.LIBRARY.name) { Heading(stringResource(R.string.play_again)) }
                     item(contentType = Feed.LIBRARY.name) {
                         LazyRow(
-                            contentPadding = PaddingValues(horizontal = 20.dp),
+                            // Full-bleed, and the panel's room handed to the contents instead.
+                            // A margin on the row stopped it short of the panel, which left the
+                            // glass at the side with the page colour to bend and the last tile of
+                            // every shelf parked under it. As content padding the row runs to the
+                            // edge of the window, so the panel has a carousel to refract, and the
+                            // end of it can still be scrolled out from under the panel.
+                            contentPadding = PaddingValues(
+                                start = 20.dp,
+                                end = 20.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current,
+                            ),
                             horizontalArrangement = Arrangement.spacedBy(12.dp),
-                            modifier = Modifier.padding(top = 14.dp).padding(end = dev.lelonio.square.ui.theme.LocalPageEndInset.current),
+                            modifier = Modifier.padding(top = 14.dp),
                         ) {
                             itemsIndexed(recent, key = { _, track -> track.uri }) { index, track ->
                                 TrackTile(track) { onPlayRecent(recent, index) }
@@ -695,7 +704,16 @@ private fun HomeTopBar(
         // Measured so the docked pose can be centred on the page rather than on
         // a guess at how wide the mark is.
         var lockupWidthPx by remember { mutableFloatStateOf(0f) }
-        val fullWidthPx = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
+        // The page's width and not the window's: the mark docks in the middle
+        // of what it is the heading of, and on a window carrying the now-playing
+        // panel those are two different middles. Centred on the window it sat
+        // visibly to the left of the page it belongs to.
+        val fullWidthPx = with(density) {
+            (
+                LocalConfiguration.current.screenWidthDp.dp -
+                    dev.lelonio.square.ui.theme.LocalPageEndInset.current
+                ).toPx()
+        }
         AppLockup(
             iconSize = 44.dp,
             nameHeight = 22.dp,
@@ -799,7 +817,15 @@ private fun Header(
         Row(
             Modifier
                 .fillMaxWidth()
-                .padding(start = 24.dp, end = 24.dp)
+                // The panel's room, which this row wants more than any other on
+                // the page: the account's picture is the far end of it, and the
+                // picture is the only door to the settings there is. Without
+                // this it sat underneath the now-playing panel on every tablet
+                // where something was playing, which is to say it was gone.
+                .padding(
+                    start = 24.dp,
+                    end = 24.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current,
+                )
                 .padding(top = 18.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -905,9 +931,13 @@ private fun Header(
 @Composable
 private fun FilterRow(selected: Feed, backdrop: Backdrop, onSelect: (Feed) -> Unit) {
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 20.dp),
+        // The panel's room to the contents, not to the row; see Carousel.
+        contentPadding = PaddingValues(
+            start = 20.dp,
+            end = 20.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current,
+        ),
         horizontalArrangement = Arrangement.spacedBy(8.dp),
-        modifier = Modifier.padding(top = 14.dp, bottom = 10.dp).padding(end = dev.lelonio.square.ui.theme.LocalPageEndInset.current),
+        modifier = Modifier.padding(top = 14.dp, bottom = 10.dp),
     ) {
         items(Feed.entries.toList(), key = { it.name }) { entry ->
             // The app's own glass, so the row reads as part of the chrome
@@ -1011,7 +1041,12 @@ private fun FeedCard(item: SearchItem, onClick: () -> Unit) {
  */
 private val artistColumns: Int
     @Composable get() {
-        val width = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+        // The page's width, which on a window carrying the now-playing panel is
+        // not the window's. Counted on the whole window the row fitted two more
+        // artists than the space it is actually laid out in, and every name in
+        // it went to a second line.
+        val window = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+        val width = window - dev.lelonio.square.ui.theme.LocalPageEndInset.current.value.toInt()
         return ((width - 40) / ARTIST_CELL_MIN).coerceIn(3, 8)
     }
 
@@ -1203,9 +1238,13 @@ private const val SKELETON_TILES = 3
 @Composable
 private fun TrackRow(tracks: List<CatalogTrack>, onPlay: (Int) -> Unit) {
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 20.dp),
+        // The panel's room to the contents, not to the row; see Carousel.
+        contentPadding = PaddingValues(
+            start = 20.dp,
+            end = 20.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current,
+        ),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.padding(top = 14.dp).padding(end = dev.lelonio.square.ui.theme.LocalPageEndInset.current),
+        modifier = Modifier.padding(top = 14.dp),
     ) {
         itemsIndexed(tracks, key = { _, track -> track.uri }) { index, track ->
             TrackTile(track) { onPlay(index) }
@@ -1254,9 +1293,18 @@ private fun <T> Carousel(
     item: @Composable (T) -> Unit,
 ) {
     LazyRow(
-        contentPadding = PaddingValues(horizontal = 20.dp),
+        // Full-bleed, and the panel's room handed to the contents instead.
+        // A margin on the row stopped it short of the panel, which left the
+        // glass at the side with the page colour to bend and the last tile of
+        // every shelf parked under it. As content padding the row runs to the
+        // edge of the window, so the panel has a carousel to refract, and the
+        // end of it can still be scrolled out from under the panel.
+        contentPadding = PaddingValues(
+            start = 20.dp,
+            end = 20.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current,
+        ),
         horizontalArrangement = Arrangement.spacedBy(12.dp),
-        modifier = Modifier.padding(top = 14.dp).padding(end = dev.lelonio.square.ui.theme.LocalPageEndInset.current),
+        modifier = Modifier.padding(top = 14.dp),
     ) {
         items(items, key = key) { item(it) }
     }

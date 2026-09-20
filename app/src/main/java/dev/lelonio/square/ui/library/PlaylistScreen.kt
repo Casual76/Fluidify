@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.library
 
+import dev.antigravity.fluidengine.ui.fluid.fluidReadingWidth
 import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
 import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
 import androidx.annotation.StringRes
@@ -475,6 +476,18 @@ fun PlaylistScreen(
             // out as a grey card. Safe to record: the menu is drawn outside the
             // list, so nothing in this layer samples it.
             modifier = Modifier
+            // The panel's room, and then a column somebody can read.
+            //
+            // Two modifiers and one rule between them. The panel is taken off
+            // the list, not off the page — the page goes on drawing to the edge
+            // of the window, or its veil leaves a bare stripe down one side —
+            // and what is left is then held to the family's reading width and
+            // centred in it. A track row is a title, an artist and a duration,
+            // and on a tablet in landscape the untouched version of it ran a
+            // metre wide with the duration alone at the far end. Below the
+            // reading width, which is every phone, this measures as before.
+                .padding(end = dev.lelonio.square.ui.theme.LocalPageEndInset.current)
+                .fluidReadingWidth()
                 .layerBackdrop(listBackdrop)
                 // The hero takes the gesture first and closes; only what is
                 // left over reaches the list.
@@ -1705,7 +1718,8 @@ private fun TrackRow(
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .padding(start = 18.dp, end = 18.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current, top = 2.dp, bottom = 2.dp)
+            // The panel's room is the list's now; see the note on it.
+            .padding(start = 18.dp, end = 18.dp, top = 2.dp, bottom = 2.dp)
             // The playing row lifts onto its own card. With covers gone from the
             // list, a tint alone was too quiet to find while scrolling.
             .clip(shape)

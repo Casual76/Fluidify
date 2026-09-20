@@ -1,6 +1,7 @@
 package dev.lelonio.square.ui.search
 
 import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollContent
+import dev.antigravity.fluidengine.ui.fluid.fluidReadingWidth
 import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollEdge
 import dev.antigravity.fluidengine.ui.fluid.rememberFluidEdgeOverscroll
 import androidx.annotation.StringRes
@@ -106,9 +107,24 @@ fun SearchScreen(
     LazyColumn(
         Modifier
             .fillMaxSize()
+            // The panel's room first, then the family's reading width — the same
+            // pair, for the same reason, as the track list on a playlist page.
+            // A result is a cover, two lines and nothing else, and a window a
+            // metre wide gives it a metre of white space to the right.
+            .padding(end = dev.lelonio.square.ui.theme.LocalPageEndInset.current)
+            .fluidReadingWidth()
             .fluidOverscrollEdge(overscroll)
             .fluidOverscrollContent(overscroll),
-        contentPadding = contentPadding,
+        // The panel's room is paid once, on the list above, and never here.
+        //
+        // The padding handed in already carries `end = panelWidth`, and every
+        // row in this page used to apply `LocalPageEndInset` for itself as well
+        // — so on a tablet the two were paid one after the other and the
+        // results stopped two panel-widths short of the edge.
+        contentPadding = PaddingValues(
+            top = contentPadding.calculateTopPadding(),
+            bottom = contentPadding.calculateBottomPadding(),
+        ),
         overscrollEffect = null,
     ) {
         // No field, and no title over it. Both are in the bottom bar now: the
@@ -274,7 +290,7 @@ private fun HistoryTitle(onClear: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(start = 24.dp, end = 12.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current, top = 22.dp, bottom = 6.dp),
+            .padding(start = 24.dp, end = 12.dp, top = 22.dp, bottom = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
@@ -326,7 +342,7 @@ private fun ResultRow(
         Modifier
             .fillMaxWidth()
             .pressable(onClick, shape = RoundedCornerShape(16.dp), pressedScale = 0.98f)
-            .padding(start = 24.dp, end = 12.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current, top = 8.dp, bottom = 8.dp),
+            .padding(start = 24.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Artwork(
