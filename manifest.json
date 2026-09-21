@@ -15,22 +15,30 @@
       "ref": "master"
     },
     "stable": {
-      "version": "1.3.0",
+      "version": "1.4.0",
       "releaseDate": "2026-09-21",
-      "changelog": "Il lettore del tablet ha quattro misure. Il pannello accanto alla pagina si tira in alto o a sinistra e diventa il lettore in colonna, alto quanto la pagina: copertina grande, barra trascinabile con i tempi, trasporto pieno con shuffle e ripeti. Un tasto in alto a sinistra, o un altro tiro, apre a fianco il testo e la coda; tirando fino in fondo si entra nel lettore a tutto schermo. La pagina si sposta con il pannello e ogni passaggio e' un movimento solo, senza salti.\n\nCorretto il riordino della coda, che spesso si bloccava: con lo shuffle acceso ogni spostamento rimescolava tutta la coda, e la riga presa perdeva la maniglia dopo un incrocio. Ora si trascina fino a dove si vuole, sul telefono come sul tablet.\n\nCopertina e Canvas nel pannello hanno angoli piu' morbidi.",
-      "releaseTag": "stable-fluidify-v1.3.0",
-      "apkAsset": "fluidify-1.3.0.apk",
-      "sizeBytes": 15341445
+      "changelog": "La coda arriva davvero all'apparecchio che sta suonando. Trascinare un brano cambiava solo la lista a schermo: il lettore continuava sull'ordine di prima e se ne accorgeva solo al salto successivo. Adesso il nuovo ordine parte subito, senza interrompere la canzone. E con la musica su un altro apparecchio -- il computer, una cassa, la TV -- togliere un brano dalla coda e spostarlo funziona da qui, dove prima la X e la maniglia non facevano niente.\n\nIl lettore e' fatto di un vetro solo. La capsula del titolo, quella della riga cantata e il badge del karaoke erano di un materiale diverso dai tondini che ci stanno dentro, e si vedeva soprattutto sui brani senza Canvas: adesso sono lo stesso vetro, con lo stesso bordo che piega quello che ha dietro. La luce dietro il lettore torna ad avere dei contorni, invece di essere una velatura piatta.\n\nIl pannello del tablet ha uno sfondo. Lasciava passare la griglia di copertine della home e si vedeva a chiazze; adesso e' una lastra, e i dischi e i brani in coda piegano il pannello invece della pagina sotto. Ogni brano in coda e' un blocco di vetro per conto suo, cosi' la lista non e' piu' un blocco unico.\n\nLa coda si legge meglio. Basta scostarla un poco e prende tutta la colonna, testo compreso; dopo qualche secondo che non la tocchi torna in cima e si riapre da sola. La maniglia per riordinare e la X per togliere sono grandi quanto un dito.",
+      "releaseTag": "stable-fluidify-v1.4.0",
+      "apkAsset": "fluidify-1.4.0.apk",
+      "sizeBytes": 15355840
     },
     "beta": {
-      "version": "1.3.0",
+      "version": "1.4.0",
       "releaseDate": "2026-09-21",
-      "changelog": "Il lettore del tablet ha quattro misure. Il pannello accanto alla pagina si tira in alto o a sinistra e diventa il lettore in colonna, alto quanto la pagina: copertina grande, barra trascinabile con i tempi, trasporto pieno con shuffle e ripeti. Un tasto in alto a sinistra, o un altro tiro, apre a fianco il testo e la coda; tirando fino in fondo si entra nel lettore a tutto schermo. La pagina si sposta con il pannello e ogni passaggio e' un movimento solo, senza salti.\n\nCorretto il riordino della coda, che spesso si bloccava: con lo shuffle acceso ogni spostamento rimescolava tutta la coda, e la riga presa perdeva la maniglia dopo un incrocio. Ora si trascina fino a dove si vuole, sul telefono come sul tablet.\n\nCopertina e Canvas nel pannello hanno angoli piu' morbidi.",
-      "releaseTag": "stable-fluidify-v1.3.0",
-      "apkAsset": "fluidify-1.3.0.apk",
-      "sizeBytes": 15341445
+      "changelog": "La coda arriva davvero all'apparecchio che sta suonando. Trascinare un brano cambiava solo la lista a schermo: il lettore continuava sull'ordine di prima e se ne accorgeva solo al salto successivo. Adesso il nuovo ordine parte subito, senza interrompere la canzone. E con la musica su un altro apparecchio -- il computer, una cassa, la TV -- togliere un brano dalla coda e spostarlo funziona da qui, dove prima la X e la maniglia non facevano niente.\n\nIl lettore e' fatto di un vetro solo. La capsula del titolo, quella della riga cantata e il badge del karaoke erano di un materiale diverso dai tondini che ci stanno dentro, e si vedeva soprattutto sui brani senza Canvas: adesso sono lo stesso vetro, con lo stesso bordo che piega quello che ha dietro. La luce dietro il lettore torna ad avere dei contorni, invece di essere una velatura piatta.\n\nIl pannello del tablet ha uno sfondo. Lasciava passare la griglia di copertine della home e si vedeva a chiazze; adesso e' una lastra, e i dischi e i brani in coda piegano il pannello invece della pagina sotto. Ogni brano in coda e' un blocco di vetro per conto suo, cosi' la lista non e' piu' un blocco unico.\n\nLa coda si legge meglio. Basta scostarla un poco e prende tutta la colonna, testo compreso; dopo qualche secondo che non la tocchi torna in cima e si riapre da sola. La maniglia per riordinare e la X per togliere sono grandi quanto un dito.",
+      "releaseTag": "stable-fluidify-v1.4.0",
+      "apkAsset": "fluidify-1.4.0.apk",
+      "sizeBytes": 15355840
     },
     "history": [
+      {
+        "version": "1.3.0",
+        "releaseDate": "2026-09-21",
+        "changelog": "Il lettore del tablet ha quattro misure. Il pannello accanto alla pagina si tira in alto o a sinistra e diventa il lettore in colonna, alto quanto la pagina: copertina grande, barra trascinabile con i tempi, trasporto pieno con shuffle e ripeti. Un tasto in alto a sinistra, o un altro tiro, apre a fianco il testo e la coda; tirando fino in fondo si entra nel lettore a tutto schermo. La pagina si sposta con il pannello e ogni passaggio e' un movimento solo, senza salti.\n\nCorretto il riordino della coda, che spesso si bloccava: con lo shuffle acceso ogni spostamento rimescolava tutta la coda, e la riga presa perdeva la maniglia dopo un incrocio. Ora si trascina fino a dove si vuole, sul telefono come sul tablet.\n\nCopertina e Canvas nel pannello hanno angoli piu' morbidi.",
+        "releaseTag": "stable-fluidify-v1.3.0",
+        "apkAsset": "fluidify-1.3.0.apk",
+        "sizeBytes": 15341445
+      },
       {
         "version": "1.2.0",
         "releaseDate": "2026-09-20",
