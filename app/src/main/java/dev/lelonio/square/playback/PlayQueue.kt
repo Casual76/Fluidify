@@ -238,6 +238,23 @@ class PlayQueue {
         _items.subList(from, to).clear()
         _items.addAll(target, moved)
 
+        // The shuffled order survives, rearranged the same way.
+        //
+        // As in [remove] and [add]: dropping the permutation here handed the
+        // caller a queue it then shuffled afresh, so a row dragged one place
+        // down landed somewhere random and everything after it was dealt out
+        // again — under a finger that was still holding the row. The places in
+        // the permutation move with the tracks; the pre-shuffle list is what it
+        // was, and un-shuffling later restores it exactly.
+        val order = originalIndices
+        if (order != null) {
+            originalIndices = order.toMutableList().apply {
+                val movedIndices = ArrayList(subList(from, to))
+                subList(from, to).clear()
+                addAll(target, movedIndices)
+            }
+        }
+
         // Recomputed arithmetically rather than by searching for the playing
         // track: a playlist may hold the same track twice, and indexOf would
         // latch onto the wrong copy.
@@ -248,7 +265,7 @@ class PlayQueue {
             if (shifted >= target) shifted += moved.size
             shifted
         }.coerceIn(0, maxOf(0, _items.lastIndex))
-        clearShuffle()
+        if (originalIndices?.size != _items.size) clearShuffle()
     }
 
     /**

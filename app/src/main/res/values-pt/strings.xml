@@ -58,6 +58,8 @@
     <string name="library_all">Tudo</string>
     <string name="search">Buscar</string>
     <string name="now_playing">Tocando agora</string>
+    <string name="player_panel_widen">Ampliar o leitor</string>
+    <string name="player_panel_narrow">Reduzir o leitor</string>
     <string name="unofficial_client">Cliente não oficial para contas Premium</string>
     <string name="log_in_with_spotify">Entrar com o Spotify</string>
     <string name="connect">Conectar</string>

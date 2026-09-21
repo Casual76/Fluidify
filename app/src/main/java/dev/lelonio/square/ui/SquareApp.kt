@@ -169,10 +169,13 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import dev.lelonio.square.ui.player.MorphEpsilon
 import dev.lelonio.square.ui.player.PlayerMorphSpec
 import dev.lelonio.square.ui.player.dragPlayerMorph
-import dev.lelonio.square.ui.player.dragPlayerMorphBy
+import dev.lelonio.square.ui.player.dragPanelBy
 import dev.lelonio.square.ui.player.settlePlayerMorph
-import dev.lelonio.square.ui.player.settlePlayerMorphUnits
+import dev.lelonio.square.ui.player.settlePanel
 import dev.lelonio.square.ui.player.rememberPillMorphTint
+import androidx.compose.runtime.State
+import androidx.compose.ui.layout.layout
+import kotlin.math.roundToInt
 import dev.lelonio.square.ui.player.asPlaybackState
 import dev.lelonio.square.ui.player.rememberRemotePositionMs
 import kotlinx.coroutines.Dispatchers
@@ -752,6 +755,20 @@ fun SquareApp(
         Animatable(if (preferences.playerWasOpen()) 1f else 0f).apply { updateBounds(0f, 1f) }
     }
 
+    // How big the panel beside the page is, 0 to 2, on a window wide enough to
+    // have one: beside the page, the height of it, opened out. A second number
+    // and not a wider `expand`, because everything that reads `expand` — the
+    // gates, the floor, the chrome, the saved openness — reads it as "how far
+    // is the window here", and the panel growing is not the window arriving.
+    // Bounded like `expand` and for the same reason; the upper bound is set
+    // below, once the window has been measured, since a narrow window has no
+    // third size to be at.
+    val reach = remember {
+        Animatable(preferences.panelReach().toFloat().coerceIn(0f, 2f)).apply {
+            updateBounds(0f, 2f)
+        }
+    }
+
     /**
      * Where the pill is, in the window's own pixels.
      *
@@ -759,7 +776,12 @@ fun SquareApp(
      * a real screen, and every number derived from it — the shape it grows from,
      * the distance the top edge travels — is only as true as this is.
      */
-    var pillBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    // Held as a state and read by nobody in this body: on a wide window the
+    // panel changes size under a finger and this moves with it every frame,
+    // and one read of it here recomposed the whole app for every one of them.
+    // The window reads it through the state, the travel below derives from it.
+    val pillBoundsState = remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    var pillBounds by pillBoundsState
 
     /**
      * True from the first pixel of the journey.
@@ -784,6 +806,12 @@ fun SquareApp(
         snapshotFlow { expand.isRunning to expand.value }
             .collect { (running, value) ->
                 if (!running) preferences.setPlayerOpen(value > 0.5f)
+            }
+    }
+    LaunchedEffect(Unit) {
+        snapshotFlow { reach.isRunning to reach.value }
+            .collect { (running, value) ->
+                if (!running) preferences.setPanelReach(kotlin.math.round(value).toInt())
             }
     }
 
@@ -1099,16 +1127,48 @@ fun SquareApp(
         // here rather than beside the bar because both of those are read at the
         // top of the app: the glass configuration is provided from this scope.
         val tabBarScroll = rememberFluidFloatingTabBarScrollConnection()
+
+        // Whether a finger is on the panel beside the page, for the glass to
+        // know it is travelling; written by the panel's own detector.
+        val panelDragging = remember { mutableStateOf(false) }
+
+        // Thinner glass while the panel travels.
+        //
+        // A pane that changes size photographs the page behind it on every
+        // frame it does, whatever interval it is given at rest — a capture is
+        // invalidated by its own geometry — and every pane that moves with it
+        // does the same: the bar stepping aside, the discs inside the panel.
+        // The engine's answer for a page that scrolls is the same one here:
+        // while the panel moves, every capture is taken at half and the lens
+        // and its extras are spent at half, and the moment it stops the
+        // material is whole again. Read in draw, so neither the spring nor the
+        // finger recomposes anything. Provided at the root rather than around
+        // the panel, because the bar is not inside the panel and moves anyway.
+        val panelQuality = dev.antigravity.fluidengine.ui.fluid.rememberFluidGlassQuality {
+            if (reach.isRunning || panelDragging.value) PanelTravelQuality else 1f
+        }
+
         // Held as a lambda so a scroll starting or stopping costs no
         // recomposition of the app: the surfaces ask during draw.
-        val pageMoving = remember(tabBarScroll) { { tabBarScroll.scrolling } }
+        // The panel travelling counts as the page moving, for the panes that
+        // are not the engine's: the vendored renderer holds its last capture
+        // while this is true, which is what keeps a bar sliding aside from
+        // re-photographing the page on every frame of the slide.
+        val pageMoving = remember(tabBarScroll) {
+            { tabBarScroll.scrolling || reach.isRunning || panelDragging.value }
+        }
 
         CompositionLocalProvider(
             LocalContentColor provides Ink,
             dev.lelonio.square.ui.glass.LocalGlassEffectConfig provides glassConfig,
             dev.lelonio.square.ui.glass.LocalGlassFrozen provides pageMoving,
+            dev.antigravity.fluidengine.ui.fluid.LocalFluidGlassQuality provides panelQuality,
         ) {
-            Box(Modifier.fillMaxSize()) {
+            // The window, in its own pixels. The panel's geometry is worked out
+            // from this rather than from the configuration's height, which is
+            // the display's and not the activity's.
+            var windowHeightPx by remember { mutableStateOf(0) }
+            Box(Modifier.fillMaxSize().onSizeChanged { windowHeightPx = it.height }) {
                 val navController = rememberNavController()
                 val currentEntry by navController.currentBackStackEntryAsState()
 
@@ -1183,11 +1243,6 @@ fun SquareApp(
                 // it. See NowPlayingPanel.
                 val showPanel = windowWidth >= dev.lelonio.square.ui.player.NowPlayingPanelMinWindow &&
                     playback.hasItem
-                val panelWidth = if (showPanel) {
-                    dev.lelonio.square.ui.player.NowPlayingPanelWidth
-                } else {
-                    0.dp
-                }
 
                 /**
                  * How far a finger has to run for a whole journey, per axis.
@@ -1203,33 +1258,32 @@ fun SquareApp(
                  * source: the pill opens upwards only — sideways on that one is
                  * already how you change track — and the panel opens both ways.
                  */
-                val travel = remember(pillBounds, showPanel, density) {
+                // Derived, and read only inside the gestures that need it, so
+                // the rectangle moving under a finger — every frame, on a wide
+                // window — recomposes nothing. It also keeps a gesture alive
+                // across the panel changing size: a `pointerInput` keyed on the
+                // run would be torn down and rebuilt thirty times in half a
+                // second, cancelling among other things the drag in progress.
+                val currentTravel = remember(showPanel, density) {
                     val floor = with(density) {
                         dev.lelonio.square.ui.player.MinMorphTravel.toPx()
                     }
-                    dev.lelonio.square.ui.player.PlayerMorphTravel(
-                        up = pillBounds.top.coerceAtLeast(floor),
-                        // The panel's own width, and not the distance its
-                        // left edge really travels. That distance is honest and
-                        // unusable: on this window it is most of the screen, so
-                        // a thumb ran out of tablet at about half a journey and
-                        // the only way to finish was to start pulling upwards.
-                        // Dragging the panel its own width aside is the gesture
-                        // people actually make, and it is the same order as the
-                        // run upwards.
-                        left = if (showPanel) pillBounds.width.coerceAtLeast(floor) else 0f,
-                    )
+                    derivedStateOf {
+                        val bounds = pillBoundsState.value
+                        dev.lelonio.square.ui.player.PlayerMorphTravel(
+                            up = bounds.top.coerceAtLeast(floor),
+                            // The panel's own width, and not the distance its
+                            // left edge really travels. That distance is honest and
+                            // unusable: on this window it is most of the screen, so
+                            // a thumb ran out of tablet at about half a journey and
+                            // the only way to finish was to start pulling upwards.
+                            // Dragging the panel its own width aside is the gesture
+                            // people actually make, and it is the same order as the
+                            // run upwards.
+                            left = if (showPanel) bounds.width.coerceAtLeast(floor) else 0f,
+                        )
+                    }
                 }
-                // What the pill and the player's own collapse already ask for.
-                val travelPx = travel.up
-
-                // Read through a state by the detector below, so the gesture
-                // survives the panel changing size under it: the rectangle is
-                // measured every frame a Canvas opens the slot, and a
-                // `pointerInput` keyed on the run would be torn down and rebuilt
-                // thirty times in half a second — cancelling, among other
-                // things, a drag that happened to be in progress.
-                val currentTravel = rememberUpdatedState(travel)
 
                 /**
                  * False from the first pixel of the journey; see NowPlayingPanel.
@@ -1250,6 +1304,65 @@ fun SquareApp(
                 val statusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
                 val navBar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
 
+                // The clip's shape, once its decoder has said. Held here and not
+                // in the panel: the tall pane's width follows it, and that
+                // width is something the page and the bar have to agree with
+                // the panel about. Forgotten with the clip.
+                var clipRatio by remember(canvas?.url) { mutableStateOf<Float?>(null) }
+
+                // The four sizes of the panel, for this window. Recomputed only
+                // when the window or the clip changes; everything that moves is
+                // `reach`, handed to it.
+                val panelBoxHeightPx = with(density) {
+                    windowHeightPx - (statusBar + 12.dp + navBar + 12.dp).toPx()
+                }
+                val geometry = remember(windowWidth, panelBoxHeightPx, clipRatio, density) {
+                    if (panelBoxHeightPx > 0f) {
+                        dev.lelonio.square.ui.player.PanelGeometry.of(
+                            density = density,
+                            windowWidth = windowWidth,
+                            boxHeightPx = panelBoxHeightPx,
+                            clipRatio = clipRatio,
+                        )
+                    } else {
+                        dev.lelonio.square.ui.player.PanelGeometry.rest(density)
+                    }
+                }
+                // A window that lost its third size takes the panel back with
+                // it, without animating: there is nothing to animate towards.
+                LaunchedEffect(geometry.maxReach) {
+                    reach.updateBounds(0f, geometry.maxReach)
+                }
+                val currentGeometry = rememberUpdatedState(geometry)
+
+                // The panel's size as a `State`, for the panel and its copy to
+                // read in measure. An `Animatable` is not one, and handing the
+                // animatable itself over would be handing over the pen.
+                val reachState = remember(reach) {
+                    object : State<Float> {
+                        override val value: Float get() = reach.value
+                    }
+                }
+
+                /**
+                 * How much of the page's end the panel takes; see LocalPageEndInset.
+                 *
+                 * Quantised to a few points, the way the backdrop's drift is:
+                 * the rows that read it re-measure when it changes, and while
+                 * a finger is on the panel it changes sixty times a second.
+                 * The content ends twenty points short of the glass, so a step
+                 * this size is under the panel's own air and never seen.
+                 */
+                val pageEndInset = remember(geometry, showPanel, density) {
+                    derivedStateOf {
+                        if (!showPanel) {
+                            0.dp
+                        } else {
+                            with(density) { quantiseInset(geometry.widthPx(reach.value).toDp()) }
+                        }
+                    }
+                }
+
                 // Settings is not a place you listen from: it is a full page of
                 // its own, and the tab bar and the now-playing bar step out of
                 // the way for it instead of floating over a form.
@@ -1269,19 +1382,13 @@ fun SquareApp(
                 // measured height already has it in. Adding it again left a
                 // pill-sized strip of nothing at the end of every list, on
                 // exactly the screens where music was playing.
+                // No end here. The panel's room is handed to the rows through
+                // LocalPageEndInset and nothing reads an end off this, and a
+                // value that moved with the panel would recompose four screens
+                // a frame for the sake of a number nobody asked for.
                 val listPadding = PaddingValues(
                     top = statusBar,
                     bottom = barHeight,
-                    // Content padding, not a margin on the page.
-                    //
-                    // The page goes on drawing to the edge of the window and only
-                    // its *contents* stop short of the panel. Padding the
-                    // container instead is how the first tablet build grew a
-                    // stripe of unveiled backdrop down one side and a step where
-                    // the header's veil ran out: that veil is a rectangle drawn
-                    // inside the page, so a page that is not the window's width
-                    // leaves the window's edges bare.
-                    end = panelWidth,
                 )
 
                 // Nothing floats over settings, so nothing has to be left free
@@ -1354,12 +1461,15 @@ fun SquareApp(
                         AppBackdrop(playback.artworkUrl, alive = playback.isPlaying)
                     }
 
-                    androidx.compose.runtime.CompositionLocalProvider(
-                        dev.lelonio.square.ui.theme.LocalPageEndInset provides panelWidth,
+                    // The inset is read inside the host and not here: the
+                    // number moves with the panel, and read in this body it
+                    // would recompose the whole app with it.
+                    PageEndInsetHost(
+                        inset = pageEndInset,
                         // Which kind of movement is on screen, and how much
                         // optics the glass may spend while it lasts. Read from
                         // the draw pass by every page's own host.
-                        LocalRouteMotionSignals provides routeSignals,
+                        routeSignals = routeSignals,
                     ) {
                     Box(
                         Modifier
@@ -1936,8 +2046,24 @@ fun SquareApp(
                         .align(Alignment.BottomCenter)
                         .fillMaxWidth()
                         // Out from under the panel, on a window wide enough to
-                        // have one.
-                        .padding(end = panelWidth)
+                        // have one. Read in measure, since the panel's width
+                        // moves with a finger.
+                        .layout { measurable, constraints ->
+                            val end = if (showPanel) {
+                                currentGeometry.value.widthPx(reach.value).roundToInt()
+                            } else {
+                                0
+                            }
+                            val placeable = measurable.measure(
+                                constraints.copy(
+                                    minWidth = (constraints.minWidth - end).coerceAtLeast(0),
+                                    maxWidth = (constraints.maxWidth - end).coerceAtLeast(0),
+                                ),
+                            )
+                            layout((placeable.width + end).coerceAtMost(constraints.maxWidth), placeable.height) {
+                                placeable.place(0, 0)
+                            }
+                        }
                         // The bar is where you type now, so it has to be above
                         // the keyboard: the search field lived on the page until
                         // a moment ago, where the keyboard covering the bottom of
@@ -2049,11 +2175,11 @@ fun SquareApp(
                                   }
                                   .draggable(
                                       state = rememberDraggableState { delta ->
-                                          scope.dragPlayerMorph(expand, delta, travelPx)
+                                          scope.dragPlayerMorph(expand, delta, currentTravel.value.up)
                                       },
                                       orientation = androidx.compose.foundation.gestures.Orientation.Vertical,
                                       onDragStopped = { velocity ->
-                                          scope.settlePlayerMorph(expand, velocity, travelPx, haptics)
+                                          scope.settlePlayerMorph(expand, velocity, currentTravel.value.up, haptics)
                                       },
                                   ),
                           ) {
@@ -2270,11 +2396,55 @@ fun SquareApp(
                 // rectangle, and it takes the same vertical drag. Everything in
                 // PlayerMorph and NowPlayingSheet goes on working without
                 // knowing which of the two it started from.
+                // The transport's other three verbs, shared between the panel
+                // and the window: one place that knows about Connect.
+                val onSeekAction: (Long) -> Unit = { target ->
+                    if (remote != null) {
+                        onRemote { id -> RemoteConnect.seek(id, target) }
+                    } else {
+                        player?.seekTo(target)
+                    }
+                }
+                val onToggleShuffleAction: () -> Unit = {
+                    if (remote != null) {
+                        val wanted = remote?.shuffle != true
+                        onRemote { id -> RemoteConnect.setShuffle(id, wanted) }
+                    } else {
+                        player?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled }
+                    }
+                }
+                val onCycleRepeatAction: () -> Unit = {
+                    if (remote != null) {
+                        val current = remote
+                        // Off, all, one, off: the same cycle the local button
+                        // walks.
+                        val context = current?.repeatContext != true &&
+                            current?.repeatTrack != true
+                        val track = current?.repeatContext == true
+                        onRemote { id -> RemoteConnect.setRepeat(id, context, track) }
+                    } else {
+                        player?.cycleRepeatMode()
+                    }
+                }
+
+                // And the queue's three, shared the same way.
+                val onPlayQueueItemAction: (Int) -> Unit = { player?.seekTo(it, 0L) }
+                val onRemoveQueueItemAction: (Int) -> Unit = { player?.removeMediaItem(it) }
+                val onMoveQueueItemAction: (Int, Int) -> Unit = { from, to ->
+                    player?.moveMediaItem(from, to)
+                }
+
+                // The panel's natural height at rest, for the run upwards:
+                // that leg is half the difference between this and the box.
+                // A plain array, written from layout and read by the detector.
+                val panelMiniHeight = remember { floatArrayOf(0f) }
+
                 if (showPanel && chrome > 0.01f) {
                     Box(
                         Modifier
                             .align(Alignment.CenterEnd)
-                            .width(panelWidth)
+                            // No width: the panel measures itself to its
+                            // geometry and the number it is at.
                             .padding(top = statusBar + 12.dp, bottom = navBar + 12.dp)
                             .padding(end = 14.dp)
                             // Cut, not faded: the picture carries on inside the
@@ -2295,6 +2465,9 @@ fun SquareApp(
                                 ) {
                                     pillBounds = bounds
                                 }
+                                if (reach.value < 0.001f && bounds.height > 0f) {
+                                    panelMiniHeight[0] = bounds.height
+                                }
                             }
                             // Up, and left, and anything between the two.
                             //
@@ -2305,10 +2478,12 @@ fun SquareApp(
                             // the surface is at the side — lost one of its two
                             // components for the whole of the drag.
                             //
-                            // The axes are summed because they say the same thing:
-                            // each is normalised on its own run before it is added,
-                            // so a diagonal covers the journey faster than either
-                            // alone, and `expand` is bounded to 0..1 anyway.
+                            // The finger runs along one axis with four anchors on
+                            // it — the panel's three sizes and the window — and
+                            // each leg has its own length in pixels; see
+                            // PanelGeometry. Upwards only counts on the first leg:
+                            // past it the panel is already as tall as the page,
+                            // and the lists in the extension need the vertical.
                             .pointerInput(Unit) {
                                 val tracker = VelocityTracker()
                                 // Which way this pull is going, decided once and
@@ -2322,7 +2497,18 @@ fun SquareApp(
                                 var settled = false
                                 var totalX = 0f
                                 var totalY = 0f
+                                var origin = 0f
                                 val slop = viewConfiguration.touchSlop
+                                fun units(along: Float): Float {
+                                    val geometry = currentGeometry.value
+                                    val leg = geometry.legPx(
+                                        units = reach.value + expand.value,
+                                        horizontal = sideways,
+                                        miniHeight = panelMiniHeight[0],
+                                        backwards = along < 0f,
+                                    )
+                                    return if (leg > 0f) along / leg else 0f
+                                }
                                 detectDragGestures(
                                     onDragStart = {
                                         tracker.resetTracking()
@@ -2330,22 +2516,33 @@ fun SquareApp(
                                         settled = false
                                         totalX = 0f
                                         totalY = 0f
+                                        origin = currentGeometry.value
+                                            .nearestAnchor(reach.value + expand.value)
+                                        panelDragging.value = true
                                     },
                                     onDragCancel = {
-                                        scope.settlePlayerMorphUnits(expand, 0f, haptics)
+                                        panelDragging.value = false
+                                        scope.settlePanel(
+                                            reach,
+                                            expand,
+                                            0f,
+                                            currentGeometry.value.maxReach,
+                                            origin,
+                                            haptics,
+                                        )
                                     },
                                     onDragEnd = {
+                                        panelDragging.value = false
                                         val velocity = tracker.calculateVelocity()
                                         // Through the same projection the drag went
                                         // through, so the spring is handed the
                                         // journey's velocity and not the screen's.
-                                        scope.settlePlayerMorphUnits(
+                                        scope.settlePanel(
+                                            reach,
                                             expand,
-                                            currentTravel.value.along(
-                                                sideways,
-                                                velocity.x,
-                                                velocity.y,
-                                            ),
+                                            units(if (sideways) -velocity.x else -velocity.y),
+                                            currentGeometry.value.maxReach,
+                                            origin,
                                             haptics,
                                         )
                                     },
@@ -2365,10 +2562,15 @@ fun SquareApp(
                                         sideways = ax > ay
                                         settled = ax + ay >= slop
                                     }
-                                    scope.dragPlayerMorphBy(
-                                        expand,
-                                        currentTravel.value.along(sideways, drag.x, drag.y),
-                                    )
+                                    val du = units(if (sideways) -drag.x else -drag.y)
+                                    if (du != 0f) {
+                                        scope.dragPanelBy(
+                                            reach,
+                                            expand,
+                                            du,
+                                            currentGeometry.value.maxReach,
+                                        )
+                                    }
                                 }
                             }
                             .then(panelGlass),
@@ -2385,6 +2587,36 @@ fun SquareApp(
                                 // The same fetch the window reads: one request
                                 // per track, two places it is shown.
                                 lyrics = lyrics,
+                                reach = reachState,
+                                geometry = geometry,
+                                // The words and the queue, live: the full
+                                // player's own stage and list.
+                                extension = {
+                                    dev.lelonio.square.ui.player.PanelExtension(
+                                        lyrics = lyrics,
+                                        lyricsLoading = playback.mediaId != null &&
+                                            lyricsFor != playback.mediaId,
+                                        positionMs = positionMs,
+                                        isPlaying = playback.isPlaying,
+                                        onSeek = onSeekAction,
+                                        backdrop = artBackdrop,
+                                        queue = queue,
+                                        onPlayQueueItem = onPlayQueueItemAction,
+                                        onRemoveQueueItem = onRemoveQueueItemAction,
+                                        onMoveQueueItem = onMoveQueueItemAction,
+                                    )
+                                },
+                                onSeek = onSeekAction,
+                                onToggleShuffle = onToggleShuffleAction,
+                                onCycleRepeat = onCycleRepeatAction,
+                                onToggleWide = {
+                                    scope.launch {
+                                        reach.animateTo(
+                                            if (reach.value > 1.5f) 1f else 2f,
+                                            PlayerMorphSpec,
+                                        )
+                                    }
+                                },
                                 // The ground, and not the page the pane itself
                                 // samples.
                                 //
@@ -2413,6 +2645,7 @@ fun SquareApp(
                                 // picture, so what they bend is the clip when
                                 // there is one and the page when there is not.
                                 backdrop = pageGlass,
+                                onClipRatio = { clipRatio = it },
                                 onOpen = {
                                     scope.launch { expand.animateTo(1f, PlayerMorphSpec) }
                                 },
@@ -2498,7 +2731,7 @@ fun SquareApp(
 
                     NowPlayingSheet(
                         progress = expand,
-                        pillBounds = pillBounds,
+                        pillBounds = pillBoundsState,
                         // The page it is leaving, which is what a window growing
                         // out of that page has to refract.
                         backdrop = pageGlass,
@@ -2528,6 +2761,17 @@ fun SquareApp(
                                         // Carried, where the clip and the
                                         // backdrop are not: see the parameter.
                                         lyrics = lyrics,
+                                        reach = reachState,
+                                        geometry = geometry,
+                                        // A still of the words and the queue:
+                                        // see PanelExtensionStill.
+                                        extension = {
+                                            dev.lelonio.square.ui.player.PanelExtensionStill(
+                                                lyrics = lyrics,
+                                                positionMs = positionMs,
+                                                queue = queue,
+                                            )
+                                        },
                                         modifier = Modifier.fillMaxSize(),
                                         interactive = false,
                                         onOpen = {},
@@ -2641,34 +2885,9 @@ fun SquareApp(
                                         player?.seekToPreviousMediaItem()
                                     }
                                 },
-                                onSeek = { target ->
-                                    if (remote != null) {
-                                        onRemote { id -> RemoteConnect.seek(id, target) }
-                                    } else {
-                                        player?.seekTo(target)
-                                    }
-                                },
-                                onToggleShuffle = {
-                                    if (remote != null) {
-                                        val wanted = remote?.shuffle != true
-                                        onRemote { id -> RemoteConnect.setShuffle(id, wanted) }
-                                    } else {
-                                        player?.let { it.shuffleModeEnabled = !it.shuffleModeEnabled }
-                                    }
-                                },
-                                onCycleRepeat = {
-                                    if (remote != null) {
-                                        val current = remote
-                                        // Off, all, one, off: the same cycle the
-                                        // local button walks.
-                                        val context = current?.repeatContext != true &&
-                                            current?.repeatTrack != true
-                                        val track = current?.repeatContext == true
-                                        onRemote { id -> RemoteConnect.setRepeat(id, context, track) }
-                                    } else {
-                                        player?.cycleRepeatMode()
-                                    }
-                                },
+                                onSeek = onSeekAction,
+                                onToggleShuffle = onToggleShuffleAction,
+                                onCycleRepeat = onCycleRepeatAction,
                                 queue = queue,
                                 lyrics = lyrics,
                                 // Loading until the answer in hand is this
@@ -2680,11 +2899,9 @@ fun SquareApp(
                                 creditsLoading = creditsLoading,
                                 onWantCredits = viewModel::loadCredits,
                                 onWantArtist = viewModel::loadArtist,
-                                onPlayQueueItem = { player?.seekTo(it, 0L) },
-                                onRemoveQueueItem = { player?.removeMediaItem(it) },
-                                onMoveQueueItem = { from, to ->
-                                    player?.moveMediaItem(from, to)
-                                },
+                                onPlayQueueItem = onPlayQueueItemAction,
+                                onRemoveQueueItem = onRemoveQueueItemAction,
+                                onMoveQueueItem = onMoveQueueItemAction,
                                 backdrop = artBackdrop,
                                 canvas = canvas,
                                 devices = devices,
@@ -2713,9 +2930,9 @@ fun SquareApp(
                                 connectAvailable = true,
                                 onCloseDevices = viewModel::closeDevices,
                                 ground = groundGlass,
-                                onMorphDrag = { scope.dragPlayerMorph(expand, it, travelPx) },
+                                onMorphDrag = { scope.dragPlayerMorph(expand, it, currentTravel.value.up) },
                                 onMorphRelease = {
-                                    scope.settlePlayerMorph(expand, it, travelPx, haptics)
+                                    scope.settlePlayerMorph(expand, it, currentTravel.value.up, haptics)
                                 },
                                 playerOpen = { expand.value >= 1f - MorphEpsilon },
                                 artist = artistInfo,
@@ -3222,6 +3439,38 @@ private class BackdropDrift(
  * player says the wrong thing, and it says it at sixty frames a second on a
  * screen the listener has put down.
  */
+/**
+ * The room the panel takes at the end of every page, given to the rows.
+ *
+ * A composable of its own so that the number is read *here* and nowhere
+ * above: it moves with a finger on the panel, and the only things that should
+ * wake with it are this provider and the rows that read the local.
+ */
+@Composable
+private fun PageEndInsetHost(
+    inset: State<Dp>,
+    routeSignals: RouteMotionSignals,
+    content: @Composable () -> Unit,
+) {
+    androidx.compose.runtime.CompositionLocalProvider(
+        dev.lelonio.square.ui.theme.LocalPageEndInset provides inset.value,
+        LocalRouteMotionSignals provides routeSignals,
+        content = content,
+    )
+}
+
+/** The step the page's end inset moves in; see PageEndInsetHost. */
+private val PageEndInsetStep = 4.dp
+
+private fun quantiseInset(value: Dp): Dp =
+    (kotlin.math.round(value.value / PageEndInsetStep.value) * PageEndInsetStep.value).dp
+
+/**
+ * How much of the glass the panel keeps while it changes size: half the
+ * lens, the whole film. See the panel's quality in SquareApp.
+ */
+private const val PanelTravelQuality = 0.5f
+
 @Composable
 private fun rememberBackdropDrift(alive: Boolean): BackdropDrift {
     val reducedMotion =

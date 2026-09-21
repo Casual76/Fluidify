@@ -63,6 +63,8 @@
     <string name="library_all">सब कुछ</string>
     <string name="search">खोजें</string>
     <string name="now_playing">अभी चल रहा है</string>
+    <string name="player_panel_widen">प्लेयर चौड़ा करें</string>
+    <string name="player_panel_narrow">प्लेयर संकरा करें</string>
     <string name="unofficial_client">प्रीमियम खातों के लिए गैर-आधिकारिक क्लाइंट</string>
     <string name="log_in_with_spotify">Spotify से लॉग इन करें</string>
     <string name="connect">कनेक्ट करें</string>

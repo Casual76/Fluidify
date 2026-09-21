@@ -5,12 +5,10 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -18,12 +16,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -32,36 +30,35 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.layout.Layout
 import androidx.compose.ui.layout.layout
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Constraints
 import androidx.compose.ui.unit.constrainHeight
 import androidx.compose.ui.unit.constrainWidth
-import androidx.compose.ui.unit.offset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.offset
 import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
 import com.adamglin.PhosphorIcons
-import com.adamglin.phosphoricons.Fill
 import com.adamglin.phosphoricons.Regular
-import com.adamglin.phosphoricons.fill.Pause
-import com.adamglin.phosphoricons.fill.Play
-import com.adamglin.phosphoricons.fill.SkipBack
-import com.adamglin.phosphoricons.fill.SkipForward
+import com.adamglin.phosphoricons.regular.ArrowsInSimple
+import com.adamglin.phosphoricons.regular.ArrowsOutSimple
 import com.adamglin.phosphoricons.regular.CaretUp
-import dev.antigravity.fluidengine.ui.fluid.FluidMotion
-import dev.antigravity.fluidengine.ui.fluid.GlassBackdropState
-import dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop
-import dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop
 import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import dev.antigravity.fluidengine.ui.fluid.FluidRadius
+import dev.antigravity.fluidengine.ui.fluid.GlassBackdropState
 import dev.antigravity.fluidengine.ui.fluid.GlassDefaults
 import dev.antigravity.fluidengine.ui.fluid.GlassRole
+import dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop
+import dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop
 import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
 import dev.antigravity.fluidengine.ui.fluid.glassSurface
 import dev.antigravity.fluidengine.ui.fluid.rememberCombinedGlassBackdrop
@@ -101,8 +98,14 @@ import kotlin.math.roundToInt
  * Without one it keeps the quieter shape it has always had — the cover inset in
  * the pane with the controls under it — and the two are one spring apart.
  *
- * Still deliberately not a second player. The queue, the lyrics, the effects and
- * the credits all live in the full window.
+ * And it has three sizes, one number apart — [reach], see [PanelGeometry].
+ * Beside the page it is the panel described above. Pulled up, or a little to
+ * the left, it grows to the height of the page and the transport grows with it
+ * to the player's own: the seek bar gets its times, the discs their size, the
+ * toggles their place. Pulled further, or asked with the button at its top
+ * left, the words and the queue open out to its left. Past that the window
+ * takes over, as it always did. Every one of those is the same panel measured
+ * at a different number, read in layout; nothing here is swapped for anything.
  */
 @UnstableApi
 @Composable
@@ -151,16 +154,45 @@ fun NowPlayingPanel(
      * which is given an empty one instead; see [PanelGlass].
      */
     backdrop: GlassBackdropState? = null,
+    /**
+     * How big the panel is, 0 to 2. A `State`, read in measure and draw only:
+     * it moves with a finger, and read in composition it would recompose the
+     * panel — and the copy of it inside the morph — on every frame of a pull.
+     */
+    reach: State<Float> = remember { mutableStateOf(0f) },
+    /** The sizes that number moves between, for this window. */
+    geometry: PanelGeometry = PanelGeometry.rest(LocalDensity.current),
+    /**
+     * The clip's width over its height, once the decoder has said.
+     *
+     * Told to the caller rather than kept: the width of the tall pane follows
+     * the clip's shape, and that width is a fact the page and the bar have to
+     * agree with the panel about. One number, held where all three can read it.
+     */
+    onClipRatio: (Float) -> Unit = {},
+    /**
+     * The words and the queue, opened out to the left at the third size.
+     *
+     * Composed by the caller, so the real panel can hold the live lists and the
+     * travelling copy a still of them. Null where the window has no room.
+     */
+    extension: (@Composable () -> Unit)? = null,
     onOpen: () -> Unit,
     onTogglePlay: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
+    onSeek: (Long) -> Unit = {},
+    onToggleShuffle: () -> Unit = {},
+    onCycleRepeat: () -> Unit = {},
+    /** The button at the top left: opens the extension, or closes it. */
+    onToggleWide: () -> Unit = {},
 ) {
     // Only ever the real panel, standing still.
     val clip = canvas?.takeIf { interactive && canvasLive.value }
 
     var canvasReady by remember(clip?.url) { mutableStateOf(false) }
     var clipRatio by remember(clip?.url) { mutableStateOf<Float?>(null) }
+    val reportRatio = rememberUpdatedState(onClipRatio)
 
     // Held at zero until there is a picture, then faded up. Between prepare()
     // and the first decoded frame a TextureView is empty, and the cover has to
@@ -171,7 +203,7 @@ fun NowPlayingPanel(
         label = "panel-clip",
     )
 
-    // How far along the panel is to being a picture with controls on it.
+    // How far along the panel is to having a clip at all.
     //
     // It starts moving the moment a Canvas is *known about* rather than when one
     // decodes: the growth and the picture are two events, and holding the first
@@ -193,6 +225,35 @@ fun NowPlayingPanel(
     // the pane is already the right shape by the time there is anything in it.
     val shape = rememberUpdatedState(clipRatio ?: CanvasPortrait)
 
+    // The geometry, through a state, so the lambdas below survive it changing
+    // without being rebuilt.
+    val geo = rememberUpdatedState(geometry)
+
+    // The three numbers everything below is laid out by, as lambdas read in
+    // measure and draw.
+    //
+    // `pictureShare` is how much of the clip is a *picture* — the pane filled
+    // edge to edge with the controls standing on it. `inset` is how much of it
+    // is a *cover* instead, sitting in the cover's place with the controls
+    // under it. A clip that fits the tall pane is a picture at every size; one
+    // too wide for it goes from the first to the second as the panel grows,
+    // and the two sum to how much of a clip there is at all.
+    val pictureShare = remember { { picture.value * geo.value.pictureShare(reach.value) } }
+    val inset = remember { { 1f - geo.value.pictureShare(reach.value) } }
+    val pictureAmount = remember { { picture.value } }
+    val reach01 = remember { { geo.value.reach01(reach.value) } }
+    val ext01 = remember { { geo.value.ext01(reach.value) } }
+
+    // For the one lambda below that has to turn points into pixels.
+    val density = LocalDensity.current
+    val headerRoomPx = with(density) { (WideButton + WideButtonGap).toPx() }
+
+    // The two facts composition needs, derived so they flip twice a journey
+    // instead of sixty times a second: whether the controls the tall panel adds
+    // can be touched yet, and which way the button at the top left points.
+    val tall by remember { derivedStateOf { reach.value > 0.5f } }
+    val wide by remember { derivedStateOf { reach.value > 1.5f } }
+
     // The picture behind the controls, recorded before them.
     //
     // This is the whole answer to "the buttons are not glass". A control is a
@@ -210,39 +271,107 @@ fun NowPlayingPanel(
     // not when one is expected.
     val onPicture = clip != null && canvasReady
 
+    // The side is the column's, not the panel's.
+    //
+    // A clip turns the column into a dark page, and the header, the cover, the
+    // names and the transport standing on it are read on that side. The words
+    // and the queue beside it are not on the clip: they stand on the panel's
+    // own glass, over the page, and are read on the page's side like every
+    // other pane over it. So each column slot is wrapped on its own, and the
+    // extension and the button at the corner are left on the app's side.
+    val side: @Composable (@Composable () -> Unit) -> Unit = { content ->
+        PanelSide(onPicture, content)
+    }
+
     PanelGlass(page = page, controls = controlGlass, inert = backdrop == null) {
-        PanelSide(onPicture) {
             PanelFrame(
                 modifier = modifier,
-                // What the picture asks the pane to be. Zero asks for nothing,
-                // and the frame then measures to its contents as it always did.
-                pictureHeight = { width ->
-                    picture.value * (width / shape.value.coerceIn(MinPaneRatio, MaxPaneRatio))
+                geometry = geo,
+                reach = reach,
+                pictureShare = pictureShare,
+                inset = inset,
+                pictureAmount = pictureAmount,
+                // What the picture asks the pane to be at rest. Zero asks for
+                // nothing, and the frame then measures to its contents as it
+                // always did.
+                pictureRatio = { shape.value.coerceIn(MinPaneRatio, MaxPaneRatio) },
+                // The shape of the cover's place: a square for a cover, the
+                // clip's own for a clip inset in it.
+                coverRatio = { shape.value.coerceIn(MinInsetRatio, MaxInsetRatio) },
+                hasPicture = picture.value > 0.001f || clip != null,
+                wash = {
+                    // A wash under the words and the queue, on the page's side.
+                    //
+                    // The panel's own film is tuned for a cover and a title
+                    // over a page; a column of lyrics over a shelf of bright
+                    // covers wants more of the page taken away than that, and
+                    // this is the same wash a record's header lays over its
+                    // picture for the same reason.
+                    Box(
+                        Modifier
+                            .fillMaxSize()
+                            .background(dev.lelonio.square.ui.theme.pageWash(ExtensionWash)),
+                    )
+                },
+                extension = {
+                    if (extension != null && geometry.hasWide) {
+                        Box(Modifier.extensionReveal(geometry.extension, ext01)) {
+                            extension()
+                        }
+                    }
+                },
+                cover = {
+                    // The quiet shape, folded away as the picture takes over.
+                    // Collapsed rather than removed so the two arrangements
+                    // are one spring apart instead of a cut.
+                    side {
+                        InsetCover(
+                            state = state,
+                            interactive = interactive,
+                            onOpen = onOpen,
+                            amount = picture,
+                        )
+                    }
                 },
                 picture = {
                     if (picture.value > 0.001f || clip != null) {
+                        side {
                         PanelPicture(
                             state = state,
                             clip = clip,
                             clipAlpha = clipAlpha,
                             amount = picture,
+                            scrim = pictureShare,
                             stage = stage,
                             onFirstFrame = { canvasReady = true },
-                            onAspectRatio = { clipRatio = it },
+                            onAspectRatio = {
+                                clipRatio = it
+                                reportRatio.value(it)
+                            },
                             onStillReady = {
                                 clipRatio = it
+                                reportRatio.value(it)
                                 canvasReady = true
                             },
                         )
+                        }
                     }
                 },
                 header = {
                     // The way into the full player, said with a word rather than
                     // left to be discovered: the panel is a surface you can
                     // press, and nothing about a cover suggests that.
+                    side {
                     Row(
                         Modifier
                             .fillMaxWidth()
+                            // Room for the button at the top left while it is
+                            // in the column, and none once it has gone out to
+                            // the extension's corner; see PanelFrame.
+                            .startInset {
+                                val ext = geo.value.extPx(reach.value)
+                                (headerRoomPx - ext).coerceAtLeast(0f) * reach01()
+                            }
                             .then(
                                 if (interactive) {
                                     Modifier.pressable(onOpen, pressedScale = 0.98f)
@@ -250,7 +379,7 @@ fun NowPlayingPanel(
                                     Modifier
                                 },
                             )
-                            .padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 10.dp),
+                            .padding(start = PanelGutter, end = PanelGutter, top = HeaderTop, bottom = HeaderBottom),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
                         Text(
@@ -268,22 +397,39 @@ fun NowPlayingPanel(
                             modifier = Modifier.size(18.dp),
                         )
                     }
+                    }
                 },
-                content = {
+                wideButton = {
+                    if (geometry.hasWide) {
+                        // Only an icon. It says what it does by pointing, and
+                        // a word beside it would be the one label in a panel
+                        // that has none.
+                        RoundGlassButton(
+                            size = WideButton,
+                            isInteractive = interactive && tall,
+                            onClick = onToggleWide,
+                        ) {
+                            Crossfade(wide, animationSpec = tween(160), label = "panel-wide") { open ->
+                                Icon(
+                                    if (open) PhosphorIcons.Regular.ArrowsInSimple
+                                    else PhosphorIcons.Regular.ArrowsOutSimple,
+                                    contentDescription = stringResource(
+                                        if (open) R.string.player_panel_narrow
+                                        else R.string.player_panel_widen,
+                                    ),
+                                    tint = Ink,
+                                    modifier = Modifier.size(20.dp),
+                                )
+                            }
+                        }
+                    }
+                },
+                body = {
+                    side {
                     Column(
-                        Modifier.padding(start = 20.dp, end = 20.dp, bottom = 20.dp),
+                        Modifier.padding(start = PanelGutter, end = PanelGutter, bottom = PanelGutter),
                         horizontalAlignment = Alignment.CenterHorizontally,
                     ) {
-                        // The quiet shape, folded away as the picture takes over.
-                        // Collapsed rather than removed so the two arrangements
-                        // are one spring apart instead of a cut.
-                        InsetCover(
-                            state = state,
-                            interactive = interactive,
-                            onOpen = onOpen,
-                            amount = picture,
-                        )
-
                         // The name, on its own pane once there is a clip.
                         //
                         // A canvas is graded for itself and some are near-white
@@ -298,7 +444,7 @@ fun NowPlayingPanel(
                                     Modifier
                                         .matchParentSize()
                                         .graphicsLayer {
-                                            alpha = picture.value.coerceIn(0f, 1f)
+                                            alpha = pictureShare().coerceIn(0f, 1f)
                                         }
                                         .glassSurface(
                                             state = controlGlass,
@@ -313,7 +459,7 @@ fun NowPlayingPanel(
                                 // before it: read in the measure pass, so the
                                 // inset is part of the same spring instead of a
                                 // step the eye catches.
-                                Modifier.insetBy(14.dp, 10.dp) { picture.value },
+                                Modifier.insetBy(14.dp, 10.dp, pictureShare),
                             ) {
                                 // Above the title, as in the window: the panel
                                 // is the player in miniature, and the order
@@ -322,11 +468,16 @@ fun NowPlayingPanel(
                                 // of its own — the glass that was put here for
                                 // a title on a clip is the glass a lyric on a
                                 // clip needs.
+                                // Folded away as the words open out beside it:
+                                // the line being sung is lit in the middle of
+                                // them, and saying it twice is noise.
                                 SungLineLabel(
                                     lyrics = lyrics,
                                     positionMs = positionMs,
                                     isPlaying = state.isPlaying,
-                                    modifier = Modifier.fillMaxWidth(),
+                                    modifier = Modifier
+                                        .fillMaxWidth()
+                                        .foldHeight { 1f - ext01() },
                                 )
                                 Text(
                                     text = state.title,
@@ -349,90 +500,44 @@ fun NowPlayingPanel(
 
                         Spacer(Modifier.height(14.dp))
 
-                        LinearProgressIndicator(
-                            progress = { progressOf(positionMs.value, state.durationMs) },
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .height(3.dp),
-                            color = MaterialTheme.colorScheme.primary,
+                        // The bar: a hairline beside the page, the player's own
+                        // seek bar once there is room, and its times folded out
+                        // under it. One bar, one number.
+                        GlassProgressBar(
+                            positionMs = positionMs,
+                            durationMs = state.durationMs,
+                            onSeek = onSeek,
+                            accentColor = MaterialTheme.colorScheme.primary,
                             trackColor = Ink.copy(alpha = 0.18f),
-                            drawStopIndicator = {},
+                            amount = reach01,
+                            interactive = interactive && tall,
                         )
+                        Box(Modifier.fillMaxWidth().foldHeight(reach01)) {
+                            TimeRow(positionMs, state.durationMs)
+                        }
 
                         Spacer(Modifier.height(12.dp))
 
-                        // The player's transport, at the panel's scale.
-                        //
-                        // The same discs of engine glass, three quarters the
-                        // size: the panel has three hundred points between its
-                        // gutters against a phone's four hundred, and the ratio
-                        // between the two sizes is the ratio between the two
-                        // widths.
-                        //
-                        // Spaced rather than spread: 48 + 16 + 58 + 16 + 48 reads
-                        // as one group in the middle of the panel, where evenly
-                        // spread pushes the skips against the gutter and their
-                        // rims into the panel's own.
-                        Row(
-                            Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(
-                                16.dp,
-                                Alignment.CenterHorizontally,
-                            ),
-                            verticalAlignment = Alignment.CenterVertically,
-                        ) {
-                            RoundGlassButton(
-                                size = 48.dp,
-                                enabled = state.hasPrevious,
-                                isInteractive = interactive,
-                                onClick = onPrevious,
-                            ) {
-                                Icon(
-                                    PhosphorIcons.Fill.SkipBack,
-                                    contentDescription = stringResource(R.string.previous),
-                                    // The dimming belongs to the button, not to
-                                    // the glyph: asking for it twice is how a
-                                    // disabled control goes from quiet to gone.
-                                    tint = Ink,
-                                    modifier = Modifier.size(22.dp),
-                                )
-                            }
-                            RoundGlassButton(
-                                size = 58.dp,
-                                isInteractive = interactive,
-                                onClick = onTogglePlay,
-                            ) {
-                                Icon(
-                                    if (state.isPlaying) {
-                                        PhosphorIcons.Fill.Pause
-                                    } else {
-                                        PhosphorIcons.Fill.Play
-                                    },
-                                    contentDescription = stringResource(
-                                        if (state.isPlaying) R.string.pause else R.string.play,
-                                    ),
-                                    tint = Ink,
-                                    modifier = Modifier.size(26.dp),
-                                )
-                            }
-                            RoundGlassButton(
-                                size = 48.dp,
-                                enabled = state.hasNext,
-                                isInteractive = interactive,
-                                onClick = onNext,
-                            ) {
-                                Icon(
-                                    PhosphorIcons.Fill.SkipForward,
-                                    contentDescription = stringResource(R.string.next),
-                                    tint = Ink,
-                                    modifier = Modifier.size(22.dp),
-                                )
-                            }
-                        }
+                        // The player's transport, at the panel's scale — and
+                        // at the player's, as the panel grows. Same discs of
+                        // engine glass, one row, measured at whatever size the
+                        // number says; see Controls.
+                        Controls(
+                            state = state,
+                            backdrop = null,
+                            onTogglePlay = onTogglePlay,
+                            onNext = onNext,
+                            onPrevious = onPrevious,
+                            onToggleShuffle = onToggleShuffle,
+                            onCycleRepeat = onCycleRepeat,
+                            amount = reach01,
+                            isInteractive = interactive,
+                            togglesEnabled = tall,
+                        )
+                    }
                     }
                 },
             )
-        }
     }
 }
 
@@ -442,6 +547,10 @@ fun NowPlayingPanel(
  * Recorded into [stage] so the discs below have it to bend. The recording is of
  * this node only — the controls are somewhere else entirely, so nothing that
  * samples it can be inside it.
+ *
+ * The scrim is only for the picture arrangement, where the controls stand on
+ * the clip: inset in the cover's place the clip is a cover, and a cover has no
+ * letters on it. [scrim] is how much of the first this is.
  */
 @UnstableApi
 @Composable
@@ -450,6 +559,7 @@ private fun PanelPicture(
     clip: CanvasClip?,
     clipAlpha: Float,
     amount: State<Float>,
+    scrim: () -> Float,
     stage: dev.antigravity.fluidengine.ui.fluid.GlassBackdropState,
     onFirstFrame: () -> Unit,
     onAspectRatio: (Float) -> Unit,
@@ -510,6 +620,7 @@ private fun PanelPicture(
         Box(
             Modifier
                 .fillMaxSize()
+                .graphicsLayer { alpha = scrim().coerceIn(0f, 1f) }
                 .background(
                     Brush.verticalGradient(
                         0f to Color.Black.copy(alpha = 0.30f),
@@ -523,10 +634,12 @@ private fun PanelPicture(
 }
 
 /**
- * The cover in its own square, for the tracks with no Canvas.
+ * The cover in its own place, for the tracks with no Canvas.
  *
- * Folded rather than dropped: the height is scaled by how far the picture behind
- * has arrived, so the quiet arrangement and the loud one are one spring apart.
+ * Faded rather than dropped as a clip arrives, and its place in the frame is
+ * folded with it: the quiet arrangement and the loud one are one spring apart.
+ * The frame decides its size — see [PanelFrame] — so this is only the picture
+ * and the press.
  */
 @Composable
 private fun InsetCover(
@@ -537,7 +650,7 @@ private fun InsetCover(
 ) {
     Box(
         Modifier
-            .fillMaxWidth()
+            .fillMaxSize()
             .then(
                 if (interactive) {
                     Modifier.pressable(onOpen, pressedScale = 0.97f)
@@ -546,8 +659,7 @@ private fun InsetCover(
                 },
             )
             .graphicsLayer { alpha = (1f - amount.value * 1.6f).coerceIn(0f, 1f) }
-            .clip(RoundedCornerShape(18.dp))
-            .folding { 1f - amount.value },
+            .clip(ContinuousCornerShape(PanelPictureRadius)),
     ) {
         Crossfade(
             targetState = state.artworkUrl to state.title,
@@ -557,25 +669,11 @@ private fun InsetCover(
             Artwork(
                 url = url,
                 title = title,
-                modifier = Modifier.fillMaxWidth().aspectRatio(1f),
+                modifier = Modifier.fillMaxSize(),
                 corner = 0.dp,
             )
         }
     }
-}
-
-/**
- * Reports a fraction of the height it measured, and keeps the rest.
- *
- * Read in the measure pass rather than in composition, so a pane folding away
- * costs a re-layout of eight nodes and not sixty recompositions of the app.
- */
-private fun Modifier.folding(fraction: () -> Float) = layout { measurable, constraints ->
-    val placeable = measurable.measure(constraints)
-    val shown = (placeable.height * fraction().coerceIn(0f, 1f)).roundToInt()
-    // The spacer that used to sit under the cover folds with it.
-    val gap = (PanelCoverGap.roundToPx() * fraction().coerceIn(0f, 1f)).roundToInt()
-    layout(placeable.width, shown + gap) { placeable.place(0, 0) }
 }
 
 /**
@@ -600,39 +698,188 @@ private fun Modifier.insetBy(
 }
 
 /**
- * The pane: a picture behind, a line at the top, and the controls at the bottom.
+ * The extension's content, measured at its full width and uncovered by the edge.
+ *
+ * Laid out whole from the first pixel, and placed so that it travels a third
+ * as fast as the edge that is revealing it: it arrives with the edge rather
+ * than either being pinned under it or standing still while the glass slides
+ * off. Clipped to the room it has been given, because the panel's glass is
+ * transparent and a column of words at full width would show through the
+ * column beside it.
+ */
+private fun Modifier.extensionReveal(fullWidthPx: Float, amount: () -> Float): Modifier = this
+    .clipToBounds()
+    .layout { measurable, constraints ->
+        val full = fullWidthPx.roundToInt().coerceAtLeast(constraints.maxWidth)
+        val placeable = measurable.measure(Constraints.fixed(full, constraints.maxHeight))
+        layout(constraints.maxWidth, constraints.maxHeight) {
+            val x = ((constraints.maxWidth - full) * ExtensionParallax).roundToInt()
+            placeable.placeWithLayer(x, 0) {
+                alpha = (amount() / ExtensionFadeIn).coerceIn(0f, 1f)
+            }
+        }
+    }
+
+/**
+ * The pane: a picture behind, a line at the top, a cover in the middle, and
+ * the controls at the bottom — and beside it, once there is room, the words.
  *
  * A layout rather than a Box because the picture has to be as tall as the *pane*
  * and the pane as tall as the picture wants — which a Box cannot say, since
  * `matchParentSize` is resolved from a size the other children already decided.
- * One pass, no subcomposition: the height is a number read in measure.
+ * One pass, no subcomposition: every number is read in measure.
+ *
+ * Three things it decides, all from [reach]:
+ *
+ * - **Its own size.** The column is as wide as the geometry says for this
+ *   reach; the extension takes the rest. The height is its contents' at rest
+ *   and the whole box it was given at the second size, and every height
+ *   between is the same number.
+ * - **The cover's place.** Between the header and the body there is a
+ *   rectangle: at rest it is the square the cover has always had, grown, it is
+ *   whatever room is left, and the cover takes it. With a clip that is a
+ *   picture the place folds to nothing; with a clip inset instead of a cover
+ *   the place takes the clip's own shape.
+ * - **Where the picture is.** Edge to edge with the controls on it, or exactly
+ *   in the cover's place with the controls under it, or on its way between the
+ *   two — it is the same node, moved and clipped in place, so the one decoder
+ *   there is never has to be handed from one slot to another.
  */
 @Composable
 private fun PanelFrame(
     modifier: Modifier,
-    /** What the picture asks for, in pixels, given the pane's width. Zero asks for nothing. */
-    pictureHeight: (Int) -> Float,
+    geometry: State<PanelGeometry>,
+    reach: State<Float>,
+    /** How much of the clip is a picture behind the controls, 0..1. */
+    pictureShare: () -> Float,
+    /** How far the picture has gone from the pane to the cover's place, 0..1. */
+    inset: () -> Float,
+    /** How much of a clip there is at all, 0..1: the spring that follows one arriving or leaving. */
+    pictureAmount: () -> Float,
+    /** The clip's width over its height, for what the picture asks the pane to be. */
+    pictureRatio: () -> Float,
+    /** The shape of the cover's place, width over height. */
+    coverRatio: () -> Float,
+    /** Whether there is a picture node at all. */
+    hasPicture: Boolean,
+    wash: @Composable () -> Unit,
+    extension: @Composable () -> Unit,
+    cover: @Composable () -> Unit,
     picture: @Composable () -> Unit,
     header: @Composable () -> Unit,
-    content: @Composable () -> Unit,
+    body: @Composable () -> Unit,
+    wideButton: @Composable () -> Unit,
 ) {
     Layout(
-        contents = listOf(picture, header, content),
+        contents = listOf(wash, extension, cover, picture, header, body, wideButton),
         modifier = modifier,
-    ) { (pictures, headers, contents), constraints ->
-        val loose = constraints.copy(minHeight = 0)
-        val head = headers.first().measure(loose)
-        val body = contents.first().measure(loose)
-        val width = constraints.constrainWidth(maxOf(head.width, body.width))
-        val asked = pictureHeight(width).roundToInt()
-        val height = constraints.constrainHeight(maxOf(head.height + body.height, asked))
-        val behind = pictures.firstOrNull()?.measure(Constraints.fixed(width, height))
+    ) { slots, constraints ->
+        val washes = slots[0]
+        val extensions = slots[1]
+        val covers = slots[2]
+        val pictures = slots[3]
+        val headers = slots[4]
+        val bodies = slots[5]
+        val buttons = slots[6]
+        val g = geometry.value
+        val t = reach.value
+        val r01 = g.reach01(t)
+        val e01 = g.ext01(t)
+        val ext = g.extPx(t).roundToInt().coerceAtMost(constraints.maxWidth)
+        val colW = g.columnWidthPx(t).roundToInt()
+            .coerceIn(0, (constraints.maxWidth - ext).coerceAtLeast(0))
+        val width = constraints.constrainWidth(colW + ext)
+        val gutter = PanelGutter.roundToPx()
+
+        val column = Constraints(minWidth = colW, maxWidth = colW, minHeight = 0, maxHeight = constraints.maxHeight)
+        val head = headers.first().measure(column)
+        val bodyP = bodies.first().measure(column)
+
+        // How much of the clip is a picture, how much a cover.
+        val pic = pictureShare().coerceIn(0f, 1f)
+        val k = inset().coerceIn(0f, 1f)
+
+        // The cover's place at rest: the width between the gutters, in the
+        // shape it has — square, or the clip's, and anything between.
+        val coverMaxW = (colW - 2 * gutter).coerceAtLeast(0)
+        // The clip's shape only as far as there is a clip, and only as far as
+        // it is a cover: a clip leaving hands the place back to the square.
+        val aspect = lerpPx(1f, coverRatio(), if (hasPicture) k * pictureAmount().coerceIn(0f, 1f) else 0f)
+            .coerceAtLeast(0.01f)
+        val coverNaturalH = (coverMaxW / aspect).roundToInt()
+        val gap = (PanelCoverGap.roundToPx() * (1f - pic)).roundToInt()
+
+        // What the picture asks the pane to be at rest, and what the contents
+        // add up to; then the height, which is either of those at rest and the
+        // whole box once grown.
+        val asked = (pic * colW / pictureRatio()).roundToInt()
+        val natural = maxOf(head.height + (coverNaturalH * (1f - pic)).roundToInt() + gap + bodyP.height, asked)
+        val bounded = constraints.maxHeight != Constraints.Infinity
+        val height = constraints.constrainHeight(
+            if (bounded) lerpPx(natural.toFloat(), constraints.maxHeight.toFloat(), r01).roundToInt() else natural,
+        )
+
+        // The cover's place: what is left between the header and the body,
+        // never wider than the gutters allow, centred in any slack.
+        val room = (height - head.height - bodyP.height - gap).coerceAtLeast(0)
+        val coverW = minOf(coverMaxW, (room * aspect).roundToInt()).coerceAtLeast(0)
+        val coverH = (coverW / aspect).roundToInt().coerceAtMost(room)
+        val coverX = ext + gutter + (coverMaxW - coverW) / 2
+        val coverY = head.height + (room - coverH) / 2
+        val coverP = covers.firstOrNull()?.measure(Constraints.fixed(coverW, coverH))
+
+        // The picture: the whole column, or the cover's place, or between.
+        val picX = lerpPx(ext.toFloat(), coverX.toFloat(), k).roundToInt()
+        val picY = lerpPx(0f, coverY.toFloat(), k).roundToInt()
+        val picW = lerpPx(colW.toFloat(), coverW.toFloat(), k).roundToInt().coerceAtLeast(0)
+        val picH = lerpPx(height.toFloat(), coverH.toFloat(), k).roundToInt().coerceAtLeast(0)
+        val pictureP = pictures.firstOrNull()?.measure(Constraints.fixed(picW, picH))
+        // The picture's corner. Inset in the cover's place it is the cover's;
+        // filling the column beside an open extension it is the panel's own,
+        // so the clip's left edge rounds off like every other edge of the
+        // pane instead of meeting the words square. The right corners land
+        // exactly under the pane's, which is the same shape at the same place.
+        val picRadius = maxOf(
+            PanelPictureRadius.toPx() * k,
+            FluidRadius.Sheet.toPx() * e01 * (1f - k),
+        )
+        val picSettled = (k <= 0.001f || k >= 0.999f) && (e01 <= 0.001f || e01 >= 0.999f)
+        val picShape: androidx.compose.ui.graphics.Shape? = when {
+            picRadius < 0.5f -> null
+            // Rounded in transit, continuous at rest: a continuous corner is a
+            // path, and a path re-cut every frame is the one thing the corner
+            // rules forbid.
+            !picSettled -> RoundedCornerShape(picRadius)
+            k >= 0.999f -> ContinuousCornerShape(PanelPictureRadius)
+            else -> ContinuousCornerShape(FluidRadius.Sheet)
+        }
+
+        val washP = if (ext > 0) washes.firstOrNull()?.measure(Constraints.fixed(ext, height)) else null
+        val extensionP = if (ext > 0) extensions.firstOrNull()?.measure(Constraints.fixed(ext, height)) else null
+
+        val button = buttons.firstOrNull()?.measure(constraints.copy(minWidth = 0, minHeight = 0))
+        // Centred on the header's line of text, at the frame's left edge: in
+        // the column at the second size, at the extension's corner at the
+        // third, and it is the same place because the edge is what moved.
+        val buttonY = (head.height + (HeaderTop - HeaderBottom).roundToPx()) / 2 - (button?.height ?: 0) / 2
+        val buttonSlide = (WideButtonSlide.toPx() * (1f - r01)).roundToInt()
+        val buttonAlpha = ((r01 - WideButtonFadeFrom) / (1f - WideButtonFadeFrom)).coerceIn(0f, 1f)
+
         layout(width, height) {
-            behind?.place(0, 0)
-            head.place(0, 0)
+            washP?.placeWithLayer(0, 0) { alpha = (e01 / ExtensionFadeIn).coerceIn(0f, 1f) }
+            extensionP?.place(0, 0)
+            coverP?.place(coverX, coverY)
+            pictureP?.placeWithLayer(picX, picY) {
+                if (picShape != null) {
+                    shape = picShape
+                    clip = true
+                }
+            }
+            head.place(ext, 0)
             // Pinned to the floor, so the picture grows into the space above it
             // rather than pushing the transport off the bottom of the window.
-            body.place(0, height - body.height)
+            bodyP.place(ext, height - bodyP.height)
+            button?.placeWithLayer(gutter - buttonSlide, buttonY) { alpha = buttonAlpha }
         }
     }
 }
@@ -718,8 +965,55 @@ private const val CanvasPortrait = 9f / 16f
 private const val MinPaneRatio = 0.4f
 private const val MaxPaneRatio = 1f
 
+/**
+ * And how far one inset in the cover's place may: a landscape clip is a wide
+ * cover there, which is fine, and a clip taller than the place is high is
+ * cropped to it like the pane crops one at rest.
+ */
+private const val MinInsetRatio = 0.5f
+private const val MaxInsetRatio = 2f
+
 /** The room under the inset cover, folded away with it. */
 private val PanelCoverGap = 18.dp
+
+/** The panel's gutters, on every side. */
+private val PanelGutter = 20.dp
+
+/** The header's own air, above and below its line. */
+private val HeaderTop = 20.dp
+private val HeaderBottom = 10.dp
+
+/**
+ * The corner of the cover, and of a clip inset in its place.
+ *
+ * Twenty-six, continuous. The concentric answer — the pane's radius less the
+ * gutter — is eighteen, and eighteen on a cover three hundred points across
+ * reads as square; this is the smallest that reads as a cover in a pane and not
+ * a tile in one.
+ */
+private val PanelPictureRadius = 26.dp
+
+/** The button at the top left, and the air between it and the header's line. */
+private val WideButton = 40.dp
+private val WideButtonGap = 8.dp
+
+/** How far it comes in from the panel's edge, and where on the first leg it starts to show. */
+private val WideButtonSlide = 24.dp
+private const val WideButtonFadeFrom = 0.35f
+
+/** How much slower than the edge the extension's content travels, and how soon it is whole. */
+private const val ExtensionParallax = 0.35f
+private const val ExtensionFadeIn = 0.4f
+
+/**
+ * The wash under the extension, as the dark side's black; see the wash slot.
+ *
+ * Heavier than a header's: a header carries a title over a picture it wants
+ * seen, this carries a column of small type over a shelf of covers nobody is
+ * looking at. Measured at thirty percent the shelf still came through the
+ * words; at forty-five it is a wash.
+ */
+private const val ExtensionWash = 0.45f
 
 /**
  * What a clip under the scrim amounts to, for the purpose of picking a side.

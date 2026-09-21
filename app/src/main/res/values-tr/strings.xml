@@ -63,6 +63,8 @@
     <string name="library_all">Tümü</string>
     <string name="search">Ara</string>
     <string name="now_playing">Şimdi çalıyor</string>
+    <string name="player_panel_widen">Oynatıcıyı genişlet</string>
+    <string name="player_panel_narrow">Oynatıcıyı daralt</string>
     <string name="unofficial_client">Premium hesaplar için resmi olmayan istemci</string>
     <string name="log_in_with_spotify">Spotify ile giriş yap</string>
     <string name="connect">Bağla</string>

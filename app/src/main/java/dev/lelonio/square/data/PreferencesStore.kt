@@ -104,6 +104,19 @@ class PreferencesStore(context: Context) {
         prefs.edit().putBoolean(KEY_PLAYER_OPEN, value).apply()
     }
 
+    /**
+     * Which size the now-playing panel was left at on a wide window: 0 beside
+     * the page, 1 the height of it, 2 with the words and the queue opened out.
+     *
+     * A layout choice rather than a place you went, so it is kept the way the
+     * player's own openness is — read straight, for the first frame.
+     */
+    fun panelReach(): Int = prefs.getInt(KEY_PANEL_REACH, 0)
+
+    fun setPanelReach(value: Int) {
+        prefs.edit().putInt(KEY_PANEL_REACH, value).apply()
+    }
+
     private val _canvasEnabled = MutableStateFlow(prefs.getBoolean(KEY_CANVAS, true))
 
     /**
@@ -216,6 +229,7 @@ class PreferencesStore(context: Context) {
         const val KEY_DEVICE_ID = "device_id"
         const val KEY_ONBOARDED = "onboarded"
         const val KEY_PLAYER_OPEN = "player_open"
+        const val KEY_PANEL_REACH = "panel_reach"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
         const val KEY_SKIPPED_UPDATE = "skipped_update"
         const val KEY_PROFILE_NAME = "profile_name"

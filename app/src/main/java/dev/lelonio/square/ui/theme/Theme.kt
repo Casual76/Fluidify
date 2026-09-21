@@ -452,8 +452,13 @@ val Ink: Color
  * go on being the width of the window and carry on under the panel, the way it
  * already carries on under the bar. Only what you are meant to reach stops
  * short.
+ *
+ * Tracked, not static: on a wide window the panel grows and the number moves
+ * with a finger. A static local recomposes the whole subtree it is provided
+ * to — every screen of the app, sixty times a second — where this one wakes
+ * only the rows that read it.
  */
-val LocalPageEndInset = staticCompositionLocalOf { 0.dp }
+val LocalPageEndInset = compositionLocalOf { 0.dp }
 
 /**
  * The colour a page ends on, where nothing else has been painted.

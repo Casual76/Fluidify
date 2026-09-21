@@ -138,6 +138,25 @@ fun playerMorphTarget(progress: Float, progressVelocity: Float): Float = when {
 }
 
 /**
+ * The same question, on an axis with more than two anchors.
+ *
+ * The panel on a wide window has four sizes on one line — beside the page, the
+ * height of it, opened out, and the window — and the finger runs along all of
+ * them as `reach + expand`. A flick goes to the *next* anchor in its own
+ * direction, never further: a fast pull from the small panel lands on the tall
+ * one, and it takes another to open the words. Anything slower is projected
+ * the same seventh of a second and rounded to whichever anchor is nearest,
+ * which on an axis of length one is exactly [playerMorphTarget].
+ */
+fun panelMorphTarget(units: Float, unitsVelocity: Float, maxUnits: Float): Float = when {
+    unitsVelocity > FlingUnitsPerSecond ->
+        (kotlin.math.floor(units) + 1f).coerceAtMost(maxUnits)
+    unitsVelocity < -FlingUnitsPerSecond ->
+        (kotlin.math.ceil(units) - 1f).coerceAtLeast(0f)
+    else -> kotlin.math.round(units + unitsVelocity * ProjectionSeconds).coerceIn(0f, maxUnits)
+}
+
+/**
  * How far a finger has to run, per axis, for one whole journey.
  *
  * The travelling edge and nothing else: upwards it is `pillBounds.top`, to the
@@ -216,6 +235,78 @@ fun CoroutineScope.settlePlayerMorphUnits(
         haptics?.performHapticFeedback(HapticFeedbackType.LongPress)
     }
     expand.animateTo(target, PlayerMorphSpec, initialVelocity = velocityUnitsPerSec)
+}
+
+/**
+ * The finger on the panel, whose axis is two numbers laid end to end.
+ *
+ * `reach` is written first on the way out and `expand` first on the way back,
+ * so the two never move at once under a finger: the window only starts growing
+ * once the panel has nowhere left to grow, and only once the window is fully
+ * back does the panel begin to give up its size. Both are bounded, so a run past
+ * either end is simply held there.
+ */
+fun CoroutineScope.dragPanelBy(
+    reach: Animatable<Float, AnimationVector1D>,
+    expand: Animatable<Float, AnimationVector1D>,
+    units: Float,
+    maxReach: Float,
+) = launch {
+    if (units >= 0f) {
+        val onReach = units.coerceAtMost((maxReach - reach.value).coerceAtLeast(0f))
+        if (onReach > 0f) reach.snapTo(reach.value + onReach)
+        val rest = units - onReach
+        if (rest > 0f) expand.snapTo(expand.value + rest)
+    } else {
+        val onExpand = (-units).coerceAtMost(expand.value)
+        if (onExpand > 0f) expand.snapTo(expand.value - onExpand)
+        val rest = -units - onExpand
+        if (rest > 0f) reach.snapTo(reach.value - rest)
+    }
+}
+
+/**
+ * The release on the panel: the nearest anchor, with the finger's speed in the spring.
+ *
+ * The two numbers are animated together and not one after the other. A flick
+ * that crosses from the panel's last size into the window has the panel still
+ * growing while the window sets off from it — and since the window measures
+ * where it starts from every frame, it starts from a panel that is still
+ * moving, which is a single journey and not two. The speed only goes into the
+ * number that has somewhere to go: a spring handed a velocity towards a target
+ * it is already at bounces off it.
+ *
+ * @param origin the anchor the gesture began at, for the one knock at the end
+ *   of a journey that finishes somewhere it did not start.
+ */
+fun CoroutineScope.settlePanel(
+    reach: Animatable<Float, AnimationVector1D>,
+    expand: Animatable<Float, AnimationVector1D>,
+    velocityUnitsPerSec: Float,
+    maxReach: Float,
+    origin: Float,
+    haptics: HapticFeedback?,
+) {
+    val target = panelMorphTarget(reach.value + expand.value, velocityUnitsPerSec, maxReach + 1f)
+    if (target != origin) {
+        haptics?.performHapticFeedback(HapticFeedbackType.LongPress)
+    }
+    val reachTarget = target.coerceAtMost(maxReach)
+    val expandTarget = (target - maxReach).coerceAtLeast(0f)
+    launch {
+        reach.animateTo(
+            reachTarget,
+            PlayerMorphSpec,
+            initialVelocity = if (reach.value != reachTarget) velocityUnitsPerSec else 0f,
+        )
+    }
+    launch {
+        expand.animateTo(
+            expandTarget,
+            PlayerMorphSpec,
+            initialVelocity = if (expand.value != expandTarget) velocityUnitsPerSec else 0f,
+        )
+    }
 }
 
 /**

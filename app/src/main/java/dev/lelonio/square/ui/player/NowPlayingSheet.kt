@@ -8,6 +8,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.SideEffect
+import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -81,7 +82,7 @@ import kotlinx.coroutines.launch
 fun NowPlayingSheet(
     progress: Animatable<Float, AnimationVector1D>,
     /** Where the pill is, in the window's own pixels. The journey starts there. */
-    pillBounds: Rect,
+    pillBounds: State<Rect>,
     /** What the travelling surface refracts: the page it is leaving. */
     backdrop: GlassBackdropState,
     /**
@@ -120,8 +121,20 @@ fun NowPlayingSheet(
     // The last place the pill was seen, kept across the journey: the pill itself
     // is cut the moment the journey starts, so its bounds stop being reported
     // exactly when they are needed.
+    // Read only while there is a journey to read it for. On a wide window the
+    // panel changes size under a finger, and this rectangle with it, on every
+    // frame of a pull that has nothing to do with the window; followed here
+    // unconditionally, that recomposed this and the surface every one of those
+    // frames. Derived, it is a dependency only past the epsilon — and then it
+    // is a live one, which is what lets a fling that crosses into the window
+    // start from a panel that is still growing.
+    val reported by remember {
+        derivedStateOf {
+            if (progress.value > MorphEpsilon) pillBounds.value else Rect.Zero
+        }
+    }
     var lastPill by remember { mutableStateOf(Rect.Zero) }
-    if (pillBounds.width > 0f) lastPill = pillBounds
+    if (reported.width > 0f) lastPill = reported
 
     val ready = lastPill.width > 0f && hostBounds.width > 0f
     val startDensity = LocalDensity.current

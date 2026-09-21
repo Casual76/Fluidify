@@ -69,6 +69,8 @@
     <string name="library_all">Everything</string>
     <string name="search">Search</string>
     <string name="now_playing">Now playing</string>
+    <string name="player_panel_widen">Wider player</string>
+    <string name="player_panel_narrow">Narrower player</string>
     <string name="unofficial_client">Unofficial client for Premium accounts</string>
     <string name="log_in_with_spotify">Log in with Spotify</string>
     <string name="connect">Connect</string>

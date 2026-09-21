@@ -87,6 +87,7 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
 import coil.compose.AsyncImage
@@ -1946,42 +1947,60 @@ internal fun TimeRow(positionMs: State<Long>, durationMs: Long) {
     }
 }
 
+/**
+ * The transport: shuffle, back, play, forward, repeat.
+ *
+ * It has two sizes and every size between them. At [amount] one it is the
+ * player's own row — three discs of glass with the two toggles spread evenly
+ * either side. At zero it is the now-playing panel's — the three discs alone,
+ * three quarters the size, spaced rather than spread, with the toggles tucked
+ * behind the skips. The panel growing into a player carries the row from one
+ * to the other, and it is one row: the discs are measured at the size the
+ * number says, never scaled, because a disc is a lens and a lens scaled by its
+ * layer scales the page it is bending along with it.
+ */
 @Composable
 internal fun Controls(
     state: PlaybackState,
-    backdrop: Backdrop,
+    /** Unused since the discs stopped taking one; kept so the callers read as they did. */
+    @Suppress("UNUSED_PARAMETER") backdrop: Backdrop?,
     onTogglePlay: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
     onToggleShuffle: () -> Unit,
     onCycleRepeat: () -> Unit,
+    /** How much of the player's row this is, 0 (the panel's) to 1. Read in measure. */
+    amount: () -> Float = { 1f },
+    /** False for a copy that is a picture of a transport rather than a transport. */
+    isInteractive: Boolean = true,
+    /** Whether shuffle and repeat can be pressed: false while they are still folded away. */
+    togglesEnabled: Boolean = true,
 ) {
-    Row(
-        Modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.SpaceEvenly,
-    ) {
+    // Three discs of the same material, the middle one larger. The reference
+    // gives the transport its own row of circles rather than icons on a bar,
+    // and the size difference is the only thing marking the primary action —
+    // no fill, no accent.
+    // A knock under the finger on each of the three, and it is the engine's
+    // own vocabulary rather than the platform's: a skip is a Tap, the thing
+    // the phone does when you have changed what is happening. The transport
+    // is the one place in the app where the control is small, the
+    // consequence is large, and the eyes are often somewhere else.
+    val transportHaptics = LocalFluidHaptics.current
+
+    val shuffle: @Composable () -> Unit = {
         ToggleIcon(
             icon = PhosphorIcons.Regular.Shuffle,
             description = stringResource(R.string.shuffle_play),
             active = state.shuffleEnabled,
+            enabled = isInteractive && togglesEnabled,
             onClick = onToggleShuffle,
         )
-
-        // Three discs of the same material, the middle one larger. The reference
-        // gives the transport its own row of circles rather than icons on a bar,
-        // and the size difference is the only thing marking the primary action —
-        // no fill, no accent.
-        // A knock under the finger on each of the three, and it is the engine's
-        // own vocabulary rather than the platform's: a skip is a Tap, the thing
-        // the phone does when you have changed what is happening. The transport
-        // is the one place in the app where the control is small, the
-        // consequence is large, and the eyes are often somewhere else.
-        val transportHaptics = LocalFluidHaptics.current
-
+    }
+    val previous: @Composable () -> Unit = {
         RoundGlassButton(
-            size = 62.dp,
+            size = SkipDisc,
             enabled = state.hasPrevious,
+            isInteractive = isInteractive,
             onClick = {
                 transportHaptics.play(FluidHapticEvent.Tap)
                 onPrevious()
@@ -1990,12 +2009,14 @@ internal fun Controls(
             Icon(
                 PhosphorIcons.Fill.SkipBack,
                 contentDescription = stringResource(R.string.previous),
-                modifier = Modifier.size(30.dp),
+                modifier = Modifier.grow(SkipGlyphSmall, SkipGlyph, amount),
             )
         }
-
+    }
+    val play: @Composable () -> Unit = {
         RoundGlassButton(
-            size = 76.dp,
+            size = PlayDisc,
+            isInteractive = isInteractive,
             onClick = {
                 transportHaptics.play(
                     if (state.isPlaying) FluidHapticEvent.ToggleOff
@@ -2018,7 +2039,7 @@ internal fun Controls(
                     CircularProgressIndicator(
                         color = LocalContentColor.current.copy(alpha = 0.5f),
                         strokeWidth = 2.dp,
-                        modifier = Modifier.size(52.dp),
+                        modifier = Modifier.grow(BufferRingSmall, BufferRing, amount),
                     )
                 }
                 Crossfade(
@@ -2029,15 +2050,17 @@ internal fun Controls(
                     Icon(
                         imageVector = if (playing) PhosphorIcons.Fill.Pause else PhosphorIcons.Fill.Play,
                         contentDescription = stringResource(if (playing) R.string.pause else R.string.play),
-                        modifier = Modifier.size(34.dp),
+                        modifier = Modifier.grow(PlayGlyphSmall, PlayGlyph, amount),
                     )
                 }
             }
         }
-
+    }
+    val next: @Composable () -> Unit = {
         RoundGlassButton(
-            size = 62.dp,
+            size = SkipDisc,
             enabled = state.hasNext,
+            isInteractive = isInteractive,
             onClick = {
                 transportHaptics.play(FluidHapticEvent.Tap)
                 onNext()
@@ -2046,10 +2069,11 @@ internal fun Controls(
             Icon(
                 PhosphorIcons.Fill.SkipForward,
                 contentDescription = stringResource(R.string.next),
-                modifier = Modifier.size(30.dp),
+                modifier = Modifier.grow(SkipGlyphSmall, SkipGlyph, amount),
             )
         }
-
+    }
+    val repeat: @Composable () -> Unit = {
         ToggleIcon(
             icon = if (state.repeatMode == Player.REPEAT_MODE_ONE) {
                 PhosphorIcons.Regular.RepeatOnce
@@ -2058,10 +2082,90 @@ internal fun Controls(
             },
             description = stringResource(R.string.repeat),
             active = state.repeatMode != Player.REPEAT_MODE_OFF,
+            enabled = isInteractive && togglesEnabled,
             onClick = onCycleRepeat,
         )
     }
+
+    // The toggles first, so the discs are above them: folded away they sit
+    // behind the skips, and a hidden target on top of a visible one is the
+    // tap that goes nowhere.
+    androidx.compose.ui.layout.Layout(
+        contents = listOf(shuffle, repeat, previous, play, next),
+        modifier = Modifier.fillMaxWidth(),
+    ) { (shuffles, repeats, previouses, plays, nexts), constraints ->
+        val a = amount().coerceIn(0f, 1f)
+        val disc = lerpPx(SkipDiscSmall.toPx(), SkipDisc.toPx(), a).roundToInt()
+        val playSide = lerpPx(PlayDiscSmall.toPx(), PlayDisc.toPx(), a).roundToInt()
+        val gap = TransportGap.roundToPx()
+        val loose = constraints.copy(minWidth = 0, minHeight = 0)
+        val shuffleP = shuffles.first().measure(loose)
+        val repeatP = repeats.first().measure(loose)
+        val previousP = previouses.first().measure(androidx.compose.ui.unit.Constraints.fixed(disc, disc))
+        val playP = plays.first().measure(androidx.compose.ui.unit.Constraints.fixed(playSide, playSide))
+        val nextP = nexts.first().measure(androidx.compose.ui.unit.Constraints.fixed(disc, disc))
+        val width = constraints.maxWidth
+        val height = maxOf(playSide, shuffleP.height, repeatP.height)
+
+        // The panel's row: three discs, spaced, in the middle.
+        val compact = disc + gap + playSide + gap + disc
+        val previous0 = (width - compact) / 2f
+        val play0 = previous0 + disc + gap
+        val next0 = play0 + playSide + gap
+        // The player's: five, spread with the same air between and around.
+        val spread = shuffleP.width + disc + playSide + disc + repeatP.width
+        val air = ((width - spread) / 6f).coerceAtLeast(0f)
+        val shuffle1 = air
+        val previous1 = shuffle1 + shuffleP.width + air
+        val play1 = previous1 + disc + air
+        val next1 = play1 + playSide + air
+        val repeat1 = next1 + disc + air
+        // Where the toggles wait while folded: behind the skips.
+        val shuffle0 = previous0 + (disc - shuffleP.width) / 2f
+        val repeat0 = next0 + (disc - repeatP.width) / 2f
+
+        layout(width, height) {
+            fun centred(h: Int) = (height - h) / 2
+            val toggles = a * a
+            shuffleP.placeWithLayer(lerpPx(shuffle0, shuffle1, a).roundToInt(), centred(shuffleP.height)) {
+                alpha = toggles
+            }
+            repeatP.placeWithLayer(lerpPx(repeat0, repeat1, a).roundToInt(), centred(repeatP.height)) {
+                alpha = toggles
+            }
+            previousP.place(lerpPx(previous0, previous1, a).roundToInt(), centred(disc))
+            playP.place(lerpPx(play0, play1, a).roundToInt(), centred(playSide))
+            nextP.place(lerpPx(next0, next1, a).roundToInt(), centred(disc))
+        }
+    }
 }
+
+/** The player's discs: the reference's own sizes. */
+private val SkipDisc = 62.dp
+private val PlayDisc = 76.dp
+
+/**
+ * The panel's, three quarters of them: the panel has three hundred points
+ * between its gutters against a phone's four hundred, and the ratio between the
+ * two sizes is the ratio between the two widths.
+ */
+private val SkipDiscSmall = 48.dp
+private val PlayDiscSmall = 58.dp
+
+/** The glyphs inside, at each size. */
+private val SkipGlyph = 30.dp
+private val SkipGlyphSmall = 22.dp
+private val PlayGlyph = 34.dp
+private val PlayGlyphSmall = 26.dp
+private val BufferRing = 52.dp
+private val BufferRingSmall = 40.dp
+
+/**
+ * The air between the panel's three discs. Spaced rather than spread: 48 + 16 +
+ * 58 + 16 + 48 reads as one group in the middle of the panel, where evenly
+ * spread pushes the skips against the gutter and their rims into the panel's own.
+ */
+private val TransportGap = 16.dp
 
 /**
  * A word for the setting that is quietly changing the record.
@@ -2137,8 +2241,9 @@ private fun ToggleIcon(
     description: String,
     active: Boolean,
     onClick: () -> Unit,
+    enabled: Boolean = true,
 ) {
-    IconButton(onClick = onClick) {
+    IconButton(onClick = onClick, enabled = enabled) {
         Icon(
             icon,
             contentDescription = description,
@@ -2186,7 +2291,7 @@ internal val GlassFilm: Color
  * space rather than collapsing the screen around it.
  */
 @Composable
-private fun LyricsStage(
+internal fun LyricsStage(
     lyrics: dev.lelonio.square.data.Lyrics?,
     loading: Boolean,
     positionMs: State<Long>,
@@ -2195,6 +2300,7 @@ private fun LyricsStage(
     backdrop: Backdrop,
     /** Bumped when somebody arrives here asking for the karaoke control. */
     expandSignal: Int,
+    modifier: Modifier = Modifier,
 ) {
     // Off when a song starts: turning it on is asking to read this one.
     var translated by androidx.compose.runtime.saveable.rememberSaveable(lyrics) {
@@ -2250,7 +2356,7 @@ private fun LyricsStage(
         }
     }
 
-    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         when {
             loading -> androidx.compose.material3.CircularProgressIndicator(
                 color = GlassInkDim,

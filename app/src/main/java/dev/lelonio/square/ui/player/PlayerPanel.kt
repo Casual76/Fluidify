@@ -298,21 +298,39 @@ internal fun QueueList(
     var dragOffset by remember { mutableFloatStateOf(0f) }
     val rowHeight = with(LocalDensity.current) { QueueRowHeight.toPx() }
 
+    // Keyed on the track, not on where it sits.
+    //
+    // With the index as the key, taking one out renumbered every row below
+    // it — as far as the list is concerned each of those became a different
+    // item, so nothing could be animated and the queue jumped. Keyed on the
+    // track itself, the row that went is the only one that changes and the
+    // rest slide up into the gap.
+    //
+    // And not on the index *either*, which the key carried for a while to
+    // tell two copies of one track apart: a row dragged one place down took a
+    // new index, so a new key, so it was a new row — and the handle under
+    // the finger belonged to the old one, gone. A drag could move a row once
+    // and then held nothing. Copies are told apart by counting them instead,
+    // which a move does not change unless one copy is dragged past another.
+    val keys = remember(queue) {
+        val seen = HashMap<String, Int>()
+        queue.map { entry ->
+            val nth = seen.getOrDefault(entry.uri, 0)
+            seen[entry.uri] = nth + 1
+            "${entry.uri}#$nth"
+        }
+    }
+
     LazyColumn(Modifier.padding(vertical = 8.dp)) {
-        // Keyed on the track, not on where it sits.
-        //
-        // With the index as the key, taking one out renumbered every row below
-        // it — as far as the list is concerned each of those became a different
-        // item, so nothing could be animated and the queue jumped. Keyed on the
-        // track itself, the row that went is the only one that changes and the
-        // rest slide up into the gap.
         itemsIndexed(
             queue,
-            key = { at, entry -> "${entry.uri}-$at-${entry.title}" },
+            key = { at, _ -> keys[at] },
         ) { _, entry ->
             val held = draggingIndex == entry.index
-            Row(
-                Modifier
+            val startIndex by rememberUpdatedState(entry.index)
+            QueueRow(
+                entry = entry,
+                modifier = Modifier
                     .fillMaxWidth()
                     // Everything but the row in the hand animates into its new
                     // place. The held one must not: `animateItem` would be
@@ -343,76 +361,9 @@ internal fun QueueList(
                             Modifier
                         },
                     )
-                    .clickable { onPlay(entry.index) }
-                    .padding(horizontal = 18.dp, vertical = 8.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                dev.lelonio.square.ui.components.Artwork(
-                    url = entry.artworkUrl,
-                    title = entry.title,
-                    modifier = Modifier.size(44.dp),
-                    corner = 8.dp,
-                    decodeSize = 44.dp,
-                )
-
-                Column(
-                    Modifier
-                        .weight(1f)
-                        .padding(start = 12.dp),
-                ) {
-                    Text(
-                        entry.title,
-                        style = MaterialTheme.typography.titleMedium,
-                        // The accent for the one playing — inside the player
-                        // that is the cover's own colour — because a shade of
-                        // grey was not enough to find it in a long queue.
-                        color = when {
-                            entry.isCurrent -> MaterialTheme.colorScheme.primary
-                            else -> GlassInk.copy(alpha = 0.85f)
-                        },
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // The mark for a track somebody asked for by hand, the
-                        // way every queue that has one draws it: a small glyph
-                        // before the name, in the accent, so the difference
-                        // between "next in the list" and "next because I said
-                        // so" is visible without reading anything.
-                        if (entry.queued) {
-                            Icon(
-                                PhosphorIcons.Regular.Queue,
-                                contentDescription = stringResource(R.string.queued),
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier
-                                    .padding(end = 5.dp)
-                                    .size(13.dp),
-                            )
-                        }
-                        Text(
-                            entry.artist,
-                            style = MaterialTheme.typography.bodySmall,
-                            color = GlassInkDim,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis,
-                        )
-                    }
-                }
-
-                // Not on the track being played: taking that one out is a
-                // different act — it is a skip — and it already has a button.
-                if (!entry.isCurrent) {
-                    Icon(
-                        PhosphorIcons.Regular.X,
-                        contentDescription = stringResource(R.string.remove_from_queue),
-                        tint = GlassInkDim,
-                        modifier = Modifier
-                            .clip(RoundedCornerShape(50))
-                            .pressable({ onRemove(entry.index) }, pressedScale = 0.86f)
-                            .padding(10.dp)
-                            .size(16.dp),
-                    )
-
+                    .clickable { onPlay(entry.index) },
+                onRemove = { onRemove(entry.index) },
+                handle = {
                     // A handle, and not the whole row.
                     //
                     // The row is already a button — tapping it plays that track
@@ -423,14 +374,8 @@ internal fun QueueList(
                     // itself dragged open and shut, so half a second of holding
                     // still before anything happens is half a second of the
                     // panel wondering whether it is being closed.
-                    val startIndex by rememberUpdatedState(entry.index)
-                    Icon(
-                        PhosphorIcons.Regular.DotsSixVertical,
-                        contentDescription = stringResource(R.string.reorder),
-                        tint = GlassInkDim,
+                    QueueHandle(
                         modifier = Modifier
-                            .padding(start = 2.dp)
-                            .size(QueueDragHandleWidth)
                             // Keyed on nothing: the detector must survive the
                             // reordering it is causing. `startIndex` is read
                             // through a state for the same reason — the row this
@@ -483,10 +428,119 @@ internal fun QueueList(
                                 }
                             },
                     )
-                }
-            }
+                },
+            )
         }
     }
+}
+
+/**
+ * One row of the queue: the cover, the names, and the two things you can do to it.
+ *
+ * On its own so that the still the morph carries — see PanelExtensionStill —
+ * is a picture of *this* row and not a second drawing of it. Given [onRemove]
+ * and a [handle] it is the live row; given neither it is the picture.
+ */
+@Composable
+internal fun QueueRow(
+    entry: QueueEntry,
+    modifier: Modifier = Modifier,
+    /** Takes the track out; null on a still. Absent for the one playing either way. */
+    onRemove: (() -> Unit)? = null,
+    /** The grip at the end, with whatever the list has hung on it. */
+    handle: @Composable () -> Unit = { QueueHandle() },
+) {
+    Row(
+        modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        dev.lelonio.square.ui.components.Artwork(
+            url = entry.artworkUrl,
+            title = entry.title,
+            modifier = Modifier.size(44.dp),
+            corner = 8.dp,
+            decodeSize = 44.dp,
+        )
+
+        Column(
+            Modifier
+                .weight(1f)
+                .padding(start = 12.dp),
+        ) {
+            Text(
+                entry.title,
+                style = MaterialTheme.typography.titleMedium,
+                // The accent for the one playing — inside the player
+                // that is the cover's own colour — because a shade of
+                // grey was not enough to find it in a long queue.
+                color = when {
+                    entry.isCurrent -> MaterialTheme.colorScheme.primary
+                    else -> GlassInk.copy(alpha = 0.85f)
+                },
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                // The mark for a track somebody asked for by hand, the
+                // way every queue that has one draws it: a small glyph
+                // before the name, in the accent, so the difference
+                // between "next in the list" and "next because I said
+                // so" is visible without reading anything.
+                if (entry.queued) {
+                    Icon(
+                        PhosphorIcons.Regular.Queue,
+                        contentDescription = stringResource(R.string.queued),
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier
+                            .padding(end = 5.dp)
+                            .size(13.dp),
+                    )
+                }
+                Text(
+                    entry.artist,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GlassInkDim,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                )
+            }
+        }
+
+        // Not on the track being played: taking that one out is a
+        // different act — it is a skip — and it already has a button.
+        if (!entry.isCurrent) {
+            Icon(
+                PhosphorIcons.Regular.X,
+                contentDescription = stringResource(R.string.remove_from_queue),
+                tint = GlassInkDim,
+                modifier = Modifier
+                    .clip(RoundedCornerShape(50))
+                    .then(
+                        if (onRemove != null) {
+                            Modifier.pressable(onRemove, pressedScale = 0.86f)
+                        } else {
+                            Modifier
+                        },
+                    )
+                    .padding(10.dp)
+                    .size(16.dp),
+            )
+            handle()
+        }
+    }
+}
+
+/** The grip itself: six dots, and whatever the caller hangs on them. */
+@Composable
+internal fun QueueHandle(modifier: Modifier = Modifier) {
+    Icon(
+        PhosphorIcons.Regular.DotsSixVertical,
+        contentDescription = stringResource(R.string.reorder),
+        tint = GlassInkDim,
+        modifier = modifier
+            .padding(start = 2.dp)
+            .size(QueueDragHandleWidth),
+    )
 }
 
 /**

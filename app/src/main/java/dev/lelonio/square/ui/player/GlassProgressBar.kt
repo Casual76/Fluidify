@@ -1,14 +1,9 @@
 package dev.lelonio.square.ui.player
 
-import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
@@ -16,7 +11,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.layout
@@ -36,6 +34,12 @@ import kotlin.math.roundToInt
  * So the position is scrubbed locally and committed once, on release. While a
  * drag is in progress the incoming position is ignored, or each update would
  * yank the bar back to where playback still is.
+ *
+ * It has a folded form as well, for the now-playing panel beside a page: at
+ * [amount] zero it is the hairline the panel always had, three points high and
+ * not for touching, and at one it is this bar. The two are one number apart,
+ * read in measure and draw, so the panel growing into a player carries the bar
+ * with it instead of swapping one for the other.
  */
 @Composable
 fun GlassProgressBar(
@@ -45,28 +49,37 @@ fun GlassProgressBar(
     accentColor: Color,
     trackColor: Color,
     modifier: Modifier = Modifier,
+    /** How much of a bar this is, 0 (a hairline) to 1. */
+    amount: () -> Float = { 1f },
+    /** False for a bar that is a picture of one, or one folded too thin to grab. */
+    interactive: Boolean = true,
 ) {
     var scrubbing by remember { mutableStateOf<Float?>(null) }
-    var width by remember { mutableStateOf(1f) }
-
-    val progress = scrubbing ?: progressOf(positionMs.value, durationMs)
 
     Box(
         modifier
             .fillMaxWidth()
             // The touch target is taller than the bar. A 6dp-high capsule is
-            // accurate to look at and almost impossible to grab.
-            .height(28.dp)
-            .pointerInput(durationMs) {
-                width = size.width.toFloat()
+            // accurate to look at and almost impossible to grab. Folded, the
+            // target folds with it: a hairline is not for touching.
+            .layout { measurable, constraints ->
+                val height = lerpPx(HairlineHeight.toPx(), TouchHeight.toPx(), amount().coerceIn(0f, 1f))
+                    .roundToInt()
+                val placeable = measurable.measure(
+                    constraints.copy(minHeight = height, maxHeight = height),
+                )
+                layout(placeable.width, height) { placeable.place(0, 0) }
+            }
+            .pointerInput(durationMs, interactive) {
+                if (!interactive) return@pointerInput
                 detectTapGestures { offset ->
                     if (durationMs > 0) {
                         onSeek(((offset.x / size.width).coerceIn(0f, 1f) * durationMs).toLong())
                     }
                 }
             }
-            .pointerInput(durationMs) {
-                width = size.width.toFloat()
+            .pointerInput(durationMs, interactive) {
+                if (!interactive) return@pointerInput
                 detectHorizontalDragGestures(
                     onDragStart = { offset ->
                         scrubbing = (offset.x / size.width).coerceIn(0f, 1f)
@@ -80,28 +93,39 @@ fun GlassProgressBar(
                     change.consume()
                     scrubbing = (change.position.x / size.width).coerceIn(0f, 1f)
                 }
+            }
+            // Drawn rather than laid out, so the ticking position redraws the
+            // bar and recomposes nothing.
+            .drawBehind {
+                val a = amount().coerceIn(0f, 1f)
+                val thickness = lerpPx(HairlineHeight.toPx(), TrackHeight.toPx(), a)
+                val top = (size.height - thickness) / 2f
+                val radius = CornerRadius(thickness / 2f)
+                drawRoundRect(
+                    color = trackColor,
+                    topLeft = Offset(0f, top),
+                    size = Size(size.width, thickness),
+                    cornerRadius = radius,
+                )
+                val progress = scrubbing ?: progressOf(positionMs.value, durationMs)
+                val filled = size.width * progress
+                if (filled > 0f) {
+                    drawRoundRect(
+                        color = accentColor,
+                        topLeft = Offset(0f, top),
+                        size = Size(filled, thickness),
+                        cornerRadius = radius,
+                    )
+                }
             },
-    ) {
-        Box(
-            Modifier
-                .padding(vertical = 11.dp)
-                .fillMaxWidth()
-                .height(6.dp)
-                .clip(RoundedCornerShape(50))
-                .background(trackColor),
-        )
-        Box(
-            Modifier
-                .padding(vertical = 11.dp)
-                .height(6.dp)
-                .clip(RoundedCornerShape(50))
-                .background(accentColor)
-                .fillMaxHeight()
-                .layout { measurable, constraints ->
-                    val placeable = measurable.measure(constraints)
-                    val w = (constraints.maxWidth * progress).roundToInt()
-                    layout(w, placeable.height) { placeable.place(0, 0) }
-                },
-        )
-    }
+    )
 }
+
+/** The bar as the panel has always drawn it beside a page: a line, not a control. */
+private val HairlineHeight = 3.dp
+
+/** The capsule itself. */
+private val TrackHeight = 6.dp
+
+/** And the room around it that a finger can find. */
+private val TouchHeight = 28.dp
