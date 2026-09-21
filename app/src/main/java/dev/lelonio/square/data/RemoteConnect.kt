@@ -336,6 +336,60 @@ object RemoteConnect {
         )
     }
 
+    /**
+     * Puts a track at the end of the other device's queue, or next after this one.
+     *
+     * The protocol's own word for it, and the one command in this family that
+     * needs nothing of what the device already holds: a queued track is handed
+     * over on its own, marked as queued, and the device inserts it where a
+     * queued track goes. `provider` and the `is_queued` flag are both said,
+     * because that pair is what every other client reads to draw the row as
+     * something put there by hand rather than as part of the playlist.
+     */
+    fun addToQueue(deviceId: String, uri: String) {
+        val track = org.json.JSONObject()
+            .put("uri", uri)
+            .put("provider", "queue")
+            .put("metadata", org.json.JSONObject().put("is_queued", "true"))
+        send(deviceId, """{"command":{"endpoint":"add_to_queue","track":$track}}""")
+    }
+
+    /**
+     * Takes a track out of the other device's queue.
+     *
+     * Unlike everything else here the body is not written at this end: the only
+     * queue edit the protocol has is `set_queue`, which replaces the whole list
+     * on the other device, and the list it has to be given is the one that
+     * device published. That lives on the native side with the cluster, so the
+     * command is built there; see [NativeBridge.remoteQueueEdit].
+     */
+    fun removeFromQueue(deviceId: String, item: RemoteQueueItem) {
+        if (item.uid.isEmpty()) {
+            android.util.Log.w(TAG, "no uid for ${item.uri}; cannot edit that queue")
+            return
+        }
+        runCatching { NativeBridge.remoteQueueEdit(deviceId, "remove", item.uid) }
+            .onFailure { android.util.Log.w(TAG, "could not remove ${item.uri}", it) }
+    }
+
+    /**
+     * Moves a track within the other device's queue.
+     *
+     * [before] is the track it should end up in front of; null puts it last.
+     * Stated as a neighbour rather than as a position because that is what
+     * survives the round trip: by the time the command lands the device may
+     * have moved on a track, and a number would then mean somewhere else.
+     */
+    fun moveInQueue(deviceId: String, item: RemoteQueueItem, before: RemoteQueueItem?) {
+        if (item.uid.isEmpty()) {
+            android.util.Log.w(TAG, "no uid for ${item.uri}; cannot edit that queue")
+            return
+        }
+        runCatching {
+            NativeBridge.remoteQueueEdit(deviceId, "move", item.uid, before?.uid.orEmpty())
+        }.onFailure { android.util.Log.w(TAG, "could not move ${item.uri}", it) }
+    }
+
     fun setShuffle(deviceId: String, shuffle: Boolean) =
         send(deviceId, """{"command":{"endpoint":"set_shuffling_context","value":$shuffle}}""")
 

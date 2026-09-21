@@ -46,6 +46,7 @@ import dev.lelonio.square.data.Lyrics
 import androidx.compose.foundation.layout.RowScope
 import dev.lelonio.square.ui.components.GlassButton
 import dev.antigravity.fluidengine.ui.fluid.FluidSegmentedControl
+import dev.antigravity.fluidengine.ui.fluid.glassSurface
 import kotlin.math.ln
 import kotlin.math.pow
 import kotlin.math.roundToInt
@@ -275,6 +276,16 @@ internal fun QueueList(
     onRemove: (Int) -> Unit,
     /** Moves a track to another place in the queue. See [QueueDragHandleWidth]. */
     onMove: (from: Int, to: Int) -> Unit = { _, _ -> },
+    /** Hoisted where the caller reacts to the scroll; see [PanelExtension]. */
+    listState: androidx.compose.foundation.lazy.LazyListState = rememberLazyListState(),
+    /**
+     * True while a row is in somebody's hand.
+     *
+     * Told to the caller because a drag is the one thing that has to stop the
+     * extension putting the list back at the top by itself: a list that scrolls
+     * home under a finger holding a row is the list fighting the hand.
+     */
+    onReorderingChange: (Boolean) -> Unit = {},
 ) {
     if (queue.isEmpty()) {
         EmptyPanel(stringResource(R.string.queue_empty))
@@ -290,6 +301,7 @@ internal fun QueueList(
     // crossing rather than held from the press. Minus one means nobody is
     // dragging, which is also why it cannot simply be the row's own index.
     var draggingIndex by remember { mutableIntStateOf(-1) }
+    LaunchedEffect(draggingIndex >= 0) { onReorderingChange(draggingIndex >= 0) }
 
     // How far the finger has travelled since the last crossing, not since the
     // press. Once a row has been moved, the list has already put it under the
@@ -321,7 +333,7 @@ internal fun QueueList(
         }
     }
 
-    LazyColumn(Modifier.padding(vertical = 8.dp)) {
+    LazyColumn(state = listState, modifier = Modifier.padding(vertical = 8.dp)) {
         itemsIndexed(
             queue,
             key = { at, _ -> keys[at] },
@@ -332,6 +344,18 @@ internal fun QueueList(
                 entry = entry,
                 modifier = Modifier
                     .fillMaxWidth()
+                    // A block each, with air between them.
+                    //
+                    // The list was rows of text standing on the panel's own
+                    // film, which at any length reads as one slab with writing
+                    // on it: nothing says where a song ends and the next begins
+                    // except the gap in the writing. A pane each says it in the
+                    // material, and on a surface that is already glass the
+                    // engine has a recipe for exactly that; see [queueBlock].
+                    .padding(
+                        horizontal = QueueBlockInset,
+                        vertical = QueueBlockGap / 2,
+                    )
                     // Everything but the row in the hand animates into its new
                     // place. The held one must not: `animateItem` would be
                     // animating a row that is already following a finger, and
@@ -351,11 +375,15 @@ internal fun QueueList(
                             clip = false
                         }
                     }
+                    .queueBlock()
+                    // What a held row adds to the material, drawn over it
+                    // rather than instead of it: a block is still a block while
+                    // it travels.
                     .then(
                         if (held) {
                             Modifier.background(
                                 GlassInk.copy(alpha = 0.10f),
-                                RoundedCornerShape(14.dp),
+                                QueueBlockShape,
                             )
                         } else {
                             Modifier
@@ -451,7 +479,7 @@ internal fun QueueRow(
     handle: @Composable () -> Unit = { QueueHandle() },
 ) {
     Row(
-        modifier.padding(horizontal = 18.dp, vertical = 8.dp),
+        modifier.padding(start = 10.dp, end = 2.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         dev.lelonio.square.ui.components.Artwork(
@@ -509,11 +537,9 @@ internal fun QueueRow(
         // Not on the track being played: taking that one out is a
         // different act — it is a skip — and it already has a button.
         if (!entry.isCurrent) {
-            Icon(
-                PhosphorIcons.Regular.X,
-                contentDescription = stringResource(R.string.remove_from_queue),
-                tint = GlassInkDim,
-                modifier = Modifier
+            Box(
+                Modifier
+                    .size(QueueTouchTarget)
                     .clip(RoundedCornerShape(50))
                     .then(
                         if (onRemove != null) {
@@ -521,25 +547,85 @@ internal fun QueueRow(
                         } else {
                             Modifier
                         },
-                    )
-                    .padding(10.dp)
-                    .size(16.dp),
-            )
+                    ),
+                contentAlignment = Alignment.Center,
+            ) {
+                Icon(
+                    PhosphorIcons.Regular.X,
+                    contentDescription = stringResource(R.string.remove_from_queue),
+                    tint = GlassInkDim,
+                    modifier = Modifier.size(16.dp),
+                )
+            }
             handle()
         }
     }
 }
 
-/** The grip itself: six dots, and whatever the caller hangs on them. */
+/**
+ * The grip: six dots drawn small, inside a target the size of a finger.
+ *
+ * The two were one thing for a while, and that is the whole of why reordering
+ * was fiddly. A drag has to start on the grip -- the row itself is a button, and
+ * a list that reorders when you meant to play something is worse than one that
+ * does not reorder at all -- so the grip is the only way in, and it was
+ * twenty-two points wide, which is half of what a finger asks for.
+ *
+ * The glyph stays the size it was. What grew is the box around it, which is also
+ * what the caller hangs the detector on.
+ */
 @Composable
 internal fun QueueHandle(modifier: Modifier = Modifier) {
-    Icon(
-        PhosphorIcons.Regular.DotsSixVertical,
-        contentDescription = stringResource(R.string.reorder),
-        tint = GlassInkDim,
-        modifier = modifier
-            .padding(start = 2.dp)
-            .size(QueueDragHandleWidth),
+    Box(
+        modifier.size(QueueTouchTarget),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            PhosphorIcons.Regular.DotsSixVertical,
+            contentDescription = stringResource(R.string.reorder),
+            tint = GlassInkDim,
+            modifier = Modifier.size(QueueDragHandleWidth),
+        )
+    }
+}
+
+/**
+ * A pane of the surface this list stands on, for one row.
+ *
+ * The engine's rule is that glass goes on the container and never on the row,
+ * and it is a rule about cost: a group of twelve rows is one pane, not twelve,
+ * because every pane is a layer recording and a chain of shaders over its own
+ * bounds. What makes a queue the exception is that the rows are the point --
+ * they are separate songs, they are dragged past one another, and one pane
+ * behind all of them says the opposite of what the list is for.
+ *
+ * It is affordable here for the reason the stacked recipe exists: the canvas is
+ * another pane of glass, already frosted and already still, so the capture is
+ * taken once and kept -- [GlassRole.Content] does that by itself -- and a
+ * gradient riding along with a row is indistinguishable from one fixed behind
+ * it. Only the rows on screen are composed, which is six or seven.
+ *
+ * Asking is a request and not an instruction, exactly as in the engine: with no
+ * canvas in scope this hands the modifier back untouched and the row is drawn on
+ * whatever it was drawn on before.
+ */
+@Composable
+private fun Modifier.queueBlock(): Modifier {
+    val canvas = dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop.current ?: return this
+    val stacked = dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasIsGlass.current
+    val defaults = dev.antigravity.fluidengine.ui.fluid.GlassDefaults
+    return this.then(
+        Modifier.glassSurface(
+            state = canvas,
+            tint = if (stacked) defaults.stackedContentTint() else defaults.contentTint(),
+            shape = QueueBlockShape,
+            role = dev.antigravity.fluidengine.ui.fluid.GlassRole.Content,
+            optics = if (stacked) {
+                defaults.stackedContentOptics()
+            } else {
+                defaults.optics(dev.antigravity.fluidengine.ui.fluid.GlassRole.Content)
+            },
+        ),
     )
 }
 
@@ -553,10 +639,26 @@ internal fun QueueHandle(modifier: Modifier = Modifier) {
  * lines beside it are shorter — so one number is the whole answer, and it is
  * wrong only if somebody changes the row without changing this.
  */
-private val QueueRowHeight = 60.dp
+/** A block on its own: a 44 dp cover with 8 dp above and below it. */
+private val QueueBlockHeight = 60.dp
 
-/** The grip. Wide enough to hit without being wide enough to hit by accident. */
+/** The air between two blocks, and what keeps them off the panel's edge. */
+private val QueueBlockGap = 6.dp
+private val QueueBlockInset = 10.dp
+
+/** Declared after the two it adds up, because a file-level val is read in order. */
+private val QueueRowHeight = QueueBlockHeight + QueueBlockGap
+
+/** The corner a block is cut with; a held row's wash takes the same one. */
+private val QueueBlockShape = dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape(
+    dev.antigravity.fluidengine.ui.fluid.FluidRadius.Card,
+)
+
+/** The glyph on the grip. What a finger presses is [QueueTouchTarget]. */
 private val QueueDragHandleWidth = 22.dp
+
+/** What a finger is given for the two things at the end of a row. */
+private val QueueTouchTarget = 44.dp
 
 /** How much a held row grows, and how far it stands off the list. */
 private const val QueueHeldScale = 1.02f

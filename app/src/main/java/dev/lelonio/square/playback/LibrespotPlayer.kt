@@ -512,6 +512,92 @@ class LibrespotPlayer(
         return true
     }
 
+    /**
+     * Puts a track into the other device's queue.
+     *
+     * One command per track and nothing read first, which is what makes this
+     * the easy one of the three: `add_to_queue` carries the track on its own
+     * and the device decides where a queued track goes, so two of them sent
+     * together cannot tread on each other.
+     */
+    private fun remoteQueueAdd(mediaItems: List<MediaItem>): ListenableFuture<*> {
+        val uris = mediaItems.map { it.mediaId }.filter { it.startsWith("spotify:") }
+        if (uris.isEmpty()) return Futures.immediateVoidFuture()
+        onRemote("queue") { id ->
+            uris.forEach { dev.lelonio.square.data.RemoteConnect.addToQueue(id, it) }
+        }
+        return Futures.immediateVoidFuture()
+    }
+
+    /** Takes a track out of the other device's queue; see [remoteQueueMove]. */
+    private fun remoteQueueRemove(fromIndex: Int, toIndex: Int): ListenableFuture<*> {
+        val item = remoteQueueRow(fromIndex, toIndex) ?: return Futures.immediateVoidFuture()
+        onRemote("queue remove") { id ->
+            dev.lelonio.square.data.RemoteConnect.removeFromQueue(id, item)
+        }
+        return Futures.immediateVoidFuture()
+    }
+
+    /**
+     * Moves a track within the other device's queue.
+     *
+     * The row is named to the device by the track it should end up in front of,
+     * rather than by a number. A number counts in this phone's copy of a list
+     * that belongs somewhere else, and by the time the command lands that copy
+     * can be a track out of date — the device having simply moved on — which is
+     * exactly the case where a number lands on the wrong row and a neighbour
+     * still means what it said. Nothing in front means the end of the queue.
+     */
+    private fun remoteQueueMove(
+        fromIndex: Int,
+        toIndex: Int,
+        newIndex: Int,
+    ): ListenableFuture<*> {
+        val item = remoteQueueRow(fromIndex, toIndex) ?: return Futures.immediateVoidFuture()
+        // Only into what is still to come. `set_queue` hands the device two
+        // lists split at the track it is playing, and the half in front of that
+        // track is history over there as much as it is here.
+        if (newIndex <= remoteQueue.index) return Futures.immediateVoidFuture()
+        // Counted in the list with the row already taken out, which is what
+        // `newIndex` means; see [PlayQueue.move].
+        val before = remoteQueue.items.toMutableList()
+            .apply { removeAt(fromIndex) }
+            .getOrNull(newIndex)
+        onRemote("queue move") { id ->
+            dev.lelonio.square.data.RemoteConnect.moveInQueue(id, item, before)
+        }
+        return Futures.immediateVoidFuture()
+    }
+
+    /**
+     * The one row an edit is allowed to name, or null.
+     *
+     * One row, and it has to be a row that is still coming.
+     *
+     * One, because `set_queue` rewrites the whole list from the picture the
+     * account last published: two of them sent together are both built on that
+     * same picture, and the second quietly undoes the first. The panel only
+     * ever takes out or moves a single row, so a wider range is refused rather
+     * than half-honoured.
+     *
+     * Coming, because the current track is not in the queue — it is the thing
+     * the queue is behind — and what is before it is history.
+     */
+    private fun remoteQueueRow(
+        fromIndex: Int,
+        toIndex: Int,
+    ): dev.lelonio.square.data.RemoteQueueItem? {
+        if (toIndex != fromIndex + 1) {
+            android.util.Log.w(
+                "SquarePlayer",
+                "will not edit $fromIndex..$toIndex of another device's queue at once",
+            )
+            return null
+        }
+        if (fromIndex <= remoteQueue.index) return null
+        return remoteQueue.items.getOrNull(fromIndex)
+    }
+
     private fun playlistSnapshot(): List<MediaItemData> =
         cachedPlaylist ?: queue.items
             .mapIndexed(::toMediaItemData)
@@ -1136,8 +1222,10 @@ class LibrespotPlayer(
     ): ListenableFuture<*> {
         // The queue on screen belongs to the other device; see [remoteState].
         // Editing this phone's own list would change something nobody can see
-        // and silently rearrange what it goes back to playing.
-        if (remote != null) return Futures.immediateVoidFuture()
+        // and silently rearrange what it goes back to playing -- so the edit is
+        // addressed over there instead, which is the whole of [remoteQueueAdd]
+        // and the two below it.
+        if (remote != null) return remoteQueueAdd(mediaItems)
         queue.addFromMediaItems(index, mediaItems)
         reapplyShuffle()
         // The engine is told now, not at the end of the song.
@@ -1156,7 +1244,7 @@ class LibrespotPlayer(
     }
 
     override fun handleRemoveMediaItems(fromIndex: Int, toIndex: Int): ListenableFuture<*> {
-        if (remote != null) return Futures.immediateVoidFuture()
+        if (remote != null) return remoteQueueRemove(fromIndex, toIndex)
         queue.remove(fromIndex, toIndex)
         reapplyShuffle()
         // A track taken out of the queue is gone from the engine's list too, and
@@ -1173,10 +1261,22 @@ class LibrespotPlayer(
         toIndex: Int,
         newIndex: Int,
     ): ListenableFuture<*> {
-        if (remote != null) return Futures.immediateVoidFuture()
+        if (remote != null) return remoteQueueMove(fromIndex, toIndex, newIndex)
         queue.move(fromIndex, toIndex, newIndex)
-        engineQueueStale = true
         reapplyShuffle()
+        // The engine is told now, exactly as it is for a track queued or taken
+        // out, and for the same reason.
+        //
+        // Marking the queue stale was the whole answer before there was a way
+        // to hand over an order without a reload, and it outlived that way
+        // arriving: a row dragged into another place changed the list on screen
+        // and nothing else. The device went on playing the order it was given,
+        // the account and every other client went on showing it, and what came
+        // after the current song was whatever the engine still believed in --
+        // corrected, if at all, only by the next skip rebuilding the queue
+        // wholesale. See [pushOrder], which is a change to what comes after
+        // this song and does not interrupt it.
+        pushOrder()
         onQueueChanged()
         invalidateState()
         return Futures.immediateVoidFuture()
@@ -1454,6 +1554,12 @@ class LibrespotPlayer(
         engineIndex = queue.currentIndex
         runCatching {
             NativeBridge.setQueueOrder(queue.items.map { it.uri }, queue.currentIndex)
+        }.onSuccess {
+            // The engine is on this list now, so whatever made the queue stale
+            // earlier has been answered. Left standing, the flag sent the next
+            // skip the long way round -- a reload, and a gap in the song -- for
+            // an order the engine had already been handed.
+            engineQueueStale = false
         }.onFailure {
             android.util.Log.w("SquarePlayer", "could not reorder: ${it.message}")
             engineQueueStale = true

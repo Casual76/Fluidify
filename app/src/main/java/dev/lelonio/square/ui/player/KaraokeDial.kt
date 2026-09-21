@@ -141,16 +141,11 @@ fun KaraokeDial(
                 scaleY = grip
             }
             .clip(ContinuousCapsule())
-            .liquidGlass(
-                // The player's own material, not a lighter one: this sits in a
-                // row of glass controls and reading as a different substance is
-                // exactly what made it look bolted on.
-                config = LocalGlassEffectConfig.current,
-                shape = ContinuousCapsule(),
-                ownBackdrop = backdrop,
-                highlightAlpha = BarHighlightAlpha,
-                backdropScale = 0.4f,
-            )
+            // The player's own material, not a lighter one: this sits in a row
+            // of glass controls and reading as a different substance is exactly
+            // what made it look bolted on. The engine's, since that is what the
+            // controls beside it are made of; see playerControlGlass.
+            .playerControlGlass(ContinuousCapsule())
             // The touch is claimed the moment it lands, before anything else
             // can decide what it was.
             //

@@ -23,6 +23,7 @@ import androidx.compose.ui.unit.dp
 import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
 import dev.antigravity.fluidengine.ui.fluid.GlassDefaults
 import dev.antigravity.fluidengine.ui.fluid.GlassRole
+import dev.antigravity.fluidengine.ui.fluid.GlassTint
 import dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop
 import dev.antigravity.fluidengine.ui.fluid.currentGlassBackdrop
 import dev.antigravity.fluidengine.ui.fluid.fluidPressable
@@ -73,12 +74,32 @@ fun GlassButton(
     content: @Composable RowScope.() -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
-    val optics = remember(flat) {
+    // Whether this control is standing on a photograph. It decides the film
+    // below and how much of the photograph is worth recording, which are the
+    // two halves of the same question.
+    val onPicture = dev.lelonio.square.ui.theme.LocalOnPicture.current
+    val optics = remember(flat, onPicture) {
         val base = GlassDefaults.optics(GlassRole.Interactive)
         // Flat is not "no material": the film and the rim stay, so a chip in a
         // list still reads as the same glass as the chrome above it. What goes
         // is the one expensive part, which is the photograph.
-        if (flat) base.copy(blurScale = 0f, backdropResolution = 0.4f) else base.copy(backdropResolution = 0.4f)
+        //
+        // And where there is a photograph, it is recorded whole.
+        //
+        // Two fifths was chosen for a page, and it is right there: what a
+        // control stands on in a page is an ambient wash, and a wash survives a
+        // downsample untouched — the engine's own argument for compressing
+        // content glass. A cover or a clip is the opposite case. It is all
+        // structure, and structure is the only thing a lens has to bend: at two
+        // fifths the transport's discs were refracting a thumbnail of a video
+        // through a band a few pixels wide, which is a bend nobody can see. What
+        // was left of the material was the film, and a film on its own is a
+        // painted disc. The preset leaves this at one for this exact reason.
+        when {
+            flat -> base.copy(blurScale = 0f, backdropResolution = 0.4f)
+            onPicture -> base
+            else -> base.copy(backdropResolution = 0.4f)
+        }
     }
 
     Row(
@@ -88,11 +109,7 @@ fun GlassButton(
             .glassControlSurface(
                 // Denser on a cover than on a page. See LocalOnPicture: a control's own film is
                 // almost nothing by design, which is right on a bar and not enough on a picture.
-                tint = if (dev.lelonio.square.ui.theme.LocalOnPicture.current) {
-                    GlassDefaults.floatingTintOnPhoto()
-                } else {
-                    GlassDefaults.controlTint()
-                },
+                tint = if (onPicture) controlTintOnPhoto() else GlassDefaults.controlTint(),
                 // The ambient canvas first, and it is not a preference. This
                 // button lives *in* the page, and `LocalGlassBackdrop` is the
                 // record of that page: a pane drawn inside the layer it samples
@@ -120,6 +137,85 @@ fun GlassButton(
         CompositionLocalProvider(LocalContentColor provides contentTint, content = { content() })
     }
 }
+/**
+ * A control's film, on a photograph.
+ *
+ * The gap this fills: the engine's glass has a photo twin for the bar and one
+ * for the floating family, and none for controls. A control asked for its film
+ * over a cover and got the *floating* one, which is the pill's scrim — black at
+ * very nearly half — and that is a scrim's weight for a reason: a pill carries
+ * navigation over arbitrary content and has to win outright.
+ *
+ * A control is the other thing. `GlassDefaults.controlTint` calls its own film
+ * "almost nothing" and says why: a button is a lens sitting on a surface that is
+ * already glass, and a second opaque wash is what made the old ones read as grey
+ * pills stuck onto a bar. Lending it the pill's scrim did that again, one
+ * surface at a time and only over pictures — which is where it shows most,
+ * because a picture is the one backdrop with enough structure for a lens to
+ * bend. The player's transport is the clearest case: three discs over a video,
+ * each one a flat black circle with a lit ring around it.
+ *
+ * So: the same argument as [GlassDefaults.darkBarTint] — fixed colours, because
+ * a scrim has no palette to come from, and it darkens whatever is behind it — at
+ * a control's weight rather than a pill's. The rim comes up as the film comes
+ * down, and that trade is the whole point: with little film left, the edge is
+ * what says the disc is made of anything at all.
+ *
+ * It belongs in `GlassDefaults` beside its two siblings, and it is here because
+ * `engine/` is a submodule: a change made there and not released is a silent
+ * variant that the next engine update deletes. Move it over when the engine is
+ * next cut.
+ */
+@Composable
+internal fun controlTintOnPhoto(): GlassTint =
+    if (dev.lelonio.square.ui.theme.onDarkPage) {
+        GlassTint(
+            overlay = Color.Black.copy(alpha = 0.30f),
+            fallback = Color(0xFF141416).copy(alpha = 0.95f),
+            hairline = Color.White.copy(alpha = 0.22f),
+        )
+    } else {
+        // The light twin, at the ratio the rest of this family uses: dark ink
+        // needs more of a picture taken away than light ink does, because the
+        // bright parts of a photograph are brighter than any wash lets them be.
+        GlassTint(
+            overlay = Color.White.copy(alpha = 0.40f),
+            fallback = Color(0xFFFDFDFF).copy(alpha = 0.96f),
+            hairline = Color.Black.copy(alpha = 0.26f),
+        )
+    }
+
+/**
+ * A *pane* standing on a photograph, as [controlTintOnPhoto] is for a control.
+ *
+ * Between the two things the engine does have. A pane carries writing, so it
+ * cannot be as thin as a button; it is also not a bar, and the bar family's
+ * scrim is what the panel's title card was wearing when it came out as a black
+ * slab with a name printed on it -- a clip showing through at nothing, which is
+ * the one thing a pane over a video is supposed to do.
+ *
+ * The weight is only half of the answer and the smaller half. What makes writing
+ * survive a photograph is *frost*, not film: a blurred clip under a title is a
+ * gradient, and a gradient is both easier to read against and still the clip. So
+ * this is paired with an optic that actually frosts -- see the use site -- and
+ * the film is turned down by the same step the frost is turned up.
+ */
+@Composable
+internal fun paneTintOnPhoto(): GlassTint =
+    if (dev.lelonio.square.ui.theme.onDarkPage) {
+        GlassTint(
+            overlay = Color.Black.copy(alpha = 0.38f),
+            fallback = Color(0xFF141416).copy(alpha = 0.95f),
+            hairline = Color.White.copy(alpha = 0.20f),
+        )
+    } else {
+        GlassTint(
+            overlay = Color.White.copy(alpha = 0.50f),
+            fallback = Color(0xFFFDFDFF).copy(alpha = 0.96f),
+            hairline = Color.Black.copy(alpha = 0.24f),
+        )
+    }
+
 /**
  * The same glass, cut round, at whatever size the caller asks for.
  *

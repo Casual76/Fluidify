@@ -290,6 +290,128 @@ pub fn queue_json() -> String {
     format!("{{\"index\":{index},\"tracks\":[{}]}}", tracks.join(","))
 }
 
+/// Rewrites the active device's queue, with one track taken out or moved.
+///
+/// The only way the protocol offers. There is no "remove from the queue" and no
+/// "move within the queue": what Spotify's own clients send when a row is
+/// swiped away or dragged is `set_queue`, which hands the device the whole of
+/// what comes before and after the current track and lets it replace both.
+///
+/// So the lists go back out as they came in. Every track here is one the device
+/// itself published, forwarded field for field — the uid it gave it, the
+/// provider that says whether it was queued by hand or came from the context,
+/// and the metadata every other client draws its row from. Rebuilt from what
+/// this app happens to know instead, a reorder would strip the names off the
+/// queue on the machine that is playing it, and mark a hand-queued song as
+/// though it had always been in the playlist.
+///
+/// [`uid`] names the track to act on, because that is what a uid is for: a song
+/// can be in a queue more than once and a uri cannot tell the copies apart.
+/// `before` is the uid it should end up in front of, empty meaning the end of
+/// the queue; it is ignored when `op` is `remove`.
+///
+/// Only the tracks *after* the current one can be touched, which is also all
+/// the panel offers: the previous ones are history, and the current one is not
+/// in the queue, it is the thing the queue is behind.
+pub fn edit_queue(device_id: &str, op: &str, uid: &str, before: &str) -> engine::EngineResult<()> {
+    if uid.is_empty() {
+        return Err("no track to move".into());
+    }
+
+    let (mut next, prev, revision) = {
+        let Ok(guard) = CLUSTER.lock() else {
+            return Err("no cluster".into());
+        };
+        let Some(cluster) = guard.as_ref() else {
+            return Err("nothing is playing".into());
+        };
+        let player: &PlayerState = &cluster.player_state;
+        (
+            player.next_tracks.clone(),
+            player.prev_tracks.clone(),
+            player.queue_revision.clone(),
+        )
+    };
+
+    let Some(at) = next.iter().position(|track| track.uid == uid) else {
+        // Not a failure worth shouting about: the device has moved on and the
+        // row the finger was on is already behind it.
+        return Err("that track is no longer in the queue".into());
+    };
+
+    let track = next.remove(at);
+    if op != "remove" {
+        let to = if before.is_empty() {
+            next.len()
+        } else {
+            match next.iter().position(|other| other.uid == before) {
+                Some(to) => to,
+                None => next.len(),
+            }
+        };
+        next.insert(to, track);
+    }
+
+    let body = format!(
+        concat!(
+            "{{\"command\":{{\"endpoint\":\"set_queue\",\"next_tracks\":[{}],",
+            "\"prev_tracks\":[{}],\"queue_revision\":{},\"logging_params\":{{}}}}}}"
+        ),
+        next.iter().map(provided_track_json).collect::<Vec<_>>().join(","),
+        prev.iter().map(provided_track_json).collect::<Vec<_>>().join(","),
+        json_string(&revision),
+    );
+    command(device_id, body)
+}
+
+/// One track as the command carries it: protobuf written out as JSON.
+///
+/// By hand rather than through the protobuf-to-JSON mapping, because the six
+/// fields that matter are all this message has that a queue row uses, and the
+/// empty ones are left out the way the mapping leaves them out. `restrictions`
+/// and the two lists of reasons are the device's own reading of what may be
+/// done with a track, and sending them back would be this app telling it
+/// something it knows better.
+fn provided_track_json(track: &librespot_protocol::player::ProvidedTrack) -> String {
+    let mut fields = vec![
+        format!("\"uri\":{}", json_string(&track.uri)),
+        format!("\"uid\":{}", json_string(&track.uid)),
+    ];
+    if !track.provider.is_empty() {
+        fields.push(format!("\"provider\":{}", json_string(&track.provider)));
+    }
+    if !track.album_uri.is_empty() {
+        fields.push(format!("\"album_uri\":{}", json_string(&track.album_uri)));
+    }
+    if !track.artist_uri.is_empty() {
+        fields.push(format!("\"artist_uri\":{}", json_string(&track.artist_uri)));
+    }
+    if !track.metadata.is_empty() {
+        // Sorted, so the same queue always produces the same bytes: a map has
+        // no order, and a body that changes shape between two identical edits
+        // is a thing nobody can compare in a log.
+        let mut keys: Vec<&String> = track.metadata.keys().collect();
+        keys.sort();
+        let pairs: Vec<String> = keys
+            .iter()
+            .map(|key| {
+                format!(
+                    "{}:{}",
+                    json_string(key),
+                    json_string(&track.metadata[key.as_str()]),
+                )
+            })
+            .collect();
+        fields.push(format!("\"metadata\":{{{}}}", pairs.join(",")));
+    }
+    format!("{{{}}}", fields.join(","))
+}
+
+/// A JSON string literal, quotes and escapes included.
+fn json_string(value: &str) -> String {
+    serde_json::to_string(value).unwrap_or_else(|_| "\"\"".into())
+}
+
 /// Every device the account can see, as a JSON array.
 pub fn devices_json() -> String {
     let Ok(guard) = CLUSTER.lock() else {

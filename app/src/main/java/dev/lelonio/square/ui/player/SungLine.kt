@@ -200,11 +200,9 @@ internal fun SungLineCapsule(
         exit = fadeOut(tween(LINE_EXIT_MS)) + shrinkVertically(tween(LINE_EXIT_MS)),
         modifier = modifier,
     ) {
-        GlassSurface(
-            backdrop = backdrop,
-            surfaceColor = GlassFilm,
+        PlayerPane(
             onPicture = onPicture,
-            shape = RoundedCornerShape(50),
+            shape = dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape,
             // The gap to the title lives inside the visibility block, so it
             // closes with the capsule instead of leaving a hole where one was.
             modifier = Modifier

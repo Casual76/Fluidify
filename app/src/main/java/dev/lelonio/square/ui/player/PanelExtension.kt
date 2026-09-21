@@ -17,6 +17,20 @@ import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.animation.core.Spring
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.spring
+import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Constraints
+import kotlinx.coroutines.delay
+import kotlin.math.roundToInt
 import androidx.compose.ui.unit.sp
 import dev.lelonio.square.R
 import dev.lelonio.square.data.Lyrics
@@ -52,32 +66,126 @@ internal fun PanelExtension(
     onRemoveQueueItem: (Int) -> Unit,
     onMoveQueueItem: (from: Int, to: Int) -> Unit,
 ) {
-    ExtensionColumn {
-        LyricsStage(
-            lyrics = lyrics,
-            loading = lyricsLoading,
-            positionMs = positionMs,
-            isPlaying = isPlaying,
-            onSeek = onSeek,
-            backdrop = backdrop,
-            expandSignal = 0,
-            modifier = Modifier
-                .weight(LyricsShare)
-                .fillMaxWidth(),
-        )
-        ExtensionHeading(stringResource(R.string.queue))
-        Box(
-            Modifier
-                .weight(1f - LyricsShare)
-                .fillMaxWidth()
-                .clipToBounds(),
-        ) {
+    val queueState = rememberLazyListState()
+    var reordering by remember { mutableStateOf(false) }
+    val nudge = with(LocalDensity.current) { QueueNudge.toPx() }
+
+    // Whether the queue is the thing being read.
+    //
+    // A fact and not a number of pixels: a list pushed off its top is a list
+    // somebody is looking through, and what they are not looking at is the
+    // words above it. A nudge of slack so that a finger resting on the list, or
+    // a fling that ends one pixel short of home, does not count as reading it.
+    val away by remember(nudge) {
+        derivedStateOf {
+            queueState.firstVisibleItemIndex > 0 ||
+                queueState.firstVisibleItemScrollOffset > nudge
+        }
+    }
+    val share by animateFloatAsState(
+        targetValue = if (away) 0f else LyricsShare,
+        animationSpec = spring(
+            dampingRatio = Spring.DampingRatioNoBouncy,
+            stiffness = Spring.StiffnessMediumLow,
+        ),
+        label = "extensionSplit",
+    )
+
+    // And home again by itself, once nobody is asking anything of it.
+    //
+    // The queue takes the column on the way down and has to give it back on the
+    // way up, and "the way up" cannot only mean scrolling to the top: a list
+    // left halfway is a panel that has quietly lost its words. So the top is
+    // where it goes when it is put down -- which is the same gesture as putting
+    // it down, and needs no control.
+    //
+    // Not while a row is in somebody's hand, which is the one case where the
+    // list moving on its own would be the list fighting the finger: a drag does
+    // not scroll, so [LazyListState.isScrollInProgress] cannot see it, and the
+    // list says so itself.
+    LaunchedEffect(away, reordering, queueState.isScrollInProgress) {
+        if (!away || reordering || queueState.isScrollInProgress) return@LaunchedEffect
+        delay(QueueIdleReturnMs)
+        queueState.animateScrollToItem(0)
+    }
+
+    ExtensionSplit(
+        share = { share },
+        words = {
+            Box(Modifier.fillMaxSize().clipToBounds()) {
+                LyricsStage(
+                    lyrics = lyrics,
+                    loading = lyricsLoading,
+                    positionMs = positionMs,
+                    isPlaying = isPlaying,
+                    onSeek = onSeek,
+                    backdrop = backdrop,
+                    expandSignal = 0,
+                    modifier = Modifier.fillMaxSize(),
+                )
+            }
+        },
+        heading = { ExtensionHeading(stringResource(R.string.queue)) },
+        queue = {
             QueueList(
                 queue = queue,
                 onPlay = onPlayQueueItem,
                 onRemove = onRemoveQueueItem,
                 onMove = onMoveQueueItem,
+                listState = queueState,
+                onReorderingChange = { reordering = it },
             )
+        },
+    )
+}
+
+/**
+ * The words and the queue sharing one column, on a number that moves.
+ *
+ * A layout rather than two weights, and the reason is the number: a weight has
+ * to be greater than zero, and the whole of what this is for is the queue taking
+ * *all* of the column. Read in measure, so the spring that hands the room over
+ * does not recompose either half while it runs -- the words are a stage winding
+ * a clock of their own and the queue is a list that may be holding a drag.
+ *
+ * The words fade as their room goes rather than only being cropped: a line of
+ * lyric squeezed to nothing is a line cut in half, and half a letter is worse
+ * than none.
+ */
+@Composable
+private fun ExtensionSplit(
+    /** How much of the column the words take, 0 to [LyricsShare]. */
+    share: () -> Float,
+    words: @Composable () -> Unit,
+    heading: @Composable () -> Unit,
+    queue: @Composable () -> Unit,
+) {
+    Layout(
+        contents = listOf(words, heading, queue),
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(top = ExtensionTop),
+    ) { slots, constraints ->
+        val width = constraints.maxWidth
+        val height = constraints.maxHeight
+        val f = share().coerceIn(0f, 1f)
+
+        val head = slots[1].first().measure(
+            Constraints(minWidth = width, maxWidth = width, minHeight = 0, maxHeight = height),
+        )
+        val room = (height - head.height).coerceAtLeast(0)
+        val wordsH = (room * f).roundToInt().coerceIn(0, room)
+        val queueH = (room - wordsH).coerceAtLeast(0)
+
+        val wordsP = slots[0].first().measure(Constraints.fixed(width, wordsH))
+        val queueP = slots[2].first().measure(Constraints.fixed(width, queueH))
+
+        layout(width, height) {
+            wordsP.placeWithLayer(0, 0) {
+                alpha = (f / (LyricsShare * WordsFadeOut)).coerceIn(0f, 1f)
+            }
+            head.place(0, wordsH)
+            queueP.place(0, wordsH + head.height)
         }
     }
 }
@@ -198,8 +306,30 @@ private fun ExtensionHeading(text: String) {
     )
 }
 
-/** How much of the height the words take; the queue has the rest. */
+/** How much of the height the words take at rest; the queue has the rest. */
 private const val LyricsShare = 0.55f
+
+/**
+ * How far into its own share the words have faded out.
+ *
+ * Four tenths: by the time the queue has taken a little over half of what the
+ * words had, the words are gone. They go before their room does on purpose -- a
+ * stage of lyrics cropped to two lines reads as a mistake, where an empty band
+ * closing reads as room being handed over.
+ */
+private const val WordsFadeOut = 0.4f
+
+/** Slack before a scrolled list counts as one somebody is reading. */
+private val QueueNudge = 8.dp
+
+/**
+ * How long the queue is left alone before it goes home and folds back.
+ *
+ * Long enough to read what is coming without the list moving under the eyes,
+ * short enough that a panel left open comes back to itself rather than staying
+ * where the last flick left it.
+ */
+private const val QueueIdleReturnMs = 8000L
 
 /** The air above the words: the button at the panel's corner stands in it. */
 private val ExtensionTop = 56.dp

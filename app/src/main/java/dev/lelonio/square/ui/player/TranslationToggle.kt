@@ -80,13 +80,8 @@ fun TranslationToggle(
                 scaleY = grip
             }
             .clip(ContinuousCapsule())
-            .liquidGlass(
-                config = LocalGlassEffectConfig.current,
-                shape = ContinuousCapsule(),
-                ownBackdrop = backdrop,
-                highlightAlpha = BarHighlightAlpha,
-                backdropScale = 0.4f,
-            )
+            // The dial's material, which is the buttons'; see playerControlGlass.
+            .playerControlGlass(ContinuousCapsule())
             // Claimed in the first pass, for the reason the dial beside it
             // does: the lyrics behind this scroll, and the player above it
             // closes on a drag, so a touch left unconsumed becomes theirs.

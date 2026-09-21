@@ -1143,10 +1143,9 @@ fun PlayerScreen(
                                 shrinkVertically(tween(180)),
                             modifier = Modifier.align(Alignment.CenterHorizontally),
                         ) {
-                            GlassSurface(
-                                backdrop = glassBackdrop,
-                                surfaceColor = GlassFilm,
-                                shape = RoundedCornerShape(50),
+                            PlayerPane(
+                                onPicture = { canvas != null },
+                                shape = dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape,
                                 // The gap to the title lives here rather than
                                 // in a spacer beside it: what a visibility
                                 // block holds is stacked in a box, so a spacer
@@ -1204,9 +1203,7 @@ fun PlayerScreen(
 
                         // Title and artist on their own capsule, with the two
                         // per-track actions on the right.
-                        GlassSurface(
-                            backdrop = glassBackdrop,
-                            surfaceColor = GlassFilm,
+                        PlayerPane(
                             // On a clip, this pane is on a dark floor whatever
                             // the phone is set to — so it takes the dark-page
                             // film rather than paper's, which over a Canvas is a
@@ -1219,7 +1216,7 @@ fun PlayerScreen(
                             // player opened at start-up and never arrived when it
                             // was expanded from the side panel.
                             onPicture = { canvas != null },
-                            shape = RoundedCornerShape(50),
+                            shape = dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape,
                             modifier = Modifier
                                 .fillMaxWidth()
 
@@ -2185,13 +2182,7 @@ private fun KaraokeBadge(amount: Float, backdrop: Backdrop, onClick: () -> Unit)
             .pressable(onClick, pressedScale = 0.94f)
             // The app's material, not a grey plate: it sits among glass and a
             // painted rectangle is the one thing that reads as pasted on.
-            .liquidGlass(
-                config = LocalGlassEffectConfig.current,
-                shape = dev.lelonio.square.ui.glass.shapes.ContinuousCapsule(),
-                ownBackdrop = backdrop,
-                highlightAlpha = BarHighlightAlpha,
-                backdropScale = 0.4f,
-            )
+            .playerControlGlass(dev.lelonio.square.ui.glass.shapes.ContinuousCapsule())
             .padding(horizontal = 12.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

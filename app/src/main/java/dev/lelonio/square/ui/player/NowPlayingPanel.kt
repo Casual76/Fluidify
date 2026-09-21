@@ -148,10 +148,13 @@ fun NowPlayingPanel(
      */
     canvasLive: State<Boolean> = remember { mutableStateOf(false) },
     /**
-     * The page behind the panel, which is what the glass in it refracts.
+     * The panel's own pane, which is what the glass inside it refracts.
      *
-     * The same record the panel's own pane samples. Null on the travelling copy,
-     * which is given an empty one instead; see [PanelGlass].
+     * Not the page: the page is what the pane itself samples, and a disc that
+     * sampled it too would refract the same carousels twice. This is the pane's
+     * finished surface, published by the caller with the engine's `exports`;
+     * see the note beside `panelSurface` in SquareApp. Null on the travelling
+     * copy, which is given an empty one instead; see [PanelGlass].
      */
     backdrop: GlassBackdropState? = null,
     /**
@@ -448,9 +451,22 @@ fun NowPlayingPanel(
                                         }
                                         .glassSurface(
                                             state = controlGlass,
-                                            tint = GlassDefaults.floatingTintOnPhoto(),
+                                            // A pane's weight, not the pill's
+                                            // scrim: at nearly half a black the
+                                            // card came out opaque, a lozenge
+                                            // with a name on it and no clip in
+                                            // it. See paneTintOnPhoto.
+                                            tint = dev.lelonio.square.ui.components
+                                                .paneTintOnPhoto(),
                                             shape = ContinuousCornerShape(FluidRadius.Card),
-                                            role = GlassRole.Floating,
+                                            // And the frost that buys back what
+                                            // the film gave up. Modal is the
+                                            // engine's own answer for a pane
+                                            // that has to win an argument with
+                                            // what is behind it, and a clip
+                                            // graded for itself is exactly that
+                                            // argument.
+                                            role = GlassRole.Modal,
                                         ),
                                 )
                             }
@@ -912,6 +928,14 @@ private fun PanelGlass(
         // buttons on the other. See the note in PlayerScreen.
         LocalFluidCanvasBackdrop provides if (inert) page else controls,
         LocalGlassBackdrop provides page,
+        // And the third thing, which is the one that makes the two above mean
+        // what they say: the canvas here *is* a pane of glass. The engine reads
+        // this to stack rather than to layer — every number goes up, because
+        // what is behind is already tinted and already softened, so a light
+        // touch on top of it reads as nothing at all. Without it a card in the
+        // panel asks for content glass, gets the recipe written for a page, and
+        // comes out invisible. See GlassDefaults.stackedContentOptics.
+        dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasIsGlass provides !inert,
         content = content,
     )
 }
@@ -932,6 +956,22 @@ private fun PanelSide(onPicture: Boolean, content: @Composable () -> Unit) {
     }
     SelfPaintedPage(ground = CanvasGround, content = content)
 }
+
+/**
+ * How much the panel's pane frosts the page under it, as a multiple of the app's blur.
+ *
+ * Past the engine's own Modal, and past the five that its bar preset calls the
+ * point where a page is averaged to a single colour — which is the point, here.
+ * A bar wants to stay glass because it is a strip over a page; this is a sheet
+ * the height of the window, and what has to be true of it is that it has a
+ * background. At the floating preset's not-quite-four dp the home screen's grid
+ * of covers came through as bright blotches, and nothing standing on the panel
+ * could read as standing on anything.
+ *
+ * What it costs is nothing: the capture's resolution falls with the radius, so a
+ * heavier frost is a smaller photograph and a cheaper chain.
+ */
+const val PanelGlassBlurScale = 7f
 
 /**
  * How wide the panel is.

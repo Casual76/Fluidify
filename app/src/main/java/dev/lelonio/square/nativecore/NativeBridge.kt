@@ -394,6 +394,24 @@ object NativeBridge {
      */
     fun remoteCommand(deviceId: String, body: String) = nativeRemoteCommand(deviceId, body)
 
+    /**
+     * Takes a track out of another device's queue, or moves it within it.
+     *
+     * Not a body the caller writes, unlike [remoteCommand], and that is the
+     * point: the protocol's only queue edit is `set_queue`, which replaces the
+     * whole of what comes before and after the current track. The lists it
+     * needs are the ones the other device published, so they are read and
+     * rewritten on the native side, where they already are.
+     *
+     * [uid] is the track's own id in that queue, not its uri: a song can be in
+     * a queue twice. [before] is the uid it should end up in front of, empty
+     * for the end, and unread when [op] is `remove`.
+     *
+     * Blocking. Never call it from the main thread.
+     */
+    fun remoteQueueEdit(deviceId: String, op: String, uid: String, before: String = "") =
+        nativeRemoteQueueEdit(deviceId, op, uid, before)
+
     /** Volume in librespot's raw 0..65535 range, on another device. */
     fun remoteVolume(deviceId: String, volume: Int) = nativeRemoteVolume(deviceId, volume)
 
@@ -647,6 +665,12 @@ object NativeBridge {
     private external fun nativeRemoteState(): String
     private external fun nativeRemoteDevices(): String
     private external fun nativeRemoteCommand(deviceId: String, body: String)
+    private external fun nativeRemoteQueueEdit(
+        deviceId: String,
+        op: String,
+        uid: String,
+        before: String,
+    )
     private external fun nativeRemoteVolume(deviceId: String, volume: Int)
     private external fun nativeShutdown()
     private external fun nativeUsername(): String

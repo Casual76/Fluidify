@@ -209,10 +209,24 @@ private fun DrawScope.beam(color: Color, offset: Float) {
 }
 
 /**
- * How far out of focus. Wide enough that no shape can be named, narrow enough
- * that the beams still pass as beams.
+ * How far out of focus.
+ *
+ * Wide enough that no shape can be named, narrow enough that the ridges survive
+ * -- and the second half of that is what this whole file is for. Everything
+ * after the bed is drawn for the glass above it: a band with one abrupt flank,
+ * and knots of light small enough that a lens throws a highlight far larger than
+ * they are. Blurred forty-eight deep, those flanks were gone. What the panes
+ * above found was an even wash, an even wash bends to an even wash, and what is
+ * left of a pane with nothing to bend is its film -- a painted lozenge with a
+ * title on it. It is the whole of why the player read as glass on a track with a
+ * clip and as flat colour on a track without one.
+ *
+ * The bed needs none of it. It is three radial gradients the width of the
+ * screen, already softer than any blur could make it. What the radius is for is
+ * the beams, and a beam three hundred points wide with twenty of blur on its
+ * flank is still light rather than a shape.
  */
-private val BLUR = 48.dp
+private val BLUR = 20.dp
 
 /** A full turn of the slowest element. Minutes, not seconds. */
 private const val CYCLE_MS = 60_000

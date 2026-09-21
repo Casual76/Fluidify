@@ -855,6 +855,25 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeRem
     });
 }
 
+/// Takes a track out of another device's queue, or moves it within it.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeRemoteQueueEdit(
+    mut env: JNIEnv,
+    _class: JClass,
+    device_id: JString,
+    op: JString,
+    uid: JString,
+    before: JString,
+) {
+    let device_id = read_string(&mut env, &device_id);
+    let op = read_string(&mut env, &op);
+    let uid = read_string(&mut env, &uid);
+    let before = read_string(&mut env, &before);
+    guard(&mut env, "RemoteQueueEdit", || {
+        crate::remote::edit_queue(&device_id?, &op?, &uid?, &before?)
+    });
+}
+
 #[no_mangle]
 pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeRemoteVolume(
     mut env: JNIEnv,

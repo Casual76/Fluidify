@@ -725,6 +725,23 @@ fun SquareApp(
      * up to an opaque image and contains no chrome at all.
      */
     val groundGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
+
+    /**
+     * The side panel's own pane, published for the things standing on it.
+     *
+     * The engine's word for it is `exports`: a surface that hands its finished
+     * self -- page, frost, film and all -- to a backdrop of its own, so a pane
+     * inside it bends *it* rather than whatever is underneath. It is how a
+     * control on a bar bends the bar.
+     *
+     * This panel needed it twice over and had tried both wrong answers first.
+     * Given the page, its discs refracted the carousels through the pane and
+     * again through themselves, and over a row of bright covers they read as
+     * holes cut in the panel. Given the app's ground instead they refracted a
+     * wash, which is calm and also flat, and they stopped being glass at all.
+     * What is actually behind a disc in a panel is the panel, and this is that.
+     */
+    val panelSurface = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
     val modalHost = dev.antigravity.fluidengine.ui.fluid.rememberFluidGlassModalHostState()
     val morphMenu = dev.antigravity.fluidengine.ui.fluidphysics.rememberFluidMorphMenuState()
 
@@ -2038,7 +2055,23 @@ fun SquareApp(
                     shape = dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape(
                         dev.antigravity.fluidengine.ui.fluid.FluidRadius.Sheet,
                     ),
-                    role = GlassRole.Floating,
+                    // A sheet, not a capsule.
+                    //
+                    // It wore the floating preset -- the one tuned for a
+                    // navigation pill -- and at not quite four dp of frost a
+                    // pane the height of the page let the home screen's grid of
+                    // covers straight through. The panel had no background of
+                    // its own: it had bright blotches where the carousels were,
+                    // and nothing standing on it could read as a surface because
+                    // there was no surface. Modal is the engine's answer for a
+                    // pane that has to win an argument with a whole page, and
+                    // the scale goes past its own because a wall of album art is
+                    // the loudest page this app has. See PanelGlassBlurScale.
+                    role = GlassRole.Modal,
+                    optics = GlassDefaults.optics(GlassRole.Modal).copy(
+                        blurScale = dev.lelonio.square.ui.player.PanelGlassBlurScale,
+                    ),
+                    exports = panelSurface,
                 )
 
                 if (chrome > 0.01f) Box(
@@ -2617,34 +2650,27 @@ fun SquareApp(
                                         )
                                     }
                                 },
-                                // The ground, and not the page the pane itself
-                                // samples.
+                                // The panel's own pane; see [panelSurface].
                                 //
-                                // A disc inside the panel is not a window onto
-                                // the page: it stands on the panel's own film,
-                                // which is a light wash over whatever is behind
-                                // it. Given the page it refracted the carousels
-                                // twice over — once through the pane and once
-                                // through itself — and over a row of bright
-                                // covers the three of them read as holes cut in
-                                // the panel. The ground is the blurred sleeve
-                                // the whole app stands on: calm, and the same
-                                // calm whichever page is underneath, which is
-                                // what a control inside a floating surface
-                                // should be.
-                                // The page, which the pane itself samples too.
+                                // Two answers were tried here before this one
+                                // and both are worth keeping, because they are
+                                // the two ways of getting it wrong. The page:
+                                // the discs then refracted the carousels once
+                                // through the pane and once through themselves,
+                                // and over a row of bright covers they read as
+                                // holes cut in the panel. The app's ground: calm
+                                // at last, and flat -- a lens over a uniform
+                                // wash has nothing to bend, so they came out as
+                                // pale circles and stopped being glass.
                                 //
-                                // It was the app's root ground for one build, on
-                                // the argument that a wash is calmer under a
-                                // control than a row of bright covers. It is
-                                // calmer, and it is also flat: a control is a
-                                // lens, and a lens over a uniform wash has
-                                // nothing to bend, so the three discs came out
-                                // as pale circles and stopped being glass at
-                                // all. The panel combines this with its own
-                                // picture, so what they bend is the clip when
-                                // there is one and the page when there is not.
-                                backdrop = pageGlass,
+                                // What is behind a disc in a panel is neither.
+                                // It is the panel: the page already frosted, a
+                                // surface with a gradient of its own, which is
+                                // exactly what a lens wants and exactly what
+                                // neither of the other two could be. The panel
+                                // pairs it with its own clip, so a disc on a
+                                // Canvas still bends the Canvas.
+                                backdrop = panelSurface,
                                 onClipRatio = { clipRatio = it },
                                 onOpen = {
                                     scope.launch { expand.animateTo(1f, PlayerMorphSpec) }
