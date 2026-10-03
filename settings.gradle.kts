@@ -22,6 +22,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "Fluidify"
 include(":app")
+include(":core")
 include(":wear-protocol")
 include(":wear")
 

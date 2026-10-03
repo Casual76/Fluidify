@@ -1,13 +1,16 @@
 # Build output
 build/
 app/build/
+core/build/
 .gradle/
 local.properties
 
 # Fetched, not vendored (see fetchBungee in app/build.gradle.kts)
 native-dsp/bungee/
 
-# Cross-compiled by cargoBuild
+# Cross-compiled by cargoBuild (in :core since the watch shares the engine;
+# the old app path stays ignored so a stale checkout cannot commit it)
+core/src/main/jniLibs/
 app/src/main/jniLibs/
 native/target/
 

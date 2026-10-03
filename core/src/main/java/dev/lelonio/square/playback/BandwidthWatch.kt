@@ -1,7 +1,6 @@
 package dev.lelonio.square.playback
 
 import android.util.Log
-import dev.lelonio.square.data.Quality
 
 /**
  * What the connection can actually carry, judged by listening rather than asking.
@@ -34,8 +33,8 @@ import dev.lelonio.square.data.Quality
 class BandwidthWatch(
     private val onStep: (Int) -> Unit,
 ) {
-    /** The step in use, in kbps: one of [Quality]'s three fixed values. */
-    var current: Int = Quality.High.kbps
+    /** The step in use, in kbps: one of the three fixed [BitrateSteps]. */
+    var current: Int = BitrateSteps.HIGH
         private set
 
     private var loadStartedAt = 0L
@@ -87,8 +86,8 @@ class BandwidthWatch(
     private fun stepDown() {
         goodRun = 0
         val next = when (current) {
-            Quality.High.kbps -> Quality.Medium.kbps
-            Quality.Medium.kbps -> Quality.Low.kbps
+            BitrateSteps.HIGH -> BitrateSteps.MEDIUM
+            BitrateSteps.MEDIUM -> BitrateSteps.LOW
             else -> return
         }
         apply(next)
@@ -97,8 +96,8 @@ class BandwidthWatch(
     private fun stepUp() {
         goodRun = 0
         val next = when (current) {
-            Quality.Low.kbps -> Quality.Medium.kbps
-            Quality.Medium.kbps -> Quality.High.kbps
+            BitrateSteps.LOW -> BitrateSteps.MEDIUM
+            BitrateSteps.MEDIUM -> BitrateSteps.HIGH
             else -> return
         }
         apply(next)

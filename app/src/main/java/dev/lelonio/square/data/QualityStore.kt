@@ -5,6 +5,7 @@ import android.net.ConnectivityManager
 import android.net.NetworkCapabilities
 import androidx.annotation.StringRes
 import dev.lelonio.square.R
+import dev.lelonio.square.playback.BitrateSteps
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -19,9 +20,9 @@ import kotlinx.coroutines.flow.asStateFlow
 enum class Quality(val key: String, @StringRes val label: Int, val kbps: Int) {
     /** Full quality on wi-fi, the middle step on a metered connection. */
     Auto("auto", R.string.quality_auto, 0),
-    High("high", R.string.quality_high, 320),
-    Medium("medium", R.string.quality_medium, 160),
-    Low("low", R.string.quality_low, 96),
+    High("high", R.string.quality_high, BitrateSteps.HIGH),
+    Medium("medium", R.string.quality_medium, BitrateSteps.MEDIUM),
+    Low("low", R.string.quality_low, BitrateSteps.LOW),
 }
 
 class QualityStore(context: Context) {

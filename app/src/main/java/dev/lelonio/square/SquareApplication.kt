@@ -21,7 +21,7 @@ import dev.lelonio.square.nativecore.NativeBridge
  * one thing that matters obvious: a single [TokenStore] instance, so token
  * refreshes really are serialised across the whole process.
  */
-class SquareApplication : Application() {
+class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost {
 
     override fun onCreate() {
         super.onCreate()
@@ -109,6 +109,10 @@ class SquareApplication : Application() {
         dev.lelonio.square.data.LibraryViewStore(this)
     }
     val preferences: PreferencesStore by lazy { PreferencesStore(this) }
+
+    /** For the shared player in :core; see [dev.lelonio.square.playback.CoreHost]. */
+    override val qualityIsAutomatic: Boolean
+        get() = quality.quality.value == dev.lelonio.square.data.Quality.Auto
 
     /** Which file the engine asks Spotify for. */
     val quality: dev.lelonio.square.data.QualityStore by lazy {

@@ -441,7 +441,6 @@ class MainActivity : ComponentActivity() {
 /** A `spotify:` URI the app was opened with, and which opening it was. */
 data class LinkRequest(val uri: String, val n: Int)
 
-/** Key for the context URI carried in a media item's metadata extras. */
 /**
  * The three things a launcher offers under a long press on the icon.
  *
@@ -453,23 +452,3 @@ const val ACTION_SHORTCUT_RESUME = "dev.lelonio.square.SHORTCUT_RESUME"
 const val ACTION_SHORTCUT_SEARCH = "dev.lelonio.square.SHORTCUT_SEARCH"
 const val ACTION_SHORTCUT_LIBRARY = "dev.lelonio.square.SHORTCUT_LIBRARY"
 
-const val EXTRA_CONTEXT_URI = "dev.lelonio.square.CONTEXT_URI"
-
-/** Whether that queue is the context in its own order; see SquareApp's `onPlay`. */
-const val EXTRA_CONTEXT_ORDERED = "dev.lelonio.square.CONTEXT_ORDERED"
-
-/**
- * Set by "add to queue": play this right after the current track rather than at
- * the end of the queue.
- */
-const val EXTRA_PLAY_NEXT = "dev.lelonio.square.PLAY_NEXT"
-
-/** What to show the listener: "Playlist · Estate 2025", "Ricerca". */
-const val EXTRA_CONTEXT_LABEL = "dev.lelonio.square.CONTEXT_LABEL"
-
-/** The first artist's own uri, so the player's second line can be opened. */
-const val EXTRA_ARTIST_URI = "dev.lelonio.square.ARTIST_URI"
-
-/** Every credited artist, in order, as two lists that line up. */
-const val EXTRA_ARTIST_NAMES = "dev.lelonio.square.ARTIST_NAMES"
-const val EXTRA_ARTIST_URIS = "dev.lelonio.square.ARTIST_URIS"

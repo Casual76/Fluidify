@@ -8,15 +8,16 @@ plugins {
 }
 
 /**
- * ABIs the native core is *built* for.
+ * ABIs the debug and dev builds package.
  *
- * arm64 covers every phone made in the last decade, and each extra ABI is a full
- * extra Rust build (~2 min from cold). x86_64 is here for one reason: without it
- * no emulator on an ordinary PC can run this app at all, and an app whose whole
- * argument is how it moves cannot be developed without ever seeing it move.
+ * arm64 covers every phone made in the last decade. x86_64 is here for one
+ * reason: without it no emulator on an ordinary PC can run this app at all, and
+ * an app whose whole argument is how it moves cannot be developed without ever
+ * seeing it move. The Rust core itself is built in :core (see `coreAbis`
+ * there), for these and the watch's.
  *
- * Built is not the same as shipped — see [shippedAbis]. The .so for both lands
- * in `jniLibs`, and the release build type packages only the phone's.
+ * Packaged is not the same as shipped — see [shippedAbis]: the release build
+ * type packages only the phone's.
  */
 val nativeAbis = listOf("arm64-v8a", "x86_64")
 
@@ -29,15 +30,8 @@ val nativeAbis = listOf("arm64-v8a", "x86_64")
  */
 val shippedAbis = listOf("arm64-v8a")
 
-/** NDK used for both AGP and the Cargo cross-build; keep the two in step. */
+/** NDK for AGP (Bungee's CMake build); keep in step with :core's Cargo build. */
 val ndkVersionForCargo = "28.2.13676358"
-
-/** Maps Android ABI names to Rust target triples. */
-val rustTargets = mapOf(
-    "arm64-v8a" to "aarch64-linux-android",
-    "armeabi-v7a" to "armv7-linux-androideabi",
-    "x86_64" to "x86_64-linux-android",
-)
 
 /**
  * The release signing details, when there are any.
@@ -206,15 +200,13 @@ android {
         buildConfig = true
     }
 
-    // Bungee and its JNI wrapper. The Rust core is not built here — it is
-    // cross-compiled by the cargoBuild task and dropped into jniLibs.
+    // Bungee and its JNI wrapper. The Rust core is not built here — :core
+    // cross-compiles it and its jniLibs reach this APK through the dependency.
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
         }
     }
-
-    sourceSets["main"].jniLibs.srcDirs("src/main/jniLibs")
 
     packaging {
         // The Rust cdylib is already stripped by the release profile; letting
@@ -262,6 +254,9 @@ dependencies {
     implementation(libs.backdrop)
     implementation(libs.kyant.shapes)
     implementation(libs.phosphor)
+
+    // The engine: librespot, its bridge and the player, shared with the watch.
+    implementation(project(":core"))
 
     // Fluid Engine: design system (porta con sé Compose e engine-foundation)
     // e aggiornamento in-app via Pampa Store.
@@ -320,98 +315,6 @@ val fetchBungee by tasks.registering {
 }
 
 
-/**
- * Cross-compiles the Rust core and drops the resulting `.so` files straight into
- * `jniLibs`.
- *
- * This shells out to `cargo-ndk` instead of using externalNativeBuild because
- * the crate is Cargo-driven, not CMake-driven. Install it once with
- * `cargo install cargo-ndk` and add the targets with `rustup target add`.
- */
-val cargoBuild by tasks.registering(Exec::class) {
-    group = "build"
-    description = "Cross-compiles the librespot core for all configured ABIs"
-
-    val nativeDir = rootProject.file("native")
-    workingDir = nativeDir
-
-    // Gradle can skip this entirely when nothing in the crate changed.
-    inputs.dir(nativeDir.resolve("src"))
-    // The patched copies of librespot's own crates, which are compiled from
-    // here rather than fetched. Left out, a change to one of them was not a
-    // change to this task, and the build quietly shipped the previous library.
-    inputs.dir(nativeDir.resolve("vendor"))
-    inputs.file(nativeDir.resolve("Cargo.toml"))
-    inputs.file(nativeDir.resolve("Cargo.lock"))
-    outputs.dir(layout.projectDirectory.dir("src/main/jniLibs"))
-
-    val outputDir = layout.projectDirectory.dir("src/main/jniLibs").asFile.absolutePath
-    val abiArgs = nativeAbis.flatMap { listOf("-t", it) }
-    // -P 26 must match minSdk: libaaudio.so only exists in the sysroot from API
-    // 26 up, and cargo-ndk otherwise links against API 21 and fails with
-    // "unable to find library -laaudio".
-    // The rustup cargo by absolute path, not whatever `cargo` resolves to first.
-    // A Homebrew rust earlier on PATH has neither the Android targets nor a new
-    // enough rustc for the dependency tree, and the failure it produces
-    // ("requires rustc 1.88") points at the crates rather than at the toolchain.
-    // cargo vs cargo.exe: same rustup layout, two spellings of the binary.
-    val cargo = sequenceOf("cargo", "cargo.exe")
-        .map { File(System.getProperty("user.home"), ".cargo/bin/$it") }
-        .firstOrNull { it.canExecute() }?.absolutePath ?: "cargo"
-    commandLine(
-        listOf(cargo, "ndk") + abiArgs +
-            listOf("-P", "26", "-o", outputDir, "build", "--release"),
-    )
-
-    // Everything is resolved here rather than in a doFirst block: a task action
-    // closure would capture the build script instance, which the configuration
-    // cache refuses to serialize.
-    val ndkDir = File(android.sdkDirectory, "ndk/$ndkVersionForCargo")
-    val unmappedAbis = nativeAbis.filterNot { rustTargets.containsKey(it) }
-    require(unmappedAbis.isEmpty()) { "No Rust target mapped for ABI(s): $unmappedAbis" }
-    require(ndkDir.isDirectory) {
-        "NDK $ndkVersionForCargo not found at $ndkDir — install it with " +
-            "sdkmanager --install \"ndk;$ndkVersionForCargo\""
-    }
-
-    // cargo-ndk finds the toolchain through this; AGP's own ndkVersion is not
-    // visible to an external process.
-    environment("ANDROID_NDK_HOME", ndkDir.absolutePath)
-
-    // dlltool (used by host build scripts on the GNU toolchain) cannot create
-    // import libraries when the .def path contains a space, and this checkout
-    // may live under one. Cargo's scratch moves somewhere unspaced; the .so
-    // still lands in jniLibs via -o above.
-    if (nativeDir.absolutePath.contains(' ')) {
-        environment(
-            "CARGO_TARGET_DIR",
-            File(System.getProperty("user.home"), ".cargo-target/fluidify").absolutePath,
-        )
-    }
-
-    // cargo-ndk re-invokes plain `cargo` for each target, so pointing the task
-    // at the rustup binary is not enough on its own: the child would still pick
-    // up a Homebrew rust earlier on PATH, which has neither the Android targets
-    // nor a new enough rustc, and reports it as "requires rustc 1.88".
-    val cargoToolDirs = listOf(
-        File(System.getProperty("user.home"), ".cargo/bin"),
-        // Host build scripts pull in windows-sys, which links via raw-dylib
-        // and needs a dlltool. rustup's GNU one ships without the assembler it
-        // spawns, so this directory holds the NDK's llvm-dlltool renamed
-        // dlltool.exe — it writes the import library directly, no assembler.
-        File(System.getProperty("user.home"), ".cargo-shims"),
-    ).filter { it.isDirectory }
-    if (cargoToolDirs.isNotEmpty()) {
-        environment(
-            "PATH",
-            (cargoToolDirs.map { it.absolutePath } + System.getenv("PATH"))
-                .joinToString(File.pathSeparator),
-        )
-    }
-}
-
-tasks.matching { it.name.startsWith("merge") && it.name.endsWith("JniLibFolders") }
-    .configureEach { dependsOn(cargoBuild) }
 
 // CMake reads Bungee's sources at configure time, so the clone has to have
 // happened before any of the native build tasks run.

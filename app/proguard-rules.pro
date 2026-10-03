@@ -5,14 +5,8 @@
 # Every entry here has a counterpart in native/src — keep the two in step when
 # adding a call across the boundary.
 
-# native fn declarations resolved against this class
--keepclasseswithmembernames class dev.lelonio.square.nativecore.NativeBridge {
-    native <methods>;
-}
-
-# called from the engine's event pump (native/src/engine.rs)
--keep class dev.lelonio.square.nativecore.NativeEvents { *; }
--keep class * implements dev.lelonio.square.nativecore.NativeEvents { *; }
+# NativeBridge and NativeEvents live in :core now, and their rules with them
+# (core/consumer-rules.pro), so the watch's build gets the same ones.
 
 # start / stop / write, called from the audio sink (native/src/sink.rs)
 -keep class dev.lelonio.square.playback.AudioOutput { *; }

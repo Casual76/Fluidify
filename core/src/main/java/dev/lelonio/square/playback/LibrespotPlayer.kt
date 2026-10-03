@@ -177,11 +177,10 @@ class LibrespotPlayer(
     private val handler = android.os.Handler(looper)
 
     /**
-     * The quality the listener asked for, which decides whether the one below
-     * is allowed to have an opinion.
+     * The app around the player, asked whether the quality the listener chose
+     * lets the watch below have an opinion.
      */
-    private val quality =
-        (context.applicationContext as dev.lelonio.square.SquareApplication).quality
+    private val host = context.applicationContext as CoreHost
 
     /**
      * Follows what the connection can actually carry; see [BandwidthWatch].
@@ -190,7 +189,7 @@ class LibrespotPlayer(
      * said which file they want and a stall is their business, not ours.
      */
     private val bandwidth = BandwidthWatch { kbps ->
-        if (quality.quality.value == dev.lelonio.square.data.Quality.Auto) {
+        if (host.qualityIsAutomatic) {
             runCatching { dev.lelonio.square.nativecore.NativeBridge.setBitrate(kbps) }
         }
     }

@@ -128,20 +128,6 @@ data class CatalogPlaylist(
 @Serializable
 data class CatalogArtist(val name: String, val uri: String? = null)
 
-/** Bridges a Web API track into the model the UI and the queue already use. */
-fun TrackDto.toCatalogTrack(addedAt: String? = null): CatalogTrack = CatalogTrack(
-    uri = uri,
-    name = name,
-    artist = artists.joinToString(", ") { it.name },
-    artistUri = artists.firstOrNull()?.uri,
-    artists = artists.map { CatalogArtist(it.name, it.uri) },
-    album = album?.name.orEmpty(),
-    durationMs = durationMs,
-    explicit = explicit,
-    artworkUrl = album?.images?.firstOrNull()?.url,
-    addedAt = addedAt,
-)
-
 /**
  * Catalogue reads over the Spotify access point.
  *
