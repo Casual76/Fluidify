@@ -31,7 +31,8 @@ if (engineDir.exists()) {
   "engine-foundation",
   "engine-ui",
   "engine-net",
-  "engine-update"
+  "engine-update",
+  "engine-wear"
   ).forEach { name ->
     include(":$name")
     project(":$name").projectDir = engineDir.resolve(name)
