@@ -114,4 +114,8 @@
     <string name="headphones_listen_on">Ouvir em %1$s</string>
     <string name="headphone_prompt">Propor ouvir com fones</string>
     <string name="headphone_prompt_summary">Quando fones se conectam ao relógio</string>
+    <string name="volume_percent">%1$d%%</string>
+    <string name="developer">Programador</string>
+    <string name="developer_unlocked">Opções de programador ativas</string>
+    <string name="developer_leave">Desativar opções de programador</string>
 </resources>

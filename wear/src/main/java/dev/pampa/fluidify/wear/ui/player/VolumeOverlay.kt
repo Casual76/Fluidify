@@ -3,47 +3,94 @@ package dev.pampa.fluidify.wear.ui.player
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.Canvas
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
-import androidx.compose.ui.graphics.StrokeCap
-import androidx.compose.ui.graphics.drawscope.Stroke
-import androidx.compose.ui.unit.dp
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
+import androidx.wear.compose.material3.Text
+import com.adamglin.PhosphorIcons
+import com.adamglin.phosphoricons.Fill
+import com.adamglin.phosphoricons.fill.SpeakerHigh
+import com.adamglin.phosphoricons.fill.SpeakerLow
+import com.adamglin.phosphoricons.fill.SpeakerX
 import dev.antigravity.fluidengine.ui.fluid.FluidMotion
-import kotlin.math.min
+import dev.antigravity.fluidengine.ui.fluid.GlassBackdropState
+import dev.antigravity.fluidengine.wear.components.FluidEdgeLevelArc
+import dev.antigravity.fluidengine.wear.glass.FluidGlassCapsule
+import dev.antigravity.fluidengine.wear.theme.FluidWearDimens
+import dev.pampa.fluidify.wear.R
+import kotlin.math.roundToInt
 
 /**
- * The volume, drawn along the right edge while the bezel turns.
+ * The volume, while the bezel turns.
  *
- * An arc of 90 degrees centred at three o'clock, the side of the bezel the thumb
- * is on, filling from the bottom. It is an indicator over the player, not a page,
- * so it is allowed to appear and leave softly.
+ * A line of light on the right edge of the screen — the same stroke and halo as the progress ring,
+ * on the side of the bezel the thumb is on — and the number, with the device it is the volume of,
+ * on a pane of glass in the middle while the controls behind it step back. An indicator over the
+ * player rather than a page, so it is allowed to arrive and leave softly.
+ *
+ * @param device whose volume this is ("Pixel 9", "Living room"); null says nothing.
  */
 @Composable
-fun VolumeOverlay(visible: Boolean, level: Float, modifier: Modifier = Modifier) {
-    val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.22f)
-    val fill = MaterialTheme.colorScheme.primary
+fun VolumeOverlay(
+    visible: Boolean,
+    level: Float,
+    backdrop: GlassBackdropState,
+    modifier: Modifier = Modifier,
+    device: String? = null,
+) {
     AnimatedVisibility(
         visible = visible,
         enter = fadeIn(FluidMotion.fadeIn()),
         exit = fadeOut(FluidMotion.fadeOut()),
         modifier = modifier.fillMaxSize(),
     ) {
-        Canvas(Modifier.fillMaxSize()) {
-            val stroke = 6.dp.toPx()
-            val radius = min(size.width, size.height) / 2f - 14.dp.toPx()
-            val topLeft = Offset(center.x - radius, center.y - radius)
-            val arc = Size(radius * 2, radius * 2)
-            // Bottom of the arc at 45° below three o'clock, top at 45° above.
-            drawArc(track, startAngle = 45f, sweepAngle = -90f, useCenter = false, topLeft = topLeft, size = arc, style = Stroke(stroke, cap = StrokeCap.Round))
-            val sweep = -90f * level.coerceIn(0f, 1f)
-            if (sweep < 0f) {
-                drawArc(fill, startAngle = 45f, sweepAngle = sweep, useCenter = false, topLeft = topLeft, size = arc, style = Stroke(stroke, cap = StrokeCap.Round))
+        Box(Modifier.fillMaxSize()) {
+            FluidEdgeLevelArc(level = level)
+            FluidGlassCapsule(
+                backdrop = backdrop,
+                modifier = Modifier
+                    .align(Alignment.Center)
+                    .animateEnterExit(enter = scaleIn(FluidMotion.snappy(), initialScale = CardEnterScale), exit = scaleOut(targetScale = CardEnterScale)),
+            ) {
+                Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                    Icon(
+                        imageVector = when {
+                            level <= 0f -> PhosphorIcons.Fill.SpeakerX
+                            level < LowVolume -> PhosphorIcons.Fill.SpeakerLow
+                            else -> PhosphorIcons.Fill.SpeakerHigh
+                        },
+                        contentDescription = null,
+                        modifier = Modifier.size(FluidWearDimens.IconMedium),
+                    )
+                    Text(
+                        text = stringResource(R.string.volume_percent, (level.coerceIn(0f, 1f) * 100).roundToInt()),
+                        style = MaterialTheme.typography.numeralExtraSmall,
+                        maxLines = 1,
+                    )
+                    if (!device.isNullOrEmpty()) {
+                        Text(
+                            text = device,
+                            style = MaterialTheme.typography.bodyExtraSmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
             }
         }
     }
 }
+
+private const val LowVolume = 0.4f
+private const val CardEnterScale = 0.88f

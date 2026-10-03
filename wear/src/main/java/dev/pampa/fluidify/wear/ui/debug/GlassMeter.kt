@@ -24,30 +24,73 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * The switch for the glass meter, in builds that are not released.
+ * Developer mode and the glass meter, in builds that are not released.
  *
- * Off by default even there: the meter is for checking, on the watch itself,
- * that a still screen costs the glass nothing.
+ * Both off by default. Developer mode is unlocked by tapping the version seven times in "More",
+ * the way Android's own developer options are, and only then does the meter's switch appear: the
+ * meter is for checking, on the watch itself, that a still screen costs the glass nothing, and the
+ * person using the watch should never meet it by accident.
  */
 class GlassMeterPrefs(context: Context) {
 
     private val prefs = context.getSharedPreferences("dev", Context.MODE_PRIVATE)
+    private val _developer = MutableStateFlow(available && prefs.getBoolean(KEY_DEVELOPER, false))
     private val _enabled = MutableStateFlow(available && prefs.getBoolean(KEY, false))
+    private val _visible = MutableStateFlow(_developer.value && _enabled.value)
+    private var taps = 0
 
+    /** Whether the developer section is showing. */
+    val developer: StateFlow<Boolean> = _developer.asStateFlow()
+
+    /** The meter's switch. */
     val enabled: StateFlow<Boolean> = _enabled.asStateFlow()
+
+    /** Whether the meter is on screen: switched on, in developer mode. */
+    val visible: StateFlow<Boolean> = _visible.asStateFlow()
 
     fun set(on: Boolean) {
         prefs.edit { putBoolean(KEY, on) }
         _enabled.value = available && on
-        FluidGlassDiagnostics.enabled = _enabled.value
+        refresh()
+    }
+
+    /** One tap on the version. Answers true on the tap that unlocks developer mode. */
+    fun tapVersion(): Boolean {
+        if (!available || _developer.value) return false
+        taps++
+        if (taps < TAPS_TO_UNLOCK) return false
+        prefs.edit { putBoolean(KEY_DEVELOPER, true) }
+        _developer.value = true
+        refresh()
+        return true
+    }
+
+    /** Leaves developer mode, and takes the meter with it. */
+    fun leaveDeveloper() {
+        prefs.edit { putBoolean(KEY_DEVELOPER, false).putBoolean(KEY, false) }
+        taps = 0
+        _developer.value = false
+        _enabled.value = false
+        refresh()
+    }
+
+    private fun refresh() {
+        _visible.value = _developer.value && _enabled.value
+        FluidGlassDiagnostics.enabled = _visible.value
     }
 
     init {
-        FluidGlassDiagnostics.enabled = _enabled.value
+        // The meter's first key was on by itself on watches that had tried it; it is gone, so
+        // nobody carries an old switch into this version.
+        if (prefs.contains(OLD_KEY)) prefs.edit { remove(OLD_KEY) }
+        refresh()
     }
 
     companion object {
-        private const val KEY = "glass_meter"
+        private const val KEY = "glass_meter_v2"
+        private const val OLD_KEY = "glass_meter"
+        private const val KEY_DEVELOPER = "developer"
+        private const val TAPS_TO_UNLOCK = 7
 
         /** Only debug and dev builds carry the meter. */
         val available: Boolean get() = BuildConfig.BUILD_TYPE != "release"

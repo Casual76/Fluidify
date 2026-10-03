@@ -44,6 +44,9 @@ import java.io.ByteArrayOutputStream
 const val Watch44 = "w240dp-h240dp-small-notlong-round-watch-xhdpi-keyshidden-nonav"
 const val Watch40 = "w216dp-h216dp-small-notlong-round-watch-xhdpi-keyshidden-nonav"
 
+/** The smallest class of round watch (Pixel Watch 41 mm): what the compact player is for. */
+const val WatchSmall = "w192dp-h192dp-small-notlong-round-watch-xhdpi-keyshidden-nonav"
+
 /** Draws [content] the way the watch shows it: themed, on black, cut to a circle. */
 @Composable
 fun WatchFrame(ambient: Boolean = false, content: @Composable () -> Unit) {

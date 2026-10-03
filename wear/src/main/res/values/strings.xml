@@ -115,4 +115,8 @@
     <string name="headphones_listen_on">Listen on %1$s</string>
     <string name="headphone_prompt">Offer to listen with headphones</string>
     <string name="headphone_prompt_summary">When headphones connect to the watch</string>
+    <string name="volume_percent">%1$d%%</string>
+    <string name="developer">Developer</string>
+    <string name="developer_unlocked">Developer options are on</string>
+    <string name="developer_leave">Turn off developer options</string>
 </resources>

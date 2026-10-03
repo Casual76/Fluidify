@@ -114,4 +114,8 @@
     <string name="headphones_listen_on">Auf %1$s hören</string>
     <string name="headphone_prompt">Mit Kopfhörern hören anbieten</string>
     <string name="headphone_prompt_summary">Wenn sich Kopfhörer mit der Uhr verbinden</string>
+    <string name="volume_percent">%1$d%%</string>
+    <string name="developer">Entwickler</string>
+    <string name="developer_unlocked">Entwickleroptionen aktiv</string>
+    <string name="developer_leave">Entwickleroptionen ausschalten</string>
 </resources>

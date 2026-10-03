@@ -175,6 +175,11 @@ dependencies {
     implementation(libs.wear.compose.navigation)
     implementation(libs.coil.compose)
     implementation(libs.phosphor)
+    // The accent of the cover playing, as the phone takes it.
+    implementation(libs.androidx.palette)
+    // Installs the baseline profiles the Compose libraries ship, which a sideloaded app
+    // otherwise never gets: the first swipes after an install are the janky ones without it.
+    implementation(libs.androidx.profileinstaller)
 
     // The system's own surfaces: the tile, the complication, the icon on the watch face.
     implementation(libs.wear.tiles)

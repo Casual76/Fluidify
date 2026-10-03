@@ -26,13 +26,24 @@ class ArtStore(context: Context) {
     @Volatile
     var onStored: ((String) -> Unit)? = null
 
-    /** The cover for [key], when it has arrived. */
+    /**
+     * The cover for [key], when it has arrived.
+     *
+     * Asked from composition, once per row of a list, so it must not write: the last-use stamp
+     * that keeps the store's order is set on a background thread, at most once a minute per file.
+     */
     fun fileFor(key: String?): File? {
         if (key.isNullOrBlank() || !key.isSafeName()) return null
         val file = File(directory, "$key.webp")
         if (!file.isFile) return null
-        file.setLastModified(System.currentTimeMillis())
+        touchLater(file)
         return file
+    }
+
+    private fun touchLater(file: File) {
+        val now = System.currentTimeMillis()
+        if (now - file.lastModified() < TOUCH_EVERY_MS) return
+        toucher.execute { file.setLastModified(now) }
     }
 
     fun has(key: String): Boolean = key.isSafeName() && File(directory, "$key.webp").isFile
@@ -61,5 +72,11 @@ class ArtStore(context: Context) {
 
     companion object {
         private const val MAX_FILES = 60
+        private const val TOUCH_EVERY_MS = 60_000L
+
+        /** One quiet thread for the last-use stamps; nothing waits for it. */
+        private val toucher = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "art-touch").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }
+        }
     }
 }

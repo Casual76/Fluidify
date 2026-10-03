@@ -114,4 +114,8 @@
     <string name="headphones_listen_on">%1$s पर सुनें</string>
     <string name="headphone_prompt">हेडफ़ोन से सुनने का सुझाव दें</string>
     <string name="headphone_prompt_summary">जब घड़ी से हेडफ़ोन जुड़ें</string>
+    <string name="volume_percent">%1$d%%</string>
+    <string name="developer">डेवलपर</string>
+    <string name="developer_unlocked">डेवलपर विकल्प चालू हैं</string>
+    <string name="developer_leave">डेवलपर विकल्प बंद करें</string>
 </resources>

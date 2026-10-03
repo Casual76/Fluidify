@@ -3,6 +3,7 @@ package dev.pampa.fluidify.wear.ui
 import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.remember
@@ -13,7 +14,11 @@ import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.PagerState
 import androidx.wear.compose.foundation.pager.VerticalPager
 import androidx.wear.compose.foundation.pager.rememberPagerState
+import androidx.wear.compose.material3.AnimatedPage
 import androidx.wear.compose.material3.AppScaffold
+import androidx.wear.compose.material3.HorizontalPagerScaffold
+import androidx.wear.compose.material3.ScreenScaffold
+import androidx.wear.compose.material3.VerticalPagerScaffold
 import androidx.wear.compose.navigation.SwipeDismissableNavHost
 import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
@@ -51,8 +56,10 @@ import kotlinx.coroutines.launch
  * ```
  *
  * Everything else (queue, output, timer, volume, library, a playlist, search)
- * opens on top and is swiped away to the right, Wear's back. Pages slide;
- * nothing fades between them.
+ * opens on top and is swiped away to the right, Wear's back. Pages slide with
+ * Wear's own page transition ([AnimatedPage]: the page leaving shrinks a little
+ * under a scrim while the next one slides over it), so a swipe reads as moving
+ * between layers rather than as a strip of screens being dragged.
  */
 @Composable
 fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit> = emptyFlow()) {
@@ -67,49 +74,77 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
     val open: (String, String) -> Unit = { uri, title -> nav.navigate(contextRoute(uri, title)) }
     // The watch face icon, the tile and the complication all land on the player.
     LaunchedEffect(showPlayer) { showPlayer.collect { toPlayer() } }
+    val playerActive by remember {
+        derivedStateOf {
+            (vertical.currentPage == PAGE_MAIN || vertical.isScrollInProgress) &&
+                (horizontal.currentPage == 0 || horizontal.isScrollInProgress)
+        }
+    }
+    val immersiveActive by remember {
+        derivedStateOf { vertical.currentPage == PAGE_IMMERSIVE || vertical.isScrollInProgress }
+    }
 
     AppScaffold(modifier = modifier) {
         SwipeDismissableNavHost(navController = nav, startDestination = HOME) {
             composable(HOME) {
-                VerticalPager(
-                    state = vertical,
-                    // The bezel belongs to the volume on the player, not to paging.
-                    rotaryScrollableBehavior = null,
-                ) { page ->
-                    when (page) {
-                        PAGE_IMMERSIVE -> ImmersiveScreen(app.controls, app.art)
-                        PAGE_MAIN -> HorizontalPager(state = horizontal) { inner ->
-                            when (inner) {
-                                0 -> PlayerScreen(
-                                    controls = app.controls,
-                                    art = app.art,
-                                    volume = app.volume,
-                                    status = standaloneStatus(app),
-                                    onBrowse = { scope.launch { vertical.animateScrollToPage(PAGE_HOME) } },
-                                    onOutput = { nav.navigate(OUTPUT) },
-                                    onEssentials = { nav.navigate(ESSENTIALS) },
-                                )
-                                else -> MoreScreen(
-                                    controls = app.controls,
-                                    onOutput = { nav.navigate(OUTPUT) },
-                                    onVolume = { nav.navigate(VOLUME) },
-                                    onSleep = { nav.navigate(SLEEP) },
-                                    updater = app.updater,
-                                    phoneVersion = phoneVersion,
-                                    surfaces = app.surfacePrefs,
-                                    onSurfacesChanged = app.surfaces::onPrefsChanged,
-                                    glassMeter = app.glassMeter,
-                                    standalone = app.standalone,
-                                    onDownloads = { nav.navigate(WATCH_DOWNLOADS) },
+                // No page dots: the player is a full-bleed cover with things on every edge, and
+                // Spotify's watch app (whose shape this is) goes without them too. The pages are
+                // told whether they are on screen, because the pager keeps the neighbours composed
+                // so the Home is ready before the swipe reaches it — and a ring ticking on a page
+                // nobody can see is battery spent on nothing.
+                VerticalPagerScaffold(pagerState = vertical, pageIndicator = null) {
+                    VerticalPager(
+                        state = vertical,
+                        beyondViewportPageCount = 1,
+                        // The bezel belongs to the volume on the player, not to paging.
+                        rotaryScrollableBehavior = null,
+                    ) { page ->
+                        AnimatedPage(pageIndex = page, pagerState = vertical) {
+                            when (page) {
+                                PAGE_IMMERSIVE -> ScreenScaffold(timeText = {}) { _ ->
+                                    ImmersiveScreen(app.controls, app.art, active = immersiveActive)
+                                }
+                                PAGE_MAIN -> HorizontalPagerScaffold(pagerState = horizontal, pageIndicator = null) {
+                                    HorizontalPager(state = horizontal) { inner ->
+                                        AnimatedPage(pageIndex = inner, pagerState = horizontal) {
+                                            when (inner) {
+                                                0 -> ScreenScaffold(timeText = {}) { _ ->
+                                                    PlayerScreen(
+                                                        controls = app.controls,
+                                                        art = app.art,
+                                                        volume = app.volume,
+                                                        status = standaloneStatus(app),
+                                                        active = playerActive,
+                                                        onQueue = { nav.navigate(QUEUE) },
+                                                        onOutput = { nav.navigate(OUTPUT) },
+                                                        onEssentials = { nav.navigate(ESSENTIALS) },
+                                                    )
+                                                }
+                                                else -> MoreScreen(
+                                                    controls = app.controls,
+                                                    onOutput = { nav.navigate(OUTPUT) },
+                                                    onVolume = { nav.navigate(VOLUME) },
+                                                    onSleep = { nav.navigate(SLEEP) },
+                                                    updater = app.updater,
+                                                    phoneVersion = phoneVersion,
+                                                    surfaces = app.surfacePrefs,
+                                                    onSurfacesChanged = app.surfaces::onPrefsChanged,
+                                                    glassMeter = app.glassMeter,
+                                                    standalone = app.standalone,
+                                                    onDownloads = { nav.navigate(WATCH_DOWNLOADS) },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                else -> HomeScreen(
+                                    app = app,
+                                    onSearch = { nav.navigate(SEARCH) },
+                                    onLibrary = { nav.navigate(LIBRARY) },
+                                    onOpen = open,
                                 )
                             }
                         }
-                        else -> HomeScreen(
-                            app = app,
-                            onSearch = { nav.navigate(SEARCH) },
-                            onLibrary = { nav.navigate(LIBRARY) },
-                            onOpen = open,
-                        )
                     }
                 }
             }
@@ -186,7 +221,7 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                 }
             }
         }
-        val meter by app.glassMeter.enabled.collectAsStateWithLifecycle()
+        val meter by app.glassMeter.visible.collectAsStateWithLifecycle()
         if (meter) GlassMeter()
     }
 }

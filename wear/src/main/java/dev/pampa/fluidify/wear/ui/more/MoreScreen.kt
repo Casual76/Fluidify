@@ -19,6 +19,7 @@ import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.SwitchButton
+import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.Text
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
@@ -90,6 +91,7 @@ fun MoreScreen(
         onSurfacesChanged()
     }
     val meterOn by (glassMeter?.enabled ?: remember { MutableStateFlow(false) }).collectAsStateWithLifecycle()
+    val developer by (glassMeter?.developer ?: remember { MutableStateFlow(false) }).collectAsStateWithLifecycle()
     var speaker by remember { mutableStateOf(standalone?.prefs?.speakerAllowed ?: true) }
     var headphonePrompt by remember {
         mutableStateOf(
@@ -302,7 +304,22 @@ fun MoreScreen(
                 )
             }
         }
-        if (glassMeter != null && GlassMeterPrefs.available) {
+        item {
+            FluidWearListRow(
+                title = stringResource(R.string.about),
+                subtitle = stringResource(R.string.about_versions, BuildConfig.VERSION_NAME, phone ?: "–"),
+                onClick = glassMeter?.takeIf { GlassMeterPrefs.available }?.let { prefs ->
+                    {
+                        if (prefs.tapVersion()) {
+                            android.widget.Toast.makeText(context, R.string.developer_unlocked, android.widget.Toast.LENGTH_SHORT).show()
+                        }
+                    }
+                },
+                leading = { Icon(PhosphorIcons.Regular.Info, contentDescription = null, modifier = Modifier.size(22.dp)) },
+            )
+        }
+        if (glassMeter != null && developer) {
+            item { ListHeader { Text(stringResource(R.string.developer)) } }
             item {
                 SwitchButton(
                     checked = meterOn,
@@ -311,13 +328,12 @@ fun MoreScreen(
                     modifier = Modifier.fillMaxWidth(),
                 )
             }
-        }
-        item {
-            FluidWearListRow(
-                title = stringResource(R.string.about),
-                subtitle = stringResource(R.string.about_versions, BuildConfig.VERSION_NAME, phone ?: "–"),
-                leading = { Icon(PhosphorIcons.Regular.Info, contentDescription = null, modifier = Modifier.size(22.dp)) },
-            )
+            item {
+                FluidWearListRow(
+                    title = stringResource(R.string.developer_leave),
+                    onClick = glassMeter::leaveDeveloper,
+                )
+            }
         }
     }
 }

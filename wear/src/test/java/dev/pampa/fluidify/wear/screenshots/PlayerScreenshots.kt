@@ -54,7 +54,7 @@ class PlayerScreenshots {
 
     private fun player(snapshot: PlaybackSnapshot?, link: LinkStatus = LinkStatus.CONNECTED) =
         @androidx.compose.runtime.Composable {
-            PlayerScreen(FakeControls(snapshot, link), art, onBrowse = {}, onOutput = {}, onEssentials = {})
+            PlayerScreen(FakeControls(snapshot, link), art, onQueue = {}, onOutput = {}, onEssentials = {})
         }
 
     @Test
@@ -93,4 +93,23 @@ class PlayerScreenshots {
     @Test
     @Config(qualifiers = Watch40)
     fun playingSmallWatch() = capture("player_playing_40mm", content = player(sampleSnapshot()))
+
+    @Test
+    @Config(qualifiers = WatchSmall)
+    fun playingSmallestWatch() = capture("player_playing_192dp", content = player(sampleSnapshot()))
+
+    @Test
+    fun turningTheVolume() {
+        val controls = FakeControls(sampleSnapshot())
+        // A dispatcher that never runs: the overlay stays up for the capture instead of hiding itself.
+        val volume = dev.pampa.fluidify.wear.playback.VolumeControl(
+            kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.test.StandardTestDispatcher()),
+            controls,
+        )
+        volume.sync(0.4f)
+        volume.turn(2)
+        capture("player_volume") {
+            PlayerScreen(controls, art, onQueue = {}, onOutput = {}, onEssentials = {}, volume = volume)
+        }
+    }
 }

@@ -114,4 +114,8 @@
     <string name="headphones_listen_on">Écouter sur %1$s</string>
     <string name="headphone_prompt">Proposer d\'écouter au casque</string>
     <string name="headphone_prompt_summary">Quand un casque se connecte à la montre</string>
+    <string name="volume_percent">%1$d%%</string>
+    <string name="developer">Développeur</string>
+    <string name="developer_unlocked">Options pour les développeurs activées</string>
+    <string name="developer_leave">Désactiver les options pour les développeurs</string>
 </resources>
