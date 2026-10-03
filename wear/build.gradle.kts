@@ -158,6 +158,16 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.phosphor)
 
+    // The system's own surfaces: the tile, the complication, the icon on the watch face.
+    implementation(libs.wear.tiles)
+    implementation(libs.wear.protolayout)
+    implementation(libs.wear.protolayout.expression)
+    implementation(libs.wear.protolayout.material3)
+    implementation(libs.wear.complications.data.source)
+    implementation(libs.wear.ongoing)
+    implementation(libs.wear.phone.interactions)
+    implementation(libs.kotlinx.coroutines.guava)
+
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
     testImplementation(libs.robolectric)
@@ -167,7 +177,11 @@ dependencies {
     testImplementation(libs.roborazzi)
     testImplementation(libs.roborazzi.compose)
     testImplementation(libs.roborazzi.junit.rule)
+    testImplementation(libs.wear.tiles.renderer)
     debugImplementation(libs.compose.ui.test.manifest)
+    // The tile renders draw with Wear's own renderer, whose styles only reach Robolectric
+    // through a variant's resources; debug carries them, as it carries the test activity.
+    debugImplementation(libs.wear.tiles.renderer)
 }
 
 roborazzi {

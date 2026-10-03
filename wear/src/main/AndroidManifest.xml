@@ -5,6 +5,8 @@
 
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
+    <!-- The icon on the watch face is an ongoing notification underneath. -->
+    <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
         android:name=".WearApp"
@@ -51,6 +53,45 @@
                     android:pathPrefix="/fluidify"
                     android:scheme="wear" />
             </intent-filter>
+        </service>
+
+        <!-- The Fluidify tile: the player, one swipe from the watch face. -->
+        <service
+            android:name=".system.PlayerTileService"
+            android:exported="true"
+            android:label="@string/tile_label"
+            android:icon="@drawable/ic_notification"
+            android:permission="com.google.android.wearable.permission.BIND_TILE_PROVIDER">
+            <intent-filter>
+                <action android:name="androidx.wear.tiles.action.BIND_TILE_PROVIDER" />
+            </intent-filter>
+            <meta-data
+                android:name="androidx.wear.tiles.PREVIEW"
+                android:resource="@drawable/tile_preview" />
+        </service>
+
+        <!-- Presses on the tile; only the tile's own pending intents reach it. -->
+        <receiver
+            android:name=".system.TileActionReceiver"
+            android:exported="false" />
+
+        <!-- The song, the cover or the mark on any watch face that takes a complication. -->
+        <service
+            android:name=".system.NowPlayingComplicationService"
+            android:exported="true"
+            android:label="@string/complication_label"
+            android:icon="@drawable/ic_notification"
+            android:permission="com.google.android.wearable.permission.BIND_COMPLICATION_PROVIDER">
+            <intent-filter>
+                <action android:name="android.support.wearable.complications.ACTION_COMPLICATION_UPDATE_REQUEST" />
+            </intent-filter>
+            <meta-data
+                android:name="android.support.wearable.complications.SUPPORTED_TYPES"
+                android:value="SHORT_TEXT,LONG_TEXT,SMALL_IMAGE,PHOTO_IMAGE,MONOCHROMATIC_IMAGE" />
+            <!-- Pushed when the song changes; the face never has to ask on a timer. -->
+            <meta-data
+                android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"
+                android:value="0" />
         </service>
 
     </application>

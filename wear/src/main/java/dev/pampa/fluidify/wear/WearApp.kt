@@ -20,8 +20,17 @@ class WearApp : Application() {
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    val state: WatchState by lazy { WatchState(this) }
-    val art: ArtStore by lazy { ArtStore(this) }
+    val surfacePrefs: dev.pampa.fluidify.wear.system.SurfacePrefs by lazy {
+        dev.pampa.fluidify.wear.system.SurfacePrefs(this)
+    }
+
+    /** The icon on the watch face, the tile and the complication, kept in step with the phone. */
+    val surfaces: dev.pampa.fluidify.wear.system.SystemSurfaces by lazy {
+        dev.pampa.fluidify.wear.system.SystemSurfaces(this, surfacePrefs)
+    }
+
+    val state: WatchState by lazy { WatchState(this).also { it.onAccepted = surfaces::onState } }
+    val art: ArtStore by lazy { ArtStore(this).also { it.onStored = surfaces::onCoverStored } }
     val link: PhoneLink by lazy { PhoneLink(this, scope, state, art) }
 
     /** Installs builds the phone sends; see [WatchUpdater]. */
@@ -35,6 +44,11 @@ class WearApp : Application() {
     /** The phone's library and state, with a copy on disk for instant screens. */
     val library: dev.pampa.fluidify.wear.library.PhoneLibrary by lazy {
         dev.pampa.fluidify.wear.library.PhoneLibrary(this, link)
+    }
+
+    /** The glass meter's switch (debug and dev builds). */
+    val glassMeter: dev.pampa.fluidify.wear.ui.debug.GlassMeterPrefs by lazy {
+        dev.pampa.fluidify.wear.ui.debug.GlassMeterPrefs(this)
     }
 
     /** The bezel as a volume knob. */

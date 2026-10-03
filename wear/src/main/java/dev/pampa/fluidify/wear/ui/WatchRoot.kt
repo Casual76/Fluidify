@@ -2,6 +2,9 @@ package dev.pampa.fluidify.wear.ui
 
 import android.net.Uri
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
@@ -21,6 +24,7 @@ import dev.pampa.fluidify.wear.ui.browse.HomeScreen
 import dev.pampa.fluidify.wear.ui.browse.LibraryScreen
 import dev.pampa.fluidify.wear.ui.browse.SearchScreen
 import dev.pampa.fluidify.wear.ui.browse.SectionScreen
+import dev.pampa.fluidify.wear.ui.debug.GlassMeter
 import dev.pampa.fluidify.wear.ui.more.MoreScreen
 import dev.pampa.fluidify.wear.ui.player.ImmersiveScreen
 import dev.pampa.fluidify.wear.ui.player.PlayerScreen
@@ -30,7 +34,9 @@ import dev.pampa.fluidify.wear.ui.sheets.QueueScreen
 import dev.pampa.fluidify.wear.ui.sheets.SleepScreen
 import dev.pampa.fluidify.wear.ui.sheets.VolumeScreen
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -49,7 +55,7 @@ import kotlinx.coroutines.launch
  * nothing fades between them.
  */
 @Composable
-fun WatchRoot(app: WearApp, modifier: Modifier = Modifier) {
+fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit> = emptyFlow()) {
     val nav = rememberSwipeDismissableNavController()
     val scope = rememberCoroutineScope()
     val vertical = rememberPagerState(initialPage = PAGE_MAIN) { 3 }
@@ -59,6 +65,8 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier) {
     }
     val toPlayer: () -> Unit = { backToPlayer(nav, scope, vertical, horizontal) }
     val open: (String, String) -> Unit = { uri, title -> nav.navigate(contextRoute(uri, title)) }
+    // The watch face icon, the tile and the complication all land on the player.
+    LaunchedEffect(showPlayer) { showPlayer.collect { toPlayer() } }
 
     AppScaffold(modifier = modifier) {
         SwipeDismissableNavHost(navController = nav, startDestination = HOME) {
@@ -87,6 +95,9 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier) {
                                     onSleep = { nav.navigate(SLEEP) },
                                     updater = app.updater,
                                     phoneVersion = phoneVersion,
+                                    surfaces = app.surfacePrefs,
+                                    onSurfacesChanged = app.surfaces::onPrefsChanged,
+                                    glassMeter = app.glassMeter,
                                 )
                             }
                         }
@@ -139,6 +150,8 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier) {
             }
             composable(SEARCH) { SearchScreen(app, onOpen = open, onPlaying = toPlayer) }
         }
+        val meter by app.glassMeter.enabled.collectAsStateWithLifecycle()
+        if (meter) GlassMeter()
     }
 }
 

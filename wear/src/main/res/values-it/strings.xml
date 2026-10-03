@@ -59,4 +59,19 @@
     <string name="auto_update">Aggiornamenti automatici</string>
     <string name="about">Informazioni</string>
     <string name="about_versions">Orologio %1$s · telefono %2$s</string>
+
+    <!-- The system's surfaces: watch face icon, tile, complication -->
+    <string name="resume">Riprendi</string>
+    <string name="ongoing_paused">In pausa · %1$s</string>
+    <string name="channel_now_playing">In riproduzione sul telefono</string>
+    <string name="tile_label">Lettore Fluidify</string>
+    <string name="complication_label">In riproduzione</string>
+    <string name="complication_preview_title">Titolo del brano</string>
+    <string name="watch_face_icon">Icona sul quadrante</string>
+    <string name="watch_face_icon_summary">Mentre il telefono suona</string>
+    <string name="notifications_blocked">Le notifiche di Fluidify sono disattivate</string>
+    <string name="phone_notifications">Notifiche del telefono</string>
+    <string name="phone_notifications_summary">Mostra anche qui le notifiche di Fluidify del telefono</string>
+    <string name="glass_diagnostics">Ricatture del vetro</string>
+    <string name="glass_diagnostics_value">%1$d in tutto · %2$d/s</string>
 </resources>

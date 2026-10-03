@@ -59,4 +59,19 @@
     <string name="auto_update">Otomatik güncellemeler</string>
     <string name="about">Hakkında</string>
     <string name="about_versions">Saat %1$s · telefon %2$s</string>
+
+    <!-- The system's surfaces: watch face icon, tile, complication -->
+    <string name="resume">Devam et</string>
+    <string name="ongoing_paused">Duraklatıldı · %1$s</string>
+    <string name="channel_now_playing">Telefonda çalıyor</string>
+    <string name="tile_label">Fluidify oynatıcı</string>
+    <string name="complication_label">Şimdi çalıyor</string>
+    <string name="complication_preview_title">Şarkı adı</string>
+    <string name="watch_face_icon">Kadranda simge</string>
+    <string name="watch_face_icon_summary">Telefon çalarken</string>
+    <string name="notifications_blocked">Fluidify bildirimleri kapalı</string>
+    <string name="phone_notifications">Telefon bildirimleri</string>
+    <string name="phone_notifications_summary">Telefondaki Fluidify bildirimlerini burada da göster</string>
+    <string name="glass_diagnostics">Cam yeniden çekimleri</string>
+    <string name="glass_diagnostics_value">toplam %1$d · %2$d/sn</string>
 </resources>

@@ -1,5 +1,10 @@
 package dev.pampa.fluidify.wear.ui.more
 
+import android.Manifest
+import android.content.pm.PackageManager
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -7,8 +12,10 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
+import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.SwitchButton
@@ -29,7 +36,10 @@ import dev.pampa.fluidify.wear.playback.PlaybackControls
 import dev.pampa.fluidify.wear.protocol.RepeatMode
 import dev.pampa.fluidify.wear.protocol.UpdatePhase
 import dev.pampa.fluidify.wear.protocol.UpdateStatus
+import dev.pampa.fluidify.wear.system.Bridging
+import dev.pampa.fluidify.wear.system.SurfacePrefs
 import dev.pampa.fluidify.wear.ui.common.WatchList
+import dev.pampa.fluidify.wear.ui.debug.GlassMeterPrefs
 import dev.pampa.fluidify.wear.ui.player.deviceIcon
 import dev.pampa.fluidify.wear.update.WatchUpdater
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -41,8 +51,8 @@ import kotlin.math.roundToInt
  *
  * Everything a player has that does not deserve a place on a 200 dp circle:
  * where the sound comes out, the volume, the timer, shuffle and repeat, updates
- * and versions. Swiped to from the right edge, as the user asked, so the left
- * edge stays the system's back.
+ * and versions, how loud Fluidify is on the watch face. Swiped to from the
+ * right edge, as the user asked, so the left edge stays the system's back.
  */
 @Composable
 fun MoreScreen(
@@ -53,12 +63,29 @@ fun MoreScreen(
     onSleep: () -> Unit = {},
     updater: WatchUpdater? = null,
     phoneVersion: StateFlow<String?> = remember { MutableStateFlow(null) },
+    surfaces: SurfacePrefs? = null,
+    onSurfacesChanged: () -> Unit = {},
+    glassMeter: GlassMeterPrefs? = null,
 ) {
+    val context = LocalContext.current
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
     val snapshot = now.snapshot
     val update by (updater?.status ?: remember { MutableStateFlow<UpdateStatus?>(null) }).collectAsStateWithLifecycle()
     val phone by phoneVersion.collectAsStateWithLifecycle()
     var auto by remember { mutableStateOf(updater?.autoUpdate ?: true) }
+    var icon by remember { mutableStateOf(surfaces?.ongoingIcon ?: true) }
+    var bridged by remember { mutableStateOf(surfaces?.phoneNotifications ?: true) }
+    var notificationsAllowed by remember {
+        mutableStateOf(
+            ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
+                PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        notificationsAllowed = granted
+        onSurfacesChanged()
+    }
+    val meterOn by (glassMeter?.enabled ?: remember { MutableStateFlow(false) }).collectAsStateWithLifecycle()
 
     WatchList(title = stringResource(R.string.more), modifier = modifier) {
         item {
@@ -123,6 +150,41 @@ fun MoreScreen(
                 },
             )
         }
+        if (surfaces != null) {
+            item {
+                SwitchButton(
+                    checked = icon && notificationsAllowed,
+                    onCheckedChange = { on ->
+                        icon = on
+                        surfaces.ongoingIcon = on
+                        if (on && !notificationsAllowed) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        onSurfacesChanged()
+                    },
+                    label = { Text(stringResource(R.string.watch_face_icon)) },
+                    secondaryLabel = {
+                        Text(
+                            stringResource(
+                                if (icon && !notificationsAllowed) R.string.notifications_blocked else R.string.watch_face_icon_summary,
+                            ),
+                        )
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            item {
+                SwitchButton(
+                    checked = bridged,
+                    onCheckedChange = { on ->
+                        bridged = on
+                        surfaces.phoneNotifications = on
+                        Bridging.apply(context, on)
+                    },
+                    label = { Text(stringResource(R.string.phone_notifications)) },
+                    secondaryLabel = { Text(stringResource(R.string.phone_notifications_summary)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
         update?.let { status ->
             item {
                 FluidWearListRow(
@@ -149,7 +211,17 @@ fun MoreScreen(
                         updater.autoUpdate = it
                     },
                     label = { Text(stringResource(R.string.auto_update)) },
-                    modifier = Modifier,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        if (glassMeter != null && GlassMeterPrefs.available) {
+            item {
+                SwitchButton(
+                    checked = meterOn,
+                    onCheckedChange = glassMeter::set,
+                    label = { Text(stringResource(R.string.glass_diagnostics)) },
+                    modifier = Modifier.fillMaxWidth(),
                 )
             }
         }

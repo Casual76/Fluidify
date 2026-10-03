@@ -33,6 +33,10 @@ class WatchState(private val file: File) {
 
     val current: StateFlow<ReceivedSnapshot?> = _current.asStateFlow()
 
+    /** Told of every snapshot accepted, for the surfaces outside the app. */
+    @Volatile
+    var onAccepted: ((ReceivedSnapshot) -> Unit)? = null
+
     fun accept(snapshot: PlaybackSnapshot, receivedAtMs: Long = System.currentTimeMillis()): Boolean {
         val held = _current.value
         // A phone whose clock went backwards restarts its counter lower; a snapshot sent well
@@ -45,6 +49,7 @@ class WatchState(private val file: File) {
         runCatching {
             file.writeBytes(WearCodec.encode(ReceivedSnapshot.serializer(), received))
         }
+        onAccepted?.invoke(received)
         return true
     }
 

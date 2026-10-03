@@ -22,6 +22,10 @@ class ArtStore(context: Context) {
 
     val revision: StateFlow<Long> = _revision.asStateFlow()
 
+    /** Told the key of each cover that lands, for the surfaces outside the app (tile, complication). */
+    @Volatile
+    var onStored: ((String) -> Unit)? = null
+
     /** The cover for [key], when it has arrived. */
     fun fileFor(key: String?): File? {
         if (key.isNullOrBlank() || !key.isSafeName()) return null
@@ -44,6 +48,7 @@ class ArtStore(context: Context) {
         }
         trim()
         _revision.value = _revision.value + 1
+        onStored?.invoke(key)
     }
 
     private fun trim() {
