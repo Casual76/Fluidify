@@ -75,6 +75,16 @@ pub enum EndReason {
 }
 
 impl EndReason {
+    fn parse(value: &str) -> Option<Self> {
+        Some(match value {
+            "trackdone" => EndReason::TrackDone,
+            "fwdbtn" => EndReason::Forward,
+            "backbtn" => EndReason::Backward,
+            "endplay" => EndReason::EndPlay,
+            _ => return None,
+        })
+    }
+
     fn as_str(self) -> &'static str {
         match self {
             EndReason::TrackDone => "trackdone",
@@ -344,6 +354,100 @@ pub mod pending {
     }
 }
 
+/// Listens heard with no connection, kept until there is one.
+///
+/// A watch playing its downloads on a run has no session to report through,
+/// and a listen that cannot be sent at the moment it ends used to be a listen
+/// that never happened. Here it waits instead: one line per finished track, in
+/// the engine's state directory, sent the next time a session comes up.
+///
+/// Bounded both ways. At most [MAX_ENTRIES] are kept (the oldest go first), and
+/// anything older than [MAX_AGE_MS] is dropped when the queue is sent rather
+/// than reported: Spotify files a listen by the time it carries, and a month-old
+/// one is closer to noise than to history.
+pub mod outbox {
+    use super::{now_ms, EndReason, EventService, Listen};
+    use std::io::Write;
+    use std::path::{Path, PathBuf};
+
+    const FILE_NAME: &str = "listen-outbox";
+    pub const MAX_ENTRIES: usize = 500;
+    pub const MAX_AGE_MS: u128 = 30 * 24 * 60 * 60 * 1000;
+
+    fn path(dir: &str) -> PathBuf {
+        Path::new(dir).join(FILE_NAME)
+    }
+
+    /// Adds one listen. Tab-separated, like the pending listen beside it.
+    pub fn append(dir: &str, listen: &Listen) {
+        let line = format!(
+            "{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\t{}\n",
+            listen.track_hex,
+            listen.playback_id,
+            listen.context_uri,
+            listen.start_ms,
+            listen.end_ms,
+            listen.duration_ms,
+            listen.reason_start,
+            listen.reason_end.as_str(),
+            listen.started_at,
+        );
+        let file = path(dir);
+        let existing = std::fs::read_to_string(&file).unwrap_or_default();
+        let count = existing.lines().count();
+        if count >= MAX_ENTRIES {
+            // Keep the newest: drop from the front, then add.
+            let kept: Vec<&str> = existing.lines().skip(count + 1 - MAX_ENTRIES).collect();
+            let _ = std::fs::write(&file, kept.join("\n") + "\n" + &line);
+            return;
+        }
+        if let Ok(mut out) = std::fs::OpenOptions::new().create(true).append(true).open(&file) {
+            let _ = out.write_all(line.as_bytes());
+        }
+        log::info!("listen kept for later ({} waiting)", count + 1);
+    }
+
+    /// Sends everything waiting through [events], oldest first, and empties the queue.
+    pub fn flush(dir: &str, events: &EventService) {
+        let file = path(dir);
+        let Ok(raw) = std::fs::read_to_string(&file) else {
+            return;
+        };
+        let _ = std::fs::remove_file(&file);
+        let now = now_ms();
+        let mut sent = 0;
+        for line in raw.lines() {
+            let parts: Vec<&str> = line.split('\t').collect();
+            if parts.len() != 9 {
+                continue;
+            }
+            let number = |index: usize| parts[index].parse::<u32>().unwrap_or(0);
+            let started_at: u128 = parts[8].parse().unwrap_or(0);
+            if started_at == 0 || now.saturating_sub(started_at) > MAX_AGE_MS {
+                continue;
+            }
+            let Some(reason_end) = EndReason::parse(parts[7]) else {
+                continue;
+            };
+            events.track_transition(&Listen {
+                track_hex: parts[0],
+                playback_id: parts[1],
+                context_uri: parts[2],
+                start_ms: number(3),
+                end_ms: number(4),
+                duration_ms: number(5),
+                reason_start: parts[6],
+                reason_end,
+                started_at,
+            });
+            sent += 1;
+        }
+        if sent > 0 {
+            log::info!("reported {sent} listens heard offline");
+        }
+    }
+}
+
 pub fn now_ms() -> u128 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -381,3 +485,68 @@ const ENCODING: &str = "vorbis";
 /// Where the play came from, in the client's own vocabulary.
 const REFERRER: &str = "unknown";
 const FEATURE_VERSION: &str = "harmony:4.21.0";
+
+#[cfg(test)]
+mod tests {
+    use super::{outbox, EndReason, Listen};
+
+    fn listen(started_at: u128) -> Listen<'static> {
+        Listen {
+            track_hex: "00ff",
+            playback_id: "p",
+            context_uri: "spotify:playlist:x",
+            start_ms: 0,
+            end_ms: 120_000,
+            duration_ms: 200_000,
+            reason_start: "playbtn",
+            reason_end: EndReason::TrackDone,
+            started_at,
+        }
+    }
+
+    fn scratch(name: &str) -> String {
+        let dir = std::env::temp_dir().join(format!("fluidify-outbox-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir.to_string_lossy().to_string()
+    }
+
+    fn lines(dir: &str) -> Vec<String> {
+        std::fs::read_to_string(std::path::Path::new(dir).join("listen-outbox"))
+            .unwrap_or_default()
+            .lines()
+            .map(str::to_string)
+            .collect()
+    }
+
+    #[test]
+    fn appends_one_line_per_listen_with_every_field() {
+        let dir = scratch("append");
+        outbox::append(&dir, &listen(1));
+        outbox::append(&dir, &listen(2));
+        let lines = lines(&dir);
+        assert_eq!(lines.len(), 2);
+        assert_eq!(lines[1].split('\t').count(), 9);
+        assert!(lines[1].ends_with("\ttrackdone\t2"));
+    }
+
+    #[test]
+    fn keeps_only_the_newest_when_full() {
+        let dir = scratch("bound");
+        for i in 0..(outbox::MAX_ENTRIES as u128 + 7) {
+            outbox::append(&dir, &listen(i + 1));
+        }
+        let lines = lines(&dir);
+        assert_eq!(lines.len(), outbox::MAX_ENTRIES);
+        assert!(lines[0].ends_with("\t8"), "oldest kept is {}", lines[0]);
+        assert!(lines.last().unwrap().ends_with(&format!("\t{}", outbox::MAX_ENTRIES + 7)));
+    }
+
+    #[test]
+    fn end_reasons_round_trip() {
+        for reason in [EndReason::TrackDone, EndReason::Forward, EndReason::Backward, EndReason::EndPlay] {
+            assert_eq!(EndReason::parse(reason.as_str()).map(|r| r.as_str()), Some(reason.as_str()));
+        }
+    }
+}
+

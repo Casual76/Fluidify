@@ -14,6 +14,9 @@
 -keep class dev.lelonio.square.nativecore.NativeEvents { *; }
 -keep class * implements dev.lelonio.square.nativecore.NativeEvents { *; }
 
+# start / stop / write, called from the audio sink (native/src/sink.rs)
+-keep class * implements dev.lelonio.square.nativecore.NativeAudioSink { *; }
+
 # kotlinx.serialization generates serializers reflectively from these.
 -keepattributes *Annotation*, InnerClasses
 -keepclassmembers class dev.lelonio.square.data.** {

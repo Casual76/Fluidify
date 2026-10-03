@@ -54,6 +54,13 @@ object NativeBridge {
     fun setAudioOutput(output: Any) = nativeSetAudioOutput(output)
 
     /**
+     * What the Connect device says it is in the account's device list, for the
+     * next [start]: librespot's own names, "smartphone" (the default) or
+     * "smartwatch" for the watch build. Throws on a name librespot does not know.
+     */
+    fun setDeviceType(kind: String) = nativeSetDeviceType(kind)
+
+    /**
      * Builds the player and starts connecting.
      *
      * Returns as soon as there is a player, which is at once, for a device
@@ -589,6 +596,7 @@ object NativeBridge {
     private external fun nativePlaylistName(uri: String): String
     private external fun nativeInitContext(context: android.content.Context)
     private external fun nativeSetAudioOutput(output: Any)
+    private external fun nativeSetDeviceType(kind: String)
     private external fun nativeStart(
         clientId: String,
         deviceName: String,

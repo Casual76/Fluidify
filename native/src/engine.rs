@@ -29,6 +29,30 @@ use tokio::runtime::Runtime;
 pub(crate) static JAVA_VM: OnceCell<JavaVM> = OnceCell::new();
 static ENGINE: Mutex<Option<Engine>> = Mutex::new(None);
 static CONTEXT_INITIALIZED: AtomicBool = AtomicBool::new(false);
+
+/// What the Connect device says it is, for the account's device list.
+///
+/// A phone unless the app says otherwise before starting the engine: the watch
+/// build sets "smartwatch", so the list draws a watch for it. Read once, when
+/// the engine starts; see [set_device_type].
+static DEVICE_TYPE: Mutex<String> = Mutex::new(String::new());
+
+/// Sets the Connect device type for the next [start]. Names are librespot's own
+/// (`smartphone`, `smartwatch`, `speaker`, ...); an unknown one is refused.
+pub fn set_device_type(kind: &str) -> EngineResult<()> {
+    kind.parse::<DeviceType>()
+        .map_err(|_| format!("unknown device type: {kind}"))?;
+    *DEVICE_TYPE.lock().map_err(|_| "device type mutex poisoned")? = kind.to_string();
+    Ok(())
+}
+
+fn device_type() -> DeviceType {
+    DEVICE_TYPE
+        .lock()
+        .ok()
+        .and_then(|kind| kind.parse::<DeviceType>().ok())
+        .unwrap_or(DeviceType::Smartphone)
+}
 /// Set when the last handshake failed and nothing is being tried right now.
 ///
 /// Different from [`CONNECTED`], which is simply whether there is a device,
@@ -687,8 +711,9 @@ pub fn start(
     let connect_config = ConnectConfig {
         name: device_name.to_string(),
         // Smartphone rather than the librespot default of Speaker: the icon in
-        // the device list should match what the user is holding.
-        device_type: DeviceType::Smartphone,
+        // the device list should match what the user is holding. The watch
+        // says so before starting; see set_device_type.
+        device_type: device_type(),
         // Full scale, matching the mixer. Loudness belongs to the phone's own
         // volume keys.
         initial_volume: u16::MAX,
@@ -1511,6 +1536,10 @@ impl History {
         let events = EventService::new(session);
         // Whatever the last run was in the middle of when it went away.
         events::pending::flush(&state_dir, &events);
+        // And what it heard offline, if this run starts with a connection.
+        if CONNECTED.load(Ordering::SeqCst) {
+            events::outbox::flush(&state_dir, &events);
+        }
         History {
             events,
             state_dir,
@@ -1534,6 +1563,8 @@ impl History {
     fn rebind(&mut self, session: Session) {
         let session_id = session.session_id();
         self.events = EventService::new(session);
+        // A new session is a connected one: whatever was heard offline goes now.
+        events::outbox::flush(&self.state_dir, &self.events);
         self.session_id = if session_id.is_empty() {
             events::random_id()
         } else {
@@ -1712,7 +1743,7 @@ impl History {
         // Sent, so it must not be sent again on the next start.
         events::pending::clear(&self.state_dir);
 
-        self.events.track_transition(&Listen {
+        let listen = Listen {
             track_hex: &playing.hex,
             playback_id: &playing.playback_id,
             context_uri: &self.context_uri,
@@ -1722,7 +1753,14 @@ impl History {
             reason_start: playing.reason_start,
             reason_end: reason,
             started_at: playing.started_at,
-        });
+        };
+        // No session to send it through: kept until there is one; see
+        // events::outbox. Posting it now would only lose it.
+        if CONNECTED.load(Ordering::SeqCst) {
+            self.events.track_transition(&listen);
+        } else {
+            events::outbox::append(&self.state_dir, &listen);
+        }
     }
 }
 

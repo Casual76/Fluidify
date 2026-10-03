@@ -34,6 +34,8 @@ data class CatalogTrack(
      */
     val artists: List<CatalogArtist> = emptyList(),
     val album: String = "",
+    /** The album's own uri, when the source gives one; see catalog.rs. */
+    val albumUri: String? = null,
     val durationMs: Long = 0,
     val explicit: Boolean = false,
     val artworkUrl: String? = null,

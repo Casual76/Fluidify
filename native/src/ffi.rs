@@ -615,6 +615,18 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeSet
     });
 }
 
+/// What the Connect device will say it is, for the next start. The watch build
+/// calls this with "smartwatch"; the phone never does and stays a smartphone.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeSetDeviceType(
+    mut env: JNIEnv,
+    _class: JClass,
+    kind: JString,
+) {
+    let kind = read_string(&mut env, &kind);
+    guard(&mut env, "SetDeviceType", || engine::set_device_type(&kind?));
+}
+
 /// Changes the quality asked for from the next track on, with no rebuild.
 #[no_mangle]
 pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeSetBitrate(

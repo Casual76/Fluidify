@@ -294,6 +294,9 @@ fn track_json(track: &Track) -> Value {
             .map(|a| json!({ "name": a.name, "uri": a.id.to_uri().ok() }))
             .collect::<Vec<_>>(),
         "album": track.album.name,
+        // So the album can be opened from what is playing: the watch's menu
+        // offers it, and nothing else in a queue item says which album it is.
+        "albumUri": track.album.id.to_uri().ok(),
         "durationMs": track.duration,
         "explicit": track.is_explicit,
         "artworkUrl": largest_cover(&track.album.covers),
