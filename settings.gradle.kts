@@ -22,6 +22,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "Fluidify"
 include(":app")
+include(":wear-protocol")
 
 // --- fluid-engine (inizio) ---
 val engineDir = file("engine")
