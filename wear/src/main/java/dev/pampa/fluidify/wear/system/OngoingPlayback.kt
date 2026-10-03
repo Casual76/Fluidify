@@ -92,21 +92,24 @@ class OngoingPlayback(private val context: Context) {
         ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
 
-    private fun ensureChannel() {
-        val system = context.getSystemService(NotificationManager::class.java) ?: return
-        if (system.getNotificationChannel(CHANNEL) != null) return
-        val channel = NotificationChannel(CHANNEL, context.getString(R.string.channel_now_playing), NotificationManager.IMPORTANCE_LOW)
-            .apply {
-                setShowBadge(false)
-                setSound(null, null)
-                enableVibration(false)
-            }
-        system.createNotificationChannel(channel)
-    }
+    private fun ensureChannel() = ensureChannel(context)
 
     companion object {
         const val CHANNEL = "now_playing"
         const val NOTIFICATION_ID = 7
         const val PAUSE_GRACE_MS = 10 * 60_000L
+
+        /** The silent "playing" channel, shared with the mirror experiment's notification. */
+        fun ensureChannel(context: Context) {
+            val system = context.getSystemService(NotificationManager::class.java) ?: return
+            if (system.getNotificationChannel(CHANNEL) != null) return
+            val channel = NotificationChannel(CHANNEL, context.getString(R.string.channel_now_playing), NotificationManager.IMPORTANCE_LOW)
+                .apply {
+                    setShowBadge(false)
+                    setSound(null, null)
+                    enableVibration(false)
+                }
+            system.createNotificationChannel(channel)
+        }
     }
 }

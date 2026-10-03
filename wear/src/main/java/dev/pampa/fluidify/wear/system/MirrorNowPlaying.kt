@@ -63,6 +63,7 @@ class MirrorNowPlaying(private val app: WearApp) {
         val playing = snapshot.isPlaying || snapshot.playWhenReady
         val signature = listOf(track.uri, track.title, track.artist, track.artKey, playing).joinToString("|")
         if (signature == shown) return
+        OngoingPlayback.ensureChannel(app)
         val builder = NotificationCompat.Builder(app, OngoingPlayback.CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(track.title)

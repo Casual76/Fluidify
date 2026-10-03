@@ -83,7 +83,10 @@ class WearLibrarySource(private val app: SquareApplication) {
     /** Starts the phone's engine if it is not running, and waits a little for it to connect. */
     private suspend fun engineReady(): Boolean {
         if (runCatching { NativeBridge.isConnected }.getOrDefault(false)) return true
-        dev.lelonio.square.playback.PlaybackService.connect(app)
+        app.wearBridge.wakePlayback()
+        // Asked as well, for a service that is up with its engine stopped; a background start
+        // can be refused, and binding above is what counts.
+        runCatching { dev.lelonio.square.playback.PlaybackService.connect(app) }
         return withTimeoutOrNull(ENGINE_WAIT_MS) {
             while (!runCatching { NativeBridge.isConnected }.getOrDefault(false)) delay(ENGINE_POLL_MS)
             true

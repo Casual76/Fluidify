@@ -611,6 +611,13 @@ class PhoneWearBridge(private val app: SquareApplication) {
      * after: holding the binding would keep the service, and the engine with it,
      * alive after the listener has stopped, which is not the remote's call to make.
      */
+    /**
+     * Wakes the playback service — and with it the engine, which it starts on creation — the way
+     * the watch's commands do: by binding to it, which a process the listener service woke may do,
+     * where starting it may be refused. True when the service is up.
+     */
+    suspend fun wakePlayback(): Boolean = withContext(Dispatchers.Main.immediate) { ensurePlayer() != null }
+
     private suspend fun ensurePlayer(): Player? {
         player?.let { return it }
         if (waker == null) {

@@ -103,7 +103,8 @@ class WatchFileServer(private val app: SquareApplication) {
 
     /** Fetches the track at the watch's quality into [root], with the phone's engine. */
     private suspend fun stage(uri: String, kbps: Int, root: File): String? {
-        PlaybackService.connect(app)
+        app.wearBridge.wakePlayback()
+        runCatching { PlaybackService.connect(app) }
         val connected = withTimeoutOrNull(ENGINE_WAIT_MS) {
             while (!NativeBridge.isConnected) delay(POLL_MS)
             true
