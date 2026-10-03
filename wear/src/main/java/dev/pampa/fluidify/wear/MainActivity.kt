@@ -44,6 +44,7 @@ class MainActivity : ComponentActivity() {
         dev.pampa.fluidify.wear.downloads.NightlySyncWorker.schedule(this)
         Bridging.apply(this, app.surfacePrefs.phoneNotifications)
         askForNotificationsOnce()
+        dev.pampa.fluidify.wear.ui.debug.FrameLog.attach(this)
         setContent {
             val ambient = rememberFluidAmbientState(this)
             CompositionLocalProvider(

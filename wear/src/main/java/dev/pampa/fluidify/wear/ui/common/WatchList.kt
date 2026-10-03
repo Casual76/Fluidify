@@ -1,5 +1,6 @@
 package dev.pampa.fluidify.wear.ui.common
 
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -38,7 +39,10 @@ fun WatchList(
 ) {
     val state = rememberTransformingLazyColumnState()
     val spec = rememberTransformationSpec()
-    ScreenScaffold(scrollState = state, modifier = modifier) { padding ->
+    // Opaque: a screen opened on top must cover the one beneath it while it slides in, and show it
+    // only where Wear's swipe-to-dismiss peels it back — not let a list and a cover show through
+    // each other for the length of the transition.
+    ScreenScaffold(scrollState = state, modifier = modifier.background(MaterialTheme.colorScheme.background)) { padding ->
         TransformingLazyColumn(state = state, contentPadding = padding) {
             val scope = WatchListScope(this, spec)
             if (title != null) scope.item { ListHeader { Text(title, maxLines = 2, textAlign = TextAlign.Center) } }

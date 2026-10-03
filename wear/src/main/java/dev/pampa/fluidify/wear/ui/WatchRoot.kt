@@ -12,6 +12,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.navigation.NavHostController
+import androidx.wear.compose.navigation.currentBackStackEntryAsState
 import androidx.wear.compose.foundation.pager.HorizontalPager
 import androidx.wear.compose.foundation.pager.PagerState
 import androidx.wear.compose.foundation.pager.VerticalPager
@@ -85,6 +86,23 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
     }
     val immersiveActive by remember {
         derivedStateOf { vertical.currentPage == PAGE_IMMERSIVE || vertical.isScrollInProgress }
+    }
+    // What the frame log (dev builds) says was on screen when a frame ran late.
+    val backStack by nav.currentBackStackEntryAsState()
+    val scene by remember {
+        derivedStateOf {
+            val page = when (vertical.targetPage) {
+                PAGE_IMMERSIVE -> "cover"
+                PAGE_MAIN -> if (horizontal.targetPage == 0) "player" else "more"
+                else -> "home"
+            }
+            val moving = if (vertical.isScrollInProgress || horizontal.isScrollInProgress) "swipe " else ""
+            moving + page
+        }
+    }
+    LaunchedEffect(scene, backStack) {
+        val route = backStack?.destination?.route?.substringBefore('?')
+        dev.pampa.fluidify.wear.ui.debug.FrameLog.scene = if (route == null || route == HOME) scene else route
     }
 
     AppScaffold(modifier = modifier) {
