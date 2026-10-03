@@ -96,6 +96,8 @@ import dev.lelonio.square.ui.theme.softShadow
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 import com.adamglin.PhosphorIcons
+import com.adamglin.phosphoricons.regular.Watch
+import com.adamglin.phosphoricons.fill.Watch
 import com.adamglin.phosphoricons.Fill
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.fill.ArrowCircleDown
@@ -176,6 +178,12 @@ fun PlaylistScreen(
     onToggleDownload: () -> Unit = {},
     /** False where a download makes no sense, such as the local files shelf. */
     canDownload: Boolean = false,
+    /**
+     * Whether the watch keeps this page; null when there is no watch to keep it
+     * on, which hides the button.
+     */
+    watchKept: Boolean? = null,
+    onToggleWatch: () -> Unit = {},
     /**
      * How one row should mark itself.
      *
@@ -466,6 +474,8 @@ fun PlaylistScreen(
             downloadState = downloadState,
             onToggleDownload = onToggleDownload,
             canDownload = canDownload,
+            watchKept = watchKept,
+            onToggleWatch = onToggleWatch,
         )
 
         LazyColumn(
@@ -882,6 +892,8 @@ private fun DetailHeader(
     downloadState: OwnerState,
     onToggleDownload: () -> Unit,
     canDownload: Boolean,
+    watchKept: Boolean? = null,
+    onToggleWatch: () -> Unit = {},
 ) {
     val density = LocalDensity.current
     val heroPx = with(density) { HERO_HEIGHT.roundToPx() }
@@ -1020,6 +1032,17 @@ private fun DetailHeader(
                         size = 52.dp,
                         backdrop = backdrop,
                         onClick = onToggleDownload,
+                    )
+                }
+
+                // The same music, kept on the watch instead: only with a watch to keep it on.
+                if (canDownload && watchKept != null) {
+                    CircleAction(
+                        icon = if (watchKept) PhosphorIcons.Fill.Watch else PhosphorIcons.Regular.Watch,
+                        description = stringResource(if (watchKept) R.string.watch_unkeep else R.string.watch_keep),
+                        size = 52.dp,
+                        backdrop = backdrop,
+                        onClick = onToggleWatch,
                     )
                 }
 

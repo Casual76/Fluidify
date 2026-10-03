@@ -1,5 +1,11 @@
 package dev.lelonio.square.ui.settings
 
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.rememberCoroutineScope
+import dev.pampa.fluidify.wear.protocol.DownloadRequest
+import dev.pampa.fluidify.wear.protocol.logic.TransferPreference
+import kotlinx.coroutines.launch
+
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.Composable
@@ -67,6 +73,8 @@ internal fun WatchSection() {
             },
         )
 
+        WatchDownloadsRows(app)
+
         // While developing: any build, straight from the phone, without a computer.
         if (BuildConfig.BUILD_TYPE != "release" && current != null) {
             RowDivider()
@@ -91,3 +99,66 @@ private fun describe(state: State): String = when (state) {
     is State.Installed -> stringResource(R.string.watch_update_installed, state.version)
     is State.Failed -> stringResource(R.string.watch_update_failed, state.reason)
 }
+
+/**
+ * What the watch keeps for offline listening, from the phone: how much, how
+ * full the watch is, and the two choices that decide how tracks get there.
+ * The list itself is edited from each playlist's page ("Scarica sull'orologio").
+ */
+@Composable
+private fun WatchDownloadsRows(app: SquareApplication) {
+    val remote = app.wearBridge.watchDownloads
+    val status by remote.status.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    LaunchedEffect(Unit) { remote.refresh() }
+    val current = status ?: return
+
+    RowDivider()
+    InfoRow(
+        stringResource(R.string.watch_downloads),
+        if (current.owners.isEmpty()) {
+            stringResource(R.string.watch_downloads_none)
+        } else {
+            stringResource(
+                R.string.watch_downloads_summary,
+                current.owners.sumOf { it.done },
+                current.owners.sumOf { it.tracks },
+                android.text.format.Formatter.formatShortFileSize(LocalContext.current, current.bytesUsed),
+                android.text.format.Formatter.formatShortFileSize(LocalContext.current, current.bytesFree),
+            )
+        },
+    )
+    current.owners.forEach { owner ->
+        RowDivider()
+        InfoRow(owner.title.ifBlank { owner.uri }, "${owner.done}/${owner.tracks}")
+    }
+    current.paused?.let { reason ->
+        RowDivider()
+        InfoRow(
+            stringResource(R.string.watch_downloads_paused),
+            stringResource(if (reason == "storage") R.string.watch_downloads_paused_storage else R.string.watch_downloads_paused_offline),
+        )
+    }
+
+    RowDivider()
+    InfoRow(stringResource(R.string.watch_download_quality), "${current.qualityKbps} kbps")
+    listOf(96, 160, 320).forEach { kbps ->
+        ChoiceRow("$kbps kbps", selected = current.qualityKbps == kbps) {
+            scope.launch { remote.request(DownloadRequest(qualityKbps = kbps)) }
+        }
+    }
+    RowDivider()
+    SwitchRow(
+        label = stringResource(R.string.watch_transfer_bluetooth),
+        note = stringResource(R.string.watch_transfer_bluetooth_note),
+        checked = current.preference == TransferPreference.BLUETOOTH_FIRST,
+        onCheckedChange = { bluetooth ->
+            scope.launch {
+                remote.request(
+                    DownloadRequest(preference = if (bluetooth) TransferPreference.BLUETOOTH_FIRST else TransferPreference.WIFI_FIRST),
+                )
+            }
+        },
+    )
+}
+

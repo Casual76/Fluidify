@@ -94,6 +94,12 @@ class PhoneWearBridge(private val app: SquareApplication) {
     /** Signs the watch's own engine in, and out with the phone; see [WearAuthGranter]. */
     val auth = WearAuthGranter(app, link)
 
+    /** Sends the watch the tracks it keeps; see [WatchFileServer]. */
+    val files = WatchFileServer(app)
+
+    /** The watch's downloads as the phone sees them, and the way to ask for more. */
+    val watchDownloads = WatchDownloadsRemote(app, link)
+
     /** The current player, for the RPC handler. Main thread. */
     internal val currentPlayer: Player? get() = player
 
@@ -356,6 +362,8 @@ class PhoneWearBridge(private val app: SquareApplication) {
         withContext(Dispatchers.Main.immediate) { publishNow(force = true) }
         // Who is signed in, so a watch that missed a sign-out still hears of it.
         auth.publishAccount()
+        // Download requests made while the watch was away.
+        watchDownloads.flushPending(nodeId)
     }
 
     fun ownHello(wantsReply: Boolean): Hello = Hello(
@@ -518,6 +526,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
             dev.pampa.fluidify.wear.protocol.Features.LIBRARY,
             dev.pampa.fluidify.wear.protocol.Features.UPDATE_PUSH,
             dev.pampa.fluidify.wear.protocol.Features.AUTH,
+            dev.pampa.fluidify.wear.protocol.Features.DOWNLOADS,
         )
 
         /** librespot's device type names, as Spotify Connect reports them. */

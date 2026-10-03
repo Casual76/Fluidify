@@ -32,7 +32,7 @@
 use crate::engine::{self, EngineResult};
 use http::{header::RANGE, Method, Request, StatusCode};
 use http_body_util::BodyExt;
-use librespot_core::{cdn_url::CdnUrl, session::Session, spotify_uri::SpotifyUri, SpotifyId};
+use librespot_core::{cdn_url::CdnUrl, session::Session, spotify_uri::SpotifyUri, FileId, SpotifyId};
 use librespot_metadata::audio::{AudioFileFormat, AudioItem, UniqueFields};
 use librespot_playback::config::{DownloadLookup, DownloadedTrack};
 use serde_json::{json, Value};
@@ -495,13 +495,93 @@ async fn resolve_item(session: &Session, uri: SpotifyUri) -> Result<AudioItem, S
 pub fn download_track(uri: &str, kbps: i32) -> EngineResult<String> {
     let session = engine::with_session(|session| session.clone())?;
     let uri = uri.to_string();
-    engine::runtime_handle()?.block_on(fetch(session, uri, kbps))
+    let root = root().ok_or("downloads have no home yet")?;
+    engine::runtime_handle()?.block_on(fetch(session, uri, kbps, root))
 }
 
-async fn fetch(session: Session, uri_text: String, kbps: i32) -> Result<String, String> {
+/// The same download into a root of the caller's choosing, leaving the store's
+/// own alone.
+///
+/// For the phone fetching a track at the watch's quality to send it over: the
+/// copy is the watch's, so it goes into a scratch area the phone empties after
+/// sending, never into the phone's own library (where it would replace, or sit
+/// beside, the listener's own download at another quality).
+pub fn download_track_into(uri: &str, kbps: i32, root_path: &str) -> EngineResult<String> {
+    let session = engine::with_session(|session| session.clone())?;
+    let uri = uri.to_string();
+    let root = PathBuf::from(root_path);
+    fs::create_dir_all(root.join("audio")).map_err(|e| format!("staging dir failed: {e}"))?;
+    fs::create_dir_all(root.join("meta")).map_err(|e| format!("staging dir failed: {e}"))?;
+    engine::runtime_handle()?.block_on(fetch(session, uri, kbps, root))
+}
+
+/// Downloads the file another device already downloaded, with that device's key.
+///
+/// The watch's way of fetching a track the phone has at the same quality: the
+/// phone's sidecar says which CDN file and which AES key, so the watch fetches
+/// the very same bytes over its own Wi-Fi without asking Spotify for a key.
+/// Audio-key requests are what Spotify throttles ("audio keys are being
+/// refused"), and a watch filling up a playlist would otherwise be asking for
+/// one per track. The sidecar is stored as it came, with this device's time.
+pub fn download_with_sidecar(sidecar_json: &str) -> EngineResult<String> {
+    let sidecar: Value =
+        serde_json::from_str(sidecar_json).map_err(|e| format!("unreadable sidecar: {e}"))?;
+    let session = engine::with_session(|session| session.clone())?;
+    let root = root().ok_or("downloads have no home yet")?;
+    engine::runtime_handle()?.block_on(fetch_known(session, sidecar, root))
+}
+
+async fn fetch_known(session: Session, mut sidecar: Value, root: PathBuf) -> Result<String, String> {
+    let field = |name: &str| -> Result<String, String> {
+        sidecar
+            .get(name)
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .ok_or_else(|| format!("the sidecar has no {name}"))
+    };
+    let uri_text = field("uri")?;
+    let id = field("trackId")?;
+    let format = format_from_name(&field("format")?).ok_or("unknown format in the sidecar")?;
+    let file_bytes = hex_to_bytes(&field("fileId")?).ok_or("bad file id in the sidecar")?;
+    if field("key").ok().and_then(|key| hex_to_bytes(&key)).map(|key| key.len()) != Some(16) {
+        return Err("the sidecar carries no usable key".to_string());
+    }
+    let file_id = FileId::from_raw(&file_bytes);
+
+    let audio = audio_path(&root, &id).ok_or("bad download path")?;
+    let meta = meta_path(&root, &id).ok_or("bad download path")?;
+    clear_cancel(&id);
+
+    // Already here at least as good: nothing to do, as with an ordinary download.
+    if let Some(existing) = read_sidecar(&meta) {
+        let good = existing
+            .get("format")
+            .and_then(Value::as_str)
+            .and_then(format_from_name)
+            .map(|have| format_rank(have) >= format_rank(format))
+            .unwrap_or(false);
+        if good && audio.exists() {
+            return Ok(existing.to_string());
+        }
+    }
+
+    let part = audio.with_extension("part");
+    let done = fetch_file(&session, file_id, &id, &uri_text, &part).await?;
+    fs::rename(&part, &audio).map_err(|e| format!("could not store the download: {e}"))?;
+
+    if let Some(object) = sidecar.as_object_mut() {
+        object.insert("bytes".to_string(), json!(done));
+        object.insert("downloadedAt".to_string(), json!(now_ms()));
+    }
+    write_sidecar(&meta, &sidecar)?;
+    log::info!("downloaded <{uri_text}> with a key it was given ({done} bytes)");
+    engine::emit_app("download_done", &uri_text, done as i64);
+    Ok(sidecar.to_string())
+}
+
+async fn fetch(session: Session, uri_text: String, kbps: i32, root: PathBuf) -> Result<String, String> {
     let uri = SpotifyUri::from_uri(&uri_text).map_err(|e| format!("bad uri {uri_text}: {e}"))?;
     let id = track_key(&uri)?;
-    let root = root().ok_or("downloads have no home yet")?;
     let audio = audio_path(&root, &id).ok_or("bad download path")?;
     let meta = meta_path(&root, &id).ok_or("bad download path")?;
 
@@ -558,99 +638,7 @@ async fn fetch(session: Session, uri_text: String, kbps: i32) -> Result<String, 
     };
 
     let part = audio.with_extension("part");
-    if let Some(parent) = part.parent() {
-        fs::create_dir_all(parent).map_err(|e| format!("download dir failed: {e}"))?;
-    }
-    let mut done = fs::metadata(&part).map(|meta| meta.len()).unwrap_or(0) as usize;
-    let mut file = fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&part)
-        .map_err(|e| format!("could not open the download: {e}"))?;
-
-    let mut cdn = CdnUrl::new(file_id)
-        .resolve_audio(&session)
-        .await
-        .map_err(|e| format!("could not find the file: {e}"))?;
-
-    let mut total = 0usize;
-    loop {
-        if cancelled(&id) {
-            clear_cancel(&id);
-            return Err("cancelled".to_string());
-        }
-        if total > 0 && done >= total {
-            break;
-        }
-
-        let mut attempt = 0;
-        let chunk = loop {
-            // Spotify hands out several mirrors for a file. Every one of them
-            // is tried before concluding the problem is the URLs rather than
-            // the mirror, which is what librespot's own opener does.
-            let urls: Vec<String> = cdn
-                .try_get_urls()
-                .map_err(|e| format!("no CDN url: {e}"))?
-                .into_iter()
-                .map(str::to_string)
-                .collect();
-
-            let mut last = "the CDN offered no url".to_string();
-            let mut got = None;
-            for url in &urls {
-                match get_range(&session, url, done, CHUNK).await {
-                    Ok(chunk) => {
-                        got = Some(chunk);
-                        break;
-                    }
-                    Err(e) => last = e,
-                }
-            }
-            if let Some(chunk) = got {
-                break chunk;
-            }
-
-            attempt += 1;
-            if attempt >= CHUNK_ATTEMPTS {
-                return Err(last);
-            }
-            log::warn!("download of <{uri_text}> stumbled at {done}: {last}; asking again");
-            // A fresh set of URLs, not a fresh wait: a signed URL that expired
-            // while the queue worked through a long playlist is the common
-            // failure here, and sleeping does not fix it.
-            cdn = CdnUrl::new(file_id)
-                .resolve_audio(&session)
-                .await
-                .map_err(|e| format!("could not find the file again: {e}"))?;
-        };
-
-        let (bytes, size) = chunk;
-        total = size;
-        if bytes.is_empty() {
-            break;
-        }
-        file.write_all(&bytes)
-            .map_err(|e| format!("could not write the download: {e}"))?;
-        done += bytes.len();
-
-        // Per mille rather than bytes: the one number the event carries has to
-        // be enough to draw a ring, and the size is not known on the Kotlin
-        // side until the sidecar lands.
-        let permille = if total > 0 {
-            (done as u64 * 1000 / total as u64) as i64
-        } else {
-            0
-        };
-        engine::emit_app("download_progress", &uri_text, permille.min(1000));
-    }
-
-    file.flush()
-        .map_err(|e| format!("could not finish the download: {e}"))?;
-    drop(file);
-
-    if done < total {
-        return Err(format!("the download stopped short: {done} of {total} bytes"));
-    }
+    let done = fetch_file(&session, file_id, &id, &uri_text, &part).await?;
 
     fs::rename(&part, &audio).map_err(|e| format!("could not store the download: {e}"))?;
 
@@ -726,6 +714,116 @@ async fn fetch(session: Session, uri_text: String, kbps: i32) -> Result<String, 
     engine::emit_app("download_done", &uri_text, done as i64);
 
     Ok(sidecar.to_string())
+}
+
+/// Fetches the CDN file into `part`, resuming from whatever is already there,
+/// and answers with the number of bytes in the whole file.
+///
+/// The one copy of the chunk loop: an ordinary download, the watch's download
+/// with a key it was given and the phone's staging for the watch all end up
+/// here. Cancellation, retries with fresh URLs and the progress events are the
+/// same for all three.
+async fn fetch_file(
+    session: &Session,
+    file_id: FileId,
+    id: &str,
+    uri_text: &str,
+    part: &Path,
+) -> Result<usize, String> {
+    if let Some(parent) = part.parent() {
+        fs::create_dir_all(parent).map_err(|e| format!("download dir failed: {e}"))?;
+    }
+    let mut done = fs::metadata(&part).map(|meta| meta.len()).unwrap_or(0) as usize;
+    let mut file = fs::OpenOptions::new()
+        .create(true)
+        .append(true)
+        .open(&part)
+        .map_err(|e| format!("could not open the download: {e}"))?;
+
+    let mut cdn = CdnUrl::new(file_id)
+        .resolve_audio(session)
+        .await
+        .map_err(|e| format!("could not find the file: {e}"))?;
+
+    let mut total = 0usize;
+    loop {
+        if cancelled(id) {
+            clear_cancel(id);
+            return Err("cancelled".to_string());
+        }
+        if total > 0 && done >= total {
+            break;
+        }
+
+        let mut attempt = 0;
+        let chunk = loop {
+            // Spotify hands out several mirrors for a file. Every one of them
+            // is tried before concluding the problem is the URLs rather than
+            // the mirror, which is what librespot's own opener does.
+            let urls: Vec<String> = cdn
+                .try_get_urls()
+                .map_err(|e| format!("no CDN url: {e}"))?
+                .into_iter()
+                .map(str::to_string)
+                .collect();
+
+            let mut last = "the CDN offered no url".to_string();
+            let mut got = None;
+            for url in &urls {
+                match get_range(session, url, done, CHUNK).await {
+                    Ok(chunk) => {
+                        got = Some(chunk);
+                        break;
+                    }
+                    Err(e) => last = e,
+                }
+            }
+            if let Some(chunk) = got {
+                break chunk;
+            }
+
+            attempt += 1;
+            if attempt >= CHUNK_ATTEMPTS {
+                return Err(last);
+            }
+            log::warn!("download of <{uri_text}> stumbled at {done}: {last}; asking again");
+            // A fresh set of URLs, not a fresh wait: a signed URL that expired
+            // while the queue worked through a long playlist is the common
+            // failure here, and sleeping does not fix it.
+            cdn = CdnUrl::new(file_id)
+                .resolve_audio(session)
+                .await
+                .map_err(|e| format!("could not find the file again: {e}"))?;
+        };
+
+        let (bytes, size) = chunk;
+        total = size;
+        if bytes.is_empty() {
+            break;
+        }
+        file.write_all(&bytes)
+            .map_err(|e| format!("could not write the download: {e}"))?;
+        done += bytes.len();
+
+        // Per mille rather than bytes: the one number the event carries has to
+        // be enough to draw a ring, and the size is not known on the Kotlin
+        // side until the sidecar lands.
+        let permille = if total > 0 {
+            (done as u64 * 1000 / total as u64) as i64
+        } else {
+            0
+        };
+        engine::emit_app("download_progress", uri_text, permille.min(1000));
+    }
+
+    file.flush()
+        .map_err(|e| format!("could not finish the download: {e}"))?;
+    drop(file);
+
+    if done < total {
+        return Err(format!("the download stopped short: {done} of {total} bytes"));
+    }
+    Ok(done)
 }
 
 fn now_ms() -> u64 {

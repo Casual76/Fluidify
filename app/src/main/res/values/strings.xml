@@ -444,4 +444,17 @@
     <string name="watch_update_confirm">Confirm on the watch</string>
     <string name="watch_update_installed">Installed %1$s</string>
     <string name="watch_update_failed">Failed: %1$s</string>
+    <string name="watch_sending">Sending music to the watch</string>
+    <string name="watch_sending_channel">Sending to the watch</string>
+    <string name="watch_downloads">On the watch</string>
+    <string name="watch_downloads_none">Nothing yet: choose \"Download to watch\" on a playlist</string>
+    <string name="watch_downloads_summary">%1$d of %2$d tracks · %3$s used, %4$s free</string>
+    <string name="watch_downloads_paused">Paused</string>
+    <string name="watch_downloads_paused_storage">The watch is almost full</string>
+    <string name="watch_downloads_paused_offline">Waiting for the phone or Wi-Fi</string>
+    <string name="watch_download_quality">Watch download quality</string>
+    <string name="watch_transfer_bluetooth">Send over Bluetooth first</string>
+    <string name="watch_transfer_bluetooth_note">When the phone already has the same file. Off: the watch\'s Wi-Fi first, which is faster.</string>
+    <string name="watch_keep">Download to watch</string>
+    <string name="watch_unkeep">Remove from watch</string>
 </resources>

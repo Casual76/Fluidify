@@ -424,4 +424,17 @@
     <string name="watch_update_confirm">Conferma sull\'orologio</string>
     <string name="watch_update_installed">Installata la %1$s</string>
     <string name="watch_update_failed">Non riuscito: %1$s</string>
+    <string name="watch_sending">Invio musica all\'orologio</string>
+    <string name="watch_sending_channel">Invio all\'orologio</string>
+    <string name="watch_downloads">Sull\'orologio</string>
+    <string name="watch_downloads_none">Ancora niente: scegli \"Scarica sull\'orologio\" su una playlist</string>
+    <string name="watch_downloads_summary">%1$d di %2$d brani · %3$s usati, %4$s liberi</string>
+    <string name="watch_downloads_paused">In pausa</string>
+    <string name="watch_downloads_paused_storage">L\'orologio è quasi pieno</string>
+    <string name="watch_downloads_paused_offline">In attesa del telefono o del Wi-Fi</string>
+    <string name="watch_download_quality">Qualità dei download sull\'orologio</string>
+    <string name="watch_transfer_bluetooth">Invia prima via Bluetooth</string>
+    <string name="watch_transfer_bluetooth_note">Quando il telefono ha già lo stesso file. Spento: prima il Wi-Fi dell\'orologio, che è più veloce.</string>
+    <string name="watch_keep">Scarica sull\'orologio</string>
+    <string name="watch_unkeep">Togli dall\'orologio</string>
 </resources>

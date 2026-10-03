@@ -48,6 +48,13 @@ class NetworkBroker(private val context: Context, private val prefs: StandaloneP
     private var callback: ConnectivityManager.NetworkCallback? = null
     private val _route = MutableStateFlow(Route.NONE)
 
+    /**
+     * How many hold the network: the engine while it plays, the download queue
+     * while it fetches. Each [acquire] is paired with one [release]; the network
+     * goes only when the last one lets go.
+     */
+    private var holders = 0
+
     val route: StateFlow<Route> = _route.asStateFlow()
 
     /** Whether this watch has a mobile radio at all; the onboarding offers it only then. */
@@ -59,6 +66,7 @@ class NetworkBroker(private val context: Context, private val prefs: StandaloneP
      * Returns what the music will travel over.
      */
     suspend fun acquire(timeoutMs: Long = WIFI_WAIT_MS): Route {
+        synchronized(this) { holders++ }
         if (_route.value == Route.WIFI || _route.value == Route.CELLULAR) return _route.value
         val transports = buildList {
             add(NetworkCapabilities.TRANSPORT_WIFI)
@@ -75,8 +83,16 @@ class NetworkBroker(private val context: Context, private val prefs: StandaloneP
         return route
     }
 
-    /** Lets the requested network go and returns the process to the system's default. */
+    /** Lets go of the network; the last holder returns the process to the system's default. */
     fun release() {
+        val last = synchronized(this) {
+            holders = (holders - 1).coerceAtLeast(0)
+            holders == 0
+        }
+        if (last) drop()
+    }
+
+    private fun drop() {
         callback?.let { runCatching { connectivity.unregisterNetworkCallback(it) } }
         callback = null
         connectivity.bindProcessToNetwork(null)
@@ -84,7 +100,7 @@ class NetworkBroker(private val context: Context, private val prefs: StandaloneP
     }
 
     private suspend fun request(transports: List<Int>, timeoutMs: Long): Network? {
-        release()
+        drop()
         val available = CompletableDeferred<Network>()
         val request = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)

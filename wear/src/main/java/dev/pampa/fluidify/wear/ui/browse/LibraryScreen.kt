@@ -10,6 +10,7 @@ import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.ClockCounterClockwise
 import com.adamglin.phosphoricons.regular.Disc
+import com.adamglin.phosphoricons.regular.DeviceMobile
 import com.adamglin.phosphoricons.regular.Download
 import com.adamglin.phosphoricons.regular.Playlist
 import com.adamglin.phosphoricons.regular.User
@@ -20,10 +21,21 @@ import dev.pampa.fluidify.wear.ui.common.WatchList
 
 /** "La tua libreria": the sections, one row each, like Spotify's. */
 @Composable
-fun LibraryScreen(onSection: (LibrarySection, String) -> Unit) {
+fun LibraryScreen(onSection: (LibrarySection, String) -> Unit, onWatchDownloads: (() -> Unit)? = null) {
     WatchList(title = stringResource(R.string.your_library)) {
+        // What the watch keeps itself first: it plays with no phone at all.
+        if (onWatchDownloads != null) {
+            item(key = "watch-downloads") {
+                FluidWearListRow(
+                    title = stringResource(R.string.downloads),
+                    subtitle = stringResource(R.string.on_this_watch),
+                    onClick = onWatchDownloads,
+                    leading = { Icon(PhosphorIcons.Regular.Download, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                )
+            }
+        }
         val rows = listOf(
-            Triple(LibrarySection.DOWNLOADS, R.string.downloads, PhosphorIcons.Regular.Download),
+            Triple(LibrarySection.DOWNLOADS, R.string.on_the_phone, PhosphorIcons.Regular.DeviceMobile),
             Triple(LibrarySection.PLAYLISTS, R.string.playlists, PhosphorIcons.Regular.Playlist),
             Triple(LibrarySection.ALBUMS, R.string.albums, PhosphorIcons.Regular.Disc),
             Triple(LibrarySection.ARTISTS, R.string.artists, PhosphorIcons.Regular.User),

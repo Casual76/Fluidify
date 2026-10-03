@@ -131,7 +131,16 @@ class SheetScreenshots {
     }
 
     @Test
-    fun library() = capture("library") { LibraryScreen(onSection = { _, _ -> }) }
+    fun library() = capture("library") { LibraryScreen(onSection = { _, _ -> }, onWatchDownloads = {}) }
+
+    @Test
+    fun watchDownloads() {
+        app.downloads.keep("spotify:playlist:a", "Corsa del mattino")
+        app.downloads.store.setTracks("spotify:playlist:a", List(24) { "spotify:track:00000000000000000000%02d".format(it) })
+        app.downloads.keep("spotify:album:b", "Riflessi")
+        app.downloads.changed(schedule = false)
+        capture("watch_downloads") { dev.pampa.fluidify.wear.ui.browse.WatchDownloadsScreen(app.downloads, onOpen = { _, _ -> }) }
+    }
 
     @Test
     fun home() {

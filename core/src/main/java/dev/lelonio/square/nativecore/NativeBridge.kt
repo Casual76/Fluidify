@@ -528,6 +528,21 @@ object NativeBridge {
         nativeDownloadTrack(trackUri, bitrateKbps)
 
     /**
+     * [downloadTrack] into [root] instead of the store's own directory: the
+     * phone fetching a track at the watch's quality, into a scratch area it
+     * empties after sending. Blocking, like [downloadTrack].
+     */
+    fun downloadTrackInto(trackUri: String, bitrateKbps: Int, root: String): String =
+        nativeDownloadTrackInto(trackUri, bitrateKbps, root)
+
+    /**
+     * Fetches the file another device downloaded, with the key in its sidecar,
+     * into the store; answers with the sidecar written. No audio-key request
+     * is made, which is the point: see native/src/downloads.rs. Blocking.
+     */
+    fun downloadWithSidecar(sidecarJson: String): String = nativeDownloadWithSidecar(sidecarJson)
+
+    /**
      * The sidecar of a downloaded track as JSON, or the string `null` when the
      * track is not downloaded.
      */
@@ -597,6 +612,8 @@ object NativeBridge {
     private external fun nativeInitContext(context: android.content.Context)
     private external fun nativeSetAudioOutput(output: Any)
     private external fun nativeSetDeviceType(kind: String)
+    private external fun nativeDownloadTrackInto(trackUri: String, bitrateKbps: Int, root: String): String
+    private external fun nativeDownloadWithSidecar(sidecarJson: String): String
     private external fun nativeStart(
         clientId: String,
         deviceName: String,

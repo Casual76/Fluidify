@@ -72,6 +72,10 @@ class WatchListenerService : WearableListenerService() {
             WearPaths.HELLO -> WearCodec.decodeOrNull(Hello.serializer(), event.data)?.let {
                 app.link.onHello(it, event.sourceNodeId)
             }
+            WearPaths.DOWNLOAD_PLAN -> WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.DownloadRequest.serializer(), event.data)?.let { request ->
+                app.downloads.onRequest(request)
+                runBlocking { withTimeoutOrNull(BUDGET_MS) { app.downloads.publish() } }
+            }
             WearPaths.AUTH_GRANT -> WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AuthGrant.serializer(), event.data)
                 ?.let { app.link.onAuthGrant(it) }
             // The phone signed out: so does the watch, and its own playback stops.

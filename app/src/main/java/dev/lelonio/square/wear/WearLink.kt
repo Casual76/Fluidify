@@ -58,9 +58,11 @@ class WearLink(private val context: Context) {
         true
     }.onFailure { Log.i(TAG, "message $path to $nodeId failed: ${it.message}") }.getOrDefault(false)
 
-    /** Sends to every reachable watch. */
-    suspend fun broadcast(path: String, bytes: ByteArray) {
-        for (node in watchNodes(reachableOnly = true)) send(node.id, path, bytes)
+    /** Sends to every reachable watch. True when at least one took it. */
+    suspend fun broadcast(path: String, bytes: ByteArray): Boolean {
+        var any = false
+        for (node in watchNodes(reachableOnly = true)) if (send(node.id, path, bytes)) any = true
+        return any
     }
 
     suspend fun put(request: PutDataRequest): Boolean = runCatching {

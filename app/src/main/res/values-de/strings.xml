@@ -423,4 +423,17 @@
     <string name="watch_update_confirm">Auf der Uhr bestätigen</string>
     <string name="watch_update_installed">%1$s installiert</string>
     <string name="watch_update_failed">Fehlgeschlagen: %1$s</string>
+    <string name="watch_sending">Musik wird an die Uhr gesendet</string>
+    <string name="watch_sending_channel">Senden an die Uhr</string>
+    <string name="watch_downloads">Auf der Uhr</string>
+    <string name="watch_downloads_none">Noch nichts: wähle „Auf die Uhr laden“ bei einer Playlist</string>
+    <string name="watch_downloads_summary">%1$d von %2$d Titeln · %3$s belegt, %4$s frei</string>
+    <string name="watch_downloads_paused">Pausiert</string>
+    <string name="watch_downloads_paused_storage">Die Uhr ist fast voll</string>
+    <string name="watch_downloads_paused_offline">Wartet auf Telefon oder WLAN</string>
+    <string name="watch_download_quality">Download-Qualität der Uhr</string>
+    <string name="watch_transfer_bluetooth">Zuerst per Bluetooth senden</string>
+    <string name="watch_transfer_bluetooth_note">Wenn das Telefon dieselbe Datei schon hat. Aus: zuerst das WLAN der Uhr, das ist schneller.</string>
+    <string name="watch_keep">Auf die Uhr laden</string>
+    <string name="watch_unkeep">Von der Uhr entfernen</string>
 </resources>

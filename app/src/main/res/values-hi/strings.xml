@@ -438,4 +438,17 @@
     <string name="watch_update_confirm">घड़ी पर पुष्टि करें</string>
     <string name="watch_update_installed">%1$s इंस्टॉल हुआ</string>
     <string name="watch_update_failed">विफल: %1$s</string>
+    <string name="watch_sending">घड़ी पर संगीत भेजा जा रहा है</string>
+    <string name="watch_sending_channel">घड़ी पर भेजना</string>
+    <string name="watch_downloads">घड़ी पर</string>
+    <string name="watch_downloads_none">अभी कुछ नहीं: किसी प्लेलिस्ट पर \"घड़ी पर डाउनलोड करें\" चुनें</string>
+    <string name="watch_downloads_summary">%2$d में से %1$d गाने · %3$s इस्तेमाल, %4$s खाली</string>
+    <string name="watch_downloads_paused">रुका हुआ</string>
+    <string name="watch_downloads_paused_storage">घड़ी लगभग भर गई है</string>
+    <string name="watch_downloads_paused_offline">फ़ोन या Wi-Fi का इंतज़ार</string>
+    <string name="watch_download_quality">घड़ी की डाउनलोड क्वालिटी</string>
+    <string name="watch_transfer_bluetooth">पहले Bluetooth से भेजें</string>
+    <string name="watch_transfer_bluetooth_note">जब फ़ोन पर वही फ़ाइल हो। बंद: पहले घड़ी का Wi-Fi, जो तेज़ है।</string>
+    <string name="watch_keep">घड़ी पर डाउनलोड करें</string>
+    <string name="watch_unkeep">घड़ी से हटाएँ</string>
 </resources>

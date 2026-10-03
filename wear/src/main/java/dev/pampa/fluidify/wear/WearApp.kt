@@ -46,14 +46,19 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
         dev.pampa.fluidify.wear.standalone.Standalone(this, link)
     }
 
+    /** What the watch keeps for offline listening; see [dev.pampa.fluidify.wear.downloads.WatchDownloads]. */
+    val downloads: dev.pampa.fluidify.wear.downloads.WatchDownloads by lazy {
+        dev.pampa.fluidify.wear.downloads.WatchDownloads(this)
+    }
+
     /** The watch's own player, behind the same interface as the phone. */
     val local: dev.pampa.fluidify.wear.standalone.LocalControls by lazy {
-        dev.pampa.fluidify.wear.standalone.LocalControls(this, scope, art)
+        dev.pampa.fluidify.wear.standalone.LocalControls(this, scope, art) { uri -> downloads.store.offlineTracks(uri) }
     }
 
     /** Whichever of the two is in front. */
     val playback: dev.pampa.fluidify.wear.playback.ActivePlayback by lazy {
-        dev.pampa.fluidify.wear.playback.ActivePlayback(scope, remote, local) { standalone }
+        dev.pampa.fluidify.wear.playback.ActivePlayback(scope, remote, local, { standalone }) { uri -> downloads.store.isKept(uri) }
     }
 
     /** What the controls talk to: see [playback]. */

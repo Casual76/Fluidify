@@ -48,6 +48,8 @@ class ActivePlayback(
     private val remote: PhoneRemote,
     private val local: LocalControls,
     private val standalone: () -> Standalone,
+    /** Whether the watch keeps [uri] on its own disk. */
+    private val keptOnWatch: (String) -> Boolean = { false },
 ) : PlaybackControls {
 
     private val _mode = MutableStateFlow(PlaybackMode.PHONE)
@@ -118,8 +120,17 @@ class ActivePlayback(
     override fun setShuffle(enabled: Boolean) = front.setShuffle(enabled)
     override fun setRepeat(mode: RepeatMode) = front.setRepeat(mode)
     override fun setLiked(liked: Boolean) = front.setLiked(liked)
-    override fun playContext(contextUri: String, startTrackUri: String?, shuffle: Boolean, label: String) =
+    override fun playContext(contextUri: String, startTrackUri: String?, shuffle: Boolean, label: String) {
+        // No phone to play it on, but the watch has it: play it here, which is the point
+        // of keeping it.
+        val phoneAway = remote.nowPlaying.value.link != dev.pampa.fluidify.wear.link.LinkStatus.CONNECTED
+        if (_mode.value == PlaybackMode.PHONE && phoneAway && keptOnWatch(contextUri)) {
+            moveToWatch(standalone().router.best)
+            local.playContext(contextUri, startTrackUri, shuffle, label)
+            return
+        }
         front.playContext(contextUri, startTrackUri, shuffle, label)
+    }
     override fun playQueueIndex(index: Int, uri: String) = front.playQueueIndex(index, uri)
     override fun addToQueue(uri: String) = front.addToQueue(uri)
     override fun startRadio() = front.startRadio()

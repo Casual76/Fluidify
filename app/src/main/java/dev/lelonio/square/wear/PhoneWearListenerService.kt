@@ -26,6 +26,19 @@ class PhoneWearListenerService : WearableListenerService() {
 
     private val bridge get() = (application as SquareApplication).wearBridge
 
+    override fun onDataChanged(events: com.google.android.gms.wearable.DataEventBuffer) {
+        events.forEach { event ->
+            if (event.type != com.google.android.gms.wearable.DataEvent.TYPE_CHANGED) return@forEach
+            val item = event.dataItem
+            if (item.uri.path == WearPaths.DOWNLOAD_STATUS) item.data?.let(bridge.watchDownloads::onStatus)
+        }
+    }
+
+    override fun onChannelOpened(channel: com.google.android.gms.wearable.ChannelClient.Channel) {
+        // The watch asking for a track; sent on a coroutine of its own, see WatchFileServer.
+        if (channel.path == WearPaths.DOWNLOAD_FILE) bridge.files.serve(channel)
+    }
+
     override fun onMessageReceived(event: MessageEvent) {
         when (event.path) {
             WearPaths.HELLO -> {

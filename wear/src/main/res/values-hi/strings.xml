@@ -95,4 +95,17 @@
     <string name="cellular_question_body">इस घड़ी का अपना कनेक्शन है। Wi-Fi न होने पर Fluidify उसे इस्तेमाल कर सकता है, आपके डेटा प्लान से। और में बदल सकते हैं।</string>
     <string name="use_mobile_data">मोबाइल डेटा इस्तेमाल करें</string>
     <string name="not_now">अभी नहीं</string>
+    <!-- Downloads on the watch -->
+    <string name="keep_on_watch">इस घड़ी पर रखें</string>
+    <string name="kept_progress">%2$d में से %1$d</string>
+    <string name="on_the_phone">फ़ोन पर</string>
+    <string name="watch_downloads_empty">अभी कुछ नहीं: किसी प्लेलिस्ट में \"इस घड़ी पर रखें\" चालू करें</string>
+    <string name="storage">स्टोरेज</string>
+    <string name="storage_used_free">%1$s इस्तेमाल, %2$s खाली</string>
+    <string name="paused_storage">घड़ी लगभग भरी</string>
+    <string name="paused_offline">फ़ोन या Wi-Fi का इंतज़ार</string>
+    <string name="waiting_tracks">%1$d डाउनलोड बाकी</string>
+    <string name="download_quality">डाउनलोड क्वालिटी</string>
+    <string name="bluetooth_first">पहले Bluetooth</string>
+    <string name="bluetooth_first_summary">जब फ़ोन पर वही फ़ाइल हो। बंद: पहले घड़ी का Wi-Fi</string>
 </resources>

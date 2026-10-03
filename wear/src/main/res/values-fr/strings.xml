@@ -95,4 +95,17 @@
     <string name="cellular_question_body">Cette montre a sa propre connexion. Fluidify peut l\'utiliser sans Wi-Fi, sur votre forfait. Modifiable dans Plus.</string>
     <string name="use_mobile_data">Utiliser les données mobiles</string>
     <string name="not_now">Plus tard</string>
+    <!-- Downloads on the watch -->
+    <string name="keep_on_watch">Garder sur cette montre</string>
+    <string name="kept_progress">%1$d sur %2$d</string>
+    <string name="on_the_phone">Sur le téléphone</string>
+    <string name="watch_downloads_empty">Rien pour l\'instant : activez « Garder sur cette montre » dans une playlist</string>
+    <string name="storage">Stockage</string>
+    <string name="storage_used_free">%1$s utilisés, %2$s libres</string>
+    <string name="paused_storage">montre presque pleine</string>
+    <string name="paused_offline">en attente du téléphone ou du Wi-Fi</string>
+    <string name="waiting_tracks">%1$d à télécharger</string>
+    <string name="download_quality">Qualité des téléchargements</string>
+    <string name="bluetooth_first">Bluetooth d\'abord</string>
+    <string name="bluetooth_first_summary">Quand le téléphone a le même fichier. Désactivé : d\'abord le Wi-Fi de la montre</string>
 </resources>

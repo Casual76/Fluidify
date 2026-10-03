@@ -126,6 +126,9 @@ class PhoneLink(
         }
     }
 
+    /** The phone's node when it is in reach, for a channel of one's own (the download transfers). */
+    suspend fun reachablePhone(): String? = findPhone()?.id
+
     private suspend fun findPhone(reachableOnly: Boolean = true): Node? = runCatching {
         val filter = if (reachableOnly) CapabilityClient.FILTER_REACHABLE else CapabilityClient.FILTER_ALL
         val nodes = capabilities.getCapability(WearPaths.CAPABILITY_PHONE, filter).await().nodes
@@ -331,7 +334,10 @@ class PhoneLink(
         private const val HELLO_ANSWER_MS = 10_000L
 
         /** What this watch build can do. Grows with each milestone. */
-        val WATCH_FEATURES: Set<String> = setOf(dev.pampa.fluidify.wear.protocol.Features.AUTH)
+        val WATCH_FEATURES: Set<String> = setOf(
+            dev.pampa.fluidify.wear.protocol.Features.AUTH,
+            dev.pampa.fluidify.wear.protocol.Features.DOWNLOADS,
+        )
 
         fun certificateSha256(context: Context): String = runCatching {
             val info = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)

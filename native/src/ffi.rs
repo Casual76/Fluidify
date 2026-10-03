@@ -956,6 +956,49 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeDow
     })
 }
 
+/// The same download into a root of the caller's choosing; see
+/// `downloads::download_track_into`. Blocking, like [nativeDownloadTrack].
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeDownloadTrackInto(
+    mut env: JNIEnv,
+    _class: JClass,
+    track_uri: JString,
+    bitrate_kbps: jint,
+    root: JString,
+) -> jstring {
+    let arguments = read_string(&mut env, &track_uri).and_then(|uri| Ok((uri, read_string(&mut env, &root)?)));
+    let (uri, root) = match arguments {
+        Ok(value) => value,
+        Err(message) => {
+            let _ = env.throw_new(EXCEPTION, message);
+            return JObject::null().into_raw() as jstring;
+        }
+    };
+    guard_string(&mut env, "DownloadTrackInto", || {
+        downloads::download_track_into(&uri, bitrate_kbps, &root)
+    })
+}
+
+/// A download fetched with another device's key; see
+/// `downloads::download_with_sidecar`. Blocking, like [nativeDownloadTrack].
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeDownloadWithSidecar(
+    mut env: JNIEnv,
+    _class: JClass,
+    sidecar: JString,
+) -> jstring {
+    let sidecar = match read_string(&mut env, &sidecar) {
+        Ok(value) => value,
+        Err(message) => {
+            let _ = env.throw_new(EXCEPTION, message);
+            return JObject::null().into_raw() as jstring;
+        }
+    };
+    guard_string(&mut env, "DownloadWithSidecar", || {
+        downloads::download_with_sidecar(&sidecar)
+    })
+}
+
 /// The sidecar of a downloaded track as JSON, or `null` if it is not here.
 #[no_mangle]
 pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeDownloadState(

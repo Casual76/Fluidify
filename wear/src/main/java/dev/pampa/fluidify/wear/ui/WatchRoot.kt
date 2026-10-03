@@ -100,6 +100,7 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                                     onSurfacesChanged = app.surfaces::onPrefsChanged,
                                     glassMeter = app.glassMeter,
                                     standalone = app.standalone,
+                                    onDownloads = { nav.navigate(WATCH_DOWNLOADS) },
                                 )
                             }
                         }
@@ -146,7 +147,10 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
             composable(SLEEP) { SleepScreen(app.controls, onSet = { nav.popBackStack() }) }
             composable(VOLUME) { VolumeScreen(app.controls, app.volume) }
             composable(LIBRARY) {
-                LibraryScreen(onSection = { section, title -> nav.navigate(sectionRoute(section, title)) })
+                LibraryScreen(
+                    onSection = { section, title -> nav.navigate(sectionRoute(section, title)) },
+                    onWatchDownloads = { nav.navigate(WATCH_DOWNLOADS) },
+                )
             }
             composable("$SECTION/{section}?title={title}") { entry ->
                 val section = entry.arguments?.getString("section")?.let { runCatching { LibrarySection.valueOf(it) }.getOrNull() }
@@ -171,6 +175,9 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                 )
             }
             composable(SEARCH) { SearchScreen(app, onOpen = open, onPlaying = toPlayer) }
+            composable(WATCH_DOWNLOADS) {
+                dev.pampa.fluidify.wear.ui.browse.WatchDownloadsScreen(app.downloads, onOpen = open)
+            }
             composable(CELLULAR) {
                 dev.pampa.fluidify.wear.ui.more.CellularScreen { yes ->
                     app.standalone.prefs.allowCellular = yes
@@ -224,6 +231,7 @@ private const val SECTION = "section"
 private const val CONTEXT = "context"
 private const val SEARCH = "search"
 private const val CELLULAR = "cellular"
+private const val WATCH_DOWNLOADS = "watch-downloads"
 
 private const val PAGE_IMMERSIVE = 0
 private const val PAGE_MAIN = 1

@@ -462,6 +462,7 @@ fun SquareApp(
     // which is a handful of entries, while the rows are answered one at a time
     // out of [files] and [progress] — see DownloadStore.ownerStates.
     val downloadOwners by viewModel.downloads.ownerStates.collectAsStateWithLifecycle()
+    val watchDownloads by viewModel.watchDownloads.collectAsStateWithLifecycle()
     val downloadedFiles by viewModel.downloads.files.collectAsStateWithLifecycle()
     val downloadProgress by viewModel.downloads.progress.collectAsStateWithLifecycle()
     // Which songs were asked for on their own, so the row menu can offer the
@@ -1846,6 +1847,13 @@ fun SquareApp(
                                             ?.let { downloadOwners[it] }
                                             ?: dev.lelonio.square.data.OwnerState.None,
                                         onToggleDownload = { viewModel.toggleDownload(playlist) },
+                                        // Only once a watch with downloads has spoken; see WatchDownloadsRemote.
+                                        watchKept = if (watchDownloads != null) {
+                                            playlist.uri?.let { uri -> watchDownloads?.owners?.any { it.uri == uri } } ?: false
+                                        } else {
+                                            null
+                                        },
+                                        onToggleWatch = { viewModel.toggleWatchDownload(playlist) },
                                         // Everything Spotify serves, and nothing
                                         // else. The local files shelf is already on
                                         // the phone, and an empty page has nothing

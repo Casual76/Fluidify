@@ -213,12 +213,20 @@
             android:exported="true">
             <intent-filter>
                 <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <action android:name="com.google.android.gms.wearable.DATA_CHANGED" />
+                <action android:name="com.google.android.gms.wearable.CHANNEL_EVENT" />
                 <data
                     android:host="*"
                     android:pathPrefix="/fluidify"
                     android:scheme="wear" />
             </intent-filter>
         </service>
+
+        <!-- Keeps the phone up while it sends tracks to the watch; see WatchTransferService. -->
+        <service
+            android:name=".wear.WatchTransferService"
+            android:exported="false"
+            android:foregroundServiceType="dataSync" />
 
         <meta-data
             android:name="com.google.android.gms.car.application"

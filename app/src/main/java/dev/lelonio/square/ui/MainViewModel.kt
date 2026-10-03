@@ -2353,6 +2353,31 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * its own, instantly and at no cost in bytes, which is exactly what the
      * listener asked for.
      */
+    /** What the watch keeps for offline listening, as it last said. Null without a watch. */
+    val watchDownloads: kotlinx.coroutines.flow.StateFlow<dev.pampa.fluidify.wear.protocol.WatchDownloads?>
+        get() = container.wearBridge.watchDownloads.status
+
+    init {
+        // What the watch keeps, for the playlist pages' watch button.
+        viewModelScope.launch { runCatching { container.wearBridge.watchDownloads.refresh() } }
+    }
+
+    /** Keeps [page] on the watch, or stops keeping it. The watch does the fetching. */
+    fun toggleWatchDownload(page: PlaylistState) {
+        val uri = page.uri ?: return
+        val remote = container.wearBridge.watchDownloads
+        viewModelScope.launch {
+            remote.request(
+                dev.pampa.fluidify.wear.protocol.DownloadRequest(
+                    owner = uri,
+                    title = page.name,
+                    keep = !remote.keeps(uri),
+                    artUrl = page.artworkUrl,
+                ),
+            )
+        }
+    }
+
     fun toggleDownload(page: PlaylistState) {
         val uri = page.uri ?: return
         if (page.tracks.isEmpty()) return

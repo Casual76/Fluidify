@@ -57,6 +57,8 @@ class LocalControls(
     private val context: Context,
     private val scope: CoroutineScope,
     private val art: ArtStore,
+    /** A kept playlist's tracks from the watch's own disk, for when there is no session to read it. */
+    private val offlineTracks: (String) -> List<dev.lelonio.square.data.CatalogTrack> = { emptyList() },
 ) : PlaybackControls {
 
     private val _nowPlaying = MutableStateFlow(NowPlaying(null, LinkStatus.CONNECTED))
@@ -138,11 +140,13 @@ class LocalControls(
 
     override fun playContext(contextUri: String, startTrackUri: String?, shuffle: Boolean, label: String) {
         scope.launch {
+            // Through the session when there is one; from the watch's own downloads otherwise,
+            // which is how a run with no phone and no Wi-Fi still plays the playlist.
             val tracks = runCatching {
                 val uris = if (contextUri.startsWith("spotify:track:")) listOf(contextUri) else Catalog.contextTrackUris(contextUri)
                 Catalog.tracks(uris)
-            }.getOrElse {
-                Log.w(TAG, "cannot read $contextUri: ${it.message}")
+            }.getOrNull()?.takeIf { it.isNotEmpty() } ?: offlineTracks(contextUri).ifEmpty {
+                Log.w(TAG, "cannot read $contextUri, and nothing of it is kept here")
                 _errors.tryEmit("context")
                 return@launch
             }

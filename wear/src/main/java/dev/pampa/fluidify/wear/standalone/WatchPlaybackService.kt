@@ -44,6 +44,9 @@ class WatchPlaybackService : MediaSessionService() {
     private lateinit var player: LibrespotPlayer
     private var session: MediaSession? = null
 
+    /** Whether this service holds a lease on the engine; see WatchEngine.acquire. */
+    @Volatile private var leased = false
+
     /** Which context and track were adopted last, so a repeat of the same event does nothing. */
     private var adopted: String? = null
 
@@ -85,7 +88,7 @@ class WatchPlaybackService : MediaSessionService() {
         session = MediaSession.Builder(this, player)
             .setSessionActivity(PlayerIntents.openPlayer(this))
             .build()
-        scope.launch { app.standalone.engine.start(player, output) }
+        scope.launch { leased = app.standalone.engine.acquire(player, output) }
         handler.postDelayed(idleStop, IDLE_MS)
     }
 
@@ -96,7 +99,12 @@ class WatchPlaybackService : MediaSessionService() {
         session?.release()
         session = null
         player.release()
-        app.standalone.engine.stop()
+        val engine = app.standalone.engine
+        val player = player
+        if (leased) {
+            // Off the main thread's lifetime: the service is going, the lease still has to.
+            app.scope.launch { engine.release(player) }
+        }
         output.release()
         scope.cancel()
         super.onDestroy()

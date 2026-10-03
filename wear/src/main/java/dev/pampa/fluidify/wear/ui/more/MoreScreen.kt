@@ -23,6 +23,7 @@ import androidx.wear.compose.material3.Text
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.ArrowCircleUp
+import com.adamglin.phosphoricons.regular.DownloadSimple
 import com.adamglin.phosphoricons.regular.Info
 import com.adamglin.phosphoricons.regular.Repeat
 import com.adamglin.phosphoricons.regular.RepeatOnce
@@ -68,6 +69,7 @@ fun MoreScreen(
     onSurfacesChanged: () -> Unit = {},
     glassMeter: GlassMeterPrefs? = null,
     standalone: dev.pampa.fluidify.wear.standalone.Standalone? = null,
+    onDownloads: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
@@ -188,6 +190,16 @@ fun MoreScreen(
                     label = { Text(stringResource(R.string.phone_notifications)) },
                     secondaryLabel = { Text(stringResource(R.string.phone_notifications_summary)) },
                     modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        if (onDownloads != null) {
+            item {
+                FluidWearListRow(
+                    title = stringResource(R.string.downloads),
+                    subtitle = stringResource(R.string.on_this_watch),
+                    onClick = onDownloads,
+                    leading = { Icon(PhosphorIcons.Regular.DownloadSimple, contentDescription = null, modifier = Modifier.size(22.dp)) },
                 )
             }
         }

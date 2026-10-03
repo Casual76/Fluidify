@@ -1,5 +1,8 @@
 package dev.pampa.fluidify.wear.ui.browse
 
+import androidx.compose.runtime.getValue
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
@@ -69,6 +72,27 @@ fun ContextScreen(
                     },
                     modifier = Modifier.weight(1f),
                 ) { Icon(PhosphorIcons.Regular.Shuffle, contentDescription = stringResource(R.string.shuffle), modifier = Modifier.size(20.dp)) }
+            }
+        }
+        // Keeping it on the watch, for listening without the phone. Playlists, albums and
+        // Liked Songs only: an artist has no fixed list of tracks to keep.
+        if (!uri.startsWith("spotify:artist:")) {
+            item {
+                val owners by app.downloads.store.owners.collectAsStateWithLifecycle()
+                val status by app.downloads.status.collectAsStateWithLifecycle()
+                val kept = owners.any { it.uri == uri }
+                val progress = status.owners.firstOrNull { it.uri == uri }
+                androidx.wear.compose.material3.SwitchButton(
+                    checked = kept,
+                    onCheckedChange = { keep ->
+                        if (keep) app.downloads.keep(uri, page?.title ?: title, page?.artUrl) else app.downloads.drop(uri)
+                    },
+                    label = { androidx.wear.compose.material3.Text(stringResource(R.string.keep_on_watch)) },
+                    secondaryLabel = progress?.takeIf { kept && it.tracks > 0 }?.let { owner ->
+                        { androidx.wear.compose.material3.Text(stringResource(R.string.kept_progress, owner.done, owner.tracks)) }
+                    },
+                    modifier = Modifier.fillMaxWidth(),
+                )
             }
         }
         when {

@@ -438,4 +438,17 @@
     <string name="watch_update_confirm">Saatte onayla</string>
     <string name="watch_update_installed">%1$s yüklendi</string>
     <string name="watch_update_failed">Başarısız: %1$s</string>
+    <string name="watch_sending">Saate müzik gönderiliyor</string>
+    <string name="watch_sending_channel">Saate gönderim</string>
+    <string name="watch_downloads">Saatte</string>
+    <string name="watch_downloads_none">Henüz yok: bir çalma listesinde \"Saate indir\"i seç</string>
+    <string name="watch_downloads_summary">%1$d / %2$d şarkı · %3$s kullanıldı, %4$s boş</string>
+    <string name="watch_downloads_paused">Duraklatıldı</string>
+    <string name="watch_downloads_paused_storage">Saat neredeyse dolu</string>
+    <string name="watch_downloads_paused_offline">Telefon ya da Wi-Fi bekleniyor</string>
+    <string name="watch_download_quality">Saat indirme kalitesi</string>
+    <string name="watch_transfer_bluetooth">Önce Bluetooth ile gönder</string>
+    <string name="watch_transfer_bluetooth_note">Telefonda aynı dosya varken. Kapalı: önce saatin Wi-Fi\'ı, daha hızlı.</string>
+    <string name="watch_keep">Saate indir</string>
+    <string name="watch_unkeep">Saatten kaldır</string>
 </resources>

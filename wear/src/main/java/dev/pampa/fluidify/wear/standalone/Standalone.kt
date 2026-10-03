@@ -14,5 +14,7 @@ class Standalone(context: Context, link: PhoneLink) {
     val network = NetworkBroker(context, prefs)
     val router = OutputRouter(context, prefs)
     val auth = WatchAuth(context, link, prefs)
-    val engine = WatchEngine(context, auth, network, prefs)
+    val engine = WatchEngine(context, auth, network, prefs).apply {
+        downloadRoot = java.io.File(context.filesDir, "downloads")
+    }
 }

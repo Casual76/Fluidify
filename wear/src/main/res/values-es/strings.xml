@@ -95,4 +95,17 @@
     <string name="cellular_question_body">Este reloj tiene su propia conexión. Fluidify puede usarla cuando no hay Wi-Fi, con tu plan de datos. Puedes cambiarlo en Más.</string>
     <string name="use_mobile_data">Usar datos móviles</string>
     <string name="not_now">Ahora no</string>
+    <!-- Downloads on the watch -->
+    <string name="keep_on_watch">Guardar en este reloj</string>
+    <string name="kept_progress">%1$d de %2$d</string>
+    <string name="on_the_phone">En el teléfono</string>
+    <string name="watch_downloads_empty">Nada aún: activa \"Guardar en este reloj\" en una playlist</string>
+    <string name="storage">Almacenamiento</string>
+    <string name="storage_used_free">%1$s usados, %2$s libres</string>
+    <string name="paused_storage">reloj casi lleno</string>
+    <string name="paused_offline">esperando al teléfono o al Wi-Fi</string>
+    <string name="waiting_tracks">%1$d por descargar</string>
+    <string name="download_quality">Calidad de descarga</string>
+    <string name="bluetooth_first">Primero Bluetooth</string>
+    <string name="bluetooth_first_summary">Cuando el teléfono tiene el mismo archivo. Desactivado: primero el Wi-Fi del reloj</string>
 </resources>

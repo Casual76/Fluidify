@@ -95,4 +95,17 @@
     <string name="cellular_question_body">Bu saatin kendi bağlantısı var. Fluidify Wi-Fi yokken onu kullanabilir; veri paketinden düşer. Daha Fazla\'dan değiştirebilirsin.</string>
     <string name="use_mobile_data">Mobil veriyi kullan</string>
     <string name="not_now">Şimdi değil</string>
+    <!-- Downloads on the watch -->
+    <string name="keep_on_watch">Bu saatte tut</string>
+    <string name="kept_progress">%1$d / %2$d</string>
+    <string name="on_the_phone">Telefonda</string>
+    <string name="watch_downloads_empty">Henüz yok: bir çalma listesinde \"Bu saatte tut\"u aç</string>
+    <string name="storage">Depolama</string>
+    <string name="storage_used_free">%1$s kullanıldı, %2$s boş</string>
+    <string name="paused_storage">saat neredeyse dolu</string>
+    <string name="paused_offline">telefon ya da Wi-Fi bekleniyor</string>
+    <string name="waiting_tracks">%1$d indirilecek</string>
+    <string name="download_quality">İndirme kalitesi</string>
+    <string name="bluetooth_first">Önce Bluetooth</string>
+    <string name="bluetooth_first_summary">Telefonda aynı dosya varken. Kapalı: önce saatin Wi-Fi\'ı</string>
 </resources>

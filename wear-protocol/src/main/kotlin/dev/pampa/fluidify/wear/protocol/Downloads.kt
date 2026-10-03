@@ -12,12 +12,20 @@ import kotlinx.serialization.Serializable
  * ([WatchDownloads], a DataItem the watch keeps current).
  */
 
-/** Phone to watch, message at [WearPaths.DOWNLOAD_PLAN]: keep (or stop keeping) a playlist or album. */
+/**
+ * Phone to watch, message at [WearPaths.DOWNLOAD_PLAN]: keep (or stop keeping) a
+ * playlist or album, and/or change how the watch downloads. A request without
+ * an [owner] only changes the settings.
+ */
 @Serializable
 data class DownloadRequest(
-    val owner: String,
+    val owner: String? = null,
     val title: String = "",
     val keep: Boolean = true,
+    val artUrl: String? = null,
+    /** The watch's download quality: 96, 160 or 320. */
+    val qualityKbps: Int? = null,
+    val preference: TransferPreference? = null,
 )
 
 /** One playlist or album the watch keeps, and how far it has got. */
