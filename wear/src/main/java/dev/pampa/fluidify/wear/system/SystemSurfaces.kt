@@ -49,6 +49,19 @@ class SystemSurfaces(
         }
     }
 
+    /**
+     * The watch's own player changed: the tile and the complication follow it as they follow the
+     * phone (they read whichever player is in front). The watch-face entry is the session's own.
+     */
+    fun onWatchState(snapshot: PlaybackSnapshot?) {
+        if (!watchPlaying) return
+        val signature = "watch|" + signatureOf(snapshot)
+        if (signature != prefs.lastSignature) {
+            prefs.lastSignature = signature
+            refreshTileAndComplication()
+        }
+    }
+
     /** Which of the watch's players is in front changed. */
     fun onModeChanged(watchInFront: Boolean) {
         if (watchInFront == watchPlaying) return

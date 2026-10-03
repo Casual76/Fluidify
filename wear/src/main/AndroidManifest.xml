@@ -116,7 +116,7 @@
             </intent-filter>
             <meta-data
                 android:name="android.support.wearable.complications.SUPPORTED_TYPES"
-                android:value="SHORT_TEXT,LONG_TEXT,SMALL_IMAGE,PHOTO_IMAGE,MONOCHROMATIC_IMAGE" />
+                android:value="SHORT_TEXT,LONG_TEXT,SMALL_IMAGE,PHOTO_IMAGE,MONOCHROMATIC_IMAGE,RANGED_VALUE" />
             <!-- Pushed when the song changes; the face never has to ask on a timer. -->
             <meta-data
                 android:name="android.support.wearable.complications.UPDATE_PERIOD_SECONDS"

@@ -543,8 +543,8 @@ class PhoneWearBridge(private val app: SquareApplication) {
             Command.Play -> playWhenLoaded(player)
             Command.Pause -> player.pause()
             Command.TogglePlay -> if (player.isPlaying || player.playWhenReady) player.pause() else playWhenLoaded(player)
-            Command.Next -> player.seekToNext()
-            Command.Previous -> player.seekToPrevious()
+            Command.Next -> if (!dev.lelonio.square.playback.PlaybackTransport.skip(player, forward = true)) return AckErrors.NOTHING_TO_SKIP
+            Command.Previous -> if (!dev.lelonio.square.playback.PlaybackTransport.skip(player, forward = false)) return AckErrors.NOTHING_TO_SKIP
             is Command.SeekTo -> player.seekTo(command.positionMs.coerceAtLeast(0))
             is Command.SetShuffle -> player.shuffleModeEnabled = command.enabled
             is Command.SetRepeat -> player.repeatMode = when (command.mode) {

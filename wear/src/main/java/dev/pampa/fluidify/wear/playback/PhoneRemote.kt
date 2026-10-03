@@ -109,7 +109,29 @@ class PhoneRemote(
         dispatch(Command.TogglePlay, guess)
     }
 
-    override fun next() = dispatch(Command.Next, null)
+    /**
+     * Skips ahead, and shows the next song at once when the phone said which it is: the title and
+     * the cover change on the press (the cover was sent ahead), not half a second later.
+     */
+    override fun next() {
+        val snapshot = nowPlaying.value.snapshot
+        val upcoming = snapshot?.nextTrack
+        val now = System.currentTimeMillis()
+        val guess = if (snapshot != null && upcoming != null) {
+            snapshot.copy(
+                track = upcoming,
+                positionMs = 0,
+                sampledAtEpochMs = now,
+                sentAtEpochMs = now,
+                liked = null,
+                nextTrack = null,
+                nextArtKey = null,
+            )
+        } else {
+            null
+        }
+        dispatch(Command.Next, guess)
+    }
 
     override fun previous() = dispatch(Command.Previous, null)
 

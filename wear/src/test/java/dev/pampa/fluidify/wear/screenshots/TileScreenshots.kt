@@ -52,6 +52,10 @@ class TileScreenshots {
         liked = true,
         trackUri = "spotify:track:1",
         coverKey = SampleArtKey,
+        positionMs = 84_000,
+        durationMs = 212_000,
+        // Now: the ring is worked out from the renderer's clock, as on the watch.
+        sampledAtEpochMs = System.currentTimeMillis(),
     )
 
     @Test
@@ -72,6 +76,7 @@ class TileScreenshots {
         val art = ArtStore(activity)
         storeSampleCover(art)
         val cover = if (withCover) CoverImages.compressed(art, SampleArtKey, COVER_PX) else null
+        val backdrop = if (withCover) CoverImages.backdrop(art, SampleArtKey) else null
 
         val scope = ProtoLayoutScope()
         val device = DeviceParametersBuilders.DeviceParameters.Builder()
@@ -86,7 +91,7 @@ class TileScreenshots {
             .setRendererSchemaVersion(VersionInfo.Builder().setMajor(1).setMinor(500).build())
             .build()
         val element = materialScopeWithResources(activity, scope, device, allowDynamicTheme = false, defaultColorScheme = fluidifyTileColors()) {
-            playerTileLayout(model, FakeClicks, cover)
+            playerTileLayout(model, FakeClicks, cover, backdrop = backdrop)
         }
 
         val frame = FrameLayout(activity).apply {

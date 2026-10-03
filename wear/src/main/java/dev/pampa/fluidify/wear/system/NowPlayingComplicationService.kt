@@ -11,6 +11,7 @@ import androidx.wear.watchface.complications.data.MonochromaticImage
 import androidx.wear.watchface.complications.data.MonochromaticImageComplicationData
 import androidx.wear.watchface.complications.data.PhotoImageComplicationData
 import androidx.wear.watchface.complications.data.PlainComplicationText
+import androidx.wear.watchface.complications.data.RangedValueComplicationData
 import androidx.wear.watchface.complications.data.ShortTextComplicationData
 import androidx.wear.watchface.complications.data.SmallImage
 import androidx.wear.watchface.complications.data.SmallImageComplicationData
@@ -35,10 +36,23 @@ class NowPlayingComplicationService : SuspendingComplicationDataSourceService() 
     private val app get() = application as WearApp
 
     override suspend fun onComplicationRequest(request: ComplicationRequest): ComplicationData? {
-        // The phone's last word, read straight from the state file: a watch face asking for
-        // data has no use for the remote's guesses, and this keeps the request off the link.
-        val track = app.state.current.value?.snapshot?.track
-        return build(request.complicationType, track)
+        // Whatever is in front — the phone, or the watch's own player — as the player shows it.
+        val now = app.controls.nowPlaying.value
+        val snapshot = now.snapshot
+        val progress = snapshot?.track?.let { track ->
+            val nowMs = System.currentTimeMillis()
+            Progress(
+                positionMs = now.positionAt(nowMs),
+                sampledAtEpochMs = nowMs,
+                durationMs = track.durationMs,
+                playing = snapshot.isPlaying || snapshot.playWhenReady,
+            )
+        }
+        return build(request.complicationType, snapshot?.track, progress = progress)
+    }
+
+    private data class Progress(val positionMs: Long, val sampledAtEpochMs: Long, val durationMs: Long, val playing: Boolean) {
+        val fraction: Float get() = if (durationMs <= 0) 0f else (positionMs.toFloat() / durationMs).coerceIn(0f, 1f)
     }
 
     override fun getPreviewData(type: ComplicationType): ComplicationData? =
@@ -48,7 +62,7 @@ class NowPlayingComplicationService : SuspendingComplicationDataSourceService() 
             preview = true,
         )
 
-    private fun build(type: ComplicationType, track: TrackInfo?, preview: Boolean = false): ComplicationData? {
+    private fun build(type: ComplicationType, track: TrackInfo?, preview: Boolean = false, progress: Progress? = null): ComplicationData? {
         val tap = PlayerIntents.openPlayer(this)
         val mark = MonochromaticImage.Builder(Icon.createWithResource(this, R.drawable.ic_notification)).build()
         val name = getString(R.string.app_name)
@@ -76,6 +90,22 @@ class NowPlayingComplicationService : SuspendingComplicationDataSourceService() 
                     ?: Icon.createWithResource(this, R.mipmap.ic_launcher)
                 PhotoImageComplicationData.Builder(cover, describe).setTapAction(tap).build()
             }
+            // The song's progress, for faces with a gauge: moved by the face from the clock while
+            // it plays, so it needs no update until the song changes.
+            ComplicationType.RANGED_VALUE -> {
+                val value = if (preview) PREVIEW_PROGRESS else progress?.fraction ?: 0f
+                val live = progress?.takeIf { it.playing }?.let { LiveProgress.expression(it.positionMs, it.sampledAtEpochMs, it.durationMs) }
+                val builder = if (live != null) {
+                    RangedValueComplicationData.Builder(live, value, 0f, 1f, describe)
+                } else {
+                    RangedValueComplicationData.Builder(value, 0f, 1f, describe)
+                }
+                builder
+                    .setText(text(track?.title ?: name))
+                    .setMonochromaticImage(mark)
+                    .setTapAction(tap)
+                    .build()
+            }
             ComplicationType.MONOCHROMATIC_IMAGE ->
                 MonochromaticImageComplicationData.Builder(mark, describe).setTapAction(tap).build()
             else -> null
@@ -89,6 +119,7 @@ class NowPlayingComplicationService : SuspendingComplicationDataSourceService() 
 
     companion object {
         private const val SMALL_PX = 96
+        private const val PREVIEW_PROGRESS = 0.4f
         private const val PHOTO_PX = 240
 
         fun requestUpdate(context: Context) {

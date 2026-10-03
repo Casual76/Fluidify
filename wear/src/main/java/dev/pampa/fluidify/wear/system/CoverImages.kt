@@ -37,5 +37,66 @@ object CoverImages {
         }
     }
 
+    /**
+     * The cover as a backdrop: small, blurred and darkened, for a tile to stretch behind its
+     * buttons. Blurred here, once per cover, because a tile renderer cannot blur anything; at
+     * [BACKDROP_PX] a few box-blur passes cost nothing and the renderer's upscaling finishes the job.
+     */
+    fun backdrop(art: ArtStore, key: String?): ByteArray? {
+        val small = bitmap(art, key, BACKDROP_PX) ?: return null
+        val pixels = IntArray(BACKDROP_PX * BACKDROP_PX)
+        small.getPixels(pixels, 0, BACKDROP_PX, 0, 0, BACKDROP_PX, BACKDROP_PX)
+        small.recycle()
+        repeat(BLUR_PASSES) { boxBlur(pixels, BACKDROP_PX, BLUR_RADIUS) }
+        for (i in pixels.indices) pixels[i] = darken(pixels[i])
+        val blurred = Bitmap.createBitmap(pixels, BACKDROP_PX, BACKDROP_PX, Bitmap.Config.ARGB_8888)
+        return ByteArrayOutputStream().use { out ->
+            blurred.compress(Bitmap.CompressFormat.WEBP_LOSSY, BACKDROP_QUALITY, out)
+            blurred.recycle()
+            out.toByteArray()
+        }
+    }
+
+    /** One horizontal and one vertical running-average pass over a square of [size]. */
+    internal fun boxBlur(pixels: IntArray, size: Int, radius: Int) {
+        val line = IntArray(size)
+        fun pass(get: (Int, Int) -> Int, set: (Int, Int, Int) -> Unit) {
+            for (row in 0 until size) {
+                var r = 0; var g = 0; var b = 0
+                for (k in -radius..radius) {
+                    val c = get(row, k.coerceIn(0, size - 1))
+                    r += (c shr 16) and 0xFF; g += (c shr 8) and 0xFF; b += c and 0xFF
+                }
+                val window = radius * 2 + 1
+                for (col in 0 until size) {
+                    line[col] = (0xFF shl 24) or ((r / window) shl 16) or ((g / window) shl 8) or (b / window)
+                    val out = get(row, (col - radius).coerceIn(0, size - 1))
+                    val inn = get(row, (col + radius + 1).coerceIn(0, size - 1))
+                    r += ((inn shr 16) and 0xFF) - ((out shr 16) and 0xFF)
+                    g += ((inn shr 8) and 0xFF) - ((out shr 8) and 0xFF)
+                    b += (inn and 0xFF) - (out and 0xFF)
+                }
+                for (col in 0 until size) set(row, col, line[col])
+            }
+        }
+        pass({ row, col -> pixels[row * size + col] }) { row, col, c -> pixels[row * size + col] = c }
+        pass({ col, row -> pixels[row * size + col] }) { col, row, c -> pixels[row * size + col] = c }
+    }
+
+    /** Toward black, enough for white text and translucent buttons to sit on any cover. */
+    private fun darken(color: Int): Int {
+        val r = ((color shr 16) and 0xFF) * DARKEN / 100
+        val g = ((color shr 8) and 0xFF) * DARKEN / 100
+        val b = (color and 0xFF) * DARKEN / 100
+        return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
+    }
+
     private const val QUALITY = 85
+    private const val BACKDROP_PX = 48
+    private const val BACKDROP_QUALITY = 80
+    private const val BLUR_PASSES = 3
+    private const val BLUR_RADIUS = 4
+
+    /** Percent of each channel kept. */
+    private const val DARKEN = 46
 }

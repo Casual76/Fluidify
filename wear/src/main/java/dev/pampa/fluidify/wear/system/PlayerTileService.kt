@@ -26,28 +26,30 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
 /**
- * The Fluidify tile: what is playing on the phone, with its buttons.
+ * The Fluidify tile: what is playing, with its buttons.
  *
- * Asked for a fresh layout whenever the phone's state changes in a way the
- * tile shows (see [SystemSurfaces]); never on a timer. Presses go out as
- * pending intents to [TileActionReceiver] where the renderer can send them,
- * which Wear OS 6 does, and otherwise come back here as a load action.
+ * Asked for a fresh layout whenever the state changes in a way the tile shows (see
+ * [SystemSurfaces]); never on a timer — the progress ring moves by itself. The transport presses are
+ * load actions: the renderer asks this service for a new layout the instant one is pressed, which
+ * is not subject to the limit on [requestUpdate], and the answer already shows the result (the next
+ * song's title, the play mark turned to pause). Sent as broadcasts, as before, the redraw that
+ * followed a skip could be the old song, and the one with the new song could be dropped by the
+ * system's throttle: the "inconsistent" skips the tests found.
  */
 class PlayerTileService : Material3TileService(allowDynamicTheme = false, defaultColorScheme = fluidifyTileColors()) {
 
     private val app get() = application as WearApp
 
     override suspend fun MaterialScope.tileResponse(requestParams: TileRequest): Tile {
-        // Older renderers cannot send a pending intent; their presses arrive as the id of what
-        // was pressed, on the request that follows it.
-        if (!protoLayoutScope.hasCapability(ProtoLayoutScope.RendererCapability.PENDING_INTENT_ACTION)) {
-            requestParams.currentState.lastClickableId.takeIf { it.isNotEmpty() }?.let { id ->
-                TileActions.perform(app, id)
-            }
+        val clicked = requestParams.currentState.lastClickableId.takeIf { it in TileActions.ALL }
+        var model = PlayerTileModel.from(app.controls.nowPlaying.value)
+        if (clicked != null) {
+            TileActions.perform(app, clicked)
+            model = model.afterClick(clicked)
         }
-        val model = PlayerTileModel.from(app.controls.nowPlaying.value)
         val cover = CoverImages.compressed(app.art, model.coverKey, COVER_PX)
-        val layout = playerTileLayout(model, ServiceClicks(this@PlayerTileService, protoLayoutScope, model), cover)
+        val backdrop = CoverImages.backdrop(app.art, model.coverKey)
+        val layout = playerTileLayout(model, ServiceClicks(this@PlayerTileService, protoLayoutScope, model), cover, backdrop = backdrop)
         return tile(timeline(timelineEntry(layout)))
     }
 
@@ -70,8 +72,7 @@ class PlayerTileService : Material3TileService(allowDynamicTheme = false, defaul
         override val like: Clickable = action(if (model.liked == true) TileActions.UNLIKE else TileActions.LIKE)
         override val resume: Clickable = action(TileActions.TOGGLE)
 
-        private fun action(name: String): Clickable =
-            scope.clickable(TileActions.pendingIntent(context, name), id = name, fallbackAction = loadAction())
+        private fun action(name: String): Clickable = clickable(action = loadAction(), id = name)
     }
 
     companion object {
@@ -90,6 +91,9 @@ internal object TileActions {
     const val NEXT = "next"
     const val LIKE = "like"
     const val UNLIKE = "unlike"
+
+    /** The ids a tile press can come back with. */
+    val ALL = setOf(PREVIOUS, TOGGLE, NEXT, LIKE, UNLIKE)
 
     private const val ACTION = "dev.pampa.fluidify.wear.TILE_ACTION"
     private const val EXTRA_NAME = "name"

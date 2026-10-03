@@ -80,6 +80,7 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
                 scope.launch {
                     active.mode.collect { surfaces.onModeChanged(it == dev.pampa.fluidify.wear.playback.PlaybackMode.WATCH) }
                 }
+                scope.launch { active.nowPlaying.collect { surfaces.onWatchState(it.snapshot) } }
             }
     }
 
