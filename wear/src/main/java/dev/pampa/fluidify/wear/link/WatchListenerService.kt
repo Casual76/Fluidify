@@ -1,6 +1,7 @@
 package dev.pampa.fluidify.wear.link
 
 import android.util.Log
+import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.DataEvent
 import com.google.android.gms.wearable.DataEventBuffer
 import com.google.android.gms.wearable.DataMapItem
@@ -10,6 +11,7 @@ import dev.pampa.fluidify.wear.WearApp
 import dev.pampa.fluidify.wear.protocol.CommandAck
 import dev.pampa.fluidify.wear.protocol.Hello
 import dev.pampa.fluidify.wear.protocol.PlaybackSnapshot
+import dev.pampa.fluidify.wear.protocol.UpdateOffer
 import dev.pampa.fluidify.wear.protocol.WearCodec
 import dev.pampa.fluidify.wear.protocol.WearPaths
 import kotlinx.coroutines.runBlocking
@@ -57,6 +59,9 @@ class WatchListenerService : WearableListenerService() {
 
     override fun onMessageReceived(event: MessageEvent) {
         when (event.path) {
+            WearPaths.UPDATE_OFFER -> WearCodec.decodeOrNull(UpdateOffer.serializer(), event.data)?.let { offer ->
+                runBlocking { withTimeoutOrNull(BUDGET_MS) { app.updater.onOffer(event.sourceNodeId, offer) } }
+            }
             WearPaths.ACK -> WearCodec.decodeOrNull(CommandAck.serializer(), event.data)?.let { app.link.onAck(it) }
             WearPaths.HELLO -> WearCodec.decodeOrNull(Hello.serializer(), event.data)?.let {
                 app.link.onHello(it, event.sourceNodeId)
@@ -64,8 +69,19 @@ class WatchListenerService : WearableListenerService() {
         }
     }
 
+    override fun onChannelOpened(channel: ChannelClient.Channel) {
+        if (channel.path != WearPaths.UPDATE_APK) return
+        runBlocking { withTimeoutOrNull(BUDGET_MS) { app.updater.onChannelOpened(channel) } }
+    }
+
+    override fun onInputClosed(channel: ChannelClient.Channel, closeReason: Int, appSpecificErrorCode: Int) {
+        if (channel.path != WearPaths.UPDATE_APK) return
+        runBlocking { withTimeoutOrNull(INSTALL_BUDGET_MS) { app.updater.onInputClosed(channel, closeReason) } }
+    }
+
     companion object {
         private const val TAG = "WatchListener"
         private const val BUDGET_MS = 8_000L
+        private const val INSTALL_BUDGET_MS = 25_000L
     }
 }

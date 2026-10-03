@@ -133,6 +133,8 @@ android {
 dependencies {
     implementation(project(":wear-protocol"))
     implementation(project(":engine-wear"))
+    // The same installer the phone updates itself with: download, checks, PackageInstaller.
+    implementation(project(":engine-update"))
 
     implementation(libs.androidx.core.ktx)
     implementation(libs.androidx.activity.compose)
@@ -147,6 +149,7 @@ dependencies {
     implementation(libs.kotlinx.coroutines.play.services)
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.play.services.wearable)
+    implementation(libs.androidx.work.runtime)
     implementation(libs.coil.compose)
     implementation(libs.phosphor)
 

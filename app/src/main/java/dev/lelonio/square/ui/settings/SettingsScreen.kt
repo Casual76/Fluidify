@@ -449,6 +449,10 @@ fun SettingsScreen(
             }
         }
 
+        if (open == SettingsPage.Watch) item("watch") {
+            WatchSection()
+        }
+
         if (open == SettingsPage.About) item("permissions") {
             Section(stringResource(R.string.permissions_asked)) {
                 Text(
@@ -548,6 +552,7 @@ private enum class SettingsPage(
     Account(R.string.account, R.string.page_account_summary),
     Playback(R.string.page_playback, R.string.page_playback_summary),
     App(R.string.page_app, R.string.page_app_summary),
+    Watch(R.string.page_watch, R.string.page_watch_summary),
     About(R.string.about, R.string.page_about_summary),
 }
 
@@ -1021,7 +1026,7 @@ private fun DownloadsSection() {
  * been four.
  */
 @Composable
-private fun SwitchRow(
+internal fun SwitchRow(
     label: String,
     note: String,
     checked: Boolean,
@@ -1158,7 +1163,7 @@ private fun Licences() {
 }
 
 @Composable
-private fun Section(title: String?, content: @Composable () -> Unit) {
+internal fun Section(title: String?, content: @Composable () -> Unit) {
     Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
         if (title != null) {
             Text(
@@ -1226,7 +1231,7 @@ private fun CreditRow(name: String, url: String, avatarUrl: String) {
 }
 
 @Composable
-private fun InfoRow(label: String, value: String) {
+internal fun InfoRow(label: String, value: String) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -1246,7 +1251,7 @@ private fun InfoRow(label: String, value: String) {
 }
 
 @Composable
-private fun ActionRow(label: String, destructive: Boolean, onClick: () -> Unit) {
+internal fun ActionRow(label: String, destructive: Boolean, onClick: () -> Unit) {
     Text(
         label,
         style = MaterialTheme.typography.bodyLarge,
@@ -1261,7 +1266,7 @@ private fun ActionRow(label: String, destructive: Boolean, onClick: () -> Unit) 
 
 /** A row of a list where one is picked, with a tick on the one that is. */
 @Composable
-private fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
+internal fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
@@ -1287,7 +1292,7 @@ private fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
 }
 
 @Composable
-private fun RowDivider() {
+internal fun RowDivider() {
     Box(
         Modifier
             .fillMaxWidth()

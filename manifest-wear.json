@@ -1,0 +1,12 @@
+{
+  "_comment": "La build per Wear OS di Fluidify. Stesso schema della sezione app di manifest.json, piu' sha256. Letto dal telefono (WatchUpdateCoordinator) e dall'orologio (WatchSelfUpdateWorker); scritto da tools/publish-wear.py. La release e' la stessa del telefono: stesso tag, un asset in piu'.",
+  "app": {
+    "id": "fluidify-wear",
+    "name": "Fluidify per Wear OS",
+    "packageName": "dev.pampa.fluidify",
+    "repository": {
+      "repoOwner": "Casual76",
+      "repoName": "Fluidify"
+    }
+  }
+}

@@ -67,6 +67,9 @@ class PhoneWearBridge(private val app: SquareApplication) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     val link = WearLink(app)
     private val artwork = WearArtworkSender(app, link)
+
+    /** Keeps the watch app up to date from here; see [WatchUpdateCoordinator]. */
+    val updates = WatchUpdateCoordinator(app, link, scope)
     private val coalescer = StateCoalescer()
     private val seq = AtomicLong(System.currentTimeMillis())
 
@@ -296,6 +299,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
     /** A watch introduced itself. */
     suspend fun onHello(nodeId: String, hello: Hello) {
         link.noteWatchSeen()
+        updates.onWatchHello(nodeId, hello)
         if (hello.wantsReply) {
             link.send(nodeId, WearPaths.HELLO, WearCodec.encode(Hello.serializer(), ownHello(wantsReply = false)))
         }

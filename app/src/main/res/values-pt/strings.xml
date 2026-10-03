@@ -400,4 +400,27 @@
     <string name="library_offline_action">Tentar de novo</string>
     <string name="library_needs_app">Os artistas que segues e os álbuns guardados precisam da tua própria aplicação Spotify ligada.</string>
     <string name="library_needs_app_action">Ligar</string>
+
+    <!-- The watch companion. -->
+    <string name="page_watch">Relógio</string>
+    <string name="page_watch_summary">Fluidify no Wear OS, atualizações</string>
+    <string name="watch_status">Relógio</string>
+    <string name="watch_none">Nenhum relógio com o Fluidify</string>
+    <string name="watch_version">Versão no relógio</string>
+    <string name="watch_update">Atualização do relógio</string>
+    <string name="watch_update_now">Atualizar o relógio</string>
+    <string name="watch_auto_update">Atualizar o relógio automaticamente</string>
+    <string name="watch_auto_update_note">As novas versões passam para o relógio por Bluetooth quando ele se liga</string>
+    <string name="watch_push_apk">Enviar um APK para o relógio</string>
+    <string name="watch_update_idle">Ainda não verificado</string>
+    <string name="watch_update_checking">A verificar…</string>
+    <string name="watch_update_current">Atualizado (%1$s)</string>
+    <string name="watch_update_available">%1$s disponível</string>
+    <string name="watch_update_downloading">A transferir %1$s…</string>
+    <string name="watch_update_offered">À espera do relógio (%1$s)</string>
+    <string name="watch_update_sending">A enviar %1$s por Bluetooth…</string>
+    <string name="watch_update_installing">A instalar %1$s no relógio…</string>
+    <string name="watch_update_confirm">Confirme no relógio</string>
+    <string name="watch_update_installed">%1$s instalada</string>
+    <string name="watch_update_failed">Falhou: %1$s</string>
 </resources>

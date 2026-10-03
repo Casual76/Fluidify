@@ -400,4 +400,27 @@
     <string name="library_offline_action">Erneut versuchen</string>
     <string name="library_needs_app">Gefolgte Künstler und gespeicherte Alben brauchen deine eigene verbundene Spotify-Anwendung.</string>
     <string name="library_needs_app_action">Verbinden</string>
+
+    <!-- The watch companion. -->
+    <string name="page_watch">Uhr</string>
+    <string name="page_watch_summary">Fluidify auf Wear OS, Updates</string>
+    <string name="watch_status">Uhr</string>
+    <string name="watch_none">Keine Uhr mit Fluidify</string>
+    <string name="watch_version">Version auf der Uhr</string>
+    <string name="watch_update">Uhr-Update</string>
+    <string name="watch_update_now">Uhr aktualisieren</string>
+    <string name="watch_auto_update">Uhr automatisch aktualisieren</string>
+    <string name="watch_auto_update_note">Neue Versionen gehen per Bluetooth an die Uhr, sobald sie sich verbindet</string>
+    <string name="watch_push_apk">APK an die Uhr senden</string>
+    <string name="watch_update_idle">Noch nicht geprüft</string>
+    <string name="watch_update_checking">Wird geprüft…</string>
+    <string name="watch_update_current">Aktuell (%1$s)</string>
+    <string name="watch_update_available">%1$s verfügbar</string>
+    <string name="watch_update_downloading">%1$s wird geladen…</string>
+    <string name="watch_update_offered">Warte auf die Uhr (%1$s)</string>
+    <string name="watch_update_sending">%1$s wird per Bluetooth gesendet…</string>
+    <string name="watch_update_installing">%1$s wird auf der Uhr installiert…</string>
+    <string name="watch_update_confirm">Auf der Uhr bestätigen</string>
+    <string name="watch_update_installed">%1$s installiert</string>
+    <string name="watch_update_failed">Fehlgeschlagen: %1$s</string>
 </resources>

@@ -141,6 +141,10 @@ class PhoneLink(
         if (hello.role != Role.PHONE) return
         nodeId = fromNode
         _phone.value = hello
+        // The phone handles updates while it is around; see WatchSelfUpdateWorker.
+        context.getSharedPreferences("phone_link", Context.MODE_PRIVATE).edit()
+            .putLong(dev.pampa.fluidify.wear.update.WatchSelfUpdateWorker.KEY_PHONE_SEEN, System.currentTimeMillis())
+            .apply()
         answerWatch?.cancel()
         _status.value = when (compatibility(ownHello(), hello)) {
             Compatibility.OK -> LinkStatus.CONNECTED

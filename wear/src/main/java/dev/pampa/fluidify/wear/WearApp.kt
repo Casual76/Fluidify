@@ -24,6 +24,16 @@ class WearApp : Application() {
     val art: ArtStore by lazy { ArtStore(this) }
     val link: PhoneLink by lazy { PhoneLink(this, scope, state, art) }
 
+    /** Installs builds the phone sends; see [WatchUpdater]. */
+    val updater: dev.pampa.fluidify.wear.update.WatchUpdater by lazy {
+        dev.pampa.fluidify.wear.update.WatchUpdater(this)
+    }
+
     /** What the controls talk to. The phone, for now. */
     val controls: PlaybackControls by lazy { PhoneRemote(scope, state, link) }
+
+    override fun onCreate() {
+        super.onCreate()
+        dev.pampa.fluidify.wear.update.WatchSelfUpdateWorker.schedule(this)
+    }
 }

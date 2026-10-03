@@ -196,3 +196,39 @@ the first one anybody receives.
   store listing, and `Updater.State.Available` currently drops it.
 - `Updater` follows the stable channel and offers no way to switch to beta. The
   engine supports it; nothing in this app asks for it.
+
+## The watch build
+
+Fluidify for Wear OS ships in the **same release** as the phone app: same tag,
+one more asset. The store does not know about it and does not need to; the phone
+app and the watch app read `manifest-wear.json`, the watch build's own entry
+beside `manifest.json`.
+
+After `publisher.py` has created `stable-fluidify-v<version>`:
+
+```powershell
+cd "C:\VibeCoded Projects\Fluidify"
+.\gradlew.bat :app:assembleRelease :wear:assembleRelease
+$env:PAMPA_GH_TOKEN = "ghp_..."
+python tools\publish-wear.py `
+    --apk wear\build\outputs\apk\release\wear-release.apk `
+    --phone-apk app\build\outputs\apk\release\app-release.apk
+```
+
+The script refuses to publish a watch APK whose package is not
+`dev.pampa.fluidify`, whose version is not the one in `app/build.gradle.kts`, or
+— when given the phone APK, which it always should be — that is signed with a
+different key than the phone. That last check is the one that matters: the
+Wearable Data Layer silently drops traffic between two apps signed differently,
+and Android on the watch would refuse the build as an update anyway. `--dry-run`
+checks without uploading.
+
+What happens next needs nobody: the next time the watch says hello to the phone,
+the phone sees the new version in `manifest-wear.json`, downloads the APK,
+checks it again and sends it to the watch over Bluetooth; the watch installs it
+(silently when it is its own installer of record, which `tools/install-wear.ps1`
+arranges; otherwise with one tap). A watch that has not seen its phone for a
+week checks the manifest itself while charging.
+
+The first install on a watch is the one step that needs ADB:
+`tools/install-wear.ps1` (see the comment at its top for the Galaxy Watch steps).
