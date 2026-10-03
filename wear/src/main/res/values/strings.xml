@@ -125,4 +125,16 @@
     <string name="now_bar_never">Never</string>
     <string name="mirror_now_bar">Fluidify controls on the watch face</string>
     <string name="mirror_now_bar_summary">Experiment: the phone keeps its notification and the watch shows its own</string>
+    <string name="error_unreachable">The phone isn\'t answering</string>
+    <string name="error_phone_unavailable">Fluidify didn\'t start on the phone</string>
+    <string name="error_transfer">The music didn\'t move to the watch</string>
+    <string name="error_nothing_to_skip">Nothing is playing to skip</string>
+    <string name="error_radio">No radio for this song right now</string>
+    <string name="error_like">Couldn\'t save the like</string>
+    <string name="error_context">Can\'t open it right now</string>
+    <string name="error_not_found">Not found</string>
+    <string name="error_not_in_queue">It\'s no longer in the queue</string>
+    <string name="error_generic">That didn\'t work</string>
+    <string name="radio_of">Radio: %1$s</string>
+    <string name="moving_to_watch">Moving to the watch…</string>
 </resources>

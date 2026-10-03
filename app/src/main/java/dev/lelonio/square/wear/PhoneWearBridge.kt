@@ -14,6 +14,7 @@ import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.data.RemoteConnect
 import dev.lelonio.square.playback.PlaybackService
 import dev.lelonio.square.playback.toQueueItem
+import dev.pampa.fluidify.wear.protocol.AckErrors
 import dev.pampa.fluidify.wear.protocol.Command
 import dev.pampa.fluidify.wear.protocol.CommandAck
 import dev.pampa.fluidify.wear.protocol.CommandEnvelope
@@ -39,6 +40,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -125,6 +127,25 @@ class PhoneWearBridge(private val app: SquareApplication) {
      * notification provider every time it builds the notification.
      */
     val phoneMediaLocalOnly: Boolean get() = surfacePrefs.getBoolean(KEY_LOCAL_ONLY, false)
+
+    /**
+     * Sends the account's playback to [deviceId] and says whether it went.
+     *
+     * Waits a moment for the device to be in the account's list first: a watch whose engine has
+     * just started is known to Spotify a few seconds later, and a transfer sent before that is
+     * the 404 the tests found. Through the playback service when it runs, which republishes the
+     * queue as something the device can resolve first; directly otherwise.
+     */
+    private suspend fun transferTo(deviceId: String): Boolean {
+        withTimeoutOrNull(DEVICE_LISTED_WAIT_MS) {
+            RemoteConnect.devices.first { devices -> devices.any { it.id == deviceId } }
+        }
+        val done = CompletableDeferred<Boolean>()
+        if (RemoteConnect.request(RemoteConnect.TransferRequest.To(deviceId, done))) {
+            return withTimeoutOrNull(TRANSFER_WAIT_MS) { done.await() } ?: false
+        }
+        return withContext(Dispatchers.IO) { RemoteConnect.transferTo(deviceId) }
+    }
 
     /** The watch published its [WatchSurfaces]. */
     fun onWatchSurfaces(bytes: ByteArray) {
@@ -474,10 +495,11 @@ class PhoneWearBridge(private val app: SquareApplication) {
             }
             is Command.Transfer -> {
                 val here = command.deviceId == PHONE_DEVICE_ID || RemoteConnect.isThisPhone(command.deviceId)
-                RemoteConnect.request(
-                    if (here) RemoteConnect.TransferRequest.Here else RemoteConnect.TransferRequest.To(command.deviceId),
-                )
-                return null
+                if (here) {
+                    RemoteConnect.request(RemoteConnect.TransferRequest.Here)
+                    return null
+                }
+                return if (transferTo(command.deviceId)) null else AckErrors.TRANSFER
             }
             is Command.SleepTimer -> {
                 when {
@@ -582,6 +604,8 @@ class PhoneWearBridge(private val app: SquareApplication) {
 
     companion object {
         private const val KEY_LOCAL_ONLY = "phone_media_local_only"
+        private const val DEVICE_LISTED_WAIT_MS = 3_000L
+        private const val TRANSFER_WAIT_MS = 4_000L
         private const val TAG = "PhoneWearBridge"
         const val PHONE_DEVICE_ID = "phone"
         private const val QUEUE_WAIT_MS = 4_000L

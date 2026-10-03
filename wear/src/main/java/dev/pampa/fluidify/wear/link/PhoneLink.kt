@@ -49,6 +49,9 @@ interface CommandChannel {
 
     /** Sends [command] and returns the phone's acknowledgement, or null when there was none. */
     suspend fun send(command: Command): CommandAck?
+
+    /** [send], waiting up to [timeoutMs] for the answer: for commands the phone takes a while over. */
+    suspend fun send(command: Command, timeoutMs: Long): CommandAck? = send(command)
 }
 
 /** Where the conversation with the phone stands. */
@@ -175,7 +178,9 @@ class PhoneLink(
      * Sends [command] and waits for the phone's acknowledgement. Null when the
      * phone could not be reached or did not answer in time.
      */
-    override suspend fun send(command: Command): CommandAck? {
+    override suspend fun send(command: Command): CommandAck? = send(command, ACK_TIMEOUT_MS)
+
+    override suspend fun send(command: Command, timeoutMs: Long): CommandAck? {
         val node = nodeId ?: findPhone()?.id ?: run {
             _status.value = LinkStatus.UNREACHABLE
             return null
@@ -190,7 +195,7 @@ class PhoneLink(
             _status.value = LinkStatus.UNREACHABLE
             return null
         }
-        return withTimeoutOrNull(ACK_TIMEOUT_MS) { waiter.await() }.also { pending.remove(id) }
+        return withTimeoutOrNull(timeoutMs) { waiter.await() }.also { pending.remove(id) }
     }
 
     /**

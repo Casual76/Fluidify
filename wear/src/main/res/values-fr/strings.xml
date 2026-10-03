@@ -124,4 +124,16 @@
     <string name="now_bar_never">Jamais</string>
     <string name="mirror_now_bar">Commandes Fluidify sur le cadran</string>
     <string name="mirror_now_bar_summary">Expérience : le téléphone garde sa notification, la montre affiche la sienne</string>
+    <string name="error_unreachable">Le téléphone ne répond pas</string>
+    <string name="error_phone_unavailable">Fluidify n\'a pas démarré sur le téléphone</string>
+    <string name="error_transfer">La musique n\'est pas passée sur la montre</string>
+    <string name="error_nothing_to_skip">Rien ne joue à passer</string>
+    <string name="error_radio">Pas de radio pour ce titre pour l\'instant</string>
+    <string name="error_like">Impossible d\'enregistrer le J\'aime</string>
+    <string name="error_context">Impossible de l\'ouvrir pour l\'instant</string>
+    <string name="error_not_found">Introuvable</string>
+    <string name="error_not_in_queue">Ce n\'est plus dans la file</string>
+    <string name="error_generic">Ça n\'a pas marché</string>
+    <string name="radio_of">Radio : %1$s</string>
+    <string name="moving_to_watch">Passage sur la montre…</string>
 </resources>

@@ -130,13 +130,32 @@ class WatchUpdateCoordinator(
      * all: the phone's installer streams it in over ADB (see install/WatchInstaller).
      */
     suspend fun latestApk(onProgress: (Float?) -> Unit): Result<File> = lock.withLock {
-        val update = updater.check(NO_VERSION).getOrElse { return@withLock Result.failure(it) }
-            ?: return@withLock Result.failure(IllegalStateException("no watch build is published"))
+        val update = updater.check(NO_VERSION).getOrElse { error ->
+            // A manifest that is not there at all (a 404 before the first watch release) is the
+            // same news as one with nothing in it.
+            val missing = error.message.orEmpty().contains("404")
+            return@withLock Result.failure(if (missing) dev.lelonio.square.wear.install.NoReleaseException() else error)
+        } ?: return@withLock Result.failure(dev.lelonio.square.wear.install.NoReleaseException())
         val file = runCatching {
             installer.download(update) { progress -> onProgress(progress.progress.takeIf { it in 0f..1f }) }
         }.getOrElse { return@withLock Result.failure(it) }
         rejectArchive(file, update.version)?.let { return@withLock Result.failure(IllegalStateException(it)) }
         Result.success(file)
+    }
+
+    /**
+     * An APK picked on the phone, copied and checked like a downloaded one (package and signature),
+     * for the first install from the phone when the store has nothing to offer yet.
+     */
+    suspend fun apkFromUri(uri: Uri): Result<File> = withContext(Dispatchers.IO) {
+        runCatching {
+            val target = File(context.cacheDir, "watch-install.apk")
+            context.contentResolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
+                ?: error("cannot read the file")
+            val version = archiveVersion(target) ?: error("not-an-apk")
+            rejectArchive(target, version)?.let { error(it) }
+            target
+        }
     }
 
     /** Checks and, if there is something, sends it. The "update the watch" row. */

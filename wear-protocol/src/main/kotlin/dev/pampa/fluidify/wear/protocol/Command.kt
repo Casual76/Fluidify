@@ -89,3 +89,38 @@ data class CommandAck(
     /** The first snapshot seq that already reflects this command, when there is one. */
     val appliedSeq: Long? = null,
 )
+
+/**
+ * The reasons a command can fail, as [CommandAck.error] carries them.
+ *
+ * The watch turns each into a sentence on its screen, so an unknown one still shows something
+ * ("did not work") rather than nothing — which is what a silent failure looked like before.
+ */
+object AckErrors {
+    /** The phone could not be reached, or did not answer in time. Never sent by a phone. */
+    const val UNREACHABLE = "unreachable"
+
+    /** The phone's player could not be started. */
+    const val PHONE_UNAVAILABLE = "phone-unavailable"
+
+    /** The device did not take the playback. */
+    const val TRANSFER = "transfer"
+
+    /** Nothing loaded to skip in (the account's last song, not playing anywhere). */
+    const val NOTHING_TO_SKIP = "nothing-to-skip"
+
+    /** A radio could not be made from this song. */
+    const val RADIO = "radio"
+
+    /** The heart could not be set. */
+    const val LIKE = "like"
+
+    /** The playlist or album could not be played. */
+    const val CONTEXT = "context"
+
+    const val NOT_FOUND = "not-found"
+    const val EMPTY = "empty"
+    const val NOT_IN_QUEUE = "not-in-queue"
+    const val UNSUPPORTED = "unsupported"
+}
+

@@ -124,4 +124,16 @@
     <string name="now_bar_never">Asla</string>
     <string name="mirror_now_bar">Saat yüzünde Fluidify kontrolleri</string>
     <string name="mirror_now_bar_summary">Deneme: telefon bildirimini kendinde tutar, saat kendi bildirimini gösterir</string>
+    <string name="error_unreachable">Telefon yanıt vermiyor</string>
+    <string name="error_phone_unavailable">Fluidify telefonda başlamadı</string>
+    <string name="error_transfer">Müzik saate geçmedi</string>
+    <string name="error_nothing_to_skip">Atlanacak bir şey çalmıyor</string>
+    <string name="error_radio">Şu an bu şarkı için radyo yok</string>
+    <string name="error_like">Beğeni kaydedilemedi</string>
+    <string name="error_context">Şu an açılamıyor</string>
+    <string name="error_not_found">Bulunamadı</string>
+    <string name="error_not_in_queue">Artık sırada değil</string>
+    <string name="error_generic">İşe yaramadı</string>
+    <string name="radio_of">Radyo: %1$s</string>
+    <string name="moving_to_watch">Saate geçiliyor…</string>
 </resources>

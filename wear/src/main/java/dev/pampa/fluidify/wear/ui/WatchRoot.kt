@@ -4,6 +4,8 @@ import android.net.Uri
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.getValue
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.remember
@@ -41,6 +43,7 @@ import dev.pampa.fluidify.wear.ui.sheets.VolumeScreen
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
@@ -225,6 +228,19 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                 }
             }
         }
+        // Every command that fails says so, wherever the person is.
+        var notice by remember { mutableStateOf<String?>(null) }
+        val context = androidx.compose.ui.platform.LocalContext.current
+        val haptics = dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics.current
+        LaunchedEffect(app) {
+            app.controls.errors.collectLatest { code ->
+                notice = context.getString(dev.pampa.fluidify.wear.ui.common.ErrorMessages.textFor(code))
+                haptics.play(dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent.Reject)
+                kotlinx.coroutines.delay(NOTICE_MS)
+                notice = null
+            }
+        }
+        dev.antigravity.fluidengine.wear.components.FluidWearToast(message = notice)
         val meter by app.glassMeter.visible.collectAsStateWithLifecycle()
         if (meter) GlassMeter()
     }
@@ -235,6 +251,8 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
 private fun standaloneStatus(app: WearApp): String? {
     val mode by app.playback.mode.collectAsStateWithLifecycle()
     if (mode != dev.pampa.fluidify.wear.playback.PlaybackMode.WATCH) return null
+    val moving by app.playback.moving.collectAsStateWithLifecycle()
+    if (moving) return androidx.compose.ui.res.stringResource(dev.pampa.fluidify.wear.R.string.moving_to_watch)
     val status by app.standalone.engine.status.collectAsStateWithLifecycle()
     val id = when (status) {
         dev.pampa.fluidify.wear.standalone.EngineStatus.STARTING -> dev.pampa.fluidify.wear.R.string.engine_starting
@@ -271,6 +289,9 @@ private const val CONTEXT = "context"
 private const val SEARCH = "search"
 private const val CELLULAR = "cellular"
 private const val WATCH_DOWNLOADS = "watch-downloads"
+
+/** How long a notice stays up. */
+private const val NOTICE_MS = 2_600L
 
 private const val PAGE_IMMERSIVE = 0
 private const val PAGE_MAIN = 1

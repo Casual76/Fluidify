@@ -455,7 +455,7 @@
     <string name="continue_on_watch_note">Saat kendisi çalar: hoparlör ya da kulaklık</string>
     <string name="watch_install">Saate yükle</string>
     <string name="watch_install_steps">Saatte: Ayarlar › Sistem › Hakkında › yapı numarasına yedi kez dokun; sonra Geliştirici seçenekleri › ADB hata ayıklama ve Kablosuz hata ayıklamayı aç › Yeni cihaz eşle. Saat ve telefon aynı Wi-Fi\'da olsun.</string>
-    <string name="watch_install_address">Saat adresi (Yeni cihaz eşle altındaki IP:port)</string>
+    <string name="watch_install_address">Eşleştirme adresi (Yeni cihaz eşleştir altındaki IP:bağlantı noktası)</string>
     <string name="watch_install_code">Eşleme kodu</string>
     <string name="watch_install_go">Eşle ve yükle</string>
     <string name="watch_install_idle">Ağda saat bekleniyor…</string>
@@ -466,8 +466,13 @@
     <string name="watch_install_finishing">Saatte Fluidify açılıyor…</string>
     <string name="watch_install_done">Yüklendi. Saatte hata ayıklamayı kapatabilirsin.</string>
     <string name="watch_install_wrong_code">Kod kabul edilmedi: kontrol edip yeniden dene</string>
-    <string name="watch_install_not_found">Saat bulunamadı: Kablosuz hata ayıklamadaki adresi yaz</string>
+    <string name="watch_install_not_found">Saat bulunamadı: Kablosuz hata ayıklama ekranındaki adresi yazın</string>
     <string name="watch_install_refused">Saat bağlantıyı reddetti: Kablosuz hata ayıklama hâlâ açık mı?</string>
     <string name="watch_install_no_apk">Saat uygulaması mağazadan alınamadı</string>
     <string name="watch_install_failed">Yükleme başarısız: %1$s</string>
+    <string name="watch_install_connect_address">Saat adresi (Kablosuz hata ayıklama ekranındaki IP:bağlantı noktası)</string>
+    <string name="watch_install_connect_hint">Telefon saati görürse kendiliğinden dolar; görmezse yazın</string>
+    <string name="watch_install_pick">Bu telefondaki bir APK\'yı kullan</string>
+    <string name="watch_install_picked">Yüklenecek: %1$s</string>
+    <string name="watch_install_no_release">Henüz yayımlanmış saat sürümü yok: telefonda bir APK seçin</string>
 </resources>

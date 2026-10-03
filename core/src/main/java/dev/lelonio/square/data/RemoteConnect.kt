@@ -94,8 +94,14 @@ object RemoteConnect {
      * here and the playback service, which has the player, carries it out.
      */
     sealed class TransferRequest {
-        /** Send playback to another device. */
-        data class To(val deviceId: String) : TransferRequest()
+        /**
+         * Send playback to another device. [done], when given, hears whether the device took it,
+         * for a caller (the watch) that has to know.
+         */
+        data class To(
+            val deviceId: String,
+            val done: kotlinx.coroutines.CompletableDeferred<Boolean>? = null,
+        ) : TransferRequest()
 
         /** Bring playback back to this phone. */
         data object Here : TransferRequest()
@@ -106,9 +112,9 @@ object RemoteConnect {
     /** Handovers asked for from outside; see [TransferRequest]. */
     val requests: SharedFlow<TransferRequest> = _requests.asSharedFlow()
 
-    fun request(request: TransferRequest) {
-        _requests.tryEmit(request)
-    }
+    /** Hands [request] to the playback service. False when there is no service to take it. */
+    fun request(request: TransferRequest): Boolean =
+        _requests.subscriptionCount.value > 0 && _requests.tryEmit(request)
 
     /** Whether an id is this phone's own. */
     fun isThisPhone(deviceId: String): Boolean {
@@ -413,17 +419,25 @@ object RemoteConnect {
      * protocol reads: a device is told to take the account's playback, not told
      * to give it away.
      */
-    fun transferTo(deviceId: String) {
+    fun transferTo(deviceId: String): Boolean {
         if (deviceId == ownId) {
             // Coming back here is not a request to the server. A device cannot
             // address a command to itself: it goes out to the access point and
             // comes back refused, which is why choosing Square in the list did
             // nothing at all.
-            runCatching { NativeBridge.takeOver() }
+            return runCatching { NativeBridge.takeOver() }
                 .onFailure { android.util.Log.w(TAG, "could not take playback back", it) }
-            return
+                .isSuccess
         }
-        send(
+        // Spotify's transfer call first: it carries the state over. The "transfer" player
+        // command it replaces carries none — a librespot device (the watch) refuses it with a
+        // 400, others go active with nothing to play — and stays only as the last resort for a
+        // device the transfer call does not reach.
+        val transferred = runCatching { NativeBridge.transferTo(deviceId) }
+            .onFailure { android.util.Log.w(TAG, "transfer to $deviceId refused: ${it.message}") }
+            .isSuccess
+        if (transferred) return true
+        return send(
             deviceId,
             """{"command":{"endpoint":"transfer","transfer_options":{"restore_paused":"restore"}}}""",
         )
@@ -432,10 +446,10 @@ object RemoteConnect {
     private fun command(deviceId: String, endpoint: String) =
         send(deviceId, """{"command":{"endpoint":"$endpoint"}}""")
 
-    private fun send(deviceId: String, body: String) {
+    private fun send(deviceId: String, body: String): Boolean =
         runCatching { NativeBridge.remoteCommand(deviceId, body) }
             .onFailure { android.util.Log.w(TAG, "command did not reach $deviceId: $body", it) }
-    }
+            .isSuccess
 
     private const val TAG = "RemoteConnect"
 }

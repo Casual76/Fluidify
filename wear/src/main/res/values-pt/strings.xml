@@ -124,4 +124,16 @@
     <string name="now_bar_never">Nunca</string>
     <string name="mirror_now_bar">Controlos do Fluidify no mostrador</string>
     <string name="mirror_now_bar_summary">Experiência: o telemóvel fica com a sua notificação e o relógio mostra a sua</string>
+    <string name="error_unreachable">O telemóvel não responde</string>
+    <string name="error_phone_unavailable">O Fluidify não arrancou no telemóvel</string>
+    <string name="error_transfer">A música não passou para o relógio</string>
+    <string name="error_nothing_to_skip">Não está a tocar nada para saltar</string>
+    <string name="error_radio">Sem rádio para esta música agora</string>
+    <string name="error_like">Não foi possível guardar o Gosto</string>
+    <string name="error_context">Não é possível abrir agora</string>
+    <string name="error_not_found">Não encontrado</string>
+    <string name="error_not_in_queue">Já não está na fila</string>
+    <string name="error_generic">Não funcionou</string>
+    <string name="radio_of">Rádio: %1$s</string>
+    <string name="moving_to_watch">A passar para o relógio…</string>
 </resources>

@@ -2672,6 +2672,17 @@ pub fn take_over() -> EngineResult<()> {
     with_engine(|e| e.spirc()?.activate())?.map_err(|e| format!("could not take over: {e}"))
 }
 
+/// Brings the account's playback to this device: whatever is playing elsewhere, with its queue
+/// and position, moves here.
+///
+/// Not [`take_over`], which only marks this device active and leaves it with nothing to play.
+/// This is the transfer flow librespot uses when a device asks for the music itself — the watch
+/// pulling the phone's song onto its own speaker. Ignored (by librespot) if this device is
+/// already the active one.
+pub fn pull_playback() -> EngineResult<()> {
+    with_engine(|e| e.spirc()?.transfer(None))?.map_err(|e| format!("could not pull playback: {e}"))
+}
+
 /// Hands the device a new running order without touching what is playing.
 ///
 /// The app owns the order — it draws its own shuffle — and when the listener

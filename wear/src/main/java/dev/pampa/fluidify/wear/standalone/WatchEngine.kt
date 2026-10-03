@@ -17,6 +17,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.util.Locale
 
 /** Where the watch's own engine is. */
@@ -162,6 +163,18 @@ class WatchEngine(
         )
     }
 
+    /**
+     * Waits for the engine to be a Spotify Connect device the account can see.
+     *
+     * [EngineStatus.RUNNING] comes earlier than that: a watch that has signed in before is handed
+     * its player at once and connects in the background, and a transfer to it in that gap is the
+     * 404 the tests found. False when it does not happen within [timeoutMs].
+     */
+    suspend fun awaitConnected(timeoutMs: Long): Boolean = withTimeoutOrNull(timeoutMs) {
+        while (!runCatching { NativeBridge.isConnected }.getOrDefault(false)) kotlinx.coroutines.delay(CONNECTED_POLL_MS)
+        true
+    } ?: false
+
     /** Takes the Connect device off the account and lets the network go. */
     private var networkJob: kotlinx.coroutines.Job? = null
 
@@ -197,7 +210,7 @@ class WatchEngine(
         Route.PROXY, Route.NONE -> BitrateSteps.LOW
     }
 
-    private fun deviceName(): String = Build.MODEL?.takeIf { it.isNotBlank() } ?: "Wear OS"
+    private fun deviceName(): String = WatchName.of(context)
 
     private companion object {
         const val TAG = "WatchEngine"
@@ -205,5 +218,6 @@ class WatchEngine(
 
         /** The phrase the native side puts in a refusal for an account without Premium. */
         const val PREMIUM_REQUIRED = "premium"
+        const val CONNECTED_POLL_MS = 250L
     }
 }

@@ -565,7 +565,8 @@ class PlaybackService : MediaLibraryService() {
                             .getOrDefault(false)
                         if (republished) delay(TRANSFER_SETTLE_MS)
                     }
-                    dev.lelonio.square.data.RemoteConnect.transferTo(request.deviceId)
+                    val ok = dev.lelonio.square.data.RemoteConnect.transferTo(request.deviceId)
+                    request.done?.complete(ok)
                 }
             }
 

@@ -469,6 +469,34 @@ pub fn command(device_id: &str, body: String) -> engine::EngineResult<()> {
         .map_err(|e| format!("command failed: {e}"))
 }
 
+/// The device the account says is playing, when the cluster has been heard.
+fn active_device_id() -> Option<String> {
+    let guard = CLUSTER.lock().ok()?;
+    let cluster = guard.as_ref()?;
+    Some(cluster.active_device_id.clone()).filter(|id| !id.is_empty())
+}
+
+/// Moves the account's playback to `device_id`, queue and position with it.
+///
+/// Spotify's own transfer, the call its apps make, not a "transfer" player command sent to the
+/// target: that command carries no state, a librespot device refuses it outright ("transfer
+/// endpoint didn't contain any data", which the access point turns into a 400), and other
+/// devices become active with nothing to play. Addressed from whichever device is playing; with
+/// none known, from the target itself, which Spotify reads as "from the active device".
+pub fn transfer_to(device_id: &str) -> engine::EngineResult<()> {
+    if device_id.is_empty() {
+        return Err("no device to transfer to".into());
+    }
+    let from = active_device_id().unwrap_or_else(|| device_id.to_string());
+    let handle = engine::runtime_handle()?;
+    let session = engine::with_session(|session| session.clone())?;
+    let to = device_id.to_string();
+    handle
+        .block_on(async move { session.spclient().transfer(&from, &to, None).await })
+        .map(|_| ())
+        .map_err(|e| format!("transfer failed: {e}"))
+}
+
 /// Sets another device's volume, which is a different endpoint from the rest.
 pub fn set_volume(device_id: &str, volume: u16) -> engine::EngineResult<()> {
     if device_id.is_empty() {

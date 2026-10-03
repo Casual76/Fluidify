@@ -732,6 +732,26 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeTak
     guard(&mut env, "TakeOver", engine::take_over);
 }
 
+/// Brings the account's playback to this device; see `engine::pull_playback`.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativePullPlayback(
+    mut env: JNIEnv,
+    _class: JClass,
+) {
+    guard(&mut env, "PullPlayback", engine::pull_playback);
+}
+
+/// Moves the account's playback to another device; see `remote::transfer_to`.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeTransferTo(
+    mut env: JNIEnv,
+    _class: JClass,
+    device_id: JString,
+) {
+    let id = read_string(&mut env, &device_id);
+    guard(&mut env, "TransferTo", || crate::remote::transfer_to(&id?));
+}
+
 /// The account's personalised home, as raw JSON from Spotify's gateway.
 #[no_mangle]
 pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeHomeFeed(

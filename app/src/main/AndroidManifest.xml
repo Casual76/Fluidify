@@ -3,6 +3,10 @@
 
     <uses-permission android:name="android.permission.INTERNET" />
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Finding the watch for the first install: without the multicast lock many phones drop the
+         mDNS answers the watch announces its debugging ports in. -->
+    <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Required to attach the reverb effect to our own audio session. -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />

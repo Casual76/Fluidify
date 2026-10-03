@@ -144,6 +144,14 @@ class PhoneRemote(
 
     override fun transfer(deviceId: String) = dispatch(Command.Transfer(deviceId), null)
 
+    /**
+     * Asks the phone to move the account's playback to [deviceId] and waits for the answer — the
+     * phone first waits for the device to be listed, then republishes its queue, so this takes
+     * longer than a button press.
+     */
+    suspend fun transferAndWait(deviceId: String): Boolean =
+        link.send(Command.Transfer(deviceId), TRANSFER_ACK_MS)?.ok == true
+
     override fun setVolume(level: Float, deviceId: String?) {
         val snapshot = nowPlaying.value.snapshot
         val guess = snapshot?.device?.let { device -> snapshot.copy(device = device.copy(volume = level.coerceIn(0f, 1f))) }
@@ -162,6 +170,11 @@ class PhoneRemote(
             },
         )
         dispatch(Command.SleepTimer(minutes, atTrackEnd, cancel), guess)
+    }
+
+    private companion object {
+        /** The phone's own waits for a transfer (device listed, queue republished) plus margin. */
+        const val TRANSFER_ACK_MS = 9_000L
     }
 
     private fun dispatch(command: Command, guess: PlaybackSnapshot?) {

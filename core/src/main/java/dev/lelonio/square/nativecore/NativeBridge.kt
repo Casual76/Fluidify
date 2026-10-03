@@ -307,6 +307,18 @@ object NativeBridge {
     fun takeOver() = nativeTakeOver()
 
     /**
+     * Brings the account's playback here, queue and position with it: the transfer a device makes
+     * when it asks for the music itself. [takeOver] only marks this device active.
+     */
+    fun pullPlayback() = nativePullPlayback()
+
+    /**
+     * Moves the account's playback to [deviceId] with Spotify's own transfer call. Throws when the
+     * access point refuses it (an unknown device is a 404).
+     */
+    fun transferTo(deviceId: String) = nativeTransferTo(deviceId)
+
+    /**
      * The account's personalised home, as raw JSON from Spotify's gateway.
      *
      * A different service from everything else here, and a more fragile one:
@@ -659,6 +671,8 @@ object NativeBridge {
     private external fun nativePublishContext(positionMs: Int): Boolean
     private external fun nativeResumeHere(contextUri: String, trackUri: String, positionMs: Int)
     private external fun nativeTakeOver()
+    private external fun nativePullPlayback()
+    private external fun nativeTransferTo(deviceId: String)
     private external fun nativeHomeFeed(
         timeZone: String,
         language: String,

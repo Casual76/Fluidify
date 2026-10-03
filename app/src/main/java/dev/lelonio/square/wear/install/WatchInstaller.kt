@@ -2,6 +2,9 @@ package dev.lelonio.square.wear.install
 
 import android.content.Context
 import android.util.Log
+import android.net.nsd.NsdManager
+import android.net.nsd.NsdServiceInfo
+import android.net.wifi.WifiManager
 import io.github.muntashirakon.adb.android.AdbMdns
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -42,7 +45,7 @@ class WatchInstaller(private val context: Context) {
         data class Failed(val reason: Reason, val detail: String = "") : Step
     }
 
-    enum class Reason { WRONG_CODE, NOT_FOUND, REFUSED, NO_APK, INSTALL_FAILED }
+    enum class Reason { WRONG_CODE, NOT_FOUND, REFUSED, NO_APK, NO_RELEASE, INSTALL_FAILED }
 
     /** What the watch announced on the network: where to pair and where to connect. */
     data class Found(val host: String? = null, val pairingPort: Int? = null, val connectPort: Int? = null)
@@ -56,16 +59,37 @@ class WatchInstaller(private val context: Context) {
 
     private var pairingMdns: AdbMdns? = null
     private var connectMdns: AdbMdns? = null
+    private var multicast: WifiManager.MulticastLock? = null
+    private val nsd by lazy { context.getSystemService(NsdManager::class.java) }
+    private val nsdListeners = mutableListOf<NsdManager.DiscoveryListener>()
 
-    /** Listens for the watch's pairing and connection services while the wizard is open. */
+    /**
+     * Listens for the watch's pairing and connection services while the wizard is open.
+     *
+     * Twice over, and with the Wi-Fi's multicast lock held. Without the lock many phones —
+     * Samsung's among them — drop the multicast packets mDNS answers arrive in, and the watch is
+     * invisible to the phone while a computer on the same network sees it: exactly what the tests
+     * found. Two listeners because they fail differently: libadb's own resolver, and the system's
+     * NsdManager.
+     */
     fun startDiscovery() {
         stopDiscovery()
+        multicast = runCatching {
+            context.applicationContext.getSystemService(WifiManager::class.java)
+                ?.createMulticastLock(MULTICAST_TAG)
+                ?.apply {
+                    setReferenceCounted(false)
+                    acquire()
+                }
+        }.getOrNull()
         pairingMdns = AdbMdns(context, AdbMdns.SERVICE_TYPE_TLS_PAIRING) { host: InetAddress?, port: Int ->
-            if (host != null && port > 0) _found.value = _found.value.copy(host = host.hostAddress, pairingPort = port)
+            if (host != null && port > 0) onPairing(host.hostAddress, port)
         }.also { it.start() }
         connectMdns = AdbMdns(context, AdbMdns.SERVICE_TYPE_TLS_CONNECT) { host: InetAddress?, port: Int ->
-            if (host != null && port > 0) _found.value = _found.value.copy(host = _found.value.host ?: host.hostAddress, connectPort = port)
+            if (host != null && port > 0) onConnect(host.hostAddress, port)
         }.also { it.start() }
+        discoverWithNsd(NSD_PAIRING) { host, port -> onPairing(host, port) }
+        discoverWithNsd(NSD_CONNECT) { host, port -> onConnect(host, port) }
     }
 
     fun stopDiscovery() {
@@ -73,6 +97,64 @@ class WatchInstaller(private val context: Context) {
         runCatching { connectMdns?.stop() }
         pairingMdns = null
         connectMdns = null
+        nsdListeners.forEach { listener -> runCatching { nsd?.stopServiceDiscovery(listener) } }
+        nsdListeners.clear()
+        runCatching { multicast?.takeIf { it.isHeld }?.release() }
+        multicast = null
+    }
+
+    private fun onPairing(host: String?, port: Int) {
+        if (host == null) return
+        _found.value = _found.value.copy(host = host, pairingPort = port)
+    }
+
+    private fun onConnect(host: String?, port: Int) {
+        if (host == null) return
+        _found.value = _found.value.copy(host = _found.value.host ?: host, connectPort = port)
+    }
+
+    private fun discoverWithNsd(type: String, onFound: (String?, Int) -> Unit) {
+        val manager = nsd ?: return
+        val listener = object : NsdManager.DiscoveryListener {
+            override fun onServiceFound(info: NsdServiceInfo) = resolve(manager, info, onFound, attempt = 0)
+            override fun onServiceLost(info: NsdServiceInfo) = Unit
+            override fun onDiscoveryStarted(serviceType: String) = Unit
+            override fun onDiscoveryStopped(serviceType: String) = Unit
+            override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
+                Log.i(TAG, "NSD discovery of $serviceType failed: $errorCode")
+            }
+
+            override fun onStopDiscoveryFailed(serviceType: String, errorCode: Int) = Unit
+        }
+        runCatching { manager.discoverServices(type, NsdManager.PROTOCOL_DNS_SD, listener) }
+            .onSuccess { nsdListeners += listener }
+    }
+
+    /**
+     * Resolves one announced service to its address. The old API resolves one service at a
+     * time and says so with FAILURE_ALREADY_ACTIVE; a watch announces both of its services at
+     * once, so the second is simply asked again a moment later.
+     */
+    @Suppress("DEPRECATION")
+    private fun resolve(manager: NsdManager, info: NsdServiceInfo, onFound: (String?, Int) -> Unit, attempt: Int) {
+        runCatching {
+            manager.resolveService(
+                info,
+                object : NsdManager.ResolveListener {
+                    override fun onServiceResolved(resolved: NsdServiceInfo) {
+                        if (resolved.port > 0) onFound(resolved.host?.hostAddress, resolved.port)
+                    }
+
+                    override fun onResolveFailed(failed: NsdServiceInfo, errorCode: Int) {
+                        if (errorCode != NsdManager.FAILURE_ALREADY_ACTIVE || attempt >= RESOLVE_ATTEMPTS) return
+                        scope.launch {
+                            kotlinx.coroutines.delay(RESOLVE_RETRY_MS)
+                            resolve(manager, failed, onFound, attempt + 1)
+                        }
+                    }
+                },
+            )
+        }
     }
 
     /**
@@ -117,7 +199,8 @@ class WatchInstaller(private val context: Context) {
 
                 _step.value = Step.Downloading(null)
                 val file = apk { progress -> _step.value = Step.Downloading(progress) }.getOrElse { error ->
-                    _step.value = Step.Failed(Reason.NO_APK, error.message.orEmpty())
+                    val reason = if (error is NoReleaseException) Reason.NO_RELEASE else Reason.NO_APK
+                    _step.value = Step.Failed(reason, error.message.orEmpty())
                     return@launch
                 }
 
@@ -185,7 +268,17 @@ class WatchInstaller(private val context: Context) {
         const val ACTIVITY = "dev.pampa.fluidify.wear.MainActivity"
         const val BUFFER = 64 * 1024
         const val MAX_DETAIL = 200
-        const val CONNECT_WAIT_STEPS = 20
+        /** Thirty seconds: a watch that has just paired can take a while to announce its port. */
+        const val CONNECT_WAIT_STEPS = 60
         const val CONNECT_WAIT_STEP_MS = 500L
+        const val MULTICAST_TAG = "fluidify-watch-install"
+        const val NSD_PAIRING = "_adb-tls-pairing._tcp"
+        const val NSD_CONNECT = "_adb-tls-connect._tcp"
+        const val RESOLVE_ATTEMPTS = 5
+        const val RESOLVE_RETRY_MS = 400L
     }
 }
+
+/** The store has no watch build to offer yet: pick an APK on the phone instead. */
+class NoReleaseException : IllegalStateException("no watch build is published")
+

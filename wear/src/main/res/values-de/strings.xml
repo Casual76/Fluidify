@@ -124,4 +124,16 @@
     <string name="now_bar_never">Nie</string>
     <string name="mirror_now_bar">Fluidify-Steuerung auf dem Zifferblatt</string>
     <string name="mirror_now_bar_summary">Experiment: Das Telefon behält seine Benachrichtigung, die Uhr zeigt ihre eigene</string>
+    <string name="error_unreachable">Das Telefon antwortet nicht</string>
+    <string name="error_phone_unavailable">Fluidify ist auf dem Telefon nicht gestartet</string>
+    <string name="error_transfer">Die Musik ist nicht zur Uhr gewechselt</string>
+    <string name="error_nothing_to_skip">Es läuft nichts zum Überspringen</string>
+    <string name="error_radio">Gerade kein Radio für diesen Titel</string>
+    <string name="error_like">Das „Gefällt mir“ konnte nicht gespeichert werden</string>
+    <string name="error_context">Kann gerade nicht geöffnet werden</string>
+    <string name="error_not_found">Nicht gefunden</string>
+    <string name="error_not_in_queue">Nicht mehr in der Warteschlange</string>
+    <string name="error_generic">Das hat nicht geklappt</string>
+    <string name="radio_of">Radio: %1$s</string>
+    <string name="moving_to_watch">Wechsel zur Uhr…</string>
 </resources>

@@ -440,7 +440,7 @@
     <string name="continue_on_watch_note">La montre la lit seule : haut-parleur ou casque</string>
     <string name="watch_install">Installer sur la montre</string>
     <string name="watch_install_steps">Sur la montre : Paramètres › Système › À propos › touchez sept fois le numéro de build ; puis Options pour les développeurs › activez Débogage ADB et Débogage sans fil › Associer un appareil. Montre et téléphone sur le même Wi-Fi.</string>
-    <string name="watch_install_address">Adresse de la montre (IP:port sous Associer un appareil)</string>
+    <string name="watch_install_address">Adresse d\'association (IP:port sous Associer un nouvel appareil)</string>
     <string name="watch_install_code">Code d\'association</string>
     <string name="watch_install_go">Associer et installer</string>
     <string name="watch_install_idle">En attente de la montre sur le réseau…</string>
@@ -451,8 +451,13 @@
     <string name="watch_install_finishing">Ouverture de Fluidify sur la montre…</string>
     <string name="watch_install_done">Installée. Vous pouvez désactiver le débogage sur la montre.</string>
     <string name="watch_install_wrong_code">Code refusé : vérifiez-le et réessayez</string>
-    <string name="watch_install_not_found">Montre introuvable : saisissez l\'adresse affichée sous Débogage sans fil</string>
+    <string name="watch_install_not_found">Montre introuvable : saisissez l\'adresse affichée sur l\'écran Débogage sans fil</string>
     <string name="watch_install_refused">La montre a refusé la connexion : le Débogage sans fil est-il toujours actif ?</string>
     <string name="watch_install_no_apk">Impossible d\'obtenir l\'app montre</string>
     <string name="watch_install_failed">Échec de l\'installation : %1$s</string>
+    <string name="watch_install_connect_address">Adresse de la montre (IP:port sur l\'écran Débogage sans fil)</string>
+    <string name="watch_install_connect_hint">Se remplit seul si le téléphone voit la montre ; sinon, saisissez-la</string>
+    <string name="watch_install_pick">Utiliser un APK de ce téléphone</string>
+    <string name="watch_install_picked">Sera installé : %1$s</string>
+    <string name="watch_install_no_release">Aucune version pour montre n\'est encore publiée : choisissez un APK sur le téléphone</string>
 </resources>

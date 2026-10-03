@@ -3,7 +3,6 @@ package dev.pampa.fluidify.wear.standalone
 import android.content.ComponentName
 import android.content.Context
 import android.media.AudioManager
-import android.os.Build
 import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -62,6 +61,9 @@ class LocalControls(
     /** Where the last thing played here is remembered; see [resumeLast]. */
     private val prefs: StandalonePrefs? = null,
 ) : PlaybackControls {
+
+    /** How the watch appears in its own device row: the same name as in the account's list. */
+    private val watchName: String by lazy { WatchName.of(context) }
 
     private val _nowPlaying = MutableStateFlow(NowPlaying(null, LinkStatus.CONNECTED))
     override val nowPlaying: StateFlow<NowPlaying> = _nowPlaying.asStateFlow()
@@ -153,7 +155,7 @@ class LocalControls(
                 Catalog.tracks(uris)
             }.getOrNull()?.takeIf { it.isNotEmpty() } ?: offlineTracks(contextUri).ifEmpty {
                 Log.w(TAG, "cannot read $contextUri, and nothing of it is kept here")
-                _errors.tryEmit("context")
+                _errors.tryEmit(if (contextUri.startsWith("spotify:station:")) dev.pampa.fluidify.wear.protocol.AckErrors.RADIO else dev.pampa.fluidify.wear.protocol.AckErrors.CONTEXT)
                 return@launch
             }
             if (tracks.isEmpty()) return@launch
@@ -187,9 +189,21 @@ class LocalControls(
     }
 
     override fun startRadio() {
-        // The phone builds a station from Spotify's recommendations over its Web API app;
-        // the watch has no such app, so a station is the phone's to start.
-        _errors.tryEmit("radio")
+        // A station is a context like any other to the access point: `spotify:station:track:…`,
+        // which Spotify fills with the radio for that song — the official client's own button,
+        // and nothing the watch's engine cannot read for itself. Without a session there is no
+        // station to read, and playContext says so.
+        val track = _nowPlaying.value.snapshot?.track ?: run {
+            _errors.tryEmit(dev.pampa.fluidify.wear.protocol.AckErrors.RADIO)
+            return
+        }
+        val id = track.uri.substringAfterLast(':')
+        playContext(
+            contextUri = "spotify:station:track:$id",
+            startTrackUri = null,
+            shuffle = false,
+            label = context.getString(dev.pampa.fluidify.wear.R.string.radio_of, track.title),
+        )
     }
 
     /** Moving playback elsewhere is the [dev.pampa.fluidify.wear.playback.ActivePlayback]'s job. */
@@ -273,7 +287,7 @@ class LocalControls(
             context = extras?.getString(EXTRA_CONTEXT_URI)?.let { ContextInfo(it, extras.getString(EXTRA_CONTEXT_LABEL).orEmpty()) },
             device = DeviceInfo(
                 id = WATCH_DEVICE_ID,
-                name = Build.MODEL ?: "Wear OS",
+                name = watchName,
                 kind = DeviceKind.WATCH,
                 volume = volume,
                 canSetVolume = true,

@@ -1,5 +1,7 @@
 package dev.lelonio.square.ui.settings
 
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
@@ -46,8 +48,12 @@ internal fun WatchInstallRows(app: SquareApplication) {
     val found by installer.found.collectAsStateWithLifecycle()
     val step by installer.step.collectAsStateWithLifecycle()
     var address by rememberSaveable { mutableStateOf("") }
+    var connectAddress by rememberSaveable { mutableStateOf("") }
     var code by rememberSaveable { mutableStateOf("") }
+    var pickedApk by rememberSaveable { mutableStateOf<android.net.Uri?>(null) }
+    val pickApk = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) pickedApk = uri }
     val shownAddress = address.ifBlank { found.host?.let { host -> found.pairingPort?.let { "$host:$it" } }.orEmpty() }
+    val shownConnect = connectAddress.ifBlank { found.host?.let { host -> found.connectPort?.let { "$host:$it" } }.orEmpty() }
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 10.dp)) {
         Text(
@@ -70,6 +76,25 @@ internal fun WatchInstallRows(app: SquareApplication) {
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
             modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
         )
+        // The other address on the watch: the main Wireless debugging screen's, which is where
+        // the app is installed once paired. Filled by itself when the phone hears the watch;
+        // typed when the network keeps it quiet.
+        OutlinedTextField(
+            value = shownConnect,
+            onValueChange = { connectAddress = it },
+            label = { Text(stringResource(R.string.watch_install_connect_address)) },
+            supportingText = { Text(stringResource(R.string.watch_install_connect_hint)) },
+            singleLine = true,
+            modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
+        )
+        pickedApk?.let { uri ->
+            Text(
+                stringResource(R.string.watch_install_picked, uri.lastPathSegment?.substringAfterLast('/').orEmpty()),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(top = 6.dp),
+            )
+        }
         Text(
             describe(step),
             style = MaterialTheme.typography.bodySmall,
@@ -84,7 +109,16 @@ internal fun WatchInstallRows(app: SquareApplication) {
             val host = shownAddress.substringBeforeLast(':').trim()
             val port = shownAddress.substringAfterLast(':', "").trim().toIntOrNull()
             if (host.isEmpty() || port == null || code.length != 6) return@ActionRow
-            installer.install(host, port, code, found.connectPort) { progress -> app.wearBridge.updates.latestApk(progress) }
+            // The connect port as typed when it was, the one heard on the network otherwise.
+            val typedConnect = connectAddress.substringAfterLast(':', "").trim().toIntOrNull()
+            val apk = pickedApk
+            installer.install(host, port, code, typedConnect ?: found.connectPort) { progress ->
+                if (apk != null) app.wearBridge.updates.apkFromUri(apk) else app.wearBridge.updates.latestApk(progress)
+            }
+        }
+        RowDivider()
+        ActionRow(stringResource(R.string.watch_install_pick), destructive = false) {
+            pickApk.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream"))
         }
     }
 }
@@ -103,6 +137,7 @@ private fun describe(step: WatchInstaller.Step): String = when (step) {
         WatchInstaller.Reason.NOT_FOUND -> stringResource(R.string.watch_install_not_found)
         WatchInstaller.Reason.REFUSED -> stringResource(R.string.watch_install_refused)
         WatchInstaller.Reason.NO_APK -> stringResource(R.string.watch_install_no_apk)
+        WatchInstaller.Reason.NO_RELEASE -> stringResource(R.string.watch_install_no_release)
         WatchInstaller.Reason.INSTALL_FAILED -> stringResource(R.string.watch_install_failed, step.detail)
     }
 }

@@ -124,4 +124,16 @@
     <string name="now_bar_never">Mai</string>
     <string name="mirror_now_bar">Controlli Fluidify sul quadrante</string>
     <string name="mirror_now_bar_summary">Esperimento: il telefono tiene la sua notifica e l\'orologio mostra la propria</string>
+    <string name="error_unreachable">Il telefono non risponde</string>
+    <string name="error_phone_unavailable">Fluidify non è partito sul telefono</string>
+    <string name="error_transfer">La musica non è passata all\'orologio</string>
+    <string name="error_nothing_to_skip">Non sta suonando nulla da saltare</string>
+    <string name="error_radio">Nessuna radio per questo brano adesso</string>
+    <string name="error_like">Non sono riuscito a salvare il Mi piace</string>
+    <string name="error_context">Non riesco ad aprirla adesso</string>
+    <string name="error_not_found">Non trovato</string>
+    <string name="error_not_in_queue">Non è più nella coda</string>
+    <string name="error_generic">Non ha funzionato</string>
+    <string name="radio_of">Radio: %1$s</string>
+    <string name="moving_to_watch">Passo all\'orologio…</string>
 </resources>
