@@ -2362,6 +2362,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch { runCatching { container.wearBridge.watchDownloads.refresh() } }
     }
 
+    /** Whether a watch that can play on its own is in reach, for "Continua sull'orologio". */
+    val canHandoffToWatch: kotlinx.coroutines.flow.StateFlow<Boolean>
+        get() = container.wearBridge.canHandoff
+
+    /** Moves the music to the watch; see PhoneWearBridge.handoffToWatch. */
+    fun continueOnWatch() {
+        viewModelScope.launch { container.wearBridge.handoffToWatch() }
+    }
+
     /** Keeps [page] on the watch, or stops keeping it. The watch does the fetching. */
     fun toggleWatchDownload(page: PlaylistState) {
         val uri = page.uri ?: return

@@ -108,4 +108,10 @@
     <string name="download_quality">Qualidade de download</string>
     <string name="bluetooth_first">Bluetooth primeiro</string>
     <string name="bluetooth_first_summary">Quando o telefone tem o mesmo arquivo. Desligado: primeiro o Wi-Fi do relógio</string>
+    <string name="headphones_channel">Fones</string>
+    <string name="headphones_connected">Fones conectados</string>
+    <string name="headphones_listen">Ouvir aqui</string>
+    <string name="headphones_listen_on">Ouvir em %1$s</string>
+    <string name="headphone_prompt">Propor ouvir com fones</string>
+    <string name="headphone_prompt_summary">Quando fones se conectam ao relógio</string>
 </resources>

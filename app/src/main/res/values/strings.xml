@@ -457,4 +457,6 @@
     <string name="watch_transfer_bluetooth_note">When the phone already has the same file. Off: the watch\'s Wi-Fi first, which is faster.</string>
     <string name="watch_keep">Download to watch</string>
     <string name="watch_unkeep">Remove from watch</string>
+    <string name="continue_on_watch">Continue on the watch</string>
+    <string name="continue_on_watch_note">The watch plays it on its own: its speaker or headphones</string>
 </resources>

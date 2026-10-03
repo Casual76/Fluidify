@@ -337,6 +337,7 @@ class PhoneLink(
         val WATCH_FEATURES: Set<String> = setOf(
             dev.pampa.fluidify.wear.protocol.Features.AUTH,
             dev.pampa.fluidify.wear.protocol.Features.DOWNLOADS,
+            dev.pampa.fluidify.wear.protocol.Features.HANDOFF,
         )
 
         fun certificateSha256(context: Context): String = runCatching {

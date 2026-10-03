@@ -247,6 +247,8 @@ fun PlayerScreen(
     onRefreshDevices: () -> Unit,
     onSelectDevice: (String) -> Unit,
     onSetDeviceVolume: (String, Int) -> Unit,
+    /** "Continua sull'orologio", when a watch that can is in reach; null hides it. */
+    onContinueOnWatch: (() -> Unit)? = null,
     /**
      * Opens the "add to playlist" sheet.
      *
@@ -1077,6 +1079,7 @@ fun PlayerScreen(
                                         onSelect = onSelectDevice,
                                         onRefresh = onRefreshDevices,
                                         onSetVolume = onSetDeviceVolume,
+                                        onContinueOnWatch = onContinueOnWatch,
                                     )
                                 }
 

@@ -109,4 +109,10 @@
     <string name="download_quality">Download quality</string>
     <string name="bluetooth_first">Bluetooth first</string>
     <string name="bluetooth_first_summary">When the phone has the same file. Off: the watch\'s Wi-Fi first</string>
+    <string name="headphones_channel">Headphones</string>
+    <string name="headphones_connected">Headphones connected</string>
+    <string name="headphones_listen">Listen here</string>
+    <string name="headphones_listen_on">Listen on %1$s</string>
+    <string name="headphone_prompt">Offer to listen with headphones</string>
+    <string name="headphone_prompt_summary">When headphones connect to the watch</string>
 </resources>

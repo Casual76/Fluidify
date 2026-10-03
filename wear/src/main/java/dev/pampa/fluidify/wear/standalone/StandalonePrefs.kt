@@ -29,6 +29,20 @@ class StandalonePrefs(context: Context) {
         get() = prefs.getBoolean(KEY_SPEAKER, true)
         set(value) = prefs.edit { putBoolean(KEY_SPEAKER, value) }
 
+    /** Offer to play through headphones when they connect to the watch. */
+    var headphonePrompt: Boolean
+        get() = prefs.getBoolean(KEY_HEADPHONES, true)
+        set(value) = prefs.edit { putBoolean(KEY_HEADPHONES, value) }
+
+    /** What the watch last played on its own, for "Riprendi" when headphones connect. */
+    var lastContext: String?
+        get() = prefs.getString(KEY_LAST_CONTEXT, null)
+        set(value) = prefs.edit { putString(KEY_LAST_CONTEXT, value) }
+
+    var lastContextLabel: String
+        get() = prefs.getString(KEY_LAST_LABEL, null).orEmpty()
+        set(value) = prefs.edit { putString(KEY_LAST_LABEL, value) }
+
     /** Who the watch is signed in as, for Altro. Not a secret; the credential lives with the engine. */
     var username: String?
         get() = prefs.getString(KEY_USERNAME, null)
@@ -54,5 +68,8 @@ class StandalonePrefs(context: Context) {
         const val KEY_USERNAME = "username"
         const val KEY_CLIENT = "client_id"
         const val KEY_DEVICE_ID = "device_id"
+        const val KEY_HEADPHONES = "headphone_prompt"
+        const val KEY_LAST_CONTEXT = "last_context"
+        const val KEY_LAST_LABEL = "last_context_label"
     }
 }

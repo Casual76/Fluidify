@@ -451,4 +451,6 @@
     <string name="watch_transfer_bluetooth_note">Telefonda aynı dosya varken. Kapalı: önce saatin Wi-Fi\'ı, daha hızlı.</string>
     <string name="watch_keep">Saate indir</string>
     <string name="watch_unkeep">Saatten kaldır</string>
+    <string name="continue_on_watch">Saatte devam et</string>
+    <string name="continue_on_watch_note">Saat kendisi çalar: hoparlör ya da kulaklık</string>
 </resources>

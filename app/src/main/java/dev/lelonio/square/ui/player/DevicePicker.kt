@@ -30,6 +30,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.adamglin.PhosphorIcons
+import com.adamglin.phosphoricons.regular.Watch
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.ArrowClockwise
 import com.adamglin.phosphoricons.regular.Desktop
@@ -65,6 +66,12 @@ fun DeviceList(
     onSelect: (String) -> Unit,
     onRefresh: () -> Unit,
     onSetVolume: (String, Int) -> Unit = { _, _ -> },
+    /**
+     * Moves the music to the watch, which then plays it on its own. Offered while
+     * the watch is not yet a Connect device in this list: once its engine runs it
+     * shows up as one, and choosing it there is the same thing.
+     */
+    onContinueOnWatch: (() -> Unit)? = null,
 ) {
     Column(Modifier.padding(vertical = 12.dp)) {
         // No title. The player's own bar is already saying "Play on" over this
@@ -150,6 +157,31 @@ fun DeviceList(
                         playingAway = away,
                         onClick = { onSelect(device.id) },
                         onSetVolume = { onSetVolume(device.id, it) },
+                    )
+                }
+            }
+        }
+        if (onContinueOnWatch != null && state.devices.none { it.type.equals("smartwatch", ignoreCase = true) }) {
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .fluidRowPressable(onClick = onContinueOnWatch)
+                    .padding(horizontal = 22.dp, vertical = 12.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(14.dp),
+            ) {
+                Icon(
+                    PhosphorIcons.Regular.Watch,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurface,
+                    modifier = Modifier.size(22.dp),
+                )
+                Column(Modifier.weight(1f)) {
+                    Text(stringResource(R.string.continue_on_watch), style = MaterialTheme.typography.bodyLarge)
+                    Text(
+                        stringResource(R.string.continue_on_watch_note),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )
                 }
             }

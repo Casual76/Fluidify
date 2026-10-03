@@ -108,4 +108,10 @@
     <string name="download_quality">Download-Qualität</string>
     <string name="bluetooth_first">Zuerst Bluetooth</string>
     <string name="bluetooth_first_summary">Wenn das Telefon dieselbe Datei hat. Aus: zuerst das WLAN der Uhr</string>
+    <string name="headphones_channel">Kopfhörer</string>
+    <string name="headphones_connected">Kopfhörer verbunden</string>
+    <string name="headphones_listen">Hier hören</string>
+    <string name="headphones_listen_on">Auf %1$s hören</string>
+    <string name="headphone_prompt">Mit Kopfhörern hören anbieten</string>
+    <string name="headphone_prompt_summary">Wenn sich Kopfhörer mit der Uhr verbinden</string>
 </resources>

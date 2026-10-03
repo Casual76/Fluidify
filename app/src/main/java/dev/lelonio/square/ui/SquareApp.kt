@@ -463,6 +463,7 @@ fun SquareApp(
     // out of [files] and [progress] — see DownloadStore.ownerStates.
     val downloadOwners by viewModel.downloads.ownerStates.collectAsStateWithLifecycle()
     val watchDownloads by viewModel.watchDownloads.collectAsStateWithLifecycle()
+    val canHandoffToWatch by viewModel.canHandoffToWatch.collectAsStateWithLifecycle()
     val downloadedFiles by viewModel.downloads.files.collectAsStateWithLifecycle()
     val downloadProgress by viewModel.downloads.progress.collectAsStateWithLifecycle()
     // Which songs were asked for on their own, so the row menu can offer the
@@ -2980,6 +2981,7 @@ fun SquareApp(
                                 onSelectDevice = {
                                     viewModel.transferPlayback(it, positionMs.value)
                                 },
+                                onContinueOnWatch = if (canHandoffToWatch) viewModel::continueOnWatch else null,
                                 // The artist line and the line naming what is
                                 // playing both open the page they name. The
                                 // player has already folded itself away by the

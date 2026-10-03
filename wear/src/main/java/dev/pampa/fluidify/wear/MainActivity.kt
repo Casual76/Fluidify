@@ -41,6 +41,7 @@ class MainActivity : ComponentActivity() {
         // updates on its own, so the first launch is enough; KEEP makes the
         // later ones free.
         dev.pampa.fluidify.wear.update.WatchSelfUpdateWorker.schedule(this)
+        dev.pampa.fluidify.wear.downloads.NightlySyncWorker.schedule(this)
         Bridging.apply(this, app.surfacePrefs.phoneNotifications)
         askForNotificationsOnce()
         setContent {

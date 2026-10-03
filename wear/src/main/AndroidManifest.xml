@@ -15,6 +15,8 @@
     <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <!-- To hear headphones connect, for the "listen here?" prompt. Asked for in Altro. -->
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
 
     <application
         android:name=".WearApp"
@@ -72,6 +74,15 @@
                 <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
+
+        <!-- Headphones connecting to the watch, and the prompt's own button. -->
+        <receiver
+            android:name=".standalone.HeadphonesReceiver"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.bluetooth.device.action.ACL_CONNECTED" />
+            </intent-filter>
+        </receiver>
 
         <!-- The Fluidify tile: the player, one swipe from the watch face. -->
         <service

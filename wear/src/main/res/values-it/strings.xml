@@ -108,4 +108,10 @@
     <string name="download_quality">Qualità dei download</string>
     <string name="bluetooth_first">Prima il Bluetooth</string>
     <string name="bluetooth_first_summary">Quando il telefono ha lo stesso file. Spento: prima il Wi-Fi dell\'orologio</string>
+    <string name="headphones_channel">Cuffie</string>
+    <string name="headphones_connected">Cuffie collegate</string>
+    <string name="headphones_listen">Ascolta qui</string>
+    <string name="headphones_listen_on">Ascolta su %1$s</string>
+    <string name="headphone_prompt">Proponi di ascoltare con le cuffie</string>
+    <string name="headphone_prompt_summary">Quando colleghi delle cuffie all\'orologio</string>
 </resources>

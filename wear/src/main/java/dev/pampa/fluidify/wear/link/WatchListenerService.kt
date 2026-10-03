@@ -76,6 +76,9 @@ class WatchListenerService : WearableListenerService() {
                 app.downloads.onRequest(request)
                 runBlocking { withTimeoutOrNull(BUDGET_MS) { app.downloads.publish() } }
             }
+            // "Continua sull'orologio" from the phone: the watch starts its engine and the
+            // phone's music follows through Spotify Connect (see ActivePlayback.moveToWatch).
+            WearPaths.HANDOFF_TO_WATCH -> app.playback.moveToWatch(app.standalone.router.best)
             WearPaths.AUTH_GRANT -> WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AuthGrant.serializer(), event.data)
                 ?.let { app.link.onAuthGrant(it) }
             // The phone signed out: so does the watch, and its own playback stops.

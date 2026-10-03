@@ -53,7 +53,13 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
 
     /** The watch's own player, behind the same interface as the phone. */
     val local: dev.pampa.fluidify.wear.standalone.LocalControls by lazy {
-        dev.pampa.fluidify.wear.standalone.LocalControls(this, scope, art) { uri -> downloads.store.offlineTracks(uri) }
+        dev.pampa.fluidify.wear.standalone.LocalControls(
+            this,
+            scope,
+            art,
+            offlineTracks = { uri -> downloads.store.offlineTracks(uri) },
+            prefs = standalone.prefs,
+        )
     }
 
     /** Whichever of the two is in front. */

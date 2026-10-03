@@ -437,4 +437,6 @@
     <string name="watch_transfer_bluetooth_note">Quando il telefono ha già lo stesso file. Spento: prima il Wi-Fi dell\'orologio, che è più veloce.</string>
     <string name="watch_keep">Scarica sull\'orologio</string>
     <string name="watch_unkeep">Togli dall\'orologio</string>
+    <string name="continue_on_watch">Continua sull\'orologio</string>
+    <string name="continue_on_watch_note">L\'orologio la suona da solo: altoparlante o cuffie</string>
 </resources>

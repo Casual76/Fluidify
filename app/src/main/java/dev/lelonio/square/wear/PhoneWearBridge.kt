@@ -40,6 +40,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.guava.await
+import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -99,6 +101,18 @@ class PhoneWearBridge(private val app: SquareApplication) {
 
     /** The watch's downloads as the phone sees them, and the way to ask for more. */
     val watchDownloads = WatchDownloadsRemote(app, link)
+
+    /** A watch that can play by itself has said hello. */
+    val canHandoff: kotlinx.coroutines.flow.StateFlow<Boolean> = updates.watch
+        .map { it?.hello?.features?.contains(dev.pampa.fluidify.wear.protocol.Features.HANDOFF) == true }
+        .stateIn(scope, kotlinx.coroutines.flow.SharingStarted.Eagerly, false)
+
+    /**
+     * "Continua sull'orologio": the watch starts its own engine, becomes a Spotify
+     * Connect device, and asks this phone to transfer to it — queue and position go
+     * over the way they go to any speaker. True when a watch was told.
+     */
+    suspend fun handoffToWatch(): Boolean = link.broadcast(WearPaths.HANDOFF_TO_WATCH, ByteArray(0))
 
     /** The current player, for the RPC handler. Main thread. */
     internal val currentPlayer: Player? get() = player

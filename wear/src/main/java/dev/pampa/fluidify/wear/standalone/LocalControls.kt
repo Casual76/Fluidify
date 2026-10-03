@@ -59,6 +59,8 @@ class LocalControls(
     private val art: ArtStore,
     /** A kept playlist's tracks from the watch's own disk, for when there is no session to read it. */
     private val offlineTracks: (String) -> List<dev.lelonio.square.data.CatalogTrack> = { emptyList() },
+    /** Where the last thing played here is remembered; see [resumeLast]. */
+    private val prefs: StandalonePrefs? = null,
 ) : PlaybackControls {
 
     private val _nowPlaying = MutableStateFlow(NowPlaying(null, LinkStatus.CONNECTED))
@@ -139,6 +141,10 @@ class LocalControls(
     private var likedOverride: Pair<String, Boolean>? = null
 
     override fun playContext(contextUri: String, startTrackUri: String?, shuffle: Boolean, label: String) {
+        prefs?.let {
+            it.lastContext = contextUri
+            it.lastContextLabel = label
+        }
         scope.launch {
             // Through the session when there is one; from the watch's own downloads otherwise,
             // which is how a run with no phone and no Wi-Fi still plays the playlist.
@@ -161,6 +167,12 @@ class LocalControls(
                 it.play()
             }
         }
+    }
+
+    /** Plays again what the watch last played on its own, from the top; nothing when it never did. */
+    fun resumeLast() {
+        val uri = prefs?.lastContext ?: return
+        playContext(uri, label = prefs.lastContextLabel)
     }
 
     override fun playQueueIndex(index: Int, uri: String) = withController {

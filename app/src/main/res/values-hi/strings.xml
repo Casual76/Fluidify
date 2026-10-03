@@ -451,4 +451,6 @@
     <string name="watch_transfer_bluetooth_note">जब फ़ोन पर वही फ़ाइल हो। बंद: पहले घड़ी का Wi-Fi, जो तेज़ है।</string>
     <string name="watch_keep">घड़ी पर डाउनलोड करें</string>
     <string name="watch_unkeep">घड़ी से हटाएँ</string>
+    <string name="continue_on_watch">घड़ी पर जारी रखें</string>
+    <string name="continue_on_watch_note">घड़ी खुद चलाएगी: स्पीकर या हेडफ़ोन</string>
 </resources>

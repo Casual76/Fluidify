@@ -108,4 +108,10 @@
     <string name="download_quality">İndirme kalitesi</string>
     <string name="bluetooth_first">Önce Bluetooth</string>
     <string name="bluetooth_first_summary">Telefonda aynı dosya varken. Kapalı: önce saatin Wi-Fi\'ı</string>
+    <string name="headphones_channel">Kulaklık</string>
+    <string name="headphones_connected">Kulaklık bağlandı</string>
+    <string name="headphones_listen">Burada dinle</string>
+    <string name="headphones_listen_on">%1$s ile dinle</string>
+    <string name="headphone_prompt">Kulaklıkla dinlemeyi öner</string>
+    <string name="headphone_prompt_summary">Saate kulaklık bağlandığında</string>
 </resources>

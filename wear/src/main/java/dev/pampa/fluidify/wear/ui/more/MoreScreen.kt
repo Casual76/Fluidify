@@ -91,6 +91,18 @@ fun MoreScreen(
     }
     val meterOn by (glassMeter?.enabled ?: remember { MutableStateFlow(false) }).collectAsStateWithLifecycle()
     var speaker by remember { mutableStateOf(standalone?.prefs?.speakerAllowed ?: true) }
+    var headphonePrompt by remember {
+        mutableStateOf(
+            (standalone?.prefs?.headphonePrompt ?: true) &&
+                ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED,
+        )
+    }
+    // Hearing headphones connect needs the Bluetooth permission, asked for the moment the
+    // switch is turned on rather than at first launch.
+    val askBluetooth = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+        headphonePrompt = granted
+        standalone?.prefs?.headphonePrompt = granted
+    }
     var cellular by remember { mutableStateOf(standalone?.prefs?.allowCellular ?: false) }
     val watchAuth by (standalone?.auth?.state ?: remember { MutableStateFlow(dev.pampa.fluidify.wear.standalone.AuthState.NOT_YET) })
         .collectAsStateWithLifecycle()
@@ -213,6 +225,22 @@ fun MoreScreen(
                     },
                     label = { Text(stringResource(R.string.speaker_allowed)) },
                     secondaryLabel = { Text(stringResource(R.string.speaker_allowed_summary)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            item {
+                SwitchButton(
+                    checked = headphonePrompt,
+                    onCheckedChange = { on ->
+                        if (on && ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) != PackageManager.PERMISSION_GRANTED) {
+                            askBluetooth.launch(Manifest.permission.BLUETOOTH_CONNECT)
+                        } else {
+                            headphonePrompt = on
+                            standalone.prefs.headphonePrompt = on
+                        }
+                    },
+                    label = { Text(stringResource(R.string.headphone_prompt)) },
+                    secondaryLabel = { Text(stringResource(R.string.headphone_prompt_summary)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
             }

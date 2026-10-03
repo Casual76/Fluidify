@@ -436,4 +436,6 @@
     <string name="watch_transfer_bluetooth_note">Quand le téléphone a déjà le même fichier. Désactivé : d\'abord le Wi-Fi de la montre, plus rapide.</string>
     <string name="watch_keep">Télécharger sur la montre</string>
     <string name="watch_unkeep">Retirer de la montre</string>
+    <string name="continue_on_watch">Continuer sur la montre</string>
+    <string name="continue_on_watch_note">La montre la lit seule : haut-parleur ou casque</string>
 </resources>

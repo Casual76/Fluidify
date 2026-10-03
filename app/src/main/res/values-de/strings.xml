@@ -436,4 +436,6 @@
     <string name="watch_transfer_bluetooth_note">Wenn das Telefon dieselbe Datei schon hat. Aus: zuerst das WLAN der Uhr, das ist schneller.</string>
     <string name="watch_keep">Auf die Uhr laden</string>
     <string name="watch_unkeep">Von der Uhr entfernen</string>
+    <string name="continue_on_watch">Auf der Uhr weiterhören</string>
+    <string name="continue_on_watch_note">Die Uhr spielt es selbst: Lautsprecher oder Kopfhörer</string>
 </resources>

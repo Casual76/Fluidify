@@ -108,4 +108,10 @@
     <string name="download_quality">Qualité des téléchargements</string>
     <string name="bluetooth_first">Bluetooth d\'abord</string>
     <string name="bluetooth_first_summary">Quand le téléphone a le même fichier. Désactivé : d\'abord le Wi-Fi de la montre</string>
+    <string name="headphones_channel">Casque</string>
+    <string name="headphones_connected">Casque connecté</string>
+    <string name="headphones_listen">Écouter ici</string>
+    <string name="headphones_listen_on">Écouter sur %1$s</string>
+    <string name="headphone_prompt">Proposer d\'écouter au casque</string>
+    <string name="headphone_prompt_summary">Quand un casque se connecte à la montre</string>
 </resources>
