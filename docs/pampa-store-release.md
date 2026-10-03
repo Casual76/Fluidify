@@ -230,5 +230,15 @@ checks it again and sends it to the watch over Bluetooth; the watch installs it
 arranges; otherwise with one tap). A watch that has not seen its phone for a
 week checks the manifest itself while charging.
 
-The first install on a watch is the one step that needs ADB:
-`tools/install-wear.ps1` (see the comment at its top for the Galaxy Watch steps).
+The first install on a watch is the one step that needs ADB, and the phone can
+do it itself: Settings › Watch › "Install on the watch". On the watch, turn on
+Developer options (seven taps on the build number), then ADB debugging and
+Wireless debugging, and open "Pair new device"; the phone finds the watch on the
+Wi-Fi (or takes the address typed in), pairs with the six-digit code, streams
+the APK from this release into `pm install` with itself as the installer of
+record, allows the watch app to install its own updates (`appops`), and opens it.
+Debugging can be switched off on the watch afterwards.
+
+When the phone cannot (a network that blocks mDNS and an address typed wrong is
+the usual reason), `tools/install-wear.ps1` does the same from a computer (see
+the comment at its top for the Galaxy Watch steps).

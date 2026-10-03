@@ -75,6 +75,9 @@ internal fun WatchSection() {
 
         WatchDownloadsRows(app)
 
+        // Only while no watch has the app yet (or for reinstalling one in development).
+        if (current == null || BuildConfig.BUILD_TYPE != "release") WatchInstallRows(app)
+
         // While developing: any build, straight from the phone, without a computer.
         if (BuildConfig.BUILD_TYPE != "release" && current != null) {
             RowDivider()

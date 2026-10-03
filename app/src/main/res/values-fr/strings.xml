@@ -438,4 +438,21 @@
     <string name="watch_unkeep">Retirer de la montre</string>
     <string name="continue_on_watch">Continuer sur la montre</string>
     <string name="continue_on_watch_note">La montre la lit seule : haut-parleur ou casque</string>
+    <string name="watch_install">Installer sur la montre</string>
+    <string name="watch_install_steps">Sur la montre : Paramètres › Système › À propos › touchez sept fois le numéro de build ; puis Options pour les développeurs › activez Débogage ADB et Débogage sans fil › Associer un appareil. Montre et téléphone sur le même Wi-Fi.</string>
+    <string name="watch_install_address">Adresse de la montre (IP:port sous Associer un appareil)</string>
+    <string name="watch_install_code">Code d\'association</string>
+    <string name="watch_install_go">Associer et installer</string>
+    <string name="watch_install_idle">En attente de la montre sur le réseau…</string>
+    <string name="watch_install_pairing">Association…</string>
+    <string name="watch_install_connecting">Connexion…</string>
+    <string name="watch_install_downloading">Téléchargement de l\'app montre…</string>
+    <string name="watch_install_installing">Installation…</string>
+    <string name="watch_install_finishing">Ouverture de Fluidify sur la montre…</string>
+    <string name="watch_install_done">Installée. Vous pouvez désactiver le débogage sur la montre.</string>
+    <string name="watch_install_wrong_code">Code refusé : vérifiez-le et réessayez</string>
+    <string name="watch_install_not_found">Montre introuvable : saisissez l\'adresse affichée sous Débogage sans fil</string>
+    <string name="watch_install_refused">La montre a refusé la connexion : le Débogage sans fil est-il toujours actif ?</string>
+    <string name="watch_install_no_apk">Impossible d\'obtenir l\'app montre</string>
+    <string name="watch_install_failed">Échec de l\'installation : %1$s</string>
 </resources>

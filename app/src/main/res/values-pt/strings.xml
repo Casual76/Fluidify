@@ -438,4 +438,21 @@
     <string name="watch_unkeep">Remover do relógio</string>
     <string name="continue_on_watch">Continuar no relógio</string>
     <string name="continue_on_watch_note">O relógio toca sozinho: alto-falante ou fones</string>
+    <string name="watch_install">Instalar no relógio</string>
+    <string name="watch_install_steps">No relógio: Configurações › Sistema › Sobre › toque sete vezes no número da versão; depois Opções do desenvolvedor › ative Depuração ADB e Depuração sem fio › Parear novo dispositivo. Relógio e telefone no mesmo Wi-Fi.</string>
+    <string name="watch_install_address">Endereço do relógio (IP:porta em Parear novo dispositivo)</string>
+    <string name="watch_install_code">Código de pareamento</string>
+    <string name="watch_install_go">Parear e instalar</string>
+    <string name="watch_install_idle">Esperando o relógio na rede…</string>
+    <string name="watch_install_pairing">Pareando…</string>
+    <string name="watch_install_connecting">Conectando…</string>
+    <string name="watch_install_downloading">Baixando o app do relógio…</string>
+    <string name="watch_install_installing">Instalando…</string>
+    <string name="watch_install_finishing">Abrindo o Fluidify no relógio…</string>
+    <string name="watch_install_done">Instalado. Já pode desligar a depuração no relógio.</string>
+    <string name="watch_install_wrong_code">Código não aceito: confira e tente de novo</string>
+    <string name="watch_install_not_found">Relógio não encontrado: digite o endereço de Depuração sem fio</string>
+    <string name="watch_install_refused">O relógio recusou a conexão: a Depuração sem fio continua ativa?</string>
+    <string name="watch_install_no_apk">Não foi possível obter o app do relógio</string>
+    <string name="watch_install_failed">A instalação falhou: %1$s</string>
 </resources>

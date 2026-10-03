@@ -438,4 +438,21 @@
     <string name="watch_unkeep">Von der Uhr entfernen</string>
     <string name="continue_on_watch">Auf der Uhr weiterhören</string>
     <string name="continue_on_watch_note">Die Uhr spielt es selbst: Lautsprecher oder Kopfhörer</string>
+    <string name="watch_install">Auf der Uhr installieren</string>
+    <string name="watch_install_steps">Auf der Uhr: Einstellungen › System › Info › siebenmal auf die Build-Nummer tippen; dann Entwickleroptionen › ADB-Debugging und Debugging über WLAN einschalten › Neues Gerät koppeln. Uhr und Telefon im selben WLAN.</string>
+    <string name="watch_install_address">Adresse der Uhr (IP:Port unter Neues Gerät koppeln)</string>
+    <string name="watch_install_code">Kopplungscode</string>
+    <string name="watch_install_go">Koppeln und installieren</string>
+    <string name="watch_install_idle">Warte auf die Uhr im Netzwerk…</string>
+    <string name="watch_install_pairing">Koppeln…</string>
+    <string name="watch_install_connecting">Verbinden…</string>
+    <string name="watch_install_downloading">Uhr-App wird geladen…</string>
+    <string name="watch_install_installing">Installieren…</string>
+    <string name="watch_install_finishing">Fluidify wird auf der Uhr geöffnet…</string>
+    <string name="watch_install_done">Installiert. Du kannst das Debugging auf der Uhr ausschalten.</string>
+    <string name="watch_install_wrong_code">Code nicht akzeptiert: prüfen und erneut versuchen</string>
+    <string name="watch_install_not_found">Uhr nicht gefunden: gib die Adresse unter Debugging über WLAN ein</string>
+    <string name="watch_install_refused">Die Uhr hat die Verbindung abgelehnt: ist Debugging über WLAN noch an?</string>
+    <string name="watch_install_no_apk">Die Uhr-App konnte nicht geladen werden</string>
+    <string name="watch_install_failed">Installation fehlgeschlagen: %1$s</string>
 </resources>

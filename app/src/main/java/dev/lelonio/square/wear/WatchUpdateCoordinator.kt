@@ -124,6 +124,21 @@ class WatchUpdateCoordinator(
         )
     }
 
+    /**
+     * The latest watch build from the store, downloaded and checked the same way as an
+     * update (package, version, signature), for a watch that does not have the app at
+     * all: the phone's installer streams it in over ADB (see install/WatchInstaller).
+     */
+    suspend fun latestApk(onProgress: (Float?) -> Unit): Result<File> = lock.withLock {
+        val update = updater.check(NO_VERSION).getOrElse { return@withLock Result.failure(it) }
+            ?: return@withLock Result.failure(IllegalStateException("no watch build is published"))
+        val file = runCatching {
+            installer.download(update) { progress -> onProgress(progress.progress.takeIf { it in 0f..1f }) }
+        }.getOrElse { return@withLock Result.failure(it) }
+        rejectArchive(file, update.version)?.let { return@withLock Result.failure(IllegalStateException(it)) }
+        Result.success(file)
+    }
+
     /** Checks and, if there is something, sends it. The "update the watch" row. */
     fun checkAndPush() {
         scope.launch {
@@ -249,6 +264,9 @@ class WatchUpdateCoordinator(
     }
 
     companion object {
+        /** Older than any build: what "the watch has nothing installed" is checked as. */
+        private const val NO_VERSION = "0.0.0"
+
         private const val TAG = "WatchUpdate"
         private const val KEY_AUTO = "auto_update"
         private const val KEY_CHECKED = "checked_at"

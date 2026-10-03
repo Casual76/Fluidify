@@ -17,6 +17,16 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
+        // libadb-android and the SPAKE2 it pairs with, which are published only on JitPack.
+        // Exclusive both ways: those two are looked for nowhere else, and nothing else is
+        // ever resolved from JitPack.
+        exclusiveContent {
+            forRepository { maven("https://jitpack.io") }
+            filter {
+                includeModule("com.github.MuntashirAkon", "libadb-android")
+                includeGroup("com.github.MuntashirAkon.spake2-java")
+            }
+        }
     }
 }
 

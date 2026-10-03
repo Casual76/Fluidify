@@ -49,3 +49,9 @@
 # the fully qualified class name.
 -keepclasseswithmembernames class dev.lelonio.square.playback.Stretcher { native <methods>; }
 -keep class dev.lelonio.square.playback.Stretcher { *; }
+
+# Installing the watch app from the phone (wear/install, libadb-android): libadb looks the
+# TLS 1.3 provider up by name and instantiates it, and talks to the watch through its own
+# classes by reflection in places. Small enough to keep whole.
+-keep class org.conscrypt.OpenSSLProvider { <init>(...); }
+-keep class io.github.muntashirakon.adb.** { *; }

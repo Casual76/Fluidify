@@ -267,6 +267,13 @@ dependencies {
     implementation(project(":wear-protocol"))
     implementation(libs.play.services.wearable)
     implementation(libs.kotlinx.coroutines.play.services)
+    // Installing the watch app from the phone over wireless debugging; see wear/install.
+    // Conscrypt for the TLS 1.3 key export that Wear OS's pairing needs.
+    implementation(libs.libadb.android)
+    implementation(libs.conscrypt.android)
+    // Already libadb's own, at runtime; named here because the phone's key and certificate
+    // for the pairing are made with it.
+    implementation(libs.bouncycastle.prov)
 
     coreLibraryDesugaring(libs.desugaring)
 }

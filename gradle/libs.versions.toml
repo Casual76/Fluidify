@@ -44,6 +44,9 @@ androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version = "
 wear-input = { module = "androidx.wear:wear-input", version = "1.2.0" }
 wear-compose-navigation = { module = "androidx.wear.compose:compose-navigation", version = "1.6.2" }
 wear-tiles = { module = "androidx.wear.tiles:tiles", version = "1.6.2" }
+libadb-android = { module = "com.github.MuntashirAkon:libadb-android", version = "3.0.0" }
+conscrypt-android = { module = "org.conscrypt:conscrypt-android", version = "2.5.3" }
+bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk15to18", version = "1.78" }
 wear-tiles-renderer = { module = "androidx.wear.tiles:tiles-renderer", version = "1.6.2" }
 wear-protolayout = { module = "androidx.wear.protolayout:protolayout", version = "1.4.2" }
 wear-protolayout-expression = { module = "androidx.wear.protolayout:protolayout-expression", version = "1.4.2" }

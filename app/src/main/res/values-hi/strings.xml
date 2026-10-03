@@ -453,4 +453,21 @@
     <string name="watch_unkeep">घड़ी से हटाएँ</string>
     <string name="continue_on_watch">घड़ी पर जारी रखें</string>
     <string name="continue_on_watch_note">घड़ी खुद चलाएगी: स्पीकर या हेडफ़ोन</string>
+    <string name="watch_install">घड़ी पर इंस्टॉल करें</string>
+    <string name="watch_install_steps">घड़ी पर: सेटिंग › सिस्टम › जानकारी › बिल्ड नंबर पर सात बार टैप करें; फिर डेवलपर विकल्प › ADB डीबगिंग और वायरलेस डीबगिंग चालू करें › नया डिवाइस जोड़ें। घड़ी और फ़ोन एक ही Wi-Fi पर रखें।</string>
+    <string name="watch_install_address">घड़ी का पता (नया डिवाइस जोड़ें के नीचे IP:पोर्ट)</string>
+    <string name="watch_install_code">पेयरिंग कोड</string>
+    <string name="watch_install_go">जोड़ें और इंस्टॉल करें</string>
+    <string name="watch_install_idle">नेटवर्क पर घड़ी का इंतज़ार…</string>
+    <string name="watch_install_pairing">जोड़ा जा रहा है…</string>
+    <string name="watch_install_connecting">कनेक्ट हो रहा है…</string>
+    <string name="watch_install_downloading">घड़ी ऐप डाउनलोड हो रहा है…</string>
+    <string name="watch_install_installing">इंस्टॉल हो रहा है…</string>
+    <string name="watch_install_finishing">घड़ी पर Fluidify खुल रहा है…</string>
+    <string name="watch_install_done">इंस्टॉल हो गया। अब घड़ी पर डीबगिंग बंद कर सकते हैं।</string>
+    <string name="watch_install_wrong_code">कोड स्वीकार नहीं हुआ: जाँचें और फिर कोशिश करें</string>
+    <string name="watch_install_not_found">घड़ी नहीं मिली: वायरलेस डीबगिंग में दिखा पता लिखें</string>
+    <string name="watch_install_refused">घड़ी ने कनेक्शन मना किया: क्या वायरलेस डीबगिंग अभी भी चालू है?</string>
+    <string name="watch_install_no_apk">स्टोर से घड़ी ऐप नहीं मिल सका</string>
+    <string name="watch_install_failed">इंस्टॉल नहीं हुआ: %1$s</string>
 </resources>

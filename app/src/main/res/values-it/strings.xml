@@ -439,4 +439,21 @@
     <string name="watch_unkeep">Togli dall\'orologio</string>
     <string name="continue_on_watch">Continua sull\'orologio</string>
     <string name="continue_on_watch_note">L\'orologio la suona da solo: altoparlante o cuffie</string>
+    <string name="watch_install">Installa sull\'orologio</string>
+    <string name="watch_install_steps">Sull\'orologio: Impostazioni › Sistema › Info › tocca sette volte il numero build; poi Opzioni sviluppatore › attiva Debug ADB e Debug wireless › Associa nuovo dispositivo. Tieni orologio e telefono sullo stesso Wi-Fi.</string>
+    <string name="watch_install_address">Indirizzo dell\'orologio (IP:porta sotto Associa nuovo dispositivo)</string>
+    <string name="watch_install_code">Codice di associazione</string>
+    <string name="watch_install_go">Associa e installa</string>
+    <string name="watch_install_idle">In attesa dell\'orologio sulla rete…</string>
+    <string name="watch_install_pairing">Associazione…</string>
+    <string name="watch_install_connecting">Connessione…</string>
+    <string name="watch_install_downloading">Download dell\'app per orologio…</string>
+    <string name="watch_install_installing">Installazione…</string>
+    <string name="watch_install_finishing">Apertura di Fluidify sull\'orologio…</string>
+    <string name="watch_install_done">Installata. Ora puoi spegnere il debug sull\'orologio.</string>
+    <string name="watch_install_wrong_code">Codice non accettato: controllalo e riprova</string>
+    <string name="watch_install_not_found">Orologio non trovato: scrivi l\'indirizzo mostrato sotto Debug wireless</string>
+    <string name="watch_install_refused">L\'orologio ha rifiutato la connessione: il Debug wireless è ancora attivo?</string>
+    <string name="watch_install_no_apk">Impossibile scaricare l\'app per orologio dallo store</string>
+    <string name="watch_install_failed">Installazione non riuscita: %1$s</string>
 </resources>

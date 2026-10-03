@@ -459,4 +459,21 @@
     <string name="watch_unkeep">Remove from watch</string>
     <string name="continue_on_watch">Continue on the watch</string>
     <string name="continue_on_watch_note">The watch plays it on its own: its speaker or headphones</string>
+    <string name="watch_install">Install on the watch</string>
+    <string name="watch_install_steps">On the watch: Settings › System › About › tap the build number seven times; then Developer options › turn on ADB debugging and Wireless debugging › Pair new device. Keep the watch on the same Wi-Fi as the phone.</string>
+    <string name="watch_install_address">Watch address (IP:port shown under Pair new device)</string>
+    <string name="watch_install_code">Pairing code</string>
+    <string name="watch_install_go">Pair and install</string>
+    <string name="watch_install_idle">Waiting for the watch on the network…</string>
+    <string name="watch_install_pairing">Pairing…</string>
+    <string name="watch_install_connecting">Connecting…</string>
+    <string name="watch_install_downloading">Downloading the watch app…</string>
+    <string name="watch_install_installing">Installing…</string>
+    <string name="watch_install_finishing">Opening Fluidify on the watch…</string>
+    <string name="watch_install_done">Installed. You can turn off debugging on the watch.</string>
+    <string name="watch_install_wrong_code">The code was not accepted: check it and try again</string>
+    <string name="watch_install_not_found">The watch was not found: type the address shown under Wireless debugging</string>
+    <string name="watch_install_refused">The watch refused the connection: is Wireless debugging still on?</string>
+    <string name="watch_install_no_apk">Could not get the watch app from the store</string>
+    <string name="watch_install_failed">Installation failed: %1$s</string>
 </resources>
