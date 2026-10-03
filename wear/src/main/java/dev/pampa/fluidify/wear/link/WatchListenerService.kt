@@ -11,6 +11,7 @@ import dev.pampa.fluidify.wear.WearApp
 import dev.pampa.fluidify.wear.protocol.CommandAck
 import dev.pampa.fluidify.wear.protocol.Hello
 import dev.pampa.fluidify.wear.protocol.PlaybackSnapshot
+import dev.pampa.fluidify.wear.protocol.RpcResponse
 import dev.pampa.fluidify.wear.protocol.UpdateOffer
 import dev.pampa.fluidify.wear.protocol.WearCodec
 import dev.pampa.fluidify.wear.protocol.WearPaths
@@ -63,6 +64,7 @@ class WatchListenerService : WearableListenerService() {
                 runBlocking { withTimeoutOrNull(BUDGET_MS) { app.updater.onOffer(event.sourceNodeId, offer) } }
             }
             WearPaths.ACK -> WearCodec.decodeOrNull(CommandAck.serializer(), event.data)?.let { app.link.onAck(it) }
+            WearPaths.RPC_REPLY -> WearCodec.decodeOrNull(RpcResponse.serializer(), event.data)?.let { app.link.onRpcReply(it) }
             WearPaths.HELLO -> WearCodec.decodeOrNull(Hello.serializer(), event.data)?.let {
                 app.link.onHello(it, event.sourceNodeId)
             }
@@ -70,8 +72,12 @@ class WatchListenerService : WearableListenerService() {
     }
 
     override fun onChannelOpened(channel: ChannelClient.Channel) {
-        if (channel.path != WearPaths.UPDATE_APK) return
-        runBlocking { withTimeoutOrNull(BUDGET_MS) { app.updater.onChannelOpened(channel) } }
+        when {
+            channel.path == WearPaths.UPDATE_APK ->
+                runBlocking { withTimeoutOrNull(BUDGET_MS) { app.updater.onChannelOpened(channel) } }
+            channel.path.startsWith(WearPaths.RPC_STREAM_PREFIX) ->
+                runBlocking { withTimeoutOrNull(BUDGET_MS) { app.link.onRpcStream(channel) } }
+        }
     }
 
     override fun onInputClosed(channel: ChannelClient.Channel, closeReason: Int, appSpecificErrorCode: Int) {

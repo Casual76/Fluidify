@@ -125,6 +125,9 @@ android {
                     "--add-exports=java.base/jdk.internal.access=ALL-UNNAMED",
                     "--add-opens=java.base/java.io=ALL-UNNAMED",
                 )
+                // The renders need Compose's test activity, which only the debug manifest
+                // carries; the other variants run the plain tests.
+                if (!it.name.contains("Debug")) it.exclude("**/screenshots/**")
             }
         }
     }
@@ -150,6 +153,8 @@ dependencies {
     implementation(libs.kotlinx.serialization.json)
     implementation(libs.play.services.wearable)
     implementation(libs.androidx.work.runtime)
+    implementation(libs.wear.input)
+    implementation(libs.wear.compose.navigation)
     implementation(libs.coil.compose)
     implementation(libs.phosphor)
 

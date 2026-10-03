@@ -14,7 +14,9 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -58,6 +60,9 @@ import dev.pampa.fluidify.wear.link.ArtStore
 import dev.pampa.fluidify.wear.link.LinkStatus
 import dev.pampa.fluidify.wear.playback.NowPlaying
 import dev.pampa.fluidify.wear.playback.PlaybackControls
+import dev.pampa.fluidify.wear.playback.VolumeControl
+import dev.antigravity.fluidengine.wear.components.fluidRotarySteps
+import kotlinx.coroutines.flow.MutableStateFlow
 import dev.pampa.fluidify.wear.protocol.DeviceKind
 import dev.pampa.fluidify.wear.ui.common.CoverLayer
 
@@ -82,14 +87,23 @@ fun PlayerScreen(
     onOutput: () -> Unit,
     onEssentials: () -> Unit,
     modifier: Modifier = Modifier,
+    volume: VolumeControl? = null,
 ) {
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
+    val remoteVolume = now.snapshot?.device?.volume
+    LaunchedEffect(remoteVolume) { if (remoteVolume != null) volume?.sync(remoteVolume) }
+    val volumeVisible by (volume?.visible ?: remember { MutableStateFlow(false) }).collectAsStateWithLifecycle()
+    val volumeLevel by (volume?.level ?: remember { MutableStateFlow(0f) }).collectAsStateWithLifecycle()
     val ambient = LocalFluidWearAmbient.current
     val snapshot = now.snapshot
     val track = snapshot?.track
     val backdrop = rememberGlassBackdrop()
 
-    Box(modifier = modifier.fillMaxSize()) {
+    Box(
+        modifier = modifier
+            .fillMaxSize()
+            .then(if (volume != null && !ambient.isAmbient) Modifier.fluidRotarySteps(onSteps = volume::turn) else Modifier),
+    ) {
         CoverLayer(
             artKey = track?.artKey,
             art = art,
@@ -208,8 +222,9 @@ fun PlayerScreen(
                     )
                 }
             }
-        }
 
+            VolumeOverlay(visible = volumeVisible, level = volumeLevel)
+        }
     }
 }
 

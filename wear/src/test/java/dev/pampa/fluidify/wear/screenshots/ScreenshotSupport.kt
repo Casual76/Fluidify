@@ -136,4 +136,11 @@ class FakeControls(snapshot: PlaybackSnapshot?, link: LinkStatus = LinkStatus.CO
     override fun setShuffle(enabled: Boolean) = Unit
     override fun setRepeat(mode: RepeatMode) = Unit
     override fun setLiked(liked: Boolean) = Unit
+    override fun playContext(contextUri: String, startTrackUri: String?, shuffle: Boolean, label: String) = Unit
+    override fun playQueueIndex(index: Int, uri: String) = Unit
+    override fun addToQueue(uri: String) = Unit
+    override fun startRadio() = Unit
+    override fun transfer(deviceId: String) = Unit
+    override fun setVolume(level: Float, deviceId: String?) = Unit
+    override fun sleep(minutes: Int?, atTrackEnd: Boolean, cancel: Boolean) = Unit
 }

@@ -13,6 +13,7 @@ import dev.lelonio.square.BuildConfig
 import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.data.RemoteConnect
 import dev.lelonio.square.playback.PlaybackService
+import dev.lelonio.square.playback.toQueueItem
 import dev.pampa.fluidify.wear.protocol.Command
 import dev.pampa.fluidify.wear.protocol.CommandAck
 import dev.pampa.fluidify.wear.protocol.CommandEnvelope
@@ -23,6 +24,7 @@ import dev.pampa.fluidify.wear.protocol.Hello
 import dev.pampa.fluidify.wear.protocol.PlaybackSnapshot
 import dev.pampa.fluidify.wear.protocol.PlaybackSource
 import dev.pampa.fluidify.wear.protocol.RepeatMode
+import dev.pampa.fluidify.wear.protocol.SleepInfo
 import dev.pampa.fluidify.wear.protocol.Role
 import dev.pampa.fluidify.wear.protocol.TrackInfo
 import dev.pampa.fluidify.wear.protocol.WearCodec
@@ -83,6 +85,15 @@ class PhoneWearBridge(private val app: SquareApplication) {
     private var waker: MediaController? = null
     private var wakerRelease: Job? = null
 
+    /** The service's browse tree, for the radio; set by PlaybackService. */
+    var browseTree: dev.lelonio.square.playback.MediaBrowseTree? = null
+
+    /** Answers the watch's questions (queue, devices, library). */
+    val rpc = WearRpcHandler(app, this)
+
+    /** The current player, for the RPC handler. Main thread. */
+    internal val currentPlayer: Player? get() = player
+
     /** The answer for a track the shared set does not know about, while it is current. */
     private var likedLookup: Pair<String, Boolean?>? = null
     private var likedJob: Job? = null
@@ -137,7 +148,9 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 app.likedTracks.state,
                 RemoteConnect.elsewhereActive,
                 RemoteConnect.devices,
-            ) { liked, elsewhere, devices -> Triple(liked, elsewhere, devices) }
+                dev.lelonio.square.playback.SleepTimer.endsAt,
+                dev.lelonio.square.playback.SleepTimer.atTrackEnd,
+            ) { liked, elsewhere, devices, sleepAt, sleepEnd -> listOf(liked, elsewhere, devices, sleepAt, sleepEnd) }
                 .distinctUntilChanged()
                 .collect { changed(urgent = true) }
         }
@@ -242,9 +255,17 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 ContextInfo(contextUri, extras.getString(dev.lelonio.square.ui.EXTRA_CONTEXT_LABEL).orEmpty())
             },
             device = device,
+            sleep = sleepInfo(),
             offline = dev.lelonio.square.playback.OfflineMode.active.value,
             nextArtKey = artKeyOf(nextItem(current)?.mediaMetadata?.artworkUri?.toString()),
         )
+    }
+
+    private fun sleepInfo(): SleepInfo? {
+        val endsAt = dev.lelonio.square.playback.SleepTimer.endsAt.value
+        val atEnd = dev.lelonio.square.playback.SleepTimer.atTrackEnd.value
+        if (endsAt == null && !atEnd) return null
+        return SleepInfo(endsAtEpochMs = endsAt, atTrackEnd = atEnd)
     }
 
     /** The heart for [uri]: known, looked up once, or unknown (null) while the lookup runs. */
@@ -264,7 +285,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
         return null
     }
 
-    private fun currentDevice(): DeviceInfo {
+    internal fun currentDevice(): DeviceInfo {
         val active = RemoteConnect.devices.value.firstOrNull { it.active }
         if (RemoteConnect.elsewhereActive.value && active != null && !active.isThisPhone) {
             return DeviceInfo(
@@ -331,10 +352,34 @@ class PhoneWearBridge(private val app: SquareApplication) {
 
     /** Applies [command]; returns an error string, or null when it was applied. Main thread. */
     private suspend fun apply(command: Command): String? {
-        if (command is Command.SetLiked) {
-            withContext(Dispatchers.IO) { app.likedTracks.set(command.uri, command.liked) }
-            if (likedLookup?.first == command.uri) likedLookup = command.uri to command.liked
-            return null
+        when (command) {
+            is Command.SetLiked -> {
+                withContext(Dispatchers.IO) { app.likedTracks.set(command.uri, command.liked) }
+                if (likedLookup?.first == command.uri) likedLookup = command.uri to command.liked
+                return null
+            }
+            is Command.SetVolume -> {
+                ConnectVolume.set(app, command.level, command.deviceId)
+                changed(urgent = true)
+                return null
+            }
+            is Command.Transfer -> {
+                val here = command.deviceId == PHONE_DEVICE_ID || RemoteConnect.isThisPhone(command.deviceId)
+                RemoteConnect.request(
+                    if (here) RemoteConnect.TransferRequest.Here else RemoteConnect.TransferRequest.To(command.deviceId),
+                )
+                return null
+            }
+            is Command.SleepTimer -> {
+                when {
+                    command.cancel -> dev.lelonio.square.playback.SleepTimer.cancel()
+                    command.atTrackEnd -> dev.lelonio.square.playback.SleepTimer.atEndOfTrack()
+                    command.minutes != null -> dev.lelonio.square.playback.SleepTimer.inMinutes(command.minutes!!)
+                    else -> return "bad-timer"
+                }
+                return null
+            }
+            else -> Unit
         }
         val player = ensurePlayer() ?: return "phone-unavailable"
         when (command) {
@@ -349,6 +394,38 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 RepeatMode.ONE -> Player.REPEAT_MODE_ONE
                 RepeatMode.ALL -> Player.REPEAT_MODE_ALL
                 RepeatMode.OFF -> Player.REPEAT_MODE_OFF
+            }
+            is Command.PlayQueueIndex -> {
+                // The index is the watch's, read from a window that may be a moment old: only
+                // jump when it still points at the track the person tapped.
+                val index = command.index.takeIf { it in 0 until player.mediaItemCount && player.getMediaItemAt(it).mediaId == command.uri }
+                    ?: (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == command.uri }
+                    ?: return "not-in-queue"
+                player.seekTo(index, 0)
+                playWhenLoaded(player)
+            }
+            is Command.StartRadio -> {
+                val tree = browseTree ?: return "phone-unavailable"
+                tree.startRadio(player)
+            }
+            is Command.PlayContext -> {
+                val tracks = withContext(Dispatchers.IO) { app.spotifyBackend.tracksOf(command.contextUri) }
+                if (tracks.isEmpty()) return "empty"
+                val start = command.startTrackUri?.let { uri -> tracks.indexOfFirst { it.uri == uri } }?.takeIf { it >= 0 } ?: 0
+                player.setMediaItems(
+                    tracks.map { it.toQueueItem(command.contextUri, asContext = true, contextLabel = command.label) },
+                    start,
+                    0,
+                )
+                player.shuffleModeEnabled = command.shuffle
+                player.prepare()
+                player.play()
+            }
+            is Command.AddToQueue -> {
+                val track = withContext(Dispatchers.IO) {
+                    dev.lelonio.square.data.Catalog.tracks(listOf(command.uri)).firstOrNull()
+                } ?: return "not-found"
+                player.addMediaItem(track.toQueueItem(playNext = true))
             }
             else -> return "unsupported"
         }
@@ -402,7 +479,14 @@ class PhoneWearBridge(private val app: SquareApplication) {
         private const val WAKER_HOLD_MS = 30_000L
 
         /** What this phone build can do for a watch. Grows with each milestone. */
-        val PHONE_FEATURES: Set<String> = emptySet()
+        val PHONE_FEATURES: Set<String> = setOf(
+            dev.pampa.fluidify.wear.protocol.Features.VOLUME,
+            dev.pampa.fluidify.wear.protocol.Features.DEVICES,
+            dev.pampa.fluidify.wear.protocol.Features.QUEUE,
+            dev.pampa.fluidify.wear.protocol.Features.SLEEP,
+            dev.pampa.fluidify.wear.protocol.Features.LIBRARY,
+            dev.pampa.fluidify.wear.protocol.Features.UPDATE_PUSH,
+        )
 
         /** librespot's device type names, as Spotify Connect reports them. */
         fun kindOf(type: String): DeviceKind = when (type.lowercase()) {

@@ -32,8 +32,13 @@ class WearApp : Application() {
     /** What the controls talk to. The phone, for now. */
     val controls: PlaybackControls by lazy { PhoneRemote(scope, state, link) }
 
-    override fun onCreate() {
-        super.onCreate()
-        dev.pampa.fluidify.wear.update.WatchSelfUpdateWorker.schedule(this)
+    /** The phone's library and state, with a copy on disk for instant screens. */
+    val library: dev.pampa.fluidify.wear.library.PhoneLibrary by lazy {
+        dev.pampa.fluidify.wear.library.PhoneLibrary(this, link)
+    }
+
+    /** The bezel as a volume knob. */
+    val volume: dev.pampa.fluidify.wear.playback.VolumeControl by lazy {
+        dev.pampa.fluidify.wear.playback.VolumeControl(scope, controls)
     }
 }

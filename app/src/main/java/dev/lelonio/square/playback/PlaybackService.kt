@@ -198,6 +198,7 @@ class PlaybackService : MediaLibraryService() {
             .build()
 
         // The watch remote follows whichever player is current; see PhoneWearBridge.
+        container.wearBridge.browseTree = browseTree
         container.wearBridge.attach(player)
 
         // The app's own mark in the shade, instead of Media3's generic note.

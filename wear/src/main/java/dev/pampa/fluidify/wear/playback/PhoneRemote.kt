@@ -52,6 +52,13 @@ interface PlaybackControls {
     fun setShuffle(enabled: Boolean)
     fun setRepeat(mode: RepeatMode)
     fun setLiked(liked: Boolean)
+    fun playContext(contextUri: String, startTrackUri: String? = null, shuffle: Boolean = false, label: String = "")
+    fun playQueueIndex(index: Int, uri: String)
+    fun addToQueue(uri: String)
+    fun startRadio()
+    fun transfer(deviceId: String)
+    fun setVolume(level: Float, deviceId: String? = null)
+    fun sleep(minutes: Int? = null, atTrackEnd: Boolean = false, cancel: Boolean = false)
 }
 
 /**
@@ -121,6 +128,40 @@ class PhoneRemote(
     override fun setLiked(liked: Boolean) {
         val uri = nowPlaying.value.snapshot?.track?.uri ?: return
         dispatch(Command.SetLiked(uri, liked), nowPlaying.value.snapshot?.copy(liked = liked))
+    }
+
+    override fun playContext(contextUri: String, startTrackUri: String?, shuffle: Boolean, label: String) =
+        dispatch(Command.PlayContext(contextUri, startTrackUri, shuffle, label), null)
+
+    override fun playQueueIndex(index: Int, uri: String) = dispatch(Command.PlayQueueIndex(index, uri), null)
+
+    override fun addToQueue(uri: String) = dispatch(Command.AddToQueue(uri), null)
+
+    override fun startRadio() {
+        val uri = nowPlaying.value.snapshot?.track?.uri ?: return
+        dispatch(Command.StartRadio(uri), null)
+    }
+
+    override fun transfer(deviceId: String) = dispatch(Command.Transfer(deviceId), null)
+
+    override fun setVolume(level: Float, deviceId: String?) {
+        val snapshot = nowPlaying.value.snapshot
+        val guess = snapshot?.device?.let { device -> snapshot.copy(device = device.copy(volume = level.coerceIn(0f, 1f))) }
+        dispatch(Command.SetVolume(level.coerceIn(0f, 1f), deviceId), guess)
+    }
+
+    override fun sleep(minutes: Int?, atTrackEnd: Boolean, cancel: Boolean) {
+        val snapshot = nowPlaying.value.snapshot
+        val now = System.currentTimeMillis()
+        val guess = snapshot?.copy(
+            sleep = when {
+                cancel -> null
+                atTrackEnd -> dev.pampa.fluidify.wear.protocol.SleepInfo(atTrackEnd = true)
+                minutes != null -> dev.pampa.fluidify.wear.protocol.SleepInfo(endsAtEpochMs = now + minutes * 60_000L)
+                else -> snapshot.sleep
+            },
+        )
+        dispatch(Command.SleepTimer(minutes, atTrackEnd, cancel), guess)
     }
 
     private fun dispatch(command: Command, guess: PlaybackSnapshot?) {

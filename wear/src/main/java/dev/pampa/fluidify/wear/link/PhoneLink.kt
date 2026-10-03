@@ -19,6 +19,10 @@ import dev.pampa.fluidify.wear.protocol.Compatibility
 import dev.pampa.fluidify.wear.protocol.Hello
 import dev.pampa.fluidify.wear.protocol.PlaybackSnapshot
 import dev.pampa.fluidify.wear.protocol.Role
+import dev.pampa.fluidify.wear.protocol.RpcMethod
+import dev.pampa.fluidify.wear.protocol.RpcRequest
+import dev.pampa.fluidify.wear.protocol.RpcResponse
+import kotlinx.serialization.KSerializer
 import dev.pampa.fluidify.wear.protocol.WearCodec
 import dev.pampa.fluidify.wear.protocol.WearPaths
 import dev.pampa.fluidify.wear.protocol.compatibility
@@ -35,6 +39,9 @@ import kotlinx.coroutines.withTimeoutOrNull
 import java.security.MessageDigest
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
+
+/** Why a request to the phone did not produce an answer. */
+class RpcFailure(val reason: String) : Exception(reason)
 
 /** What the controls need from a link: where it stands, and a way to send a command. */
 interface CommandChannel {
@@ -97,6 +104,7 @@ class PhoneLink(
 
     private val ids = AtomicLong(System.currentTimeMillis())
     private val pending = ConcurrentHashMap<Long, CompletableDeferred<CommandAck>>()
+    private val rpcPending = ConcurrentHashMap<Long, CompletableDeferred<RpcResponse>>()
 
     @Volatile private var nodeId: String? = null
     private var answerWatch: Job? = null
@@ -181,6 +189,47 @@ class PhoneLink(
         return withTimeoutOrNull(ACK_TIMEOUT_MS) { waiter.await() }.also { pending.remove(id) }
     }
 
+    /**
+     * Asks the phone something and decodes the answer with [serializer].
+     *
+     * A failure says why: unreachable, no answer in time, or the phone's own error.
+     */
+    suspend fun <T> request(method: RpcMethod, serializer: KSerializer<T>, timeoutMs: Long = RPC_TIMEOUT_MS): Result<T> {
+        val node = nodeId ?: findPhone()?.id ?: return Result.failure(RpcFailure("unreachable"))
+        val id = ids.incrementAndGet()
+        val waiter = CompletableDeferred<RpcResponse>()
+        rpcPending[id] = waiter
+        if (!send(node, WearPaths.RPC, WearCodec.encode(RpcRequest.serializer(), RpcRequest(id, method)))) {
+            rpcPending.remove(id)
+            nodeId = null
+            _status.value = LinkStatus.UNREACHABLE
+            return Result.failure(RpcFailure("unreachable"))
+        }
+        val response = withTimeoutOrNull(timeoutMs) { waiter.await() }
+        rpcPending.remove(id)
+        if (response == null) return Result.failure(RpcFailure("timeout"))
+        if (!response.ok) return Result.failure(RpcFailure(response.error ?: "error"))
+        val payload = response.payload ?: return Result.failure(RpcFailure("empty"))
+        return runCatching { WearCodec.json.decodeFromJsonElement(serializer, payload) }
+    }
+
+    fun onRpcReply(response: RpcResponse) {
+        rpcPending.remove(response.id)?.complete(response)
+    }
+
+    /** A reply too big for a message, arriving gzipped over a channel. */
+    suspend fun onRpcStream(channel: com.google.android.gms.wearable.ChannelClient.Channel) {
+        val id = channel.path.removePrefix(WearPaths.RPC_STREAM_PREFIX).toLongOrNull() ?: return
+        val channels = Wearable.getChannelClient(context)
+        val bytes = runCatching {
+            channels.getInputStream(channel).await().use { it.readBytes() }
+        }.getOrNull() ?: return
+        val response = runCatching { WearCodec.gunzip(bytes) }.getOrNull()
+            ?.let { WearCodec.decodeOrNull(RpcResponse.serializer(), it) }
+            ?: return
+        if (response.id == id) onRpcReply(response)
+    }
+
     fun onAck(ack: CommandAck) {
         pending.remove(ack.id)?.complete(ack)
         if (_status.value == LinkStatus.UNREACHABLE || _status.value == LinkStatus.UNKNOWN) {
@@ -248,6 +297,7 @@ class PhoneLink(
         private const val TAG = "PhoneLink"
         const val ASSET_KEY = "img"
         private const val ACK_TIMEOUT_MS = 3_000L
+        private const val RPC_TIMEOUT_MS = 12_000L
         private const val HELLO_ANSWER_MS = 10_000L
 
         /** What this watch build can do. Grows with each milestone. */

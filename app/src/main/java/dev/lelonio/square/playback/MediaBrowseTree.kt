@@ -244,8 +244,13 @@ class MediaBrowseTree(
      * and this asks for it. If it will not, the queue is left alone rather than
      * replaced with something nobody chose.
      */
-    private fun startRadio(session: MediaSession) {
-        val player = session.player
+    private fun startRadio(session: MediaSession) = startRadio(session.player)
+
+    /**
+     * The same station, started on [player] directly: for the watch, which
+     * reaches the player without going through a session.
+     */
+    fun startRadio(player: androidx.media3.common.Player) {
         val uri = player.currentMediaItem?.mediaId ?: return
         if (!uri.startsWith("spotify:track:")) return
 

@@ -16,6 +16,12 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        // Here rather than in the Application: the listener service wakes the
+        // process for every message from the phone, and none of those needs to
+        // open WorkManager's database. The periodic job survives reboots and
+        // updates on its own, so the first launch is enough; KEEP makes the
+        // later ones free.
+        dev.pampa.fluidify.wear.update.WatchSelfUpdateWorker.schedule(this)
         setContent {
             val ambient = rememberFluidAmbientState(this)
             CompositionLocalProvider(LocalFluidWearAmbient provides ambient) {

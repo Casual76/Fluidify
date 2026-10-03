@@ -6,6 +6,7 @@ import com.google.android.gms.wearable.WearableListenerService
 import dev.lelonio.square.SquareApplication
 import dev.pampa.fluidify.wear.protocol.CommandEnvelope
 import dev.pampa.fluidify.wear.protocol.Hello
+import dev.pampa.fluidify.wear.protocol.RpcRequest
 import dev.pampa.fluidify.wear.protocol.UpdateStatus
 import dev.pampa.fluidify.wear.protocol.WearCodec
 import dev.pampa.fluidify.wear.protocol.WearPaths
@@ -34,6 +35,10 @@ class PhoneWearListenerService : WearableListenerService() {
             WearPaths.COMMAND -> {
                 val envelope = WearCodec.decodeOrNull(CommandEnvelope.serializer(), event.data) ?: return
                 handle { bridge.onCommand(event.sourceNodeId, envelope) }
+            }
+            WearPaths.RPC -> {
+                val request = WearCodec.decodeOrNull(RpcRequest.serializer(), event.data) ?: return
+                handle { bridge.rpc.onRequest(event.sourceNodeId, request) }
             }
             WearPaths.UPDATE_STATUS -> {
                 val status = WearCodec.decodeOrNull(UpdateStatus.serializer(), event.data) ?: return
