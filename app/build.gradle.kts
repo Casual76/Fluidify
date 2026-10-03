@@ -328,3 +328,22 @@ val fetchBungee by tasks.registering {
 // happened before any of the native build tasks run.
 tasks.matching { it.name.startsWith("configureCMake") || it.name.startsWith("buildCMake") }
     .configureEach { dependsOn(fetchBungee) }
+
+// Native libraries are built by :core now. A leftover app/src/main/jniLibs from before the move is
+// ignored by git but not by AGP, which merges it, warns about duplicates and may prefer the stale
+// copies to the fresh ones: the build fails here instead, saying what to delete.
+val checkNoStaleJniLibs by tasks.registering {
+    val stale = layout.projectDirectory.dir("src/main/jniLibs")
+    inputs.files(fileTree(stale) { include("**/*.so") }).optional()
+    doLast {
+        val libraries = stale.asFileTree.matching { include("**/*.so") }.files
+        if (libraries.isNotEmpty()) {
+            throw GradleException(
+                "Old native libraries in app/src/main/jniLibs (${libraries.size} files): delete that folder. " +
+                    "The engine is built by :core now; these would shadow it.",
+            )
+        }
+    }
+}
+tasks.named("preBuild") { dependsOn(checkNoStaleJniLibs) }
+

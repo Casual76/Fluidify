@@ -138,4 +138,9 @@
     <string name="radio_of">Radio: %1$s</string>
     <string name="moving_to_watch">Moving to the watch…</string>
     <string name="pinned">Pinned</string>
+    <string name="up_next">Up next</string>
+    <string name="other_devices">Other devices</string>
+    <string name="group_playback">Playback</string>
+    <string name="group_watch">Watch</string>
+    <string name="group_updates">Updates</string>
 </resources>

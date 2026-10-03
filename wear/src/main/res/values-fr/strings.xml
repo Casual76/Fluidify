@@ -137,4 +137,9 @@
     <string name="radio_of">Radio : %1$s</string>
     <string name="moving_to_watch">Passage sur la montre…</string>
     <string name="pinned">Épinglée</string>
+    <string name="up_next">À suivre</string>
+    <string name="other_devices">Autres appareils</string>
+    <string name="group_playback">Lecture</string>
+    <string name="group_watch">Montre</string>
+    <string name="group_updates">Mises à jour</string>
 </resources>

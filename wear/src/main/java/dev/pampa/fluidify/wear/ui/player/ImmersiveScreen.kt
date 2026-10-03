@@ -24,6 +24,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.Icon
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Fill
+import com.adamglin.phosphoricons.Regular
+import com.adamglin.phosphoricons.fill.Heart
+import com.adamglin.phosphoricons.regular.Heart
 import com.adamglin.phosphoricons.fill.Pause
 import com.adamglin.phosphoricons.fill.Play
 import com.adamglin.phosphoricons.fill.SkipForward
@@ -47,7 +50,8 @@ import kotlinx.coroutines.delay
 /**
  * The cover and nothing else, like Spotify's swipe-down view.
  *
- * The whole screen is the control: one tap plays or pauses, two skip ahead. What was done shows
+ * The whole screen is the control: one tap plays or pauses, two skip ahead, a long press likes the
+ * song (or takes the like back). What was done shows
  * for a moment as a glass disc in the middle of the cover, with the glyph of what just happened,
  * and then the cover is alone again.
  *
@@ -92,6 +96,18 @@ fun ImmersiveScreen(
                             signal++
                             haptics.play(FluidHapticEvent.Tap)
                             controls.next()
+                        },
+                        // A long press on the cover is the heart, as a double tap is in Spotify's
+                        // own cover view; the disc says which way it went.
+                        onLongPress = {
+                            val snapshot = controls.nowPlaying.value.snapshot
+                            if (snapshot?.track?.uri?.startsWith("spotify:track:") == true) {
+                                val liked = snapshot.liked == true
+                                sign = if (liked) PhosphorIcons.Regular.Heart else PhosphorIcons.Fill.Heart
+                                signal++
+                                haptics.play(if (liked) FluidHapticEvent.ToggleOff else FluidHapticEvent.ToggleOn)
+                                controls.setLiked(!liked)
+                            }
                         },
                     )
                 },

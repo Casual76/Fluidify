@@ -11,9 +11,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Icon
+import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.ListSubHeader
+import androidx.wear.compose.material3.Text
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
-import com.adamglin.phosphoricons.regular.Check
 import com.adamglin.phosphoricons.regular.Headphones
 import com.adamglin.phosphoricons.regular.Plus
 import com.adamglin.phosphoricons.regular.SpeakerHigh
@@ -56,11 +58,14 @@ fun OutputScreen(
         load().fold(onSuccess = { list = it }, onFailure = { failed = true })
     }
     WatchList(title = stringResource(R.string.audio_output)) {
+        if (watchOutputs.isNotEmpty() || onConnectHeadphones != null) {
+            item { ListSubHeader { Text(stringResource(R.string.on_this_watch)) } }
+        }
         watchOutputs.forEach { output ->
             item(key = "watch-${output.id}") {
                 FluidWearListRow(
                     title = if (output.kind == LocalOutput.Kind.SPEAKER) stringResource(R.string.watch_speaker) else output.name,
-                    subtitle = stringResource(R.string.on_this_watch),
+                    selected = watchActive && output == watchOutputs.firstOrNull(),
                     onClick = {
                         // Closed first: choosing the watch may open a question of its own.
                         onChosen()
@@ -72,11 +77,6 @@ fun OutputScreen(
                             contentDescription = null,
                             modifier = Modifier.size(22.dp),
                         )
-                    },
-                    trailing = if (watchActive && output == watchOutputs.firstOrNull()) {
-                        { Icon(PhosphorIcons.Regular.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                    } else {
-                        null
                     },
                 )
             }
@@ -91,6 +91,7 @@ fun OutputScreen(
             }
         }
         val current = list
+        item { ListSubHeader { Text(stringResource(R.string.other_devices)) } }
         when {
             current == null && failed -> noticeItem(context.getString(R.string.couldnt_load))
             current == null -> noticeItem(context.getString(R.string.loading))
@@ -99,17 +100,17 @@ fun OutputScreen(
                     val active = device.id == current.activeId && !watchActive
                     FluidWearListRow(
                         title = device.name,
-                        subtitle = if (device.isThisPhone) stringResource(R.string.this_phone) else null,
+                        selected = active,
+                        subtitle = when {
+                            device.isThisPhone -> stringResource(R.string.this_phone)
+                            active && device.canSetVolume -> stringResource(R.string.volume_percent, (device.volume * 100).toInt())
+                            else -> null
+                        },
                         onClick = {
                             if (!active) controls.transfer(device.id)
                             onChosen()
                         },
                         leading = { Icon(deviceIcon(device.kind), contentDescription = null, modifier = Modifier.size(22.dp)) },
-                        trailing = if (active) {
-                            { Icon(PhosphorIcons.Regular.Check, contentDescription = null, modifier = Modifier.size(18.dp)) }
-                        } else {
-                            null
-                        },
                     )
                 }
             }

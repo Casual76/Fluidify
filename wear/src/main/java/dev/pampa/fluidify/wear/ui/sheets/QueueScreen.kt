@@ -7,6 +7,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.res.stringResource
+import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.ListSubHeader
+import androidx.wear.compose.material3.Text
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.MusicNote
@@ -46,19 +49,39 @@ fun QueueScreen(
             current == null && failed -> noticeItem(context.getString(R.string.couldnt_load))
             current == null -> noticeItem(context.getString(R.string.loading))
             current.items.isEmpty() -> noticeItem(context.getString(R.string.queue_empty))
-            else -> current.items.forEach { entry ->
-                item(key = "q${entry.index}") {
-                    FluidWearListRow(
-                        title = entry.title,
-                        subtitle = if (entry.index == current.currentIndex) stringResource(R.string.now_playing) else entry.artist,
-                        onClick = {
-                            controls.playQueueIndex(entry.index, entry.uri)
-                            onPlayed()
-                        },
-                        leading = {
-                            Thumb(entry.artKey, entry.artUrl, art, PhosphorIcons.Regular.MusicNote)
-                        },
-                    )
+            else -> {
+                // What is playing, then what comes after it. The songs already played stay out:
+                // the window carries a few for the phone's sake, and on a watch they are only
+                // rows to scroll past before reaching the point of the screen.
+                val playing = current.items.firstOrNull { it.index == current.currentIndex }
+                val upcoming = current.items.filter { it.index > current.currentIndex }
+                if (playing != null) {
+                    item { ListSubHeader { Text(stringResource(R.string.now_playing)) } }
+                    item(key = "q${playing.index}") {
+                        FluidWearListRow(
+                            title = playing.title,
+                            subtitle = playing.artist,
+                            selected = true,
+                            onClick = onPlayed,
+                            leading = { Thumb(playing.artKey, playing.artUrl, art, PhosphorIcons.Regular.MusicNote) },
+                        )
+                    }
+                }
+                if (upcoming.isNotEmpty()) {
+                    item { ListSubHeader { Text(stringResource(R.string.up_next)) } }
+                    upcoming.forEach { entry ->
+                        item(key = "q${entry.index}") {
+                            FluidWearListRow(
+                                title = entry.title,
+                                subtitle = entry.artist,
+                                onClick = {
+                                    controls.playQueueIndex(entry.index, entry.uri)
+                                    onPlayed()
+                                },
+                                leading = { Thumb(entry.artKey, entry.artUrl, art, PhosphorIcons.Regular.MusicNote) },
+                            )
+                        }
+                    }
                 }
             }
         }

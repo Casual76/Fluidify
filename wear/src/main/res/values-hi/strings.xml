@@ -137,4 +137,9 @@
     <string name="radio_of">रेडियो: %1$s</string>
     <string name="moving_to_watch">घड़ी पर ले जा रहे हैं…</string>
     <string name="pinned">पिन किया गया</string>
+    <string name="up_next">आगे</string>
+    <string name="other_devices">अन्य डिवाइस</string>
+    <string name="group_playback">प्लेबैक</string>
+    <string name="group_watch">घड़ी</string>
+    <string name="group_updates">अपडेट</string>
 </resources>

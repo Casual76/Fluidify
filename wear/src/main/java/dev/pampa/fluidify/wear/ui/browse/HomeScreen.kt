@@ -15,6 +15,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.ListSubHeader
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import com.adamglin.PhosphorIcons
@@ -76,7 +77,7 @@ fun HomeScreen(
             page == null && home.failed -> noticeItem(app.getString(R.string.couldnt_load))
             page == null -> noticeItem(app.getString(R.string.loading))
             else -> page.shelves.forEach { shelf ->
-                if (shelf.title.isNotEmpty()) item { ListHeader { Text(shelf.title, maxLines = 2) } }
+                if (shelf.title.isNotEmpty()) item { ListSubHeader { Text(shelf.title, maxLines = 2) } }
                 shelf.items.forEach { entry ->
                     item(key = "${shelf.title}/${entry.uri}") {
                         val pinnable = entry.kind == LibraryKind.PLAYLIST || entry.kind == LibraryKind.ALBUM || entry.kind == LibraryKind.LIKED

@@ -137,4 +137,9 @@
     <string name="radio_of">Radyo: %1$s</string>
     <string name="moving_to_watch">Saate geçiliyor…</string>
     <string name="pinned">Sabitlendi</string>
+    <string name="up_next">Sıradakiler</string>
+    <string name="other_devices">Diğer cihazlar</string>
+    <string name="group_playback">Oynatma</string>
+    <string name="group_watch">Saat</string>
+    <string name="group_updates">Güncellemeler</string>
 </resources>

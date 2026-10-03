@@ -137,4 +137,9 @@
     <string name="radio_of">Rádio: %1$s</string>
     <string name="moving_to_watch">A passar para o relógio…</string>
     <string name="pinned">Fixada</string>
+    <string name="up_next">A seguir</string>
+    <string name="other_devices">Outros dispositivos</string>
+    <string name="group_playback">Reprodução</string>
+    <string name="group_watch">Relógio</string>
+    <string name="group_updates">Atualizações</string>
 </resources>

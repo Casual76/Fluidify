@@ -22,6 +22,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.ListHeader
+import androidx.wear.compose.material3.ListSubHeader
 import androidx.wear.compose.material3.Text
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
@@ -115,6 +116,7 @@ fun MoreScreen(
         .collectAsStateWithLifecycle()
 
     WatchList(title = stringResource(R.string.more), modifier = modifier) {
+        item { ListSubHeader { Text(stringResource(R.string.group_playback)) } }
         item {
             FluidWearListRow(
                 title = stringResource(R.string.audio_output),
@@ -177,6 +179,7 @@ fun MoreScreen(
                 },
             )
         }
+        item { ListSubHeader { Text(stringResource(R.string.group_watch)) } }
         if (surfaces != null) {
             item {
                 // One row that steps through the three choices: they are a scale, from "only when
@@ -269,6 +272,7 @@ fun MoreScreen(
                 )
             }
         }
+        if (update != null || updater != null) item { ListSubHeader { Text(stringResource(R.string.group_updates)) } }
         update?.let { status ->
             item {
                 FluidWearListRow(
@@ -314,7 +318,7 @@ fun MoreScreen(
             )
         }
         if (glassMeter != null && developer) {
-            item { ListHeader { Text(stringResource(R.string.developer)) } }
+            item { ListSubHeader { Text(stringResource(R.string.developer)) } }
             item {
                 SwitchButton(
                     checked = meterOn,
