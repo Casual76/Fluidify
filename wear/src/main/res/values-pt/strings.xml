@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="play">Reproduzir</string>
+    <string name="pause">Pausar</string>
+    <string name="next">Próxima</string>
+    <string name="previous">Anterior</string>
+    <string name="like">Adicionar às Músicas Curtidas</string>
+    <string name="unlike">Remover das Músicas Curtidas</string>
+    <string name="audio_output">Saída de áudio</string>
+    <string name="browse">Navegar</string>
+    <string name="nothing_playing">Escolha algo para ouvir</string>
+    <string name="phone_unreachable">Telefone inacessível</string>
+    <string name="phone_not_found">Instale o Fluidify no telefone</string>
+    <string name="phone_no_answer">O telefone não responde</string>
+    <string name="signature_mismatch">As versões do telefone e do relógio não correspondem</string>
+    <string name="phone_outdated">Atualize o Fluidify no telefone</string>
+    <string name="watch_outdated">Atualize o Fluidify neste relógio</string>
+    <string name="command_failed">Não foi possível contactar o telefone</string>
+    <string name="shuffle">Aleatório</string>
+    <string name="repeat">Repetir</string>
+    <string name="repeat_one">Repetir faixa</string>
+    <string name="off">Desativado</string>
+    <string name="on">Ativado</string>
+    <string name="more">Mais</string>
+    <string name="playing_on">A tocar em %1$s</string>
+    <string name="library_soon">A sua biblioteca chega em breve ao relógio</string>
+    <string name="swipe_hint_more">Deslize para a esquerda para mais</string>
+</resources>

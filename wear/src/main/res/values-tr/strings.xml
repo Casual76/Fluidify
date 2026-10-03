@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="play">Oynat</string>
+    <string name="pause">Duraklat</string>
+    <string name="next">Sonraki</string>
+    <string name="previous">Önceki</string>
+    <string name="like">Beğenilen Şarkılar\'a ekle</string>
+    <string name="unlike">Beğenilen Şarkılar\'dan kaldır</string>
+    <string name="audio_output">Ses çıkışı</string>
+    <string name="browse">Göz at</string>
+    <string name="nothing_playing">Dinlemek için bir şey seç</string>
+    <string name="phone_unreachable">Telefona ulaşılamıyor</string>
+    <string name="phone_not_found">Telefonuna Fluidify yükle</string>
+    <string name="phone_no_answer">Telefonun yanıt vermiyor</string>
+    <string name="signature_mismatch">Telefon ve saat sürümleri eşleşmiyor</string>
+    <string name="phone_outdated">Telefondaki Fluidify\'ı güncelle</string>
+    <string name="watch_outdated">Bu saatteki Fluidify\'ı güncelle</string>
+    <string name="command_failed">Telefona ulaşılamadı</string>
+    <string name="shuffle">Karıştır</string>
+    <string name="repeat">Tekrarla</string>
+    <string name="repeat_one">Şarkıyı tekrarla</string>
+    <string name="off">Kapalı</string>
+    <string name="on">Açık</string>
+    <string name="more">Diğer</string>
+    <string name="playing_on">%1$s üzerinde çalıyor</string>
+    <string name="library_soon">Kitaplığın yakında saate geliyor</string>
+    <string name="swipe_hint_more">Daha fazlası için sola kaydır</string>
+</resources>

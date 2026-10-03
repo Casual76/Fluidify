@@ -214,17 +214,20 @@ class MediaBrowseTree(
         if (uri == null || !uri.startsWith("spotify:track:")) {
             return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
         }
-        val id = uri.substringAfterLast(':')
+        // Through the process-wide set and the access point, as the app's own heart does. The
+        // Web API this used to call refuses the write (see native/src/collection.rs), so the
+        // car's heart failed every time it was pressed.
         return scope.future {
             runCatching {
                 when (action) {
                     CMD_IS_LIKED -> {
-                        val liked = app.api.tracksAreSaved(id).firstOrNull() ?: false
+                        val liked = app.likedTracks.isLiked(uri) ?: false
                         SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putBoolean("liked", liked) })
                     }
                     else -> {
-                        if (args.getBoolean("remove", false)) app.api.removeSavedTracks(id) else app.api.saveTracks(id)
-                        SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putBoolean("liked", !args.getBoolean("remove", false)) })
+                        val liked = !args.getBoolean("remove", false)
+                        app.likedTracks.set(uri, liked)
+                        SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putBoolean("liked", liked) })
                     }
                 }
             }.getOrElse {

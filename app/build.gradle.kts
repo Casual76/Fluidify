@@ -268,6 +268,11 @@ dependencies {
     implementation(project(":engine-ui"))
     implementation(project(":engine-update"))
 
+    // The watch companion: what the two apps say to each other, and the Data Layer that carries it.
+    implementation(project(":wear-protocol"))
+    implementation(libs.play.services.wearable)
+    implementation(libs.kotlinx.coroutines.play.services)
+
     coreLibraryDesugaring(libs.desugaring)
 }
 

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="play">चलाएं</string>
+    <string name="pause">रोकें</string>
+    <string name="next">अगला</string>
+    <string name="previous">पिछला</string>
+    <string name="like">पसंदीदा गानों में जोड़ें</string>
+    <string name="unlike">पसंदीदा गानों से हटाएं</string>
+    <string name="audio_output">ऑडियो आउटपुट</string>
+    <string name="browse">ब्राउज़ करें</string>
+    <string name="nothing_playing">सुनने के लिए कुछ चुनें</string>
+    <string name="phone_unreachable">फ़ोन उपलब्ध नहीं</string>
+    <string name="phone_not_found">अपने फ़ोन पर Fluidify इंस्टॉल करें</string>
+    <string name="phone_no_answer">आपका फ़ोन जवाब नहीं दे रहा</string>
+    <string name="signature_mismatch">फ़ोन और घड़ी के संस्करण मेल नहीं खाते</string>
+    <string name="phone_outdated">अपने फ़ोन पर Fluidify अपडेट करें</string>
+    <string name="watch_outdated">इस घड़ी पर Fluidify अपडेट करें</string>
+    <string name="command_failed">फ़ोन तक नहीं पहुंच सके</string>
+    <string name="shuffle">शफ़ल</string>
+    <string name="repeat">दोहराएं</string>
+    <string name="repeat_one">गाना दोहराएं</string>
+    <string name="off">बंद</string>
+    <string name="on">चालू</string>
+    <string name="more">और</string>
+    <string name="playing_on">%1$s पर चल रहा है</string>
+    <string name="library_soon">आपकी लाइब्रेरी जल्द घड़ी पर आ रही है</string>
+    <string name="swipe_hint_more">और के लिए बाएं स्वाइप करें</string>
+</resources>

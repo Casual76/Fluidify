@@ -1,0 +1,258 @@
+package dev.pampa.fluidify.wear.link
+
+import android.content.Context
+import android.content.pm.PackageManager
+import android.net.Uri
+import android.os.Build
+import android.util.Log
+import com.google.android.gms.wearable.Asset
+import com.google.android.gms.wearable.CapabilityClient
+import com.google.android.gms.wearable.DataClient
+import com.google.android.gms.wearable.DataMapItem
+import com.google.android.gms.wearable.Node
+import com.google.android.gms.wearable.Wearable
+import dev.pampa.fluidify.wear.BuildConfig
+import dev.pampa.fluidify.wear.protocol.Command
+import dev.pampa.fluidify.wear.protocol.CommandAck
+import dev.pampa.fluidify.wear.protocol.CommandEnvelope
+import dev.pampa.fluidify.wear.protocol.Compatibility
+import dev.pampa.fluidify.wear.protocol.Hello
+import dev.pampa.fluidify.wear.protocol.PlaybackSnapshot
+import dev.pampa.fluidify.wear.protocol.Role
+import dev.pampa.fluidify.wear.protocol.WearCodec
+import dev.pampa.fluidify.wear.protocol.WearPaths
+import dev.pampa.fluidify.wear.protocol.compatibility
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withTimeoutOrNull
+import java.security.MessageDigest
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+
+/** What the controls need from a link: where it stands, and a way to send a command. */
+interface CommandChannel {
+    val status: StateFlow<LinkStatus>
+
+    /** Sends [command] and returns the phone's acknowledgement, or null when there was none. */
+    suspend fun send(command: Command): CommandAck?
+}
+
+/** Where the conversation with the phone stands. */
+enum class LinkStatus {
+    /** Not looked yet. */
+    UNKNOWN,
+
+    /** The phone answered and speaks the same protocol. */
+    CONNECTED,
+
+    /** The phone app is installed but out of Bluetooth range, or Bluetooth is off. */
+    UNREACHABLE,
+
+    /** No phone with Fluidify was found at all. */
+    NOT_FOUND,
+
+    /** The phone is there but never answered: usually two builds signed with different keys. */
+    NO_ANSWER,
+
+    /** The two sides were signed with different keys. */
+    SIGNATURE_MISMATCH,
+
+    /** The phone app is older than this watch app and must be updated. */
+    PHONE_OUTDATED,
+
+    /** This watch app is older than the phone app. */
+    WATCH_OUTDATED,
+}
+
+/**
+ * The watch's end of the Wearable Data Layer.
+ *
+ * Finds the phone (the node advertising [WearPaths.CAPABILITY_PHONE], nearest
+ * first), says hello, sends commands and matches their acknowledgements. No
+ * polling and no heartbeat: the phone pushes state when it changes, and this
+ * side only speaks when the person wearing the watch does something.
+ */
+class PhoneLink(
+    private val context: Context,
+    private val scope: CoroutineScope,
+    private val state: WatchState,
+    private val art: ArtStore,
+) : CommandChannel {
+    private val capabilities by lazy { Wearable.getCapabilityClient(context) }
+    private val messages by lazy { Wearable.getMessageClient(context) }
+    private val data by lazy { Wearable.getDataClient(context) }
+
+    private val _status = MutableStateFlow(LinkStatus.UNKNOWN)
+    override val status: StateFlow<LinkStatus> = _status.asStateFlow()
+
+    private val _phone = MutableStateFlow<Hello?>(null)
+    val phone: StateFlow<Hello?> = _phone.asStateFlow()
+
+    private val ids = AtomicLong(System.currentTimeMillis())
+    private val pending = ConcurrentHashMap<Long, CompletableDeferred<CommandAck>>()
+
+    @Volatile private var nodeId: String? = null
+    private var answerWatch: Job? = null
+
+    /**
+     * Finds the phone, introduces this watch and catches up on what the Data
+     * Layer already holds. Called when a screen comes up.
+     */
+    fun connect() {
+        scope.launch {
+            val node = findPhone()
+            if (node == null) {
+                _status.value = if (findPhone(reachableOnly = false) != null) LinkStatus.UNREACHABLE else LinkStatus.NOT_FOUND
+            } else {
+                sayHello(node.id)
+            }
+            catchUp()
+        }
+    }
+
+    private suspend fun findPhone(reachableOnly: Boolean = true): Node? = runCatching {
+        val filter = if (reachableOnly) CapabilityClient.FILTER_REACHABLE else CapabilityClient.FILTER_ALL
+        val nodes = capabilities.getCapability(WearPaths.CAPABILITY_PHONE, filter).await().nodes
+        (nodes.firstOrNull { it.isNearby } ?: nodes.firstOrNull())?.also { if (reachableOnly) nodeId = it.id }
+    }.onFailure { Log.i(TAG, "phone lookup failed: ${it.message}") }.getOrNull()
+
+    private suspend fun sayHello(node: String) {
+        val sent = send(node, WearPaths.HELLO, WearCodec.encode(Hello.serializer(), ownHello()))
+        if (!sent) {
+            _status.value = LinkStatus.UNREACHABLE
+            return
+        }
+        answerWatch?.cancel()
+        answerWatch = scope.launch {
+            delay(HELLO_ANSWER_MS)
+            if (_phone.value == null) _status.value = LinkStatus.NO_ANSWER
+        }
+    }
+
+    /** The phone answered a hello (or introduced itself). */
+    fun onHello(hello: Hello, fromNode: String) {
+        if (hello.role != Role.PHONE) return
+        nodeId = fromNode
+        _phone.value = hello
+        answerWatch?.cancel()
+        _status.value = when (compatibility(ownHello(), hello)) {
+            Compatibility.OK -> LinkStatus.CONNECTED
+            Compatibility.PEER_OUTDATED -> LinkStatus.PHONE_OUTDATED
+            Compatibility.SELF_OUTDATED -> LinkStatus.WATCH_OUTDATED
+            Compatibility.SIGNATURE_MISMATCH -> LinkStatus.SIGNATURE_MISMATCH
+        }
+        if (hello.wantsReply) {
+            scope.launch {
+                send(fromNode, WearPaths.HELLO, WearCodec.encode(Hello.serializer(), ownHello(wantsReply = false)))
+            }
+        }
+    }
+
+    /**
+     * Sends [command] and waits for the phone's acknowledgement. Null when the
+     * phone could not be reached or did not answer in time.
+     */
+    override suspend fun send(command: Command): CommandAck? {
+        val node = nodeId ?: findPhone()?.id ?: run {
+            _status.value = LinkStatus.UNREACHABLE
+            return null
+        }
+        val id = ids.incrementAndGet()
+        val waiter = CompletableDeferred<CommandAck>()
+        pending[id] = waiter
+        val bytes = WearCodec.encode(CommandEnvelope.serializer(), CommandEnvelope(id, command))
+        if (!send(node, WearPaths.COMMAND, bytes)) {
+            pending.remove(id)
+            nodeId = null
+            _status.value = LinkStatus.UNREACHABLE
+            return null
+        }
+        return withTimeoutOrNull(ACK_TIMEOUT_MS) { waiter.await() }.also { pending.remove(id) }
+    }
+
+    fun onAck(ack: CommandAck) {
+        pending.remove(ack.id)?.complete(ack)
+        if (_status.value == LinkStatus.UNREACHABLE || _status.value == LinkStatus.UNKNOWN) {
+            _status.value = LinkStatus.CONNECTED
+        }
+    }
+
+    private suspend fun send(node: String, path: String, bytes: ByteArray): Boolean = runCatching {
+        messages.sendMessage(node, path, bytes).await()
+        true
+    }.onFailure { Log.i(TAG, "send $path failed: ${it.message}") }.getOrDefault(false)
+
+    /**
+     * Reads what the Data Layer already holds: the last state the phone wrote
+     * and its cover. Covers a watch that was asleep or out of range when they
+     * were delivered, without asking the phone for anything.
+     */
+    private suspend fun catchUp() {
+        runCatching {
+            val items = data.getDataItems(Uri.Builder().scheme("wear").path(WearPaths.STATE).build()).await()
+            items.forEach { item ->
+                item.data?.let { bytes ->
+                    WearCodec.decodeOrNull(PlaybackSnapshot.serializer(), bytes)?.let { state.accept(it) }
+                }
+            }
+            items.release()
+        }.onFailure { Log.i(TAG, "state catch-up failed: ${it.message}") }
+        val key = state.current.value?.snapshot?.track?.artKey ?: return
+        if (!art.has(key)) fetchArt(key)
+    }
+
+    /** Pulls the cover [key] from the Data Layer, when the phone put it there. */
+    suspend fun fetchArt(key: String) {
+        runCatching {
+            val items = data.getDataItems(
+                Uri.Builder().scheme("wear").path(WearPaths.art(key)).build(),
+                DataClient.FILTER_LITERAL,
+            ).await()
+            val asset = items.firstOrNull()?.let { DataMapItem.fromDataItem(it) }?.dataMap?.getAsset(ASSET_KEY)
+                ?: items.firstOrNull()?.assets?.get(ASSET_KEY)?.let { Asset.createFromRef(it.id) }
+            items.release()
+            if (asset != null) storeAsset(key, asset)
+        }.onFailure { Log.i(TAG, "cover catch-up failed: ${it.message}") }
+    }
+
+    suspend fun storeAsset(key: String, asset: Asset) {
+        val fd = data.getFdForAsset(asset).await()
+        val bytes = fd.inputStream.use { it.readBytes() }
+        art.store(key, bytes)
+    }
+
+    fun ownHello(wantsReply: Boolean = true): Hello = Hello(
+        role = Role.WATCH,
+        versionName = BuildConfig.VERSION_NAME,
+        versionCode = BuildConfig.VERSION_CODE.toLong(),
+        features = WATCH_FEATURES,
+        buildType = BuildConfig.BUILD_TYPE,
+        certSha256 = certificateSha256(context),
+        abis = Build.SUPPORTED_ABIS.toList(),
+        sdk = Build.VERSION.SDK_INT,
+        wantsReply = wantsReply,
+    )
+
+    companion object {
+        private const val TAG = "PhoneLink"
+        const val ASSET_KEY = "img"
+        private const val ACK_TIMEOUT_MS = 3_000L
+        private const val HELLO_ANSWER_MS = 10_000L
+
+        /** What this watch build can do. Grows with each milestone. */
+        val WATCH_FEATURES: Set<String> = emptySet()
+
+        fun certificateSha256(context: Context): String = runCatching {
+            val info = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)
+            val first = info.signingInfo?.apkContentsSigners?.firstOrNull() ?: return ""
+            MessageDigest.getInstance("SHA-256").digest(first.toByteArray()).joinToString(":") { "%02X".format(it) }
+        }.getOrDefault("")
+    }
+}

@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="play">Lecture</string>
+    <string name="pause">Pause</string>
+    <string name="next">Suivant</string>
+    <string name="previous">Précédent</string>
+    <string name="like">Ajouter aux Titres likés</string>
+    <string name="unlike">Retirer des Titres likés</string>
+    <string name="audio_output">Sortie audio</string>
+    <string name="browse">Parcourir</string>
+    <string name="nothing_playing">Choisissez quelque chose à écouter</string>
+    <string name="phone_unreachable">Téléphone injoignable</string>
+    <string name="phone_not_found">Installez Fluidify sur votre téléphone</string>
+    <string name="phone_no_answer">Votre téléphone ne répond pas</string>
+    <string name="signature_mismatch">Les versions du téléphone et de la montre ne correspondent pas</string>
+    <string name="phone_outdated">Mettez à jour Fluidify sur votre téléphone</string>
+    <string name="watch_outdated">Mettez à jour Fluidify sur cette montre</string>
+    <string name="command_failed">Impossible de joindre le téléphone</string>
+    <string name="shuffle">Aléatoire</string>
+    <string name="repeat">Répéter</string>
+    <string name="repeat_one">Répéter le titre</string>
+    <string name="off">Désactivé</string>
+    <string name="on">Activé</string>
+    <string name="more">Plus</string>
+    <string name="playing_on">Lecture sur %1$s</string>
+    <string name="library_soon">Votre bibliothèque arrive bientôt sur la montre</string>
+    <string name="swipe_hint_more">Balayez vers la gauche pour plus</string>
+</resources>

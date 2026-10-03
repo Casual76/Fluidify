@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!--
+      What this app tells the Wearable Data Layer it can do. The watch companion
+      looks for a node with this capability to find its phone; kept explicitly
+      because nothing in the code references it and the release build shrinks
+      resources.
+    -->
+    <string-array
+        name="android_wear_capabilities"
+        translatable="false"
+        tools:keep="@array/android_wear_capabilities">
+        <item>fluidify_phone</item>
+    </string-array>
+</resources>

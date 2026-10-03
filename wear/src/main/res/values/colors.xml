@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Same as the phone's: the launcher icon is the same plate on both. -->
+    <color name="ic_launcher_background">#222222</color>
+    <!-- The watch is always on black: the starting window must be too, or every cold
+         start flashes a lit screen before the first frame. -->
+    <color name="watch_floor">#FF000000</color>
+</resources>

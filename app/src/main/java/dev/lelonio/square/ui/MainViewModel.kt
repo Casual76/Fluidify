@@ -1968,7 +1968,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _inPlaylists.value = _inPlaylists.value + tracks.map { it.uri }
     }
 
-    private val _liked = MutableStateFlow<Set<String>>(emptySet())
+    // The process-wide set, so the car and the watch see what this screen knows and the other
+    // way round. Filled exactly as before; see [dev.lelonio.square.data.LikedTracks].
+    private val _liked: MutableStateFlow<Set<String>> get() = container.likedTracks.known
 
     /**
      * Tracks known to be in Liked Songs.

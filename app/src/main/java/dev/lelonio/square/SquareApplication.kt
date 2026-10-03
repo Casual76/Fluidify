@@ -125,6 +125,19 @@ class SquareApplication : Application() {
         dev.lelonio.square.data.Gateway(pathfinderKeys)
     }
 
+    /**
+     * Liked Songs membership for the whole process: the screen, the car and the
+     * watch read and write the same set. See [dev.lelonio.square.data.LikedTracks].
+     */
+    val likedTracks: dev.lelonio.square.data.LikedTracks by lazy {
+        dev.lelonio.square.data.LikedTracks(gateway)
+    }
+
+    /** The phone half of the watch remote; idle unless a watch runs the companion. */
+    val wearBridge: dev.lelonio.square.wear.PhoneWearBridge by lazy {
+        dev.lelonio.square.wear.PhoneWearBridge(this)
+    }
+
     /** Which stretcher works out speed and pitch. */
     val effectQuality: dev.lelonio.square.data.EffectQualityStore by lazy {
         dev.lelonio.square.data.EffectQualityStore(this)

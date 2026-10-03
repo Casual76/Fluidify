@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources xmlns:tools="http://schemas.android.com/tools">
+    <!--
+      How the phone app finds this watch on the Data Layer. Kept explicitly: no
+      code references it, and the release build shrinks resources.
+    -->
+    <string-array
+        name="android_wear_capabilities"
+        translatable="false"
+        tools:keep="@array/android_wear_capabilities">
+        <item>fluidify_watch</item>
+    </string-array>
+</resources>

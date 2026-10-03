@@ -203,6 +203,23 @@
             android:exported="false"
             android:foregroundServiceType="dataSync" />
 
+        <!--
+          The watch remote. Play Services starts this for a message on one of
+          Fluidify's own Data Layer paths, and for nothing else: the filter is
+          what keeps an unrelated watch app from waking this process.
+        -->
+        <service
+            android:name=".wear.PhoneWearListenerService"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="com.google.android.gms.wearable.MESSAGE_RECEIVED" />
+                <data
+                    android:host="*"
+                    android:pathPrefix="/fluidify"
+                    android:scheme="wear" />
+            </intent-filter>
+        </service>
+
         <meta-data
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />

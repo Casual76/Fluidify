@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name" translatable="false">Fluidify</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="next">Next</string>
+    <string name="previous">Previous</string>
+    <string name="like">Add to Liked Songs</string>
+    <string name="unlike">Remove from Liked Songs</string>
+    <string name="audio_output">Audio output</string>
+    <string name="browse">Browse</string>
+    <string name="nothing_playing">Pick something to play</string>
+    <string name="phone_unreachable">Phone not reachable</string>
+    <string name="phone_not_found">Install Fluidify on your phone</string>
+    <string name="phone_no_answer">Your phone isn\'t answering</string>
+    <string name="signature_mismatch">Phone and watch builds don\'t match</string>
+    <string name="phone_outdated">Update Fluidify on your phone</string>
+    <string name="watch_outdated">Update Fluidify on this watch</string>
+    <string name="command_failed">Couldn\'t reach the phone</string>
+    <string name="shuffle">Shuffle</string>
+    <string name="repeat">Repeat</string>
+    <string name="repeat_one">Repeat track</string>
+    <string name="off">Off</string>
+    <string name="on">On</string>
+    <string name="more">More</string>
+    <string name="playing_on">Playing on %1$s</string>
+    <string name="library_soon">Your library is coming to the watch</string>
+    <string name="swipe_hint_more">Swipe left for more</string>
+</resources>

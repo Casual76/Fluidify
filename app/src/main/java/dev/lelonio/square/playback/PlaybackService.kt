@@ -197,6 +197,9 @@ class PlaybackService : MediaLibraryService() {
             )
             .build()
 
+        // The watch remote follows whichever player is current; see PhoneWearBridge.
+        container.wearBridge.attach(player)
+
         // The app's own mark in the shade, instead of Media3's generic note.
         // The provider is built rather than subclassed: the small icon is the
         // only thing being changed.
@@ -875,6 +878,7 @@ class PlaybackService : MediaLibraryService() {
             playerKind = kind
             player = buildPlayer(kind)
             session?.player = player
+            container.wearBridge.attach(player)
             // The queue on disk belongs to this player when it is the one being
             // restored into — leaving it out is what made a local song paused
             // at closing time impossible to start again: the screen had it, the
@@ -898,6 +902,7 @@ class PlaybackService : MediaLibraryService() {
             playerKind = kind
             player = parked
             session?.player = player
+            container.wearBridge.attach(player)
             if (restore) restoreQueue()
             observeForSaving()
             return
@@ -924,6 +929,7 @@ class PlaybackService : MediaLibraryService() {
 
         player = buildPlayer(kind)
         session?.player = player
+        container.wearBridge.attach(player)
         followReverb()
         // The engine is what the Spotify player plays through, so it is started
         // whatever brought us here — without this, coming back from a local file
@@ -1796,6 +1802,7 @@ class PlaybackService : MediaLibraryService() {
     }
 
     override fun onDestroy() {
+        container.wearBridge.detach()
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             systemRouter?.let { router ->
                 runCatching { router.unregisterRouteCallback(systemRouteCallback) }
