@@ -118,4 +118,10 @@
     <string name="developer">Geliştirici</string>
     <string name="developer_unlocked">Geliştirici seçenekleri açık</string>
     <string name="developer_leave">Geliştirici seçeneklerini kapat</string>
+    <string name="now_bar">Saat yüzünde Fluidify</string>
+    <string name="now_bar_auto">Saat telefonun müziğini göstermediğinde</string>
+    <string name="now_bar_always">Her zaman, saatin kontrollerinin yanında</string>
+    <string name="now_bar_never">Asla</string>
+    <string name="mirror_now_bar">Saat yüzünde Fluidify kontrolleri</string>
+    <string name="mirror_now_bar_summary">Deneme: telefon bildirimini kendinde tutar, saat kendi bildirimini gösterir</string>
 </resources>

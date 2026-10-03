@@ -119,4 +119,10 @@
     <string name="developer">Developer</string>
     <string name="developer_unlocked">Developer options are on</string>
     <string name="developer_leave">Turn off developer options</string>
+    <string name="now_bar">Fluidify on the watch face</string>
+    <string name="now_bar_auto">When the watch doesn\'t show the phone\'s music</string>
+    <string name="now_bar_always">Always, next to the watch\'s controls</string>
+    <string name="now_bar_never">Never</string>
+    <string name="mirror_now_bar">Fluidify controls on the watch face</string>
+    <string name="mirror_now_bar_summary">Experiment: the phone keeps its notification and the watch shows its own</string>
 </resources>

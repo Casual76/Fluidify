@@ -9,6 +9,7 @@ import dev.pampa.fluidify.wear.playback.PlaybackControls
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
 
 /**
  * Fluidify on the watch: the parts that outlive a screen.
@@ -20,13 +21,22 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
+    override fun onCreate() {
+        super.onCreate()
+        // Applied whenever the process starts, not only when the app is opened: the listener
+        // service wakes it far more often, and a watch app never opened kept Wear's default.
+        runCatching { dev.pampa.fluidify.wear.system.Bridging.apply(this, surfacePrefs.phoneNotifications) }
+    }
+
     val surfacePrefs: dev.pampa.fluidify.wear.system.SurfacePrefs by lazy {
         dev.pampa.fluidify.wear.system.SurfacePrefs(this)
     }
 
     /** The icon on the watch face, the tile and the complication, kept in step with the phone. */
     val surfaces: dev.pampa.fluidify.wear.system.SystemSurfaces by lazy {
-        dev.pampa.fluidify.wear.system.SystemSurfaces(this, surfacePrefs)
+        dev.pampa.fluidify.wear.system.SystemSurfaces(this, surfacePrefs).also {
+            it.mirror = dev.pampa.fluidify.wear.system.MirrorNowPlaying(this)
+        }
     }
 
     val state: WatchState by lazy { WatchState(this).also { it.onAccepted = surfaces::onState } }
@@ -65,6 +75,12 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
     /** Whichever of the two is in front. */
     val playback: dev.pampa.fluidify.wear.playback.ActivePlayback by lazy {
         dev.pampa.fluidify.wear.playback.ActivePlayback(scope, remote, local, { standalone }) { uri -> downloads.store.isKept(uri) }
+            .also { active ->
+                // The watch's own session posts its own notification: the watch face follows.
+                scope.launch {
+                    active.mode.collect { surfaces.onModeChanged(it == dev.pampa.fluidify.wear.playback.PlaybackMode.WATCH) }
+                }
+            }
     }
 
     /** What the controls talk to: see [playback]. */

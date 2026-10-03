@@ -118,4 +118,10 @@
     <string name="developer">Sviluppatore</string>
     <string name="developer_unlocked">Opzioni sviluppatore attive</string>
     <string name="developer_leave">Disattiva opzioni sviluppatore</string>
+    <string name="now_bar">Fluidify sul quadrante</string>
+    <string name="now_bar_auto">Quando l\'orologio non mostra la musica del telefono</string>
+    <string name="now_bar_always">Sempre, accanto ai controlli dell\'orologio</string>
+    <string name="now_bar_never">Mai</string>
+    <string name="mirror_now_bar">Controlli Fluidify sul quadrante</string>
+    <string name="mirror_now_bar_summary">Esperimento: il telefono tiene la sua notifica e l\'orologio mostra la propria</string>
 </resources>

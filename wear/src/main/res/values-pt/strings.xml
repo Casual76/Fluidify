@@ -118,4 +118,10 @@
     <string name="developer">Programador</string>
     <string name="developer_unlocked">Opções de programador ativas</string>
     <string name="developer_leave">Desativar opções de programador</string>
+    <string name="now_bar">Fluidify no mostrador</string>
+    <string name="now_bar_auto">Quando o relógio não mostra a música do telemóvel</string>
+    <string name="now_bar_always">Sempre, ao lado dos controlos do relógio</string>
+    <string name="now_bar_never">Nunca</string>
+    <string name="mirror_now_bar">Controlos do Fluidify no mostrador</string>
+    <string name="mirror_now_bar_summary">Experiência: o telemóvel fica com a sua notificação e o relógio mostra a sua</string>
 </resources>

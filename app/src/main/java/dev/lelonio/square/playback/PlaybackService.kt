@@ -205,9 +205,12 @@ class PlaybackService : MediaLibraryService() {
         // The provider is built rather than subclassed: the small icon is the
         // only thing being changed.
         setMediaNotificationProvider(
-            androidx.media3.session.DefaultMediaNotificationProvider.Builder(this)
-                .build()
-                .apply { setSmallIcon(dev.lelonio.square.R.drawable.ic_notification) },
+            WatchAwareNotificationProvider(
+                androidx.media3.session.DefaultMediaNotificationProvider.Builder(this)
+                    .build()
+                    .apply { setSmallIcon(dev.lelonio.square.R.drawable.ic_notification) },
+                localOnly = { container.wearBridge.phoneMediaLocalOnly },
+            ),
         )
 
         // The car's shuffle and repeat buttons carry their own state, so they
@@ -1780,6 +1783,8 @@ class PlaybackService : MediaLibraryService() {
             session,
             startInForegroundRequired || (heldForeground && player.mediaItemCount > 0),
         )
+        // Whether the notification is up decides whether the watch shows its own entry.
+        container.wearBridge.onNotificationUpdated()
     }
 
     /** Whether playback has put this service in the foreground at least once. */

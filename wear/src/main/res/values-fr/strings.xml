@@ -118,4 +118,10 @@
     <string name="developer">Développeur</string>
     <string name="developer_unlocked">Options pour les développeurs activées</string>
     <string name="developer_leave">Désactiver les options pour les développeurs</string>
+    <string name="now_bar">Fluidify sur le cadran</string>
+    <string name="now_bar_auto">Quand la montre n\'affiche pas la musique du téléphone</string>
+    <string name="now_bar_always">Toujours, à côté des commandes de la montre</string>
+    <string name="now_bar_never">Jamais</string>
+    <string name="mirror_now_bar">Commandes Fluidify sur le cadran</string>
+    <string name="mirror_now_bar_summary">Expérience : le téléphone garde sa notification, la montre affiche la sienne</string>
 </resources>

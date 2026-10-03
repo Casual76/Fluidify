@@ -1,15 +1,18 @@
 package dev.pampa.fluidify.wear.system
 
+import dev.pampa.fluidify.wear.protocol.logic.NowBarMode
+import dev.pampa.fluidify.wear.protocol.logic.NowBarPolicy
+
 import android.content.Context
 import androidx.core.content.edit
 
 /**
- * The two switches that decide how loud Fluidify is outside its own screens.
+ * The switches that decide how loud Fluidify is outside its own screens.
  *
- * Both default to on: the icon on the watch face is how Spotify's watch app
- * behaves, and leaving the phone's notifications alone is what the system does
- * with no watch app at all. Whether the second one should start off is a call
- * to make on the watch itself (see [Bridging]).
+ * The entry on the watch face defaults to "only when the system shows nothing",
+ * which is the one setting that never puts two Fluidifys there; leaving the
+ * phone's other notifications alone is what the system does with no watch app
+ * at all (see [Bridging]).
  */
 class SurfacePrefs(context: Context) {
 
@@ -17,8 +20,27 @@ class SurfacePrefs(context: Context) {
 
     /** The icon on the watch face (Wear's ongoing activity) while the phone plays. */
     var ongoingIcon: Boolean
-        get() = prefs.getBoolean(KEY_ONGOING, true)
-        set(value) = prefs.edit { putBoolean(KEY_ONGOING, value) }
+        get() = nowBar != NowBarMode.NEVER
+        set(value) {
+            nowBar = if (value) NowBarMode.AUTO else NowBarMode.NEVER
+        }
+
+    /**
+     * When Fluidify puts its own entry on the watch face for phone playback; see [NowBarPolicy].
+     * Watches that had the old on/off switch off keep it off.
+     */
+    var nowBar: NowBarMode
+        get() = prefs.getString(KEY_NOW_BAR, null)?.let { runCatching { NowBarMode.valueOf(it) }.getOrNull() }
+            ?: if (prefs.getBoolean(KEY_ONGOING, true)) NowBarMode.AUTO else NowBarMode.NEVER
+        set(value) = prefs.edit { putString(KEY_NOW_BAR, value.name) }
+
+    /**
+     * The developer experiment: the phone keeps its media notification to itself and the watch shows
+     * a media notification of its own over a mirror of the phone's session. See [MirrorNowPlaying].
+     */
+    var mirrorNowBar: Boolean
+        get() = prefs.getBoolean(KEY_MIRROR, false)
+        set(value) = prefs.edit { putBoolean(KEY_MIRROR, value) }
 
     /** The phone's Fluidify notifications mirrored on the watch, as Wear does by default. */
     var phoneNotifications: Boolean
@@ -32,6 +54,8 @@ class SurfacePrefs(context: Context) {
 
     private companion object {
         const val KEY_ONGOING = "ongoing_icon"
+        const val KEY_NOW_BAR = "now_bar"
+        const val KEY_MIRROR = "mirror_now_bar"
         const val KEY_BRIDGING = "phone_notifications"
         const val KEY_SIGNATURE = "surface_signature"
     }

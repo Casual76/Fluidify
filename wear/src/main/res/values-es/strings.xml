@@ -118,4 +118,10 @@
     <string name="developer">Desarrollador</string>
     <string name="developer_unlocked">Opciones de desarrollador activadas</string>
     <string name="developer_leave">Desactivar opciones de desarrollador</string>
+    <string name="now_bar">Fluidify en la esfera</string>
+    <string name="now_bar_auto">Cuando el reloj no muestra la música del teléfono</string>
+    <string name="now_bar_always">Siempre, junto a los controles del reloj</string>
+    <string name="now_bar_never">Nunca</string>
+    <string name="mirror_now_bar">Controles de Fluidify en la esfera</string>
+    <string name="mirror_now_bar_summary">Experimento: el teléfono se queda su notificación y el reloj muestra la suya</string>
 </resources>

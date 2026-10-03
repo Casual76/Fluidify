@@ -14,12 +14,12 @@ import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.protocol.PlaybackSnapshot
 
 /**
- * The little Fluidify mark on the watch face while the phone plays.
+ * The little Fluidify mark on the watch face while the phone plays, when the
+ * system is not already showing the phone's playback ([dev.pampa.fluidify.wear.protocol.logic.NowBarPolicy]).
  *
  * Wear calls it an ongoing activity: a silent notification the system turns
  * into an icon on the watch face and an entry at the top of the app list. A
- * tap opens the player; nothing opens by itself. This is what Spotify's watch
- * app does when the phone starts playing, and what the user asked for.
+ * tap opens the player; nothing opens by itself.
  *
  * It lives as long as the music does. While playing, the notification is told
  * to expire a little after the song would end, so a phone that dies mid-song

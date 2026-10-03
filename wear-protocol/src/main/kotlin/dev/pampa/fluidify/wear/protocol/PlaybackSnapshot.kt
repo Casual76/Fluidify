@@ -40,6 +40,15 @@ data class PlaybackSnapshot(
     val offline: Boolean = false,
     /** The cover the phone expects to need next, sent ahead so a skip shows it at once. */
     val nextArtKey: String? = null,
+    /**
+     * Whether the phone's own media notification is up, which is what the watch's system media
+     * controls (Wear's, or the Galaxy Watch's media controller) show for phone playback. The watch
+     * puts its own entry on the watch face only when this is false, or the two would sit side by
+     * side. Null from a phone too old to say.
+     */
+    val systemMediaControls: Boolean? = null,
+    /** What plays after [track], so a skip on the watch can show it before the phone confirms. */
+    val nextTrack: TrackInfo? = null,
 )
 
 @Serializable

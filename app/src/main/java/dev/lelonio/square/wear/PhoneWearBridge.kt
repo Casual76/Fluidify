@@ -117,6 +117,32 @@ class PhoneWearBridge(private val app: SquareApplication) {
     /** The current player, for the RPC handler. Main thread. */
     internal val currentPlayer: Player? get() = player
 
+    private val surfacePrefs = app.getSharedPreferences("wear_surfaces", android.content.Context.MODE_PRIVATE)
+
+    /**
+     * Whether the watch asked for this phone's media notification to stay on the phone (an
+     * experiment the watch's developer options turn on; see [WatchSurfaces]). Read by the
+     * notification provider every time it builds the notification.
+     */
+    val phoneMediaLocalOnly: Boolean get() = surfacePrefs.getBoolean(KEY_LOCAL_ONLY, false)
+
+    /** The watch published its [WatchSurfaces]. */
+    fun onWatchSurfaces(bytes: ByteArray) {
+        val surfaces = WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.WatchSurfaces.serializer(), bytes) ?: return
+        surfacePrefs.edit().putBoolean(KEY_LOCAL_ONLY, surfaces.phoneMediaLocalOnly).apply()
+        scope.launch { changed(urgent = true) }
+    }
+
+    /** The service redrew its notification: whether it is up is part of what the watch is told. */
+    fun onNotificationUpdated() {
+        val showing = mediaNotificationShowing(player)
+        if (showing == lastNotificationShowing) return
+        lastNotificationShowing = showing
+        changed(urgent = true)
+    }
+
+    private var lastNotificationShowing: Boolean? = null
+
     /** The answer for a track the shared set does not know about, while it is current. */
     private var likedLookup: Pair<String, Boolean?>? = null
     private var likedJob: Job? = null
@@ -282,7 +308,37 @@ class PhoneWearBridge(private val app: SquareApplication) {
             sleep = sleepInfo(),
             offline = dev.lelonio.square.playback.OfflineMode.active.value,
             nextArtKey = artKeyOf(nextItem(current)?.mediaMetadata?.artworkUri?.toString()),
+            systemMediaControls = mediaNotificationShowing(current).also { lastNotificationShowing = it },
+            nextTrack = nextItem(current)?.let { next ->
+                val nextArt = next.mediaMetadata.artworkUri?.toString()
+                TrackInfo(
+                    uri = next.mediaId,
+                    title = next.mediaMetadata.title?.toString().orEmpty(),
+                    artist = next.mediaMetadata.artist?.toString().orEmpty(),
+                    artKey = artKeyOf(nextArt),
+                    artUrl = nextArt?.takeIf { it.startsWith("https://") },
+                )
+            }?.takeIf { it.title.isNotEmpty() },
         )
+    }
+
+    /**
+     * Whether this phone's media notification is up — which is what the watch's system media
+     * controls show — or about to be, for a player that has just been given something to play.
+     *
+     * The second half matters: the snapshot for a fresh start is built before the session has
+     * posted its notification, and a watch told "not up" for that half second would put its own
+     * entry on the watch face and take it away again on every play.
+     */
+    private fun mediaNotificationShowing(current: Player?): Boolean {
+        if (!androidx.core.app.NotificationManagerCompat.from(app).areNotificationsEnabled()) return false
+        val manager = app.getSystemService(android.app.NotificationManager::class.java)
+        val posted = runCatching {
+            manager?.activeNotifications?.any { it.notification.extras.containsKey(android.app.Notification.EXTRA_MEDIA_SESSION) } == true
+        }.getOrDefault(false)
+        if (posted) return true
+        return current != null && current.mediaItemCount > 0 &&
+            current.playbackState != Player.STATE_IDLE && current.playbackState != Player.STATE_ENDED
     }
 
     private fun sleepInfo(): SleepInfo? {
@@ -525,6 +581,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
     }
 
     companion object {
+        private const val KEY_LOCAL_ONLY = "phone_media_local_only"
         private const val TAG = "PhoneWearBridge"
         const val PHONE_DEVICE_ID = "phone"
         private const val QUEUE_WAIT_MS = 4_000L

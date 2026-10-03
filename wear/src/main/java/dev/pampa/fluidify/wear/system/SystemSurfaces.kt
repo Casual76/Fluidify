@@ -1,6 +1,15 @@
 package dev.pampa.fluidify.wear.system
 
+import dev.pampa.fluidify.wear.protocol.logic.NowBarEntry
+import dev.pampa.fluidify.wear.protocol.logic.NowBarPolicy
+
 import android.content.Context
+import com.google.android.gms.wearable.PutDataRequest
+import com.google.android.gms.wearable.Wearable
+import dev.pampa.fluidify.wear.protocol.WatchSurfaces
+import dev.pampa.fluidify.wear.protocol.WearCodec
+import dev.pampa.fluidify.wear.protocol.WearPaths
+import kotlinx.coroutines.tasks.await
 import dev.pampa.fluidify.wear.link.ReceivedSnapshot
 import dev.pampa.fluidify.wear.protocol.PlaybackSnapshot
 
@@ -22,10 +31,17 @@ class SystemSurfaces(
     @Volatile
     private var current: PlaybackSnapshot? = null
 
+    /** Whether the watch's own player is the one in front; its media session then has the entry. */
+    @Volatile
+    private var watchPlaying = false
+
+    /** The experiment's media notification; built only if the experiment is ever on. */
+    var mirror: MirrorNowPlaying? = null
+
     fun onState(received: ReceivedSnapshot?) {
         val snapshot = received?.snapshot
         current = snapshot
-        ongoing.update(snapshot, prefs.ongoingIcon)
+        updateEntry()
         val signature = signatureOf(snapshot)
         if (signature != prefs.lastSignature) {
             prefs.lastSignature = signature
@@ -33,14 +49,46 @@ class SystemSurfaces(
         }
     }
 
+    /** Which of the watch's players is in front changed. */
+    fun onModeChanged(watchInFront: Boolean) {
+        if (watchInFront == watchPlaying) return
+        watchPlaying = watchInFront
+        updateEntry()
+        refreshTileAndComplication()
+    }
+
+    /**
+     * Tells the phone how the watch wants its notifications ([WatchSurfaces]): today only whether
+     * the phone's media notification should stay on the phone, for the mirror experiment.
+     */
+    suspend fun publishWatchSurfaces() {
+        val surfaces = WatchSurfaces(phoneMediaLocalOnly = prefs.mirrorNowBar, changedAtEpochMs = System.currentTimeMillis())
+        runCatching {
+            Wearable.getDataClient(context)
+                .putDataItem(
+                    PutDataRequest.create(WearPaths.WATCH)
+                        .setData(WearCodec.encode(WatchSurfaces.serializer(), surfaces))
+                        .setUrgent(),
+                )
+                .await()
+        }
+    }
+
+    private fun updateEntry() {
+        val snapshot = current
+        val entry = NowBarPolicy.entry(prefs.nowBar, snapshot, watchPlaying, prefs.mirrorNowBar)
+        ongoing.update(snapshot, enabled = entry == NowBarEntry.ONGOING)
+        if (entry == NowBarEntry.MIRROR) mirror?.show(snapshot) else mirror?.hide()
+    }
+
     /** A cover arrived; it matters if it is the one on show. */
     fun onCoverStored(key: String) {
         if (current?.track?.artKey == key) refreshTileAndComplication()
     }
 
-    /** The icon switch moved in Altro. */
+    /** A switch about the watch face moved in Altro. */
     fun onPrefsChanged() {
-        ongoing.update(current, prefs.ongoingIcon)
+        updateEntry()
     }
 
     private fun refreshTileAndComplication() {

@@ -1,5 +1,7 @@
 package dev.pampa.fluidify.wear.ui.more
 
+import com.adamglin.phosphoricons.regular.Watch
+import dev.pampa.fluidify.wear.protocol.logic.NowBarMode
 import android.Manifest
 import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -68,6 +70,8 @@ fun MoreScreen(
     phoneVersion: StateFlow<String?> = remember { MutableStateFlow(null) },
     surfaces: SurfacePrefs? = null,
     onSurfacesChanged: () -> Unit = {},
+    /** The mirror experiment was switched: tell the phone and redraw the watch face. */
+    onMirrorChanged: () -> Unit = onSurfacesChanged,
     glassMeter: GlassMeterPrefs? = null,
     standalone: dev.pampa.fluidify.wear.standalone.Standalone? = null,
     onDownloads: (() -> Unit)? = null,
@@ -78,8 +82,9 @@ fun MoreScreen(
     val update by (updater?.status ?: remember { MutableStateFlow<UpdateStatus?>(null) }).collectAsStateWithLifecycle()
     val phone by phoneVersion.collectAsStateWithLifecycle()
     var auto by remember { mutableStateOf(updater?.autoUpdate ?: true) }
-    var icon by remember { mutableStateOf(surfaces?.ongoingIcon ?: true) }
+    var nowBar by remember { mutableStateOf(surfaces?.nowBar ?: NowBarMode.AUTO) }
     var bridged by remember { mutableStateOf(surfaces?.phoneNotifications ?: true) }
+    var mirror by remember { mutableStateOf(surfaces?.mirrorNowBar ?: false) }
     var notificationsAllowed by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) ==
@@ -174,36 +179,26 @@ fun MoreScreen(
         }
         if (surfaces != null) {
             item {
-                SwitchButton(
-                    checked = icon && notificationsAllowed,
-                    onCheckedChange = { on ->
-                        icon = on
-                        surfaces.ongoingIcon = on
-                        if (on && !notificationsAllowed) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                // One row that steps through the three choices: they are a scale, from "only when
+                // nothing else shows it" to "never", and a tap is all a wrist wants to spend on it.
+                FluidWearListRow(
+                    title = stringResource(R.string.now_bar),
+                    subtitle = stringResource(
+                        when {
+                            nowBar != NowBarMode.NEVER && !notificationsAllowed -> R.string.notifications_blocked
+                            nowBar == NowBarMode.AUTO -> R.string.now_bar_auto
+                            nowBar == NowBarMode.ALWAYS -> R.string.now_bar_always
+                            else -> R.string.now_bar_never
+                        },
+                    ),
+                    onClick = {
+                        val next = NowBarMode.entries[(nowBar.ordinal + 1) % NowBarMode.entries.size]
+                        nowBar = next
+                        surfaces.nowBar = next
+                        if (next != NowBarMode.NEVER && !notificationsAllowed) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
                         onSurfacesChanged()
                     },
-                    label = { Text(stringResource(R.string.watch_face_icon)) },
-                    secondaryLabel = {
-                        Text(
-                            stringResource(
-                                if (icon && !notificationsAllowed) R.string.notifications_blocked else R.string.watch_face_icon_summary,
-                            ),
-                        )
-                    },
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            item {
-                SwitchButton(
-                    checked = bridged,
-                    onCheckedChange = { on ->
-                        bridged = on
-                        surfaces.phoneNotifications = on
-                        Bridging.apply(context, on)
-                    },
-                    label = { Text(stringResource(R.string.phone_notifications)) },
-                    secondaryLabel = { Text(stringResource(R.string.phone_notifications_summary)) },
-                    modifier = Modifier.fillMaxWidth(),
+                    leading = { Icon(PhosphorIcons.Regular.Watch, contentDescription = null, modifier = Modifier.size(22.dp)) },
                 )
             }
         }
@@ -327,6 +322,34 @@ fun MoreScreen(
                     label = { Text(stringResource(R.string.glass_diagnostics)) },
                     modifier = Modifier.fillMaxWidth(),
                 )
+            }
+            if (surfaces != null) {
+                item {
+                    SwitchButton(
+                        checked = mirror,
+                        onCheckedChange = { on ->
+                            mirror = on
+                            surfaces.mirrorNowBar = on
+                            onMirrorChanged()
+                        },
+                        label = { Text(stringResource(R.string.mirror_now_bar)) },
+                        secondaryLabel = { Text(stringResource(R.string.mirror_now_bar_summary)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+                item {
+                    SwitchButton(
+                        checked = bridged,
+                        onCheckedChange = { on ->
+                            bridged = on
+                            surfaces.phoneNotifications = on
+                            Bridging.apply(context, on)
+                        },
+                        label = { Text(stringResource(R.string.phone_notifications)) },
+                        secondaryLabel = { Text(stringResource(R.string.phone_notifications_summary)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
             }
             item {
                 FluidWearListRow(

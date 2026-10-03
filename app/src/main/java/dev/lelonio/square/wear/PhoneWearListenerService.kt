@@ -30,7 +30,10 @@ class PhoneWearListenerService : WearableListenerService() {
         events.forEach { event ->
             if (event.type != com.google.android.gms.wearable.DataEvent.TYPE_CHANGED) return@forEach
             val item = event.dataItem
-            if (item.uri.path == WearPaths.DOWNLOAD_STATUS) item.data?.let(bridge.watchDownloads::onStatus)
+            when (item.uri.path) {
+                WearPaths.DOWNLOAD_STATUS -> item.data?.let(bridge.watchDownloads::onStatus)
+                WearPaths.WATCH -> item.data?.let(bridge::onWatchSurfaces)
+            }
         }
     }
 

@@ -118,4 +118,10 @@
     <string name="developer">Entwickler</string>
     <string name="developer_unlocked">Entwickleroptionen aktiv</string>
     <string name="developer_leave">Entwickleroptionen ausschalten</string>
+    <string name="now_bar">Fluidify auf dem Zifferblatt</string>
+    <string name="now_bar_auto">Wenn die Uhr die Musik des Telefons nicht zeigt</string>
+    <string name="now_bar_always">Immer, neben der Steuerung der Uhr</string>
+    <string name="now_bar_never">Nie</string>
+    <string name="mirror_now_bar">Fluidify-Steuerung auf dem Zifferblatt</string>
+    <string name="mirror_now_bar_summary">Experiment: Das Telefon behält seine Benachrichtigung, die Uhr zeigt ihre eigene</string>
 </resources>

@@ -129,6 +129,10 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                                                     phoneVersion = phoneVersion,
                                                     surfaces = app.surfacePrefs,
                                                     onSurfacesChanged = app.surfaces::onPrefsChanged,
+                                                    onMirrorChanged = {
+                                                        app.surfaces.onPrefsChanged()
+                                                        app.scope.launch { app.surfaces.publishWatchSurfaces() }
+                                                    },
                                                     glassMeter = app.glassMeter,
                                                     standalone = app.standalone,
                                                     onDownloads = { nav.navigate(WATCH_DOWNLOADS) },

@@ -118,4 +118,10 @@
     <string name="developer">डेवलपर</string>
     <string name="developer_unlocked">डेवलपर विकल्प चालू हैं</string>
     <string name="developer_leave">डेवलपर विकल्प बंद करें</string>
+    <string name="now_bar">वॉच फ़ेस पर Fluidify</string>
+    <string name="now_bar_auto">जब घड़ी फ़ोन का संगीत न दिखाए</string>
+    <string name="now_bar_always">हमेशा, घड़ी के नियंत्रणों के साथ</string>
+    <string name="now_bar_never">कभी नहीं</string>
+    <string name="mirror_now_bar">वॉच फ़ेस पर Fluidify नियंत्रण</string>
+    <string name="mirror_now_bar_summary">प्रयोग: फ़ोन अपनी सूचना रखता है और घड़ी अपनी दिखाती है</string>
 </resources>

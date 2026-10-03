@@ -49,7 +49,7 @@ object WearPaths {
     /** DataItem, phone to watch. The phone's version, features and download quality. */
     const val PHONE = "$V/phone"
 
-    /** DataItem, watch to phone. The watch's version, storage and settings. */
+    /** DataItem, watch to phone. [WatchSurfaces]: how the watch wants the phone's notifications. */
     const val WATCH = "$V/watch"
 
     /** Message, phone to watch. A [DownloadRequest]: keep, or stop keeping, a playlist or album. */
