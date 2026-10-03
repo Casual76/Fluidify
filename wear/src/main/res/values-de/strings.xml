@@ -136,4 +136,5 @@
     <string name="error_generic">Das hat nicht geklappt</string>
     <string name="radio_of">Radio: %1$s</string>
     <string name="moving_to_watch">Wechsel zur Uhr…</string>
+    <string name="pinned">Angeheftet</string>
 </resources>

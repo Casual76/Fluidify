@@ -39,7 +39,10 @@ class PhoneWearListenerService : WearableListenerService() {
 
     override fun onChannelOpened(channel: com.google.android.gms.wearable.ChannelClient.Channel) {
         // The watch asking for a track; sent on a coroutine of its own, see WatchFileServer.
-        if (channel.path == WearPaths.DOWNLOAD_FILE) bridge.files.serve(channel)
+        when (channel.path) {
+            WearPaths.DOWNLOAD_FILE -> bridge.files.serve(channel)
+            WearPaths.THUMBS -> bridge.thumbs.serve(channel)
+        }
     }
 
     override fun onMessageReceived(event: MessageEvent) {

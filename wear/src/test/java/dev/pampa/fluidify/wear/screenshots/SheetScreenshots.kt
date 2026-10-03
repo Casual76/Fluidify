@@ -150,8 +150,8 @@ class SheetScreenshots {
                     LibraryShelf(
                         "",
                         listOf(
+                            LibraryItem("spotify:playlist:a", "Notturni", kind = LibraryKind.PLAYLIST, artKey = SampleArtKey, pinned = true),
                             LibraryItem("spotify:user:x:collection", "Brani che ti piacciono", kind = LibraryKind.LIKED),
-                            LibraryItem("spotify:playlist:a", "Notturni", kind = LibraryKind.PLAYLIST, artKey = SampleArtKey),
                             LibraryItem("spotify:playlist:b", "In macchina", kind = LibraryKind.PLAYLIST),
                         ),
                     ),

@@ -66,6 +66,10 @@ sealed interface Command {
     @Serializable @SerialName("transfer")
     data class Transfer(val deviceId: String) : Command
 
+    /** Pins (or unpins) a playlist to the top of the library, on the phone and so on the watch. */
+    @Serializable @SerialName("pin")
+    data class SetPinned(val uri: String, val pinned: Boolean) : Command
+
     /** Exactly one of the three: [minutes], [atTrackEnd] or [cancel]. */
     @Serializable @SerialName("sleep")
     data class SleepTimer(

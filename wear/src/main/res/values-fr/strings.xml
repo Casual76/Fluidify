@@ -136,4 +136,5 @@
     <string name="error_generic">Ça n\'a pas marché</string>
     <string name="radio_of">Radio : %1$s</string>
     <string name="moving_to_watch">Passage sur la montre…</string>
+    <string name="pinned">Épinglée</string>
 </resources>

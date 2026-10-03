@@ -101,6 +101,9 @@ class PhoneWearBridge(private val app: SquareApplication) {
     /** Sends the watch the tracks it keeps; see [WatchFileServer]. */
     val files = WatchFileServer(app)
 
+    /** Small covers for the watch's lists; see [WatchThumbServer]. */
+    val thumbs = WatchThumbServer(app)
+
     /** The watch's downloads as the phone sees them, and the way to ask for more. */
     val watchDownloads = WatchDownloadsRemote(app, link)
 
@@ -182,7 +185,26 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 Player.EVENT_PLAYBACK_PARAMETERS_CHANGED,
             )
             changed(urgent)
+            if (player.isPlaying && events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) {
+                rememberContext(player)
+            }
         }
+    }
+
+    /**
+     * Notes the playlist or album this is playing from, for the watch's Home ("what was I
+     * listening to"): whoever started it, the phone, the watch, the car.
+     */
+    private fun rememberContext(player: Player) {
+        val item = player.currentMediaItem ?: return
+        val extras = player.mediaMetadata.extras ?: item.mediaMetadata.extras ?: return
+        val uri = extras.getString(dev.lelonio.square.ui.EXTRA_CONTEXT_URI) ?: return
+        if (!dev.lelonio.square.data.RecentContextsStore.isRememberable(uri)) return
+        val label = extras.getString(dev.lelonio.square.ui.EXTRA_CONTEXT_LABEL).orEmpty()
+        val name = label.ifBlank { player.mediaMetadata.albumTitle?.toString().orEmpty() }
+        // An album's cover is the track's; a playlist's is its own, looked up when the Home is built.
+        val art = if (uri.startsWith("spotify:album:")) player.mediaMetadata.artworkUri?.toString()?.takeIf { it.startsWith("https://") } else null
+        app.recentContexts.record(uri, name, art)
     }
 
     // --- The service's side -------------------------------------------------------
@@ -500,6 +522,10 @@ class PhoneWearBridge(private val app: SquareApplication) {
                     return null
                 }
                 return if (transferTo(command.deviceId)) null else AckErrors.TRANSFER
+            }
+            is Command.SetPinned -> {
+                if (app.pinnedPlaylists.isPinned(command.uri) != command.pinned) app.pinnedPlaylists.toggle(command.uri)
+                return null
             }
             is Command.SleepTimer -> {
                 when {

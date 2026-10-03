@@ -137,4 +137,5 @@
     <string name="error_generic">That didn\'t work</string>
     <string name="radio_of">Radio: %1$s</string>
     <string name="moving_to_watch">Moving to the watch…</string>
+    <string name="pinned">Pinned</string>
 </resources>

@@ -104,6 +104,11 @@ class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost {
     val pinnedPlaylists: dev.lelonio.square.data.PinnedPlaylistStore by lazy {
         dev.lelonio.square.data.PinnedPlaylistStore(this)
     }
+
+    /** What was played from lately, here or from the watch; see RecentContextsStore. */
+    val recentContexts: dev.lelonio.square.data.RecentContextsStore by lazy {
+        dev.lelonio.square.data.RecentContextsStore(this)
+    }
     /** How the library was left looking: grid or list, and the sort. */
     val libraryView: dev.lelonio.square.data.LibraryViewStore by lazy {
         dev.lelonio.square.data.LibraryViewStore(this)

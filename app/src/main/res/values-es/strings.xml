@@ -460,4 +460,5 @@
     <string name="watch_install_pick">Usar un APK de este teléfono</string>
     <string name="watch_install_picked">Se instalará: %1$s</string>
     <string name="watch_install_no_release">Aún no hay una versión para reloj publicada: elige un APK en el teléfono</string>
+    <string name="watch_made_for_you">Creado para ti</string>
 </resources>

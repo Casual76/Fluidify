@@ -7,6 +7,8 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.vector.ImageVector
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Fill
 import com.adamglin.phosphoricons.Regular
@@ -20,13 +22,22 @@ import dev.pampa.fluidify.wear.protocol.LibraryKind
 /**
  * Loads something the phone has, showing the copy kept on the watch first.
  *
- * [cached] answers at once (or not at all); [fetch] goes over Bluetooth and
- * replaces it when it returns. A failed fetch keeps whatever was shown.
+ * [peek] answers from memory in the first frame (or not at all); [cached] reads the copy on the
+ * watch's disk, off the main thread; [fetch] goes over Bluetooth and replaces it when it returns.
+ * A failed fetch keeps whatever was shown.
  */
 @Composable
-fun <T> rememberPhoneData(key: Any, cached: () -> T?, fetch: suspend () -> Result<T>): PhoneData<T> {
-    var state by remember(key) { mutableStateOf(PhoneData(cached(), loading = true, failed = false)) }
+fun <T> rememberPhoneData(
+    key: Any,
+    cached: () -> T?,
+    peek: () -> T? = { null },
+    fetch: suspend () -> Result<T>,
+): PhoneData<T> {
+    var state by remember(key) { mutableStateOf(PhoneData(peek(), loading = true, failed = false)) }
     LaunchedEffect(key) {
+        if (state.value == null) {
+            withContext(Dispatchers.IO) { cached() }?.let { kept -> if (state.value == null) state = state.copy(value = kept) }
+        }
         val result = fetch()
         state = PhoneData(result.getOrNull() ?: state.value, loading = false, failed = result.isFailure)
     }

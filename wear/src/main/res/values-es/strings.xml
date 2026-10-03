@@ -136,4 +136,5 @@
     <string name="error_generic">No ha funcionado</string>
     <string name="radio_of">Radio: %1$s</string>
     <string name="moving_to_watch">Pasando al reloj…</string>
+    <string name="pinned">Fijada</string>
 </resources>

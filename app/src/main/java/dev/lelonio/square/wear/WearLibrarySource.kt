@@ -15,7 +15,9 @@ import dev.pampa.fluidify.wear.protocol.LibrarySection
 import dev.pampa.fluidify.wear.protocol.LibraryShelf
 import dev.pampa.fluidify.wear.protocol.artKeyOf
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * The phone's library, read the way the phone's own screens read it, without a screen.
@@ -28,9 +30,20 @@ import kotlinx.coroutines.withContext
  */
 class WearLibrarySource(private val app: SquareApplication) {
 
+    /**
+     * The watch's Home: the listener's pins on top, then what they played lately, then what they
+     * opened lately ([WatchHome.top]); then Spotify's playlists made for them ([WatchHome.madeForYou]);
+     * then Spotify's own home shelves, without the rows already shown above.
+     *
+     * The engine is woken first: the gateway and the playlist list both go through it, and a
+     * listener service that woke the process for this question has not started it — which is how
+     * the watch's Home used to come back half empty. If it is not up in time, the last Home this
+     * phone answered stands in, with today's pins.
+     */
     suspend fun home(): LibraryPage = withContext(Dispatchers.IO) {
+        if (!engineReady()) cachedHome()?.let { return@withContext it }
         val keys = app.pathfinderKeys
-        keys.refresh()
+        runCatching { keys.refresh() }
         val shelves = runCatching {
             SpotifyHome.parse(
                 NativeBridge.homeFeed(
@@ -41,17 +54,125 @@ class WearLibrarySource(private val app: SquareApplication) {
                 ),
             )
         }.getOrDefault(emptyList())
-        val pinned = runCatching { app.spotifyBackend.playlists() }.getOrDefault(emptyList())
-        val top = pinned.take(HOME_LIBRARY_ROWS).map { it.toItem() }
-        LibraryPage(
+        val playlists = runCatching { app.spotifyBackend.playlists() }.getOrDefault(emptyList())
+        if (shelves.isEmpty() && playlists.isEmpty()) cachedHome()?.let { return@withContext it }
+
+        val pinned = app.pinnedPlaylists.pinned.value
+        val top = WatchHome.top(pinned, app.recentContexts.contexts.value, app.playlistOrder.order.value, playlists, HOME_TOP_ROWS)
+        val fromHome = shelves.flatMap { shelf -> shelf.items.map { HomeEntry(it.uri, it.name, it.artworkUrl) } }
+        val made = WatchHome.madeForYou(fromHome, playlists, rememberedMadeForYou(fromHome + top, playlists), MADE_FOR_YOU_ROWS)
+        val shown = (top.map { it.uri } + made.map { it.uri }).toHashSet()
+
+        val withCovers = withCovers(top + made)
+        val page = LibraryPage(
             shelves = buildList {
-                if (top.isNotEmpty()) add(LibraryShelf(title = "", items = top))
+                if (top.isNotEmpty()) add(LibraryShelf(title = "", items = top.map { withCovers.getValue(it.uri).toItem() }))
+                if (made.isNotEmpty()) {
+                    add(LibraryShelf(app.getString(R.string.watch_made_for_you), made.map { withCovers.getValue(it.uri).toItem() }))
+                }
                 shelves.forEach { shelf ->
-                    add(LibraryShelf(title = shelf.title, items = shelf.items.take(SHELF_ITEMS).map { it.toItem() }))
+                    val items = shelf.items.filter { it.uri !in shown }.take(SHELF_ITEMS).map { it.toItem() }
+                    if (items.isNotEmpty()) add(LibraryShelf(title = shelf.title, items = items))
                 }
             },
         )
+        saveHome(page)
+        page
     }
+
+    /** Starts the phone's engine if it is not running, and waits a little for it to connect. */
+    private suspend fun engineReady(): Boolean {
+        if (runCatching { NativeBridge.isConnected }.getOrDefault(false)) return true
+        dev.lelonio.square.playback.PlaybackService.connect(app)
+        return withTimeoutOrNull(ENGINE_WAIT_MS) {
+            while (!runCatching { NativeBridge.isConnected }.getOrDefault(false)) delay(ENGINE_POLL_MS)
+            true
+        } ?: false
+    }
+
+    /**
+     * The made-for-you playlists found before, and once a day a search for the two that matter
+     * most when neither Spotify's home nor the library has them: Discover Weekly and Release Radar
+     * are the listener's own, so their ids never change, and remembering them costs nothing.
+     */
+    private suspend fun rememberedMadeForYou(seen: List<HomeEntry>, playlists: List<CatalogPlaylist>): List<HomeEntry> {
+        val prefs = app.getSharedPreferences(MADE_FOR_YOU_PREFS, android.content.Context.MODE_PRIVATE)
+        val known = prefs.getString(KEY_MADE, null)?.let { saved ->
+            runCatching { dev.pampa.fluidify.wear.protocol.WearCodec.json.decodeFromString(MadeList.serializer(), saved).items }.getOrNull()
+        }.orEmpty().map { HomeEntry(it.uri, it.name, it.artworkUrl) }
+        val present = (seen.map { it.uri } + playlists.map { it.uri } + known.map { it.uri }).filter(WatchHome::isMadeForYou)
+        val hasWeekly = present.any { it.removePrefix("spotify:playlist:").startsWith("37i9dQZEVX") }
+        val lastSearch = prefs.getLong(KEY_SEARCHED_AT, 0L)
+        if (hasWeekly || System.currentTimeMillis() - lastSearch < SEARCH_EVERY_MS) return known
+        prefs.edit().putLong(KEY_SEARCHED_AT, System.currentTimeMillis()).apply()
+        val labels = SearchLabels(app.getString(R.string.artist), app.getString(R.string.album), app.getString(R.string.playlist))
+        val found = SEARCHES.flatMap { query ->
+            runCatching { app.spotifyBackend.search(query, labels).playlists }.getOrDefault(emptyList())
+                .filter { WatchHome.isMadeForYou(it.uri) }
+                .take(1)
+                .map { HomeEntry(it.uri, it.title, it.artworkUrl) }
+        }
+        val merged = (found + known).distinctBy { it.uri }.take(MADE_FOR_YOU_ROWS)
+        prefs.edit().putString(KEY_MADE, dev.pampa.fluidify.wear.protocol.WearCodec.json.encodeToString(MadeList.serializer(), MadeList(merged.map { MadeItem(it.uri, it.name, it.artworkUrl) }))).apply()
+        return merged
+    }
+
+    /**
+     * Covers for the rows that came without one. Spotify's own playlists — Discover Weekly, the
+     * mixes — keep their picture on the playlist, not in the account's list of it, so those rows
+     * arrived blank. Looked up once each and remembered for as long as the process lives.
+     */
+    private suspend fun withCovers(entries: List<HomeEntry>): Map<String, HomeEntry> {
+        var lookups = 0
+        return entries.associate { entry ->
+            val art = entry.artworkUrl ?: coverCache[entry.uri] ?: if (lookups < MAX_COVER_LOOKUPS && entry.uri.startsWith("spotify:playlist:")) {
+                lookups++
+                runCatching { dev.lelonio.square.data.Catalog.playlistCover(entry.uri) }.getOrNull()?.also { coverCache[entry.uri] = it }
+            } else {
+                null
+            }
+            entry.uri to entry.copy(artworkUrl = art)
+        }
+    }
+
+    private val coverCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val homeFile get() = java.io.File(app.filesDir, "wear-home.json")
+
+    private fun saveHome(page: LibraryPage) {
+        runCatching { homeFile.writeBytes(dev.pampa.fluidify.wear.protocol.WearCodec.encode(LibraryPage.serializer(), page)) }
+    }
+
+    /** The last Home answered, with the pins as they are now. */
+    private fun cachedHome(): LibraryPage? {
+        val page = runCatching { dev.pampa.fluidify.wear.protocol.WearCodec.decodeOrNull(LibraryPage.serializer(), homeFile.readBytes()) }.getOrNull()
+            ?: return null
+        val pinned = app.pinnedPlaylists.pinned.value.toSet()
+        return page.copy(
+            shelves = page.shelves.mapIndexed { index, shelf ->
+                if (index != 0) shelf else shelf.copy(items = shelf.items.map { it.copy(pinned = it.uri in pinned) })
+            },
+        )
+    }
+
+    private fun HomeEntry.toItem() = LibraryItem(
+        uri = uri,
+        title = name,
+        kind = when {
+            uri.endsWith(":collection") -> LibraryKind.LIKED
+            uri.startsWith("spotify:album:") -> LibraryKind.ALBUM
+            uri.startsWith("spotify:artist:") -> LibraryKind.ARTIST
+            else -> LibraryKind.PLAYLIST
+        },
+        artKey = artKeyOf(artworkUrl),
+        artUrl = artworkUrl?.takeIf { it.startsWith("https://") },
+        pinned = pinned,
+    )
+
+    @kotlinx.serialization.Serializable
+    private data class MadeItem(val uri: String, val name: String, val artworkUrl: String? = null)
+
+    @kotlinx.serialization.Serializable
+    private data class MadeList(val items: List<MadeItem>)
 
     suspend fun section(section: LibrarySection): LibraryPage = withContext(Dispatchers.IO) {
         when (section) {
@@ -168,7 +289,18 @@ class WearLibrarySource(private val app: SquareApplication) {
     )
 
     private companion object {
-        const val HOME_LIBRARY_ROWS = 6
+        const val HOME_TOP_ROWS = 10
+        const val MADE_FOR_YOU_ROWS = 8
         const val SHELF_ITEMS = 10
+        const val MAX_COVER_LOOKUPS = 12
+        const val ENGINE_WAIT_MS = 6_000L
+        const val ENGINE_POLL_MS = 200L
+        const val MADE_FOR_YOU_PREFS = "wear_made_for_you"
+        const val KEY_MADE = "items"
+        const val KEY_SEARCHED_AT = "searched_at"
+        const val SEARCH_EVERY_MS = 24 * 60 * 60_000L
+
+        /** Their names are the same in every language Spotify ships. */
+        val SEARCHES = listOf("Discover Weekly", "Release Radar")
     }
 }

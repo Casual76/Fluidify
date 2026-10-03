@@ -40,7 +40,7 @@ fun ContextScreen(
     title: String,
     onPlaying: () -> Unit,
 ) {
-    val data = rememberPhoneData(uri, { app.library.cachedContext(uri) }) { app.library.context(uri) }
+    val data = rememberPhoneData(uri, { app.library.cachedContext(uri) }, { app.library.peekContext(uri) }) { app.library.context(uri) }
     val page = data.value
     WatchList(title = page?.title?.ifEmpty { null } ?: title) {
         item {

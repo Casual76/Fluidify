@@ -46,7 +46,10 @@ class MainActivity : ComponentActivity() {
         askForNotificationsOnce()
         setContent {
             val ambient = rememberFluidAmbientState(this)
-            CompositionLocalProvider(LocalFluidWearAmbient provides ambient) {
+            CompositionLocalProvider(
+                LocalFluidWearAmbient provides ambient,
+                dev.pampa.fluidify.wear.library.LocalThumbnails provides app.thumbnails,
+            ) {
                 FluidWearTheme(brand = FluidifyWearBrand) {
                     WatchRoot(app, showPlayer = showPlayer)
                 }

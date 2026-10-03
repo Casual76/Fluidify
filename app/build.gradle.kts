@@ -220,6 +220,7 @@ dependencies {
     // Installs baseline-prof.txt on first run, so the code the bar and the
     // player use is compiled before it is needed rather than while it runs.
     implementation(libs.androidx.profileinstaller)
+    testImplementation(libs.junit)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.browser)
     implementation(libs.androidx.security.crypto)

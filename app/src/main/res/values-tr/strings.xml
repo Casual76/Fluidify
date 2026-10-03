@@ -475,4 +475,5 @@
     <string name="watch_install_pick">Bu telefondaki bir APK\'yı kullan</string>
     <string name="watch_install_picked">Yüklenecek: %1$s</string>
     <string name="watch_install_no_release">Henüz yayımlanmış saat sürümü yok: telefonda bir APK seçin</string>
+    <string name="watch_made_for_you">Senin için hazırlandı</string>
 </resources>

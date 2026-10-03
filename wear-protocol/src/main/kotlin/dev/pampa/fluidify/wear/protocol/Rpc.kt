@@ -94,6 +94,8 @@ data class LibraryItem(
     val kind: LibraryKind = LibraryKind.PLAYLIST,
     val artKey: String? = null,
     val artUrl: String? = null,
+    /** Pinned to the top of the library on the phone. */
+    val pinned: Boolean = false,
 )
 
 @Serializable

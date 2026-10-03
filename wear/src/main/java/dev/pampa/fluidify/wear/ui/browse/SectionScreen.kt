@@ -19,7 +19,7 @@ fun SectionScreen(
     onOpen: (uri: String, title: String) -> Unit,
     onPlayTrack: (uri: String) -> Unit,
 ) {
-    val data = rememberPhoneData(section, { app.library.cachedSection(section) }) { app.library.section(section) }
+    val data = rememberPhoneData(section, { app.library.cachedSection(section) }, { app.library.peekSection(section) }) { app.library.section(section) }
     WatchList(title = title) {
         val page = data.value
         when {

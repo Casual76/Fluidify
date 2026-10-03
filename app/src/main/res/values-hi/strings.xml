@@ -475,4 +475,5 @@
     <string name="watch_install_pick">इस फ़ोन पर मौजूद APK इस्तेमाल करें</string>
     <string name="watch_install_picked">इंस्टॉल होगा: %1$s</string>
     <string name="watch_install_no_release">अभी कोई घड़ी संस्करण प्रकाशित नहीं: फ़ोन पर APK चुनें</string>
+    <string name="watch_made_for_you">आपके लिए बनाया गया</string>
 </resources>

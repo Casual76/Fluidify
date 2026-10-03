@@ -136,4 +136,5 @@
     <string name="error_generic">यह काम नहीं किया</string>
     <string name="radio_of">रेडियो: %1$s</string>
     <string name="moving_to_watch">घड़ी पर ले जा रहे हैं…</string>
+    <string name="pinned">पिन किया गया</string>
 </resources>

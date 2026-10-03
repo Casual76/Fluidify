@@ -136,4 +136,5 @@
     <string name="error_generic">İşe yaramadı</string>
     <string name="radio_of">Radyo: %1$s</string>
     <string name="moving_to_watch">Saate geçiliyor…</string>
+    <string name="pinned">Sabitlendi</string>
 </resources>

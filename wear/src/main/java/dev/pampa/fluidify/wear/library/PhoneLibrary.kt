@@ -28,6 +28,17 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
 
     private val directory = File(context.filesDir, "library").apply { mkdirs() }
 
+    /**
+     * What has been read or received this session, so a screen coming back (the Home, after the
+     * player) has its list in the first frame without touching the disk on the main thread —
+     * which, done in composition, was part of the stutter on the swipe to the Home.
+     */
+    private val memory = java.util.concurrent.ConcurrentHashMap<String, Any>()
+
+    fun peekHome(): LibraryPage? = memory["home"] as? LibraryPage
+    fun peekSection(section: LibrarySection): LibraryPage? = memory["section-$section"] as? LibraryPage
+    fun peekContext(uri: String): ContextPage? = memory["context-${hash(uri)}"] as? ContextPage
+
     fun cachedHome(): LibraryPage? = read("home", LibraryPage.serializer())
     suspend fun home(): Result<LibraryPage> = fetch("home", RpcMethod.Home, LibraryPage.serializer())
 
@@ -46,6 +57,26 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
 
     suspend fun devices(): Result<DeviceList> = link.request(RpcMethod.Devices, DeviceList.serializer())
 
+    /**
+     * Pins or unpins [uri] on the phone, and updates the kept Home at once so the change shows
+     * before the next answer from the phone. True when the phone took it.
+     */
+    suspend fun setPinned(uri: String, pinned: Boolean): Boolean {
+        val ok = link.send(dev.pampa.fluidify.wear.protocol.Command.SetPinned(uri, pinned))?.ok == true
+        if (ok) {
+            val home = peekHome() ?: withContext(Dispatchers.IO) { cachedHome() }
+            home?.let { page ->
+                val updated = page.copy(
+                    shelves = page.shelves.mapIndexed { index, shelf ->
+                        if (index != 0) shelf else shelf.copy(items = shelf.items.map { if (it.uri == uri) it.copy(pinned = pinned) else it })
+                    },
+                )
+                withContext(Dispatchers.IO) { write("home", LibraryPage.serializer(), updated) }
+            }
+        }
+        return ok
+    }
+
     /** Puts pages in the cache as if the phone had sent them: for previews and screenshot tests. */
     internal fun seed(home: LibraryPage? = null, contexts: List<ContextPage> = emptyList()) {
         home?.let { write("home", LibraryPage.serializer(), it) }
@@ -58,13 +89,18 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
         return result
     }
 
-    private fun <T> read(key: String, serializer: KSerializer<T>): T? = runCatching {
-        val file = File(directory, "$key.json")
-        if (!file.isFile) return null
-        WearCodec.decodeOrNull(serializer, file.readBytes())
-    }.getOrNull()
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> read(key: String, serializer: KSerializer<T>): T? {
+        (memory[key] as? T)?.let { return it }
+        return runCatching {
+            val file = File(directory, "$key.json")
+            if (!file.isFile) return null
+            WearCodec.decodeOrNull(serializer, file.readBytes())
+        }.getOrNull()?.also { memory[key] = it as Any }
+    }
 
     private fun <T> write(key: String, serializer: KSerializer<T>, value: T) {
+        memory[key] = value as Any
         runCatching {
             val part = File(directory, "$key.part")
             part.writeBytes(WearCodec.encode(serializer, value))

@@ -120,6 +120,11 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
         dev.pampa.fluidify.wear.library.PhoneLibrary(this, link)
     }
 
+    /** The covers of the watch's lists, from the phone; see [dev.pampa.fluidify.wear.library.Thumbnails]. */
+    val thumbnails: dev.pampa.fluidify.wear.library.Thumbnails by lazy {
+        dev.pampa.fluidify.wear.library.Thumbnails(this, link, scope)
+    }
+
     /** The glass meter's switch (debug and dev builds). */
     val glassMeter: dev.pampa.fluidify.wear.ui.debug.GlassMeterPrefs by lazy {
         dev.pampa.fluidify.wear.ui.debug.GlassMeterPrefs(this)

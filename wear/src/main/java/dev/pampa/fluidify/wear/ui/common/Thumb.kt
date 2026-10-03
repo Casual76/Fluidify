@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -17,16 +18,18 @@ import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.MaterialTheme
 import coil.compose.AsyncImage
+import dev.pampa.fluidify.wear.library.LocalThumbnails
 import dev.pampa.fluidify.wear.link.ArtStore
+import kotlinx.coroutines.flow.MutableStateFlow
 
 /**
  * A small cover for a list row.
  *
- * The phone's own copy first (the art store, filled over Bluetooth), then the
- * Spotify CDN at the smallest size it serves, which a watch can fetch through
- * its phone's connection for a few kilobytes and then keeps in Coil's disk
- * cache. Without either, the row keeps a quiet tile with [fallback] on it, so a
- * list never jumps when covers arrive.
+ * The full cover if the watch has it (the art store: what is or was playing),
+ * then the thumbnail the phone sends for lists ([Thumbnails], asked for here
+ * and kept on the watch), and only when the phone could not give one, the
+ * Spotify CDN at the smallest size it serves. Until then the row keeps a quiet
+ * tile with [fallback] on it, so a list never jumps when covers arrive.
  */
 @Composable
 fun Thumb(
@@ -39,8 +42,16 @@ fun Thumb(
     large: Boolean = false,
 ) {
     val revision by art.revision.collectAsState()
-    val local = remember(artKey, revision) { art.fileFor(artKey) }
-    val model: Any? = local ?: smallVariant(artUrl, large)
+    val thumbnails = LocalThumbnails.current
+    val thumbRevision by (thumbnails?.revision ?: remember { MutableStateFlow(0L) }).collectAsState()
+    val model: Any? = remember(artKey, artUrl, revision, thumbRevision) {
+        art.fileFor(artKey)
+            ?: thumbnails?.fileFor(artKey)
+            ?: smallVariant(artUrl, large).takeIf { thumbnails == null || thumbnails.unavailable(artKey) }
+    }
+    if (model == null && artKey != null && thumbnails != null) {
+        LaunchedEffect(artKey) { thumbnails.want(artKey, artUrl) }
+    }
     Box(
         modifier = modifier
             .size(size)
