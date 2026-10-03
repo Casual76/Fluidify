@@ -56,6 +56,25 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
         is RpcMethod.Library -> encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), library.section(method.section))
         is RpcMethod.Context -> encode(dev.pampa.fluidify.wear.protocol.ContextPage.serializer(), library.context(method.uri, method.offset, method.limit))
         is RpcMethod.Search -> encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), library.search(method.query))
+        is RpcMethod.Downloads -> encode(dev.pampa.fluidify.wear.protocol.PhoneDownloads.serializer(), phoneDownloads(method.uris))
+    }
+
+    /**
+     * What the phone has of these tracks: each one's sidecar (format, file id, key),
+     * read from the native store without any network. The watch uses it to decide how
+     * to fetch a track (see TransportPlanner) and, with the key, to fetch it from the
+     * CDN without asking Spotify for a key of its own.
+     */
+    private suspend fun phoneDownloads(uris: List<String>) = withContext(Dispatchers.IO) {
+        // The store may not have been told where it lives yet: this can run in a process
+        // the listener service woke, with no engine started.
+        runCatching { dev.lelonio.square.nativecore.NativeBridge.setDownloadRoot(app.downloads.root.absolutePath) }
+        dev.pampa.fluidify.wear.protocol.PhoneDownloads(
+            uris.take(MAX_DOWNLOAD_QUERY).map { uri ->
+                val sidecar = runCatching { dev.lelonio.square.nativecore.NativeBridge.downloadState(uri) }.getOrNull()
+                dev.pampa.fluidify.wear.protocol.PhoneDownload(uri, sidecar?.takeIf { it != "null" })
+            },
+        )
     }
 
     private fun queue(method: RpcMethod.Queue): QueueWindow {
@@ -120,5 +139,6 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
 
     private companion object {
         const val TAG = "WearRpc"
+        const val MAX_DOWNLOAD_QUERY = 200
     }
 }

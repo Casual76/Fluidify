@@ -75,4 +75,25 @@
     <string name="phone_notifications_summary">Show Fluidify\'s phone notifications here too</string>
     <string name="glass_diagnostics">Glass recaptures</string>
     <string name="glass_diagnostics_value">%1$d total · %2$d/s</string>
+
+    <!-- Playing on the watch itself -->
+    <string name="watch_speaker">Watch speaker</string>
+    <string name="on_this_watch">On this watch</string>
+    <string name="connect_headphones">Connect headphones</string>
+    <string name="engine_starting">Starting on the watch…</string>
+    <string name="engine_needs_phone">Open Fluidify on the phone to sign the watch in</string>
+    <string name="engine_signed_out">Sign in on the phone first</string>
+    <string name="engine_premium">Playing on the watch needs Spotify Premium</string>
+    <string name="engine_failed">Couldn\'t start playback on the watch</string>
+    <string name="mobile_data">Mobile data</string>
+    <string name="mobile_data_summary">Stream and download over the watch\'s own connection</string>
+    <string name="speaker_allowed">Watch speaker</string>
+    <string name="speaker_allowed_summary">Play here when no headphones are connected</string>
+    <string name="watch_account">Signed in on the watch</string>
+    <string name="watch_account_none">Not yet: happens the first time it plays</string>
+    <string name="radio_on_phone">Start a radio from the phone</string>
+    <string name="cellular_question">Use mobile data?</string>
+    <string name="cellular_question_body">This watch has its own connection. Fluidify can stream over it when there is no Wi-Fi; it uses your data plan. You can change this in More.</string>
+    <string name="use_mobile_data">Use mobile data</string>
+    <string name="not_now">Not now</string>
 </resources>

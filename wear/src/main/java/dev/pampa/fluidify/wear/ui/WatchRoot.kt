@@ -84,6 +84,7 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                                     controls = app.controls,
                                     art = app.art,
                                     volume = app.volume,
+                                    status = standaloneStatus(app),
                                     onBrowse = { scope.launch { vertical.animateScrollToPage(PAGE_HOME) } },
                                     onOutput = { nav.navigate(OUTPUT) },
                                     onEssentials = { nav.navigate(ESSENTIALS) },
@@ -98,6 +99,7 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                                     surfaces = app.surfacePrefs,
                                     onSurfacesChanged = app.surfaces::onPrefsChanged,
                                     glassMeter = app.glassMeter,
+                                    standalone = app.standalone,
                                 )
                             }
                         }
@@ -119,8 +121,28 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                     onRadio = toPlayer,
                 )
             }
-            composable(QUEUE) { QueueScreen(app.controls, app.art, load = app.library::queue, onPlayed = toPlayer) }
-            composable(OUTPUT) { OutputScreen(app.controls, load = app.library::devices, onChosen = { nav.popBackStack() }) }
+            composable(QUEUE) { QueueScreen(app.controls, app.art, load = app::queue, onPlayed = toPlayer) }
+            composable(OUTPUT) {
+                val outputs by app.standalone.router.outputs.collectAsStateWithLifecycle()
+                val mode by app.playback.mode.collectAsStateWithLifecycle()
+                OutputScreen(
+                    app.controls,
+                    load = app.library::devices,
+                    onChosen = { nav.popBackStack() },
+                    // Headphones first, then the speaker if the listener allows it.
+                    watchOutputs = outputs.sortedBy { it.kind != dev.pampa.fluidify.wear.standalone.LocalOutput.Kind.HEADPHONES }
+                        .filter { it.kind == dev.pampa.fluidify.wear.standalone.LocalOutput.Kind.HEADPHONES || app.standalone.prefs.speakerAllowed },
+                    watchActive = mode == dev.pampa.fluidify.wear.playback.PlaybackMode.WATCH,
+                    watchConnectId = app.standalone.prefs.deviceId,
+                    onWatchOutput = { output ->
+                        app.playback.moveToWatch(output)
+                        // Asked once, on a watch that has a radio at all; see CellularScreen.
+                        val prefs = app.standalone.prefs
+                        if (app.standalone.network.hasCellular && !prefs.cellularOffered) nav.navigate(CELLULAR)
+                    },
+                    onConnectHeadphones = { app.standalone.router.openHeadphonePicker() },
+                )
+            }
             composable(SLEEP) { SleepScreen(app.controls, onSet = { nav.popBackStack() }) }
             composable(VOLUME) { VolumeScreen(app.controls, app.volume) }
             composable(LIBRARY) {
@@ -149,10 +171,34 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                 )
             }
             composable(SEARCH) { SearchScreen(app, onOpen = open, onPlaying = toPlayer) }
+            composable(CELLULAR) {
+                dev.pampa.fluidify.wear.ui.more.CellularScreen { yes ->
+                    app.standalone.prefs.allowCellular = yes
+                    app.standalone.prefs.cellularOffered = true
+                    nav.popBackStack()
+                }
+            }
         }
         val meter by app.glassMeter.enabled.collectAsStateWithLifecycle()
         if (meter) GlassMeter()
     }
+}
+
+/** What the watch's own engine is doing, while the watch is the one playing and it is not simply playing. */
+@Composable
+private fun standaloneStatus(app: WearApp): String? {
+    val mode by app.playback.mode.collectAsStateWithLifecycle()
+    if (mode != dev.pampa.fluidify.wear.playback.PlaybackMode.WATCH) return null
+    val status by app.standalone.engine.status.collectAsStateWithLifecycle()
+    val id = when (status) {
+        dev.pampa.fluidify.wear.standalone.EngineStatus.STARTING -> dev.pampa.fluidify.wear.R.string.engine_starting
+        dev.pampa.fluidify.wear.standalone.EngineStatus.NEEDS_PHONE -> dev.pampa.fluidify.wear.R.string.engine_needs_phone
+        dev.pampa.fluidify.wear.standalone.EngineStatus.SIGNED_OUT -> dev.pampa.fluidify.wear.R.string.engine_signed_out
+        dev.pampa.fluidify.wear.standalone.EngineStatus.PREMIUM_REQUIRED -> dev.pampa.fluidify.wear.R.string.engine_premium
+        dev.pampa.fluidify.wear.standalone.EngineStatus.FAILED -> dev.pampa.fluidify.wear.R.string.engine_failed
+        else -> return null
+    }
+    return androidx.compose.ui.res.stringResource(id)
 }
 
 /** Back to the player, wherever the person was: the stack emptied and the pagers reset. */
@@ -177,6 +223,7 @@ private const val LIBRARY = "library"
 private const val SECTION = "section"
 private const val CONTEXT = "context"
 private const val SEARCH = "search"
+private const val CELLULAR = "cellular"
 
 private const val PAGE_IMMERSIVE = 0
 private const val PAGE_MAIN = 1

@@ -40,6 +40,11 @@ class PhoneWearListenerService : WearableListenerService() {
                 val request = WearCodec.decodeOrNull(RpcRequest.serializer(), event.data) ?: return
                 handle { bridge.rpc.onRequest(event.sourceNodeId, request) }
             }
+            WearPaths.AUTH_REQUEST -> {
+                val request = WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AuthRequest.serializer(), event.data) ?: return
+                // A refresh over the phone's own network may take longer than an ordinary request.
+                handle(AUTH_BUDGET_MS) { bridge.auth.onRequest(event.sourceNodeId, request) }
+            }
             WearPaths.UPDATE_STATUS -> {
                 val status = WearCodec.decodeOrNull(UpdateStatus.serializer(), event.data) ?: return
                 bridge.updates.onStatus(event.sourceNodeId, status)
@@ -48,9 +53,9 @@ class PhoneWearListenerService : WearableListenerService() {
         }
     }
 
-    private fun handle(block: suspend () -> Unit) {
+    private fun handle(budgetMs: Long = CALLBACK_BUDGET_MS, block: suspend () -> Unit) {
         runBlocking {
-            withTimeoutOrNull(CALLBACK_BUDGET_MS) { block() }
+            withTimeoutOrNull(budgetMs) { block() }
                 ?: Log.w(TAG, "watch request did not finish in time")
         }
     }
@@ -60,5 +65,12 @@ class PhoneWearListenerService : WearableListenerService() {
 
         /** Play Services gives a listener callback about ten seconds; leave room to spare. */
         private const val CALLBACK_BUDGET_MS = 9_000L
+
+        /**
+         * Longer than a callback is promised, on purpose: the service is still running
+         * while this blocks, and a token the watch waits for is worth the risk of the
+         * system reclaiming a callback it thinks has hung. The watch gives up at 20 s.
+         */
+        private const val AUTH_BUDGET_MS = 18_000L
     }
 }

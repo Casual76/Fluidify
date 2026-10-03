@@ -52,13 +52,13 @@ object WearPaths {
     /** DataItem, watch to phone. The watch's version, storage and settings. */
     const val WATCH = "$V/watch"
 
-    /** DataItem, phone to watch. What the phone asked the watch to keep downloaded. */
+    /** Message, phone to watch. A [DownloadRequest]: keep, or stop keeping, a playlist or album. */
     const val DOWNLOAD_PLAN = "$V/dl/plan"
 
-    /** DataItem, watch to phone. What the watch has, and what it is working on. */
+    /** DataItem, watch to phone. [WatchDownloads]: what the watch has, and what it is working on. */
     const val DOWNLOAD_STATUS = "$V/dl/status"
 
-    /** Channel, opened by the watch. One downloaded track, header line then bytes. */
+    /** Channel, opened by the watch. A [FileRequest] line in; a [FileHeader] line and the bytes out. */
     const val DOWNLOAD_FILE = "$V/dl/file"
 
     /** Message, watch to phone. A [CommandEnvelope]. */

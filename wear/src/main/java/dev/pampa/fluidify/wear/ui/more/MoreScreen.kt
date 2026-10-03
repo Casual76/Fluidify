@@ -29,6 +29,7 @@ import com.adamglin.phosphoricons.regular.RepeatOnce
 import com.adamglin.phosphoricons.regular.Shuffle
 import com.adamglin.phosphoricons.regular.SpeakerSimpleHigh
 import com.adamglin.phosphoricons.regular.Timer
+import com.adamglin.phosphoricons.regular.UserCircle
 import dev.antigravity.fluidengine.wear.components.FluidWearListRow
 import dev.pampa.fluidify.wear.BuildConfig
 import dev.pampa.fluidify.wear.R
@@ -66,6 +67,7 @@ fun MoreScreen(
     surfaces: SurfacePrefs? = null,
     onSurfacesChanged: () -> Unit = {},
     glassMeter: GlassMeterPrefs? = null,
+    standalone: dev.pampa.fluidify.wear.standalone.Standalone? = null,
 ) {
     val context = LocalContext.current
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
@@ -86,6 +88,10 @@ fun MoreScreen(
         onSurfacesChanged()
     }
     val meterOn by (glassMeter?.enabled ?: remember { MutableStateFlow(false) }).collectAsStateWithLifecycle()
+    var speaker by remember { mutableStateOf(standalone?.prefs?.speakerAllowed ?: true) }
+    var cellular by remember { mutableStateOf(standalone?.prefs?.allowCellular ?: false) }
+    val watchAuth by (standalone?.auth?.state ?: remember { MutableStateFlow(dev.pampa.fluidify.wear.standalone.AuthState.NOT_YET) })
+        .collectAsStateWithLifecycle()
 
     WatchList(title = stringResource(R.string.more), modifier = modifier) {
         item {
@@ -182,6 +188,47 @@ fun MoreScreen(
                     label = { Text(stringResource(R.string.phone_notifications)) },
                     secondaryLabel = { Text(stringResource(R.string.phone_notifications_summary)) },
                     modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+        if (standalone != null) {
+            item {
+                SwitchButton(
+                    checked = speaker,
+                    onCheckedChange = { on ->
+                        speaker = on
+                        standalone.prefs.speakerAllowed = on
+                    },
+                    label = { Text(stringResource(R.string.speaker_allowed)) },
+                    secondaryLabel = { Text(stringResource(R.string.speaker_allowed_summary)) },
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+            // Only on a watch with a mobile radio; off until the listener says otherwise.
+            if (standalone.network.hasCellular) {
+                item {
+                    SwitchButton(
+                        checked = cellular,
+                        onCheckedChange = { on ->
+                            cellular = on
+                            standalone.prefs.allowCellular = on
+                            standalone.prefs.cellularOffered = true
+                        },
+                        label = { Text(stringResource(R.string.mobile_data)) },
+                        secondaryLabel = { Text(stringResource(R.string.mobile_data_summary)) },
+                        modifier = Modifier.fillMaxWidth(),
+                    )
+                }
+            }
+            item {
+                FluidWearListRow(
+                    title = stringResource(R.string.watch_account),
+                    subtitle = when (watchAuth) {
+                        dev.pampa.fluidify.wear.standalone.AuthState.SIGNED_IN -> standalone.prefs.username ?: stringResource(R.string.on)
+                        dev.pampa.fluidify.wear.standalone.AuthState.NOT_YET -> stringResource(R.string.watch_account_none)
+                        dev.pampa.fluidify.wear.standalone.AuthState.SIGNED_OUT -> stringResource(R.string.engine_signed_out)
+                    },
+                    leading = { Icon(PhosphorIcons.Regular.UserCircle, contentDescription = null, modifier = Modifier.size(22.dp)) },
                 )
             }
         }

@@ -74,4 +74,25 @@
     <string name="phone_notifications_summary">Fluidify-Benachrichtigungen vom Telefon auch hier zeigen</string>
     <string name="glass_diagnostics">Glas-Neuaufnahmen</string>
     <string name="glass_diagnostics_value">%1$d insgesamt · %2$d/s</string>
+
+    <!-- Playing on the watch itself -->
+    <string name="watch_speaker">Uhr-Lautsprecher</string>
+    <string name="on_this_watch">Auf dieser Uhr</string>
+    <string name="connect_headphones">Kopfhörer verbinden</string>
+    <string name="engine_starting">Start auf der Uhr…</string>
+    <string name="engine_needs_phone">Öffne Fluidify auf dem Telefon, um die Uhr anzumelden</string>
+    <string name="engine_signed_out">Melde dich zuerst auf dem Telefon an</string>
+    <string name="engine_premium">Wiedergabe auf der Uhr braucht Spotify Premium</string>
+    <string name="engine_failed">Wiedergabe auf der Uhr konnte nicht starten</string>
+    <string name="mobile_data">Mobile Daten</string>
+    <string name="mobile_data_summary">Über die eigene Verbindung der Uhr hören und laden</string>
+    <string name="speaker_allowed">Uhr-Lautsprecher</string>
+    <string name="speaker_allowed_summary">Hier abspielen, wenn keine Kopfhörer verbunden sind</string>
+    <string name="watch_account">Auf der Uhr angemeldet</string>
+    <string name="watch_account_none">Noch nicht: beim ersten Abspielen</string>
+    <string name="radio_on_phone">Starte ein Radio auf dem Telefon</string>
+    <string name="cellular_question">Mobile Daten nutzen?</string>
+    <string name="cellular_question_body">Diese Uhr hat eine eigene Verbindung. Fluidify kann sie ohne WLAN nutzen, über deinen Datentarif. Änderbar unter Mehr.</string>
+    <string name="use_mobile_data">Mobile Daten nutzen</string>
+    <string name="not_now">Nicht jetzt</string>
 </resources>

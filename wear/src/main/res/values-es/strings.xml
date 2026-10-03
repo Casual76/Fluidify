@@ -74,4 +74,25 @@
     <string name="phone_notifications_summary">Mostrar aquí también las notificaciones de Fluidify del teléfono</string>
     <string name="glass_diagnostics">Recapturas del cristal</string>
     <string name="glass_diagnostics_value">%1$d en total · %2$d/s</string>
+
+    <!-- Playing on the watch itself -->
+    <string name="watch_speaker">Altavoz del reloj</string>
+    <string name="on_this_watch">En este reloj</string>
+    <string name="connect_headphones">Conectar auriculares</string>
+    <string name="engine_starting">Iniciando en el reloj…</string>
+    <string name="engine_needs_phone">Abre Fluidify en el teléfono para iniciar sesión en el reloj</string>
+    <string name="engine_signed_out">Inicia sesión primero en el teléfono</string>
+    <string name="engine_premium">Reproducir en el reloj requiere Spotify Premium</string>
+    <string name="engine_failed">No se pudo iniciar la reproducción en el reloj</string>
+    <string name="mobile_data">Datos móviles</string>
+    <string name="mobile_data_summary">Escucha y descarga con la conexión del reloj</string>
+    <string name="speaker_allowed">Altavoz del reloj</string>
+    <string name="speaker_allowed_summary">Reproducir aquí cuando no haya auriculares conectados</string>
+    <string name="watch_account">Sesión en el reloj</string>
+    <string name="watch_account_none">Aún no: ocurre la primera vez que reproduce</string>
+    <string name="radio_on_phone">Inicia una radio desde el teléfono</string>
+    <string name="cellular_question">¿Usar datos móviles?</string>
+    <string name="cellular_question_body">Este reloj tiene su propia conexión. Fluidify puede usarla cuando no hay Wi-Fi, con tu plan de datos. Puedes cambiarlo en Más.</string>
+    <string name="use_mobile_data">Usar datos móviles</string>
+    <string name="not_now">Ahora no</string>
 </resources>

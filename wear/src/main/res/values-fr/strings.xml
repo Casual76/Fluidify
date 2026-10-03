@@ -74,4 +74,25 @@
     <string name="phone_notifications_summary">Afficher aussi ici les notifications Fluidify du téléphone</string>
     <string name="glass_diagnostics">Recaptures du verre</string>
     <string name="glass_diagnostics_value">%1$d au total · %2$d/s</string>
+
+    <!-- Playing on the watch itself -->
+    <string name="watch_speaker">Haut-parleur de la montre</string>
+    <string name="on_this_watch">Sur cette montre</string>
+    <string name="connect_headphones">Connecter un casque</string>
+    <string name="engine_starting">Démarrage sur la montre…</string>
+    <string name="engine_needs_phone">Ouvrez Fluidify sur le téléphone pour connecter la montre</string>
+    <string name="engine_signed_out">Connectez-vous d\'abord sur le téléphone</string>
+    <string name="engine_premium">La lecture sur la montre nécessite Spotify Premium</string>
+    <string name="engine_failed">Impossible de lancer la lecture sur la montre</string>
+    <string name="mobile_data">Données mobiles</string>
+    <string name="mobile_data_summary">Écouter et télécharger avec la connexion de la montre</string>
+    <string name="speaker_allowed">Haut-parleur de la montre</string>
+    <string name="speaker_allowed_summary">Lire ici quand aucun casque n\'est connecté</string>
+    <string name="watch_account">Connexion sur la montre</string>
+    <string name="watch_account_none">Pas encore : à la première lecture</string>
+    <string name="radio_on_phone">Lancez une radio depuis le téléphone</string>
+    <string name="cellular_question">Utiliser les données mobiles ?</string>
+    <string name="cellular_question_body">Cette montre a sa propre connexion. Fluidify peut l\'utiliser sans Wi-Fi, sur votre forfait. Modifiable dans Plus.</string>
+    <string name="use_mobile_data">Utiliser les données mobiles</string>
+    <string name="not_now">Plus tard</string>
 </resources>

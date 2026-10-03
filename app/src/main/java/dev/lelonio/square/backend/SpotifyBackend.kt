@@ -66,6 +66,8 @@ class SpotifyBackend(private val container: SquareApplication) : MusicBackend {
     override suspend fun logOut() {
         container.tokenStore.clear()
         _authState.value = BackendAuthState.LoggedOut
+        // The watch signs out with the phone: now if it can hear, or when it next connects.
+        runCatching { container.wearBridge.auth.onSignedOut() }
     }
 
     /**

@@ -39,6 +39,10 @@ sealed interface RpcMethod {
     /** A search. Answers [LibraryPage] with tracks first. */
     @Serializable @SerialName("search")
     data class Search(val query: String) : RpcMethod
+
+    /** What the phone has downloaded of these tracks. Answers [PhoneDownloads]. */
+    @Serializable @SerialName("phone-downloads")
+    data class Downloads(val uris: List<String>) : RpcMethod
 }
 
 @Serializable

@@ -39,6 +39,10 @@ class WatchListenerService : WearableListenerService() {
                 path == WearPaths.STATE -> item.data?.let { bytes ->
                     WearCodec.decodeOrNull(PlaybackSnapshot.serializer(), bytes)?.let { app.state.accept(it) }
                 }
+                path == WearPaths.ACCOUNT -> item.data?.let { bytes ->
+                    WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AccountState.serializer(), bytes)
+                        ?.let { app.standalone.auth.onAccount(it) }
+                }
                 path.startsWith(WearPaths.ART_PREFIX) -> {
                     val key = path.removePrefix(WearPaths.ART_PREFIX)
                     val asset = runCatching { DataMapItem.fromDataItem(item).dataMap.getAsset(PhoneLink.ASSET_KEY) }.getOrNull()
@@ -67,6 +71,13 @@ class WatchListenerService : WearableListenerService() {
             WearPaths.RPC_REPLY -> WearCodec.decodeOrNull(RpcResponse.serializer(), event.data)?.let { app.link.onRpcReply(it) }
             WearPaths.HELLO -> WearCodec.decodeOrNull(Hello.serializer(), event.data)?.let {
                 app.link.onHello(it, event.sourceNodeId)
+            }
+            WearPaths.AUTH_GRANT -> WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AuthGrant.serializer(), event.data)
+                ?.let { app.link.onAuthGrant(it) }
+            // The phone signed out: so does the watch, and its own playback stops.
+            WearPaths.AUTH_LOGOUT -> {
+                app.standalone.auth.signOut()
+                if (app.playback.mode.value == dev.pampa.fluidify.wear.playback.PlaybackMode.WATCH) app.local.disconnect()
             }
         }
     }

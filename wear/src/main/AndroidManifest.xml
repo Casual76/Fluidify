@@ -8,6 +8,14 @@
     <!-- The icon on the watch face is an ongoing notification underneath. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
+    <!-- Playing on the watch itself. -->
+    <uses-permission android:name="android.permission.INTERNET" />
+    <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE" />
+    <!-- Asking for Wi-Fi (or mobile data) instead of the Bluetooth link to the phone. -->
+    <uses-permission android:name="android.permission.CHANGE_NETWORK_STATE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+
     <application
         android:name=".WearApp"
         android:allowBackup="false"
@@ -52,6 +60,16 @@
                     android:host="*"
                     android:pathPrefix="/fluidify"
                     android:scheme="wear" />
+            </intent-filter>
+        </service>
+
+        <!-- The watch playing on its own; see standalone/WatchPlaybackService. -->
+        <service
+            android:name=".standalone.WatchPlaybackService"
+            android:exported="true"
+            android:foregroundServiceType="mediaPlayback">
+            <intent-filter>
+                <action android:name="androidx.media3.session.MediaSessionService" />
             </intent-filter>
         </service>
 

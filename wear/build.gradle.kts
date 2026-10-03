@@ -52,6 +52,13 @@ android {
         targetSdk = 36
         versionCode = phoneVersionCode()
         versionName = phoneVersionName()
+
+        // The engine's native library for the watches people wear: 64-bit for the
+        // Galaxy Watch 7 and newer, 32-bit for watches whose Wear OS still runs 32-bit
+        // apps. Unioned with the build types' own lists, like the phone's.
+        ndk {
+            abiFilters += listOf("arm64-v8a", "armeabi-v7a")
+        }
     }
 
     signingConfigs {
@@ -69,6 +76,8 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
+            // The Wear emulator's architecture too.
+            ndk { abiFilters += "x86_64" }
         }
         release {
             isMinifyEnabled = true
@@ -83,9 +92,15 @@ android {
             isMinifyEnabled = false
             isShrinkResources = false
             matchingFallbacks += "release"
+            ndk { abiFilters += "x86_64" }
             signingConfig = signingConfigs.findByName("release")
                 ?: signingConfigs.getByName("debug")
         }
+    }
+
+    packaging {
+        // Already stripped by Cargo's release profile; re-stripping breaks it, as on the phone.
+        jniLibs.keepDebugSymbols += "**/libsquarecore.so"
     }
 
     lint {
@@ -135,6 +150,9 @@ android {
 
 dependencies {
     implementation(project(":wear-protocol"))
+    // The phone's engine and player, for playing on the watch itself.
+    implementation(project(":core"))
+    implementation(libs.media3.session)
     implementation(project(":engine-wear"))
     // The same installer the phone updates itself with: download, checks, PackageInstaller.
     implementation(project(":engine-update"))

@@ -88,6 +88,8 @@ fun PlayerScreen(
     onEssentials: () -> Unit,
     modifier: Modifier = Modifier,
     volume: VolumeControl? = null,
+    /** A word on the watch's own playback (starting, needs the phone), in place of the artist. */
+    status: String? = null,
 ) {
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
     val remoteVolume = now.snapshot?.device?.volume
@@ -142,7 +144,7 @@ fun PlayerScreen(
                             maxLines = if (track == null) 2 else 1,
                             modifier = if (track != null) Modifier.basicMarquee(iterations = 2) else Modifier,
                         )
-                        val second = linkMessage(now.link)?.let { stringResource(it) } ?: track?.artist
+                        val second = status ?: linkMessage(now.link)?.let { stringResource(it) } ?: track?.artist
                         if (!second.isNullOrEmpty()) {
                             Text(
                                 text = second,

@@ -52,6 +52,12 @@ enum class PlaybackSource {
 
     /** The phone is controlling another Spotify Connect device. */
     CONNECT_REMOTE,
+
+    /**
+     * The watch is playing on its own. Never sent by a phone: the watch builds
+     * snapshots of its own playback with it, so the screens read one model.
+     */
+    WATCH,
 }
 
 @Serializable

@@ -74,4 +74,25 @@
     <string name="phone_notifications_summary">फ़ोन की Fluidify सूचनाएँ यहाँ भी दिखाएँ</string>
     <string name="glass_diagnostics">ग्लास री-कैप्चर</string>
     <string name="glass_diagnostics_value">कुल %1$d · %2$d/से</string>
+
+    <!-- Playing on the watch itself -->
+    <string name="watch_speaker">घड़ी का स्पीकर</string>
+    <string name="on_this_watch">इस घड़ी पर</string>
+    <string name="connect_headphones">हेडफ़ोन जोड़ें</string>
+    <string name="engine_starting">घड़ी पर शुरू हो रहा है…</string>
+    <string name="engine_needs_phone">घड़ी में साइन इन करने के लिए फ़ोन पर Fluidify खोलें</string>
+    <string name="engine_signed_out">पहले फ़ोन पर साइन इन करें</string>
+    <string name="engine_premium">घड़ी पर चलाने के लिए Spotify Premium चाहिए</string>
+    <string name="engine_failed">घड़ी पर प्लेबैक शुरू नहीं हो सका</string>
+    <string name="mobile_data">मोबाइल डेटा</string>
+    <string name="mobile_data_summary">घड़ी के अपने कनेक्शन से सुनें और डाउनलोड करें</string>
+    <string name="speaker_allowed">घड़ी का स्पीकर</string>
+    <string name="speaker_allowed_summary">जब हेडफ़ोन न जुड़े हों तो यहीं चलाएँ</string>
+    <string name="watch_account">घड़ी पर साइन इन</string>
+    <string name="watch_account_none">अभी नहीं: पहली बार चलने पर होगा</string>
+    <string name="radio_on_phone">रेडियो फ़ोन से शुरू करें</string>
+    <string name="cellular_question">मोबाइल डेटा इस्तेमाल करें?</string>
+    <string name="cellular_question_body">इस घड़ी का अपना कनेक्शन है। Wi-Fi न होने पर Fluidify उसे इस्तेमाल कर सकता है, आपके डेटा प्लान से। और में बदल सकते हैं।</string>
+    <string name="use_mobile_data">मोबाइल डेटा इस्तेमाल करें</string>
+    <string name="not_now">अभी नहीं</string>
 </resources>

@@ -91,6 +91,9 @@ class PhoneWearBridge(private val app: SquareApplication) {
     /** Answers the watch's questions (queue, devices, library). */
     val rpc = WearRpcHandler(app, this)
 
+    /** Signs the watch's own engine in, and out with the phone; see [WearAuthGranter]. */
+    val auth = WearAuthGranter(app, link)
+
     /** The current player, for the RPC handler. Main thread. */
     internal val currentPlayer: Player? get() = player
 
@@ -232,6 +235,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 artist = (metadata.artist ?: item.mediaMetadata.artist)?.toString().orEmpty(),
                 artistUri = extras?.getString(dev.lelonio.square.ui.EXTRA_ARTIST_URI),
                 album = metadata.albumTitle?.toString(),
+                albumUri = albumFor(uri),
                 durationMs = duration,
                 artKey = artKeyOf(artUrl),
                 artUrl = artUrl?.takeIf { it.startsWith("https://") },
@@ -285,6 +289,31 @@ class PhoneWearBridge(private val app: SquareApplication) {
         return null
     }
 
+    /**
+     * The album [uri] is on, for the watch's "go to album". No queue item says
+     * which album it is (the phone's own screens never needed to), so it is
+     * read once per track from the track's metadata and the snapshot sent again.
+     */
+    private fun albumFor(uri: String): String? {
+        if (!uri.startsWith("spotify:track:")) return null
+        albumLookup?.takeIf { it.first == uri }?.let { return it.second }
+        albumLookup = uri to null
+        albumJob?.cancel()
+        albumJob = scope.launch {
+            val album = withContext(Dispatchers.IO) {
+                runCatching { dev.lelonio.square.data.Catalog.tracks(listOf(uri)).firstOrNull()?.albumUri }.getOrNull()
+            }
+            if (albumLookup?.first == uri && album != null) {
+                albumLookup = uri to album
+                changed(urgent = false)
+            }
+        }
+        return null
+    }
+
+    private var albumLookup: Pair<String, String?>? = null
+    private var albumJob: kotlinx.coroutines.Job? = null
+
     internal fun currentDevice(): DeviceInfo {
         val active = RemoteConnect.devices.value.firstOrNull { it.active }
         if (RemoteConnect.elsewhereActive.value && active != null && !active.isThisPhone) {
@@ -325,6 +354,8 @@ class PhoneWearBridge(private val app: SquareApplication) {
             link.send(nodeId, WearPaths.HELLO, WearCodec.encode(Hello.serializer(), ownHello(wantsReply = false)))
         }
         withContext(Dispatchers.Main.immediate) { publishNow(force = true) }
+        // Who is signed in, so a watch that missed a sign-out still hears of it.
+        auth.publishAccount()
     }
 
     fun ownHello(wantsReply: Boolean): Hello = Hello(
@@ -486,6 +517,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
             dev.pampa.fluidify.wear.protocol.Features.SLEEP,
             dev.pampa.fluidify.wear.protocol.Features.LIBRARY,
             dev.pampa.fluidify.wear.protocol.Features.UPDATE_PUSH,
+            dev.pampa.fluidify.wear.protocol.Features.AUTH,
         )
 
         /** librespot's device type names, as Spotify Connect reports them. */

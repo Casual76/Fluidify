@@ -105,6 +105,7 @@ class PhoneLink(
     private val ids = AtomicLong(System.currentTimeMillis())
     private val pending = ConcurrentHashMap<Long, CompletableDeferred<CommandAck>>()
     private val rpcPending = ConcurrentHashMap<Long, CompletableDeferred<RpcResponse>>()
+    private val authPending = ConcurrentHashMap<Long, CompletableDeferred<dev.pampa.fluidify.wear.protocol.AuthGrant>>()
 
     @Volatile private var nodeId: String? = null
     private var answerWatch: Job? = null
@@ -213,6 +214,32 @@ class PhoneLink(
         return runCatching { WearCodec.json.decodeFromJsonElement(serializer, payload) }
     }
 
+    /**
+     * Asks the phone for something to sign the watch's engine in with; see
+     * [dev.pampa.fluidify.wear.protocol.AuthRequest]. Null when the phone could
+     * not be reached or did not answer.
+     */
+    suspend fun requestAuth(
+        reason: dev.pampa.fluidify.wear.protocol.AuthReason,
+        timeoutMs: Long = AUTH_TIMEOUT_MS,
+    ): dev.pampa.fluidify.wear.protocol.AuthGrant? {
+        val node = nodeId ?: findPhone()?.id ?: return null
+        val id = ids.incrementAndGet()
+        val waiter = CompletableDeferred<dev.pampa.fluidify.wear.protocol.AuthGrant>()
+        authPending[id] = waiter
+        val request = dev.pampa.fluidify.wear.protocol.AuthRequest(id, reason)
+        if (!send(node, WearPaths.AUTH_REQUEST, WearCodec.encode(dev.pampa.fluidify.wear.protocol.AuthRequest.serializer(), request))) {
+            authPending.remove(id)
+            nodeId = null
+            return null
+        }
+        return withTimeoutOrNull(timeoutMs) { waiter.await() }.also { authPending.remove(id) }
+    }
+
+    fun onAuthGrant(grant: dev.pampa.fluidify.wear.protocol.AuthGrant) {
+        authPending.remove(grant.id)?.complete(grant)
+    }
+
     fun onRpcReply(response: RpcResponse) {
         rpcPending.remove(response.id)?.complete(response)
     }
@@ -298,10 +325,13 @@ class PhoneLink(
         const val ASSET_KEY = "img"
         private const val ACK_TIMEOUT_MS = 3_000L
         private const val RPC_TIMEOUT_MS = 12_000L
+
+        /** The phone may have to refresh its own session first, over its own network. */
+        private const val AUTH_TIMEOUT_MS = 20_000L
         private const val HELLO_ANSWER_MS = 10_000L
 
         /** What this watch build can do. Grows with each milestone. */
-        val WATCH_FEATURES: Set<String> = emptySet()
+        val WATCH_FEATURES: Set<String> = setOf(dev.pampa.fluidify.wear.protocol.Features.AUTH)
 
         fun certificateSha256(context: Context): String = runCatching {
             val info = context.packageManager.getPackageInfo(context.packageName, PackageManager.GET_SIGNING_CERTIFICATES)

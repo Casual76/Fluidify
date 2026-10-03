@@ -99,6 +99,11 @@ class SheetScreenshots {
                 )
             },
             onChosen = {},
+            watchOutputs = listOf(
+                dev.pampa.fluidify.wear.standalone.LocalOutput(1, "Galaxy Buds3 Pro", dev.pampa.fluidify.wear.standalone.LocalOutput.Kind.HEADPHONES),
+                dev.pampa.fluidify.wear.standalone.LocalOutput(2, "", dev.pampa.fluidify.wear.standalone.LocalOutput.Kind.SPEAKER),
+            ),
+            onConnectHeadphones = {},
         )
     }
 

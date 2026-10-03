@@ -74,4 +74,25 @@
     <string name="phone_notifications_summary">Telefondaki Fluidify bildirimlerini burada da göster</string>
     <string name="glass_diagnostics">Cam yeniden çekimleri</string>
     <string name="glass_diagnostics_value">toplam %1$d · %2$d/sn</string>
+
+    <!-- Playing on the watch itself -->
+    <string name="watch_speaker">Saat hoparlörü</string>
+    <string name="on_this_watch">Bu saatte</string>
+    <string name="connect_headphones">Kulaklık bağla</string>
+    <string name="engine_starting">Saatte başlatılıyor…</string>
+    <string name="engine_needs_phone">Saatte oturum açmak için telefonda Fluidify\'ı aç</string>
+    <string name="engine_signed_out">Önce telefonda oturum aç</string>
+    <string name="engine_premium">Saatte çalmak için Spotify Premium gerekir</string>
+    <string name="engine_failed">Saatte çalma başlatılamadı</string>
+    <string name="mobile_data">Mobil veri</string>
+    <string name="mobile_data_summary">Saatin kendi bağlantısıyla dinle ve indir</string>
+    <string name="speaker_allowed">Saat hoparlörü</string>
+    <string name="speaker_allowed_summary">Kulaklık bağlı değilken burada çal</string>
+    <string name="watch_account">Saatte oturum açık</string>
+    <string name="watch_account_none">Henüz değil: ilk çalışta olur</string>
+    <string name="radio_on_phone">Radyoyu telefondan başlat</string>
+    <string name="cellular_question">Mobil veri kullanılsın mı?</string>
+    <string name="cellular_question_body">Bu saatin kendi bağlantısı var. Fluidify Wi-Fi yokken onu kullanabilir; veri paketinden düşer. Daha Fazla\'dan değiştirebilirsin.</string>
+    <string name="use_mobile_data">Mobil veriyi kullan</string>
+    <string name="not_now">Şimdi değil</string>
 </resources>
