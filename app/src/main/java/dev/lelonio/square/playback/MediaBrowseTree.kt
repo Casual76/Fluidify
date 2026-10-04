@@ -192,7 +192,7 @@ class MediaBrowseTree(
             CMD_LIKE, CMD_IS_LIKED -> return likeCommand(player, customCommand.customAction, args)
 
             else -> return Futures.immediateFuture(
-                SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED),
+                SessionResult(androidx.media3.session.SessionError.ERROR_NOT_SUPPORTED),
             )
         }
         // Redrawn at once. The button carries the state, so a press that left
@@ -213,7 +213,7 @@ class MediaBrowseTree(
     ): ListenableFuture<SessionResult> {
         val uri = args.getString("uri") ?: player.currentMediaItem?.mediaId
         if (uri == null || !uri.startsWith("spotify:track:")) {
-            return Futures.immediateFuture(SessionResult(SessionResult.RESULT_ERROR_NOT_SUPPORTED))
+            return Futures.immediateFuture(SessionResult(androidx.media3.session.SessionError.ERROR_NOT_SUPPORTED))
         }
         // Through the process-wide set and the access point, as the app's own heart does. The
         // Web API this used to call refuses the write (see native/src/collection.rs), so the
@@ -233,7 +233,7 @@ class MediaBrowseTree(
                 }
             }.getOrElse {
                 android.util.Log.w(TAG, "like failed for $uri: $it")
-                SessionResult(SessionResult.RESULT_ERROR_IO)
+                SessionResult(androidx.media3.session.SessionError.ERROR_IO)
             }
         }
     }
@@ -708,7 +708,7 @@ class MediaBrowseTree(
     }
 
     private fun notFound(): LibraryResult<MediaItem> =
-        LibraryResult.ofError(LibraryResult.RESULT_ERROR_BAD_VALUE)
+        LibraryResult.ofError(androidx.media3.session.SessionError.ERROR_BAD_VALUE)
 
     /**
      * Waits for the native session, rather than answering with an empty shelf.

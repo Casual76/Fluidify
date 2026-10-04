@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package dev.lelonio.square.playback
 
 import android.content.Intent
@@ -508,7 +510,7 @@ class PlaybackService : MediaLibraryService() {
         systemRouter = router
         router.registerRouteCallback(
             androidx.core.content.ContextCompat.getMainExecutor(this),
-            systemRouteCallback,
+            systemRouteCallback!!,
             android.media.RouteDiscoveryPreference.Builder(
                 listOf(ConnectRouteProvider.FEATURE),
                 true,
@@ -542,7 +544,7 @@ class PlaybackService : MediaLibraryService() {
 
     /** Nothing to do on a change: the provider publishes, the system draws. */
     private val systemRouteCallback by lazy {
-        object : android.media.MediaRouter2.RouteCallback() {}
+        if (android.os.Build.VERSION.SDK_INT >= 30) object : android.media.MediaRouter2.RouteCallback() {} else null
     }
 
     /**
@@ -1814,7 +1816,7 @@ class PlaybackService : MediaLibraryService() {
         container.wearBridge.detach()
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             systemRouter?.let { router ->
-                runCatching { router.unregisterRouteCallback(systemRouteCallback) }
+                runCatching { router.unregisterRouteCallback(systemRouteCallback!!) }
             }
             systemRouter = null
         }

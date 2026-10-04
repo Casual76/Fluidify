@@ -8,7 +8,7 @@
     values-it.
 -->
 <resources>
-    <string name="app_name">Fluidify</string>
+    <string name="app_name" translatable="false">Fluidify</string>
 
     <!-- Shared -->
     <string name="back">Back</string>

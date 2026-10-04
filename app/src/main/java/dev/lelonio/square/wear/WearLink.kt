@@ -96,9 +96,10 @@ class WearLink(private val context: Context) {
         fun certificateSha256(context: Context): String = runCatching {
             val info = context.packageManager.getPackageInfo(
                 context.packageName,
-                PackageManager.GET_SIGNING_CERTIFICATES,
+                if (android.os.Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES,
             )
-            val signers = info.signingInfo?.apkContentsSigners.orEmpty()
+            @Suppress("DEPRECATION")
+            val signers = if (android.os.Build.VERSION.SDK_INT >= 28) info.signingInfo?.apkContentsSigners.orEmpty() else info.signatures.orEmpty()
             val first = signers.firstOrNull() ?: return ""
             MessageDigest.getInstance("SHA-256").digest(first.toByteArray())
                 .joinToString(":") { "%02X".format(it) }

@@ -96,11 +96,10 @@ fun SearchScreen(
     onOpenContext: (SearchItem) -> Unit,
     backdrop: Backdrop,
 ) {
-    var kind by remember { mutableStateOf(Kind.ALL) }
+    var kind by remember(state.query) { mutableStateOf(Kind.ALL) }
     // A new search answers a new question, so the page goes back to showing all
     // of the answer rather than staying filtered to what the last one was about.
     val query = state.query
-    remember(query) { kind = Kind.ALL }
 
     val overscroll = rememberFluidEdgeOverscroll()
 

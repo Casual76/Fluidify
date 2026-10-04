@@ -40,6 +40,7 @@ internal abstract class BackdropEffectScopeImpl : BackdropEffectScope, RuntimeSh
 
     private val runtimeShaderCache = RuntimeShaderCacheImpl()
 
+    @androidx.annotation.RequiresApi(33)
     override fun obtainRuntimeShader(key: String, string: String): RuntimeShader {
         return runtimeShaderCache.obtainRuntimeShader(key, string)
     }

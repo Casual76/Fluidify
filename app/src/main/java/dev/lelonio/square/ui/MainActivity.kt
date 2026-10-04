@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package dev.lelonio.square.ui
 
 import dev.lelonio.square.playback.toQueueItem

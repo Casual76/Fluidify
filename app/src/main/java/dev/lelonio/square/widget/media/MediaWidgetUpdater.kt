@@ -7,6 +7,8 @@
  * player, so the snapshot is handed to it by the playback service and there is no listener, no
  * permission and no package to resolve.
  */
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package dev.lelonio.square.widget.media
 
 import android.app.PendingIntent
@@ -329,12 +331,12 @@ object MediaWidgetUpdater {
     views.setTextColor(R.id.media_widget_permission, style.secondaryTextColor)
     views.setTextColor(R.id.media_widget_status, style.secondaryTextColor)
     views.setTextColor(R.id.media_widget_time, style.secondaryTextColor)
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_source,
       "setBackgroundTintList",
       ColorStateList.valueOf(style.sourcePillColor),
     )
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_artwork_frame,
       "setBackgroundTintList",
       ColorStateList.valueOf(style.artworkFrameColor),
@@ -444,17 +446,17 @@ object MediaWidgetUpdater {
       context.dp(layout.contentPaddingVerticalDp),
     )
     views.setInt(R.id.media_widget_track_row, "setGravity", layout.trackGravity)
-    views.setViewLayoutHeight(
+    views.setViewLayoutHeightCompat(
       R.id.media_widget_controls,
       layout.controlsRowHeightDp.toFloat(),
       TypedValue.COMPLEX_UNIT_DIP,
     )
-    views.setViewLayoutHeight(
+    views.setViewLayoutHeightCompat(
       R.id.media_widget_extra_actions,
       layout.extraRowHeightDp.toFloat(),
       TypedValue.COMPLEX_UNIT_DIP,
     )
-    views.setViewLayoutHeight(
+    views.setViewLayoutHeightCompat(
       R.id.media_widget_source,
       layout.sourcePillHeightDp,
       TypedValue.COMPLEX_UNIT_DIP,
@@ -471,17 +473,17 @@ object MediaWidgetUpdater {
       R.id.media_widget_extra_actions,
       if (layout.showExtraActions) View.VISIBLE else View.GONE,
     )
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_refresh,
       "setBackgroundTintList",
       ColorStateList.valueOf(style.controlSurfaceColor),
     )
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_open_media,
       "setBackgroundTintList",
       ColorStateList.valueOf(style.controlSurfaceColor),
     )
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_open_pampa,
       "setBackgroundTintList",
       ColorStateList.valueOf(style.controlSurfaceColor),
@@ -496,8 +498,8 @@ object MediaWidgetUpdater {
     visualPlan: MediaWidgetVisualPlan,
   ) {
     val artworkDp = layout.artworkDp
-    views.setViewLayoutWidth(R.id.media_widget_artwork_frame, artworkDp, TypedValue.COMPLEX_UNIT_DIP)
-    views.setViewLayoutHeight(R.id.media_widget_artwork_frame, artworkDp, TypedValue.COMPLEX_UNIT_DIP)
+    views.setViewLayoutWidthCompat(R.id.media_widget_artwork_frame, artworkDp, TypedValue.COMPLEX_UNIT_DIP)
+    views.setViewLayoutHeightCompat(R.id.media_widget_artwork_frame, artworkDp, TypedValue.COMPLEX_UNIT_DIP)
     val first = if (visualPlan.animateArtwork && visualPlan.targetArtworkSlot != 0) {
       visualPlan.previousArtwork
     } else {
@@ -568,21 +570,21 @@ object MediaWidgetUpdater {
     views.setViewVisibility(R.id.media_widget_previous, if (layout.showSideControls) View.VISIBLE else View.GONE)
     views.setViewVisibility(R.id.media_widget_next, if (layout.showSideControls) View.VISIBLE else View.GONE)
 
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_previous,
       "setBackgroundTintList",
       ColorStateList.valueOf(
         if (snapshot.canSkipPrevious) style.controlSurfaceColor else style.disabledControlSurfaceColor,
       ),
     )
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_next,
       "setBackgroundTintList",
       ColorStateList.valueOf(
         if (snapshot.canSkipNext) style.controlSurfaceColor else style.disabledControlSurfaceColor,
       ),
     )
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_play_pause,
       "setBackgroundTintList",
       ColorStateList.valueOf(if (playEnabled) style.playSurfaceColor else style.disabledControlSurfaceColor),
@@ -603,27 +605,27 @@ object MediaWidgetUpdater {
       views.setImageViewResource(R.id.media_widget_play_glyph, currentGlyph)
       views.setImageViewResource(R.id.media_widget_pause_glyph, currentGlyph)
     }
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_previous,
       "setImageTintList",
       ColorStateList.valueOf(if (snapshot.canSkipPrevious) style.controlIconColor else style.disabledControlIconColor),
     )
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_next,
       "setImageTintList",
       ColorStateList.valueOf(if (snapshot.canSkipNext) style.controlIconColor else style.disabledControlIconColor),
     )
     listOf(R.id.media_widget_play_glyph, R.id.media_widget_pause_glyph).forEach { glyphId ->
-      views.setColorStateList(
+      views.setColorStateListCompat(
         glyphId,
         "setImageTintList",
         ColorStateList.valueOf(if (playEnabled) style.playIconColor else style.disabledControlIconColor),
       )
     }
     listOf(R.id.media_widget_refresh, R.id.media_widget_open_media, R.id.media_widget_open_pampa).forEach { iconId ->
-      views.setColorStateList(iconId, "setImageTintList", ColorStateList.valueOf(style.controlIconColor))
+      views.setColorStateListCompat(iconId, "setImageTintList", ColorStateList.valueOf(style.controlIconColor))
     }
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_command_pending,
       "setIndeterminateTintList",
       ColorStateList.valueOf(style.playIconColor),
@@ -652,7 +654,7 @@ object MediaWidgetUpdater {
     layout: MediaWidgetLayoutSpec,
   ) {
     val progress = snapshot.progressPermille()
-    views.setViewLayoutHeight(
+    views.setViewLayoutHeightCompat(
       R.id.media_widget_progress,
       layout.progressHeightDp,
       TypedValue.COMPLEX_UNIT_DIP,
@@ -665,12 +667,12 @@ object MediaWidgetUpdater {
         else -> View.INVISIBLE
       },
     )
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_progress,
       "setProgressTintList",
       ColorStateList.valueOf(style.progressColor),
     )
-    views.setColorStateList(
+    views.setColorStateListCompat(
       R.id.media_widget_progress,
       "setProgressBackgroundTintList",
       ColorStateList.valueOf(style.progressTrackColor),
@@ -766,6 +768,7 @@ object MediaWidgetUpdater {
   private fun configurationPendingIntent(context: Context, widgetId: Int): PendingIntent =
     settingsPendingIntent(context, widgetId)
 
+  @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
   private fun openMediaAppPendingIntent(context: Context, snapshot: MediaPlaybackSnapshot, widgetId: Int): PendingIntent {
     if (widgetId <= 0) {
       val launch = mediaAppLaunchIntent(context, snapshot)
@@ -1392,8 +1395,8 @@ private fun Long.clockLabel(): String {
 }
 
 private fun RemoteViews.setSquareDp(viewId: Int, sizeDp: Int) {
-  setViewLayoutWidth(viewId, sizeDp.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
-  setViewLayoutHeight(viewId, sizeDp.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
+  setViewLayoutWidthCompat(viewId, sizeDp.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
+  setViewLayoutHeightCompat(viewId, sizeDp.toFloat(), TypedValue.COMPLEX_UNIT_DIP)
 }
 
 private fun RemoteViews.setScale(viewId: Int, scale: Float) {
@@ -1522,4 +1525,15 @@ private fun continuousWidgetPath(bounds: RectF, corner: Float): Path {
     lineTo(l + r, b); cubicTo(l + c, b, l, b - c, l, b - r)
     lineTo(l, t + r); cubicTo(l, t + c, l + c, t, l + r, t); close()
   }
+}
+
+/** Older hosts keep the opaque XML tint and dimensions; these RemoteViews operations start at 31. */
+private fun RemoteViews.setColorStateListCompat(viewId: Int, method: String, colors: ColorStateList) {
+  if (android.os.Build.VERSION.SDK_INT >= 31) setColorStateList(viewId, method, colors)
+}
+private fun RemoteViews.setViewLayoutHeightCompat(viewId: Int, value: Float, unit: Int) {
+  if (android.os.Build.VERSION.SDK_INT >= 31) setViewLayoutHeight(viewId, value, unit)
+}
+private fun RemoteViews.setViewLayoutWidthCompat(viewId: Int, value: Float, unit: Int) {
+  if (android.os.Build.VERSION.SDK_INT >= 31) setViewLayoutWidth(viewId, value, unit)
 }

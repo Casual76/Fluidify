@@ -449,7 +449,7 @@ object RemoteConnect {
     private fun send(deviceId: String, body: String): Boolean =
         runCatching { NativeBridge.remoteCommand(deviceId, body) }
             // Not the body: it can carry what is being played, and logs are no place for that.
-            .onFailure { android.util.Log.w(TAG, "command did not reach $deviceId: ${it.message}") }
+            .onFailure { android.util.Log.w(TAG, "command failed: ${it.javaClass.simpleName}") }
             .isSuccess
 
     private const val TAG = "RemoteConnect"
