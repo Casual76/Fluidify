@@ -9,22 +9,22 @@
       "repoName": "Fluidify"
     },
     "stable": {
-      "version": "1.5.0",
+      "version": "1.5.1",
       "releaseDate": "2026-10-04",
-      "changelog": "Fluidify arriva su Wear OS 6: controlli del telefono via Bluetooth, ascolto autonomo sull'orologio, playlist e album offline, coda, ricerca, tile e complicazione. L'app dell'orologio si installa dalle impostazioni del telefono e riceve gli aggiornamenti dalla stessa release.\n\nIl lettore ha una coda piu' grande, un volume in vetro e comandi adattati agli schermi piccoli. Togliere un Mi piace chiede conferma; tenere premuto il cuore aggiunge il brano a una playlist modificabile. La tile lascia spazio al cuore e mostra l'avanzamento sui due lati.\n\nCorretti passaggi tra telefono e orologio, scollegamento delle cuffie, ripresa del motore e spegnimento dopo la pausa. Il ponte del telefono risponde ai comandi anche durante le richieste lente. I download conservano i brani gia' scaricati se una pagina fallisce, ripartono in sicurezza e segnalano quelli non disponibili.\n\nSchermate ambient su fondo nero, supporto ai caratteri grandi e a TalkBack, stato di volume e riproduzione piu' coerente. Aggiornamenti Wear con controllo di firma, checksum e tipo di APK.\n\nVerificati 149 test, 33 render e le build release minificate di telefono e orologio. La checklist delle prove sui dispositivi e' disponibile in docs/wear-qa-checklist.md; queste prove restano da eseguire.\n",
-      "releaseTag": "stable-fluidify-v1.5.0",
-      "apkAsset": "fluidify-wear-1.5.0.apk",
-      "sizeBytes": 23817547,
-      "sha256": "b56bc4008e92415a22d71e3aa551fc8d36ad2e609ea4fdbec090ddaf5aa78647"
+      "changelog": "Bluetooth e telefono al primo posto. L'orologio non richiede piu' il Wi-Fi ad ogni avvio del motore: usa la connessione Bluetooth e osserva le reti disponibili. Un download puo' chiedere il Wi-Fi solo come ripiego, con rilascio al termine. I file mancanti o a una qualita' diversa vengono prima preparati sul telefono e inviati via Bluetooth.\n\nQuando parte la musica sul telefono, l'orologio torna ai suoi controlli e ferma subito il lettore locale. Un vecchio stato in cache o il riflesso della riproduzione dell'orologio non interrompono invece una scelta locale esplicita.\n\nL'aggiornamento Wear mostra percentuale e notifica sul telefono e sull'orologio. L'invio continua tramite WorkManager. La conferma di Android resta recuperabile dalla notifica e da Altro anche dopo che lo schermo o il processo sono stati spenti. Se l'installazione fallisce, l'APK verificato resta sull'orologio: si ritenta senza scaricarlo e trasferirlo di nuovo. Anche il telefono conserva la sua copia.\n\nIl passaggio ad AOD ha una dissolvenza breve, mantiene titolo e ora nella parte alta e rimuove il lettore interattivo al termine, senza animazioni continue in ambient.\n\nVerifiche automatiche e render completati; consumo reale e aggiornamento a schermo spento restano da provare sui dispositivi.\n",
+      "releaseTag": "stable-fluidify-v1.5.1",
+      "apkAsset": "fluidify-wear-1.5.1.apk",
+      "sizeBytes": 23835206,
+      "sha256": "dc049a1592f6de829e17545ec026a210b4f9adbf5c6a78fdf41cff32ef2a9ea4"
     },
     "beta": {
-      "version": "1.5.0",
+      "version": "1.5.1",
       "releaseDate": "2026-10-04",
-      "changelog": "Fluidify arriva su Wear OS 6: controlli del telefono via Bluetooth, ascolto autonomo sull'orologio, playlist e album offline, coda, ricerca, tile e complicazione. L'app dell'orologio si installa dalle impostazioni del telefono e riceve gli aggiornamenti dalla stessa release.\n\nIl lettore ha una coda piu' grande, un volume in vetro e comandi adattati agli schermi piccoli. Togliere un Mi piace chiede conferma; tenere premuto il cuore aggiunge il brano a una playlist modificabile. La tile lascia spazio al cuore e mostra l'avanzamento sui due lati.\n\nCorretti passaggi tra telefono e orologio, scollegamento delle cuffie, ripresa del motore e spegnimento dopo la pausa. Il ponte del telefono risponde ai comandi anche durante le richieste lente. I download conservano i brani gia' scaricati se una pagina fallisce, ripartono in sicurezza e segnalano quelli non disponibili.\n\nSchermate ambient su fondo nero, supporto ai caratteri grandi e a TalkBack, stato di volume e riproduzione piu' coerente. Aggiornamenti Wear con controllo di firma, checksum e tipo di APK.\n\nVerificati 149 test, 33 render e le build release minificate di telefono e orologio. La checklist delle prove sui dispositivi e' disponibile in docs/wear-qa-checklist.md; queste prove restano da eseguire.\n",
-      "releaseTag": "stable-fluidify-v1.5.0",
-      "apkAsset": "fluidify-wear-1.5.0.apk",
-      "sizeBytes": 23817547,
-      "sha256": "b56bc4008e92415a22d71e3aa551fc8d36ad2e609ea4fdbec090ddaf5aa78647"
+      "changelog": "Bluetooth e telefono al primo posto. L'orologio non richiede piu' il Wi-Fi ad ogni avvio del motore: usa la connessione Bluetooth e osserva le reti disponibili. Un download puo' chiedere il Wi-Fi solo come ripiego, con rilascio al termine. I file mancanti o a una qualita' diversa vengono prima preparati sul telefono e inviati via Bluetooth.\n\nQuando parte la musica sul telefono, l'orologio torna ai suoi controlli e ferma subito il lettore locale. Un vecchio stato in cache o il riflesso della riproduzione dell'orologio non interrompono invece una scelta locale esplicita.\n\nL'aggiornamento Wear mostra percentuale e notifica sul telefono e sull'orologio. L'invio continua tramite WorkManager. La conferma di Android resta recuperabile dalla notifica e da Altro anche dopo che lo schermo o il processo sono stati spenti. Se l'installazione fallisce, l'APK verificato resta sull'orologio: si ritenta senza scaricarlo e trasferirlo di nuovo. Anche il telefono conserva la sua copia.\n\nIl passaggio ad AOD ha una dissolvenza breve, mantiene titolo e ora nella parte alta e rimuove il lettore interattivo al termine, senza animazioni continue in ambient.\n\nVerifiche automatiche e render completati; consumo reale e aggiornamento a schermo spento restano da provare sui dispositivi.\n",
+      "releaseTag": "stable-fluidify-v1.5.1",
+      "apkAsset": "fluidify-wear-1.5.1.apk",
+      "sizeBytes": 23835206,
+      "sha256": "dc049a1592f6de829e17545ec026a210b4f9adbf5c6a78fdf41cff32ef2a9ea4"
     }
   }
 }
