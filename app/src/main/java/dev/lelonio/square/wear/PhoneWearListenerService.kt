@@ -56,6 +56,10 @@ class PhoneWearListenerService : WearableListenerService() {
 
     override fun onMessageReceived(event: MessageEvent) {
         when (event.path) {
+            WearPaths.AUDIO_LIGHT_SUBSCRIBE -> {
+                val request = WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AudioLightSubscription.serializer(), event.data) ?: return
+                handleAside { (application as dev.lelonio.square.SquareApplication).audioLightPublisher.subscribe(event.sourceNodeId, request) }
+            }
             WearPaths.HELLO -> {
                 val hello = WearCodec.decodeOrNull(Hello.serializer(), event.data) ?: return
                 handle { bridge.onHello(event.sourceNodeId, hello) }

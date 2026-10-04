@@ -54,6 +54,7 @@ class WatchPlaybackService : MediaSessionService() {
 
     /** Which context and track were adopted last, so a repeat of the same event does nothing. */
     private var adopted: String? = null
+    private var lightPlayer: dev.lelonio.square.playback.AudioReactivePlayer? = null
 
     private val idleStop = Runnable {
         if (!player.isPlaying) {
@@ -78,6 +79,7 @@ class WatchPlaybackService : MediaSessionService() {
         )
         // The engine is shared by leases; only WatchEngine stops it.
         player.shutdownEngineOnRelease = false
+        lightPlayer = dev.lelonio.square.playback.AudioReactivePlayer(player)
         // Music usually arrives here by a handoff, which this side never pressed play for.
         player.takeFocusOnEnginePlay = true
         // Spotify Connect brought something the queue does not hold (the phone moved
@@ -126,6 +128,7 @@ class WatchPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        lightPlayer?.close(); lightPlayer = null
         app.standalone.router.release()
         handler.removeCallbacks(idleStop)
         session?.release()

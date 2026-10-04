@@ -156,4 +156,6 @@
     <string name="unpin">Sabitlemeyi kaldır</string>
     <string name="pin_failed">Sabitlenen çalma listesi değiştirilemedi</string>
     <string name="update_retry_cached">Yükleme başarısız. Kayıtlı APK ile yeniden denemek için dokunun.</string>
+    <string name="audio_light_title">Müziğe tepki veren ışık</string>
+    <string name="audio_light_note">Oynatıcı görünürken yumuşak ışıklı ilerleme.</string>
 </resources>

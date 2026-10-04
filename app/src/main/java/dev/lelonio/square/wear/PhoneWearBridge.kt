@@ -83,6 +83,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
     private val seq = AtomicLong(System.currentTimeMillis())
 
     private var player: Player? = null
+    private var lightPlayer: dev.lelonio.square.playback.AudioReactivePlayer? = null
     private var attached: CompletableDeferred<Player> = CompletableDeferred()
     private var publishJob: Job? = null
     private var publishDue = Long.MAX_VALUE
@@ -244,6 +245,8 @@ class PhoneWearBridge(private val app: SquareApplication) {
         if (this.player === player) return
         this.player?.removeListener(listener)
         this.player = player
+        lightPlayer?.close()
+        lightPlayer = dev.lelonio.square.playback.AudioReactivePlayer(player)
         player.addListener(listener)
         if (!attached.isCompleted) attached.complete(player)
         startObserving()
@@ -252,6 +255,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
 
     /** The service is going away. Main thread. */
     fun detach() {
+        lightPlayer?.close(); lightPlayer = null
         player?.removeListener(listener)
         player = null
         attached = CompletableDeferred()
@@ -815,6 +819,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
 
         /** What this phone build can do for a watch. Grows with each milestone. */
         val PHONE_FEATURES: Set<String> = setOf(
+            dev.pampa.fluidify.wear.protocol.Features.AUDIO_LIGHT,
             dev.pampa.fluidify.wear.protocol.Features.VOLUME,
             dev.pampa.fluidify.wear.protocol.Features.DEVICES,
             dev.pampa.fluidify.wear.protocol.Features.QUEUE,

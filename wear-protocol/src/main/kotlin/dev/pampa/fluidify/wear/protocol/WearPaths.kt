@@ -10,8 +10,8 @@ package dev.pampa.fluidify.wear.protocol
  * with the major, a watch two versions behind would stop hearing the very
  * message that offers to bring it up to date.
  *
- * All of them start with [PREFIX], which is also the `pathPrefix` both
- * manifests filter on: a listener service is only woken for these.
+ * Durable work starts with [PREFIX], which both listener services filter on.
+ * Ephemeral visual frames deliberately use a separate, foreground-only path.
  */
 object WearPaths {
     const val PREFIX = "/fluidify"
@@ -33,6 +33,9 @@ object WearPaths {
     // --- Versioned -----------------------------------------------------------------
 
     private const val V = "$PREFIX/${ProtocolVersion.MAJOR}"
+    const val AUDIO_LIGHT_SUBSCRIBE = "$V/audio-light/subscribe"
+    // Outside PREFIX so frames cannot wake a WearableListenerService.
+    const val AUDIO_LIGHT_FRAME = "/visual-fluidify/${ProtocolVersion.MAJOR}/frame"
 
     /** DataItem, phone to watch, urgent. The current [PlaybackSnapshot]. */
     const val STATE = "$V/state"

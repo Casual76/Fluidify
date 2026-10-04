@@ -390,6 +390,15 @@ fun SettingsScreen(
         // Under the app rather than under playback for the same reason: this
         // adds a shelf to the library, it does not change what anything sounds
         // like.
+        if (open == SettingsPage.App) item("audio-light") {
+            val context = LocalContext.current
+            val prefs = (context.applicationContext as dev.lelonio.square.SquareApplication).audioLightPreferences
+            val enabled by prefs.enabled.collectAsStateWithLifecycle()
+            Section(stringResource(R.string.audio_light_title)) {
+                SwitchRow(label = stringResource(R.string.audio_light_title), note = stringResource(R.string.audio_light_note),
+                    checked = enabled, onCheckedChange = prefs::setEnabled)
+            }
+        }
         if (open == SettingsPage.App) item("widget") {
             WidgetSection()
         }

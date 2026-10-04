@@ -2168,15 +2168,6 @@ fun SquareApp(
                     )
                     // The same pane, on the pill above it, unless the settings
                     // have singled that one out.
-                    val pillGlass = if (glassConfig.miniPlayerEnabled == glassConfig.navBarEnabled) {
-                        barGlass
-                    } else {
-                        Modifier.liquidGlass(
-                            config = pillConfig,
-                            shape = barShape,
-                            highlightAlpha = 0.3f,
-                        )
-                    }
 
                     // No pill while the panel is up: they are two ways of saying
                     // the same thing, and the window can only grow out of one of
@@ -2237,8 +2228,9 @@ fun SquareApp(
                                 // horizontal after the touch slop, which is why a
                                 // vertical pull never reached it in the first place.
                                 modifier = accessoryModifier
-                                    .fillMaxWidth()
-                                    .then(pillGlass),
+                                    .fillMaxWidth(),
+                                lightGlassConfig = pillConfig,
+                                reactiveVisible = !pillHidden,
                                 inline = tabBarScroll.isInline,
                                 onClick = {
                                     scope.launch { expand.animateTo(1f, PlayerMorphSpec) }

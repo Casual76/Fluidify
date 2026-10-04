@@ -70,13 +70,24 @@ object LocalPlayerFactory {
                 context: android.content.Context,
                 enableFloatOutput: Boolean,
                 enableAudioTrackPlaybackParams: Boolean,
-            ) = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
+            ): androidx.media3.exoplayer.audio.AudioSink {
+                val light = AudioLightProcessor()
+                val sink = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
                 .setEnableFloatOutput(enableFloatOutput)
                 // The hardware path applies speed itself, below the processors,
                 // which would leave the vocoder with nothing to do and the
                 // platform doing it after all.
                 .setEnableAudioTrackPlaybackParams(false)
-                .setAudioProcessorChain(BungeeProcessorChain())
+                .setAudioProcessorChain(BungeeProcessorChain(light = light))
                 .build()
+                return object : androidx.media3.exoplayer.audio.ForwardingAudioSink(sink) {
+                    override fun handleBuffer(buffer: java.nio.ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
+                        val audible = sink.getCurrentPositionUs(false)
+                        light.queuedMs = if (audible == androidx.media3.exoplayer.audio.AudioSink.CURRENT_POSITION_NOT_SET) 0
+                            else ((presentationTimeUs - audible) / (1000 * sink.playbackParameters.speed)).toLong().coerceIn(0, 1500)
+                        return super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
+                    }
+                }
+            }
         }
 }

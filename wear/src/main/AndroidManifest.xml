@@ -52,6 +52,11 @@
                 <action android:name="com.google.android.wearable.action.MEDIA_CONTROLS" />
                 <category android:name="android.intent.category.DEFAULT" />
             </intent-filter>
+            <!-- Public Wear SDK action for systems using the newer remote-session contract. -->
+            <intent-filter>
+                <action android:name="com.google.wear.services.media.action.REMOTE_MEDIA_ACTIVITY" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <receiver android:name=".update.WatchInstallResultReceiver" android:exported="false" />

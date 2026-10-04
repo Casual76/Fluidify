@@ -26,6 +26,8 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
     }
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    val audioLightPreferences by lazy { dev.lelonio.square.playback.AudioLightPreferences(this) }
+    val audioLight by lazy { dev.pampa.fluidify.wear.system.WatchAudioLight(this) }
 
     override fun onCreate() {
         super.onCreate()

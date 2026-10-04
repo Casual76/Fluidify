@@ -116,6 +116,8 @@ class PhoneLink(
     private val authPending = ConcurrentHashMap<Long, CompletableDeferred<dev.pampa.fluidify.wear.protocol.AuthGrant>>()
 
     @Volatile private var nodeId: String? = null
+    val knownPhoneNode: String? get() = nodeId
+    suspend fun audioLightPhone(): String? = findPhone()?.id
     private var answerWatch: Job? = null
 
     /**
@@ -392,6 +394,7 @@ class PhoneLink(
 
         /** What this watch build can do. Grows with each milestone. */
         val WATCH_FEATURES: Set<String> = setOf(
+            dev.pampa.fluidify.wear.protocol.Features.AUDIO_LIGHT,
             dev.pampa.fluidify.wear.protocol.Features.AUTH,
             dev.pampa.fluidify.wear.protocol.Features.DOWNLOADS,
             dev.pampa.fluidify.wear.protocol.Features.HANDOFF,

@@ -78,13 +78,24 @@ class WearAudioOutput : NativeAudioSink {
     override fun write(data: ByteBuffer, sizeInBytes: Int, sampleRate: Int, channels: Int) {
         if (discarding || released) return
         val output = synchronized(this) { ensureTrack(sampleRate, channels) } ?: return
+        val head = output.playbackHeadPosition.toLong() and 0xffffffffL
+        if (lightTrack !== output || lightFramesWritten < head || lightFramesWritten - head > sampleRate * 2L) {
+            lightTrack = output; lightFramesWritten = head
+        }
+        dev.lelonio.square.playback.AudioReactive.capture(data, sizeInBytes, sampleRate, channels,
+            queuedMs = (lightFramesWritten - head) * 1000 / sampleRate)
         var written = 0
         while (written < sizeInBytes) {
             val result = output.write(data, sizeInBytes - written, AudioTrack.WRITE_BLOCKING)
             if (result <= 0) return
+            lightFramesWritten += result / (channels * 2)
             written += result
         }
     }
+
+    /** Fades out, drops what is buffered, then runs [action]: the player is loading another track. */
+    private var lightTrack: AudioTrack? = null
+    private var lightFramesWritten = 0L
 
     /** Fades out, drops what is buffered, then runs [action]: the player is loading another track. */
     fun fadeOutThen(action: () -> Unit) {

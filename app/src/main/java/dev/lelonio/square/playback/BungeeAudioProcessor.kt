@@ -193,13 +193,14 @@ class VocalAudioProcessor : BaseAudioProcessor() {
 @OptIn(UnstableApi::class)
 class BungeeProcessorChain(
     private val bungee: BungeeAudioProcessor = BungeeAudioProcessor(),
+    private val light: AudioLightProcessor = AudioLightProcessor(),
 ) : DefaultAudioSink.AudioProcessorChain {
 
     private var parameters = PlaybackParameters.DEFAULT
 
     private val vocals = VocalAudioProcessor()
 
-    override fun getAudioProcessors(): Array<AudioProcessor> = arrayOf(vocals, bungee)
+    override fun getAudioProcessors(): Array<AudioProcessor> = arrayOf(vocals, bungee, light)
 
     override fun applyPlaybackParameters(
         playbackParameters: PlaybackParameters,

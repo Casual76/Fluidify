@@ -36,6 +36,11 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.foundation.shape.RoundedCornerShape
+import dev.lelonio.square.ui.glass.liquidGlass
+import dev.lelonio.square.ui.glass.backdrop.backdrops.layerBackdrop
+import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberCombinedBackdrop
+import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberLayerBackdrop
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -45,6 +50,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clipToBounds
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalLayoutDirection
@@ -86,6 +92,8 @@ fun FloatingMiniPlayer(
     contentColor: androidx.compose.ui.graphics.Color = MiniPlayerInk,
     /** Folded: the strip has room for the song and one button, nothing else. */
     inline: Boolean = false,
+    reactiveVisible: Boolean = true,
+    lightGlassConfig: dev.lelonio.square.ui.glass.GlassEffectConfig? = null,
     /**
      * The device the music is coming out of, when it is not this one.
      *
@@ -132,6 +140,11 @@ fun FloatingMiniPlayer(
     }
 
     val offsetX = remember { Animatable(0f) }
+    val audioLight = rememberAudioLight(state.isPlaying && !state.isBuffering, visible = interactive && reactiveVisible, mini = true)
+    val lightPalette by dev.lelonio.square.ui.theme.rememberArtworkPalette(state.artworkUrl)
+    val lightBackdrop = rememberLayerBackdrop()
+    val combinedLight = if (lightGlassConfig != null) rememberCombinedBackdrop(
+        dev.lelonio.square.ui.glass.LocalAppBackdrop.current, lightBackdrop) else null
     var dragStart by remember { mutableStateOf(0L) }
     var dragged by remember { mutableStateOf(0f) }
     val settle = remember { spring<Float>(stiffness = Spring.StiffnessMediumLow) }
@@ -186,6 +199,12 @@ fun FloatingMiniPlayer(
                 )
             },
     ) {
+        if (lightGlassConfig != null && combinedLight != null) {
+            AudioLightHalo(audioLight, lightPalette.firstOrNull() ?: MaterialTheme.colorScheme.primary, mini = true, compact = inline,
+                modifier = Modifier.matchParentSize().layerBackdrop(lightBackdrop))
+            Box(Modifier.matchParentSize().drawWithContent { audioLight.value; drawContent() }.liquidGlass(config = lightGlassConfig,
+                shape = RoundedCornerShape(percent = 50), highlightAlpha = 0.3f, ownBackdrop = combinedLight))
+        }
         Row(
             verticalAlignment = Alignment.CenterVertically,
             modifier = Modifier

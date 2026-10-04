@@ -37,7 +37,6 @@ import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
 import dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics
 import dev.antigravity.fluidengine.wear.ambient.LocalFluidWearAmbient
 import dev.antigravity.fluidengine.wear.ambient.fluidBurnInShift
-import dev.antigravity.fluidengine.wear.components.FluidEdgeGlowRing
 import dev.antigravity.fluidengine.wear.glass.FluidGlassBadge
 import dev.antigravity.fluidengine.wear.theme.FluidWearAccent
 import dev.antigravity.fluidengine.wear.theme.FluidWearDimens
@@ -152,7 +151,7 @@ fun ImmersiveScreen(
                     .then(if (ambient.isAmbient) Modifier.fluidBurnInShift(ambient) else Modifier.glassBackdropSource(backdrop)),
             )
             if (!ambient.isAmbient) {
-                FluidEdgeGlowRing(
+                AudioReactiveRing(
                     positionMs = { now.positionAt(System.currentTimeMillis()) },
                     durationMs = snapshot?.track?.durationMs ?: 0L,
                     running = active && started && snapshot?.isPlaying == true && !snapshot.buffering,

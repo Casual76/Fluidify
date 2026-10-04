@@ -167,3 +167,20 @@ nessuna di queste prove viene dichiarata superata soltanto perché compila.
 - [ ] Provare anche l'apertura automatica dei controlli multimediali, se attiva nelle impostazioni Wear OS.
 - [ ] Verificare play/pausa e avanti dal lettore aperto così; nessuna seconda notifica media e nessun avvio della riproduzione locale o richiesta Wi-Fi.
 - [ ] Durante riproduzione autonoma, l'ingresso della sessione locale continua ad aprire il lettore dell'orologio.
+
+## Stabile 1.6.0 — aloni musicali e Now bar
+
+- [ ] Telefono e Watch entrambi 1.6.0: le due preferenze sono attive inizialmente; disattivarne una non modifica l'altra né le preferenze del vetro.
+- [ ] Spotify sul telefono: bassi, medi e alti muovono soltanto la luce; copertina, testi e controlli restano fermi. Provare copertine chiare/scure, telefono e tablet.
+- [ ] File locali e video musicale: luce sincronizzata con l'audio, anche dopo seek, cambio traccia, pausa, buffering e velocità 0,75×/1,5×/2×. Ascolto invariato con effetti spenti/accesi.
+- [ ] Canvas in caricamento: resta la luce attorno alla copertina. Quando il Canvas appare, una sola luce si sposta verso il basso senza salto o doppia illuminazione; il suo audio decorativo non genera effetti.
+- [ ] Coda/testi/crediti/video che nascondono la copertina: luce inferiore e contenuti leggibili.
+- [ ] Mini player normale e compatto: otto aloni soffusi dal basso, nessuna barra rigida; variante compatta più contenuta. Verificare vetro liquido, sfocato, translucido e disattivato.
+- [ ] Galaxy Watch 192/216/240 dp e copertina immersiva: sweep e punto finale indicano lo stesso tempo con luce accesa/spenta; varco dell'ora libero e attenuazione volume conservata. Tile e complicazioni invariate.
+- [ ] Watch controllando il telefono via Bluetooth: luce sincronizzata; telefono a schermo spento continua solo mentre il lettore Watch è visibile. Nessuna richiesta Wi-Fi o avvio del motore Watch per l'effetto.
+- [ ] Dopo ingresso in AOD/background, chiusura del lettore, risparmio energetico o movimento ridotto: nessun rinnovo, listener dei frame rimosso, traffico degli effetti terminato. In caso di processo interrotto scadenza massima della sottoscrizione di cinque secondi.
+- [ ] Scollegare Bluetooth durante la musica: entro un secondo sparisce la reazione e resta l'avanzamento normale. Ricollegare e riaprire il lettore: sottoscrizione nuova, nessun frame della sessione precedente.
+- [ ] Watch autonomo: risposta leggera ai bassi e all'intensità senza traffico verso il telefono. Pausa/buffering: dissolvenza breve, nessuna pulsazione fittizia.
+- [ ] Musica su PC o altro dispositivo Connect: aspetto precedente, nessuna pulsazione simulata. Telefono/Watch con versioni precedenti: controlli normali senza telemetry incompatibile.
+- [ ] Sessioni comparabili con effetti accesi/spenti: Perfetto/gfxinfo e CPU su telefono/tablet e Watch; batteria e Bluetooth sul Galaxy Watch. Registrare durata, schermi, luminosità, brano e condizioni radio; non dedurre consumi dai benchmark JVM.
+- [ ] **Now bar Samsung ancora da verificare:** con 1.6.0 su entrambi e modalità Automatica, una sola voce; il tocco deve aprire Fluidify a processo chiuso e dalla Coda/Altro. Confermare controllo del telefono, nessuna seconda sessione media e nessun passaggio involontario al motore Watch.

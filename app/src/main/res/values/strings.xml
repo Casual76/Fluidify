@@ -484,4 +484,6 @@
     <string name="watch_made_for_you">Made for you</string>
     <string name="watch_update_connection_missing">Watch not connected over Bluetooth. Bring it closer and retry.</string>
     <string name="watch_update_offer_failed">Could not contact Fluidify on the watch. Open it and retry.</string>
+    <string name="audio_light_title">Music-reactive light</string>
+    <string name="audio_light_note">Light in the player and mini player follows the music.</string>
 </resources>

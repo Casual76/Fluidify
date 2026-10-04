@@ -13,6 +13,13 @@ import org.robolectric.annotation.Config
 @RunWith(AndroidJUnit4::class)
 @Config(sdk = [36], application = Application::class)
 class MediaControlsEntryTest {
+    @Test fun publicRemoteSessionEntryResolvesToFluidifyAsWell() {
+        val context = ApplicationProvider.getApplicationContext<Application>()
+        val intent = Intent(PlayerIntents.ACTION_REMOTE_MEDIA_ACTIVITY).setPackage(context.packageName)
+        val resolved = context.packageManager.resolveActivity(intent, PackageManager.MATCH_DEFAULT_ONLY)
+        assertEquals("dev.pampa.fluidify.wear.MainActivity", resolved?.activityInfo?.name)
+        assertEquals(PlayerIntents.Request.PLAYER, PlayerIntents.requestOf(intent))
+    }
     @Test fun systemPhoneMediaEntryResolvesToFluidifyPlayer() {
         val context = ApplicationProvider.getApplicationContext<Application>()
         // Same package-scoped, implicit action used by Wear OS's MediaSessions app.

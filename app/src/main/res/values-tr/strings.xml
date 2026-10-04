@@ -478,4 +478,6 @@
     <string name="watch_made_for_you">Senin için hazırlandı</string>
     <string name="watch_update_connection_missing">Saat Bluetooth ile bağlı değil. Yaklaştırın ve tekrar deneyin.</string>
     <string name="watch_update_offer_failed">Saatteki Fluidify yanıt vermiyor. Uygulamayı açın ve tekrar deneyin.</string>
+    <string name="audio_light_title">Müziğe tepki veren ışık</string>
+    <string name="audio_light_note">Oynatıcı ve mini oynatıcıdaki ışık müziği takip eder.</string>
 </resources>

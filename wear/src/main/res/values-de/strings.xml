@@ -156,4 +156,6 @@
     <string name="unpin">Lösen</string>
     <string name="pin_failed">Angeheftete Playlist konnte nicht geändert werden</string>
     <string name="update_retry_cached">Installation fehlgeschlagen. Tippe zum erneuten Versuch mit der gespeicherten APK.</string>
+    <string name="audio_light_title">Lichteffekte zur Musik</string>
+    <string name="audio_light_note">Sanft leuchtender Fortschritt, während der Player sichtbar ist.</string>
 </resources>

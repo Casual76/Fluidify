@@ -568,7 +568,15 @@ class AudioOutput {
     private var platformSpeed = 1f
     private var platformPitch = 1f
 
+    private var lightTrack: AudioTrack? = null
+    private var lightFramesWritten = 0L
     private fun writeAll(output: AudioTrack, buffer: ByteBuffer, sizeInBytes: Int) {
+        val head = output.playbackHeadPosition.toLong() and 0xffffffffL
+        if (lightTrack !== output || lightFramesWritten < head || lightFramesWritten - head > output.sampleRate * 2L) {
+            lightTrack = output; lightFramesWritten = head
+        }
+        AudioReactive.capture(buffer, sizeInBytes, output.sampleRate, output.channelCount,
+            queuedMs = ((lightFramesWritten - head) * 1000 / (output.sampleRate * platformSpeed)).toLong())
         var written = 0
         while (written < sizeInBytes) {
             // WRITE_BLOCKING returns short only on error or when the track is
@@ -576,6 +584,7 @@ class AudioOutput {
             // spins.
             val result = output.write(buffer, sizeInBytes - written, AudioTrack.WRITE_BLOCKING)
             if (result <= 0) return
+            lightFramesWritten += result / (output.channelCount * 2)
             written += result
         }
     }

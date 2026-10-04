@@ -157,4 +157,6 @@
     <string name="unpin">Unpin</string>
     <string name="pin_failed">Could not change the pinned playlist</string>
     <string name="update_retry_cached">Installation failed. Tap to retry using the saved APK.</string>
+    <string name="audio_light_title">Music-reactive light</string>
+    <string name="audio_light_note">Soft progress glow while the player is visible.</string>
 </resources>

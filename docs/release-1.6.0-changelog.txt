@@ -1,0 +1,7 @@
+Aloni di luce che reagiscono all'audio realmente riprodotto: bordi della copertina, luce inferiore con Canvas e video, otto bande soffuse nel mini player e avanzamento luminoso sul Watch.
+
+Due preferenze indipendenti, attive inizialmente e tradotte nelle otto lingue: telefono/tablet (anche mini player) e orologio. Analisi PCM senza nuovi permessi; modalità leggera sul Watch e soli aggregati via Bluetooth quando controlla il telefono. Gli effetti si fermano in background, AOD, risparmio energetico e movimento ridotto. Nessuna pulsazione simulata per altri dispositivi Connect.
+
+Aggiunto anche l'ingresso media pubblico più recente di Wear OS per aprire Fluidify dai controlli remoti di sistema. Il problema della Now bar Samsung segnalato con la 1.5.3 su entrambi i dispositivi richiede ancora la verifica del tocco sul Galaxy Watch: la risoluzione degli intent da sola non dimostra che il sistema Samsung scelga Fluidify.
+
+Test automatici, render, misure CPU sul PC e build minificate firmate per entrambi i dispositivi. Le prove fisiche di sincronizzazione audio, prestazioni, consumo e traffico Bluetooth restano da completare.

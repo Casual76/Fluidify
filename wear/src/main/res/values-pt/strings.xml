@@ -156,4 +156,6 @@
     <string name="unpin">Desafixar</string>
     <string name="pin_failed">Não foi possível alterar a playlist fixada</string>
     <string name="update_retry_cached">A instalação falhou. Toque para tentar com o APK salvo.</string>
+    <string name="audio_light_title">Luz que reage à música</string>
+    <string name="audio_light_note">Progresso com brilho suave enquanto o leitor está visível.</string>
 </resources>

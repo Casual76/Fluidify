@@ -135,6 +135,10 @@ fun WatchRoot(
     }
 
     val shown by app.controls.nowPlaying.collectAsStateWithLifecycle()
+    dev.pampa.fluidify.wear.ui.player.WatchLightActivity(app,
+        visible = (playerActive || immersiveActive) && (backStack?.destination?.route == null || backStack?.destination?.route == HOME),
+        playing = shown.snapshot?.isPlaying == true && shown.snapshot?.buffering != true,
+        track = shown.snapshot?.track?.uri.orEmpty())
     dev.pampa.fluidify.wear.ui.player.WatchAmbientSurface(shown, modifier) {
     AppScaffold {
         Box(Modifier.fillMaxSize()) {

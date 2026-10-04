@@ -21,6 +21,7 @@ enum class Role { PHONE, WATCH }
 
 /** Optional capabilities, advertised in [Hello.features]. Absent means "not this version". */
 object Features {
+    const val AUDIO_LIGHT = "audio-light"
     /** Volume through the phone (stream volume, or the Connect device's). */
     const val VOLUME = "volume"
 

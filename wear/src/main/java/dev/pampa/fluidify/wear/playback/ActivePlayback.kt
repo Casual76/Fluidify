@@ -271,7 +271,9 @@ class ActivePlayback(
     override fun togglePlay() = front.togglePlay()
     override fun next() = front.next()
     override fun previous() = front.previous()
-    override fun seekTo(positionMs: Long) = front.seekTo(positionMs)
+    private val _visualSeek = MutableStateFlow(0L)
+    val visualSeek: StateFlow<Long> = _visualSeek.asStateFlow()
+    override fun seekTo(positionMs: Long) { _visualSeek.value++; front.seekTo(positionMs) }
     override fun setShuffle(enabled: Boolean) = front.setShuffle(enabled)
     override fun setRepeat(mode: RepeatMode) = front.setRepeat(mode)
     override fun setLiked(liked: Boolean) = front.setLiked(liked)

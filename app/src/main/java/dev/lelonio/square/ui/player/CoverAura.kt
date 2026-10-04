@@ -47,6 +47,7 @@ fun CoverAura(
     /** Stilled with the music: a paused track should not be dancing. */
     playing: Boolean,
     modifier: Modifier = Modifier,
+    suppress: () -> Boolean = { false },
 ) {
     if (colors.isEmpty()) return
 
@@ -104,6 +105,7 @@ fun CoverAura(
             // and the whole thing is put out of focus afterwards.
             .blur(BLUR),
     ) {
+        if (suppress()) return@Canvas
         // Only a playing track reads the clock, which is also what stops the
         // light: with nothing read there is nothing to invalidate, and the
         // whole thing simply stops being redrawn where it stands.

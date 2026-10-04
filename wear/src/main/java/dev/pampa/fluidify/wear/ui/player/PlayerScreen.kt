@@ -65,7 +65,6 @@ import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
 import dev.antigravity.fluidengine.wear.ambient.LocalFluidWearAmbient
 import dev.antigravity.fluidengine.wear.ambient.fluidBurnInShift
 import dev.antigravity.fluidengine.wear.components.FluidArcRow
-import dev.antigravity.fluidengine.wear.components.FluidEdgeGlowRing
 import dev.antigravity.fluidengine.wear.components.fluidRotarySteps
 import dev.antigravity.fluidengine.wear.glass.FluidGlassCapsule
 import dev.antigravity.fluidengine.wear.glass.FluidGlassDisc
@@ -165,7 +164,7 @@ fun PlayerScreen(
                 var clockWidth by remember { mutableStateOf(0.dp) }
                 val density = LocalDensity.current
 
-                FluidEdgeGlowRing(
+                AudioReactiveRing(
                     positionMs = { now.positionAt(System.currentTimeMillis()) },
                     durationMs = track?.durationMs ?: 0L,
                     running = active && started && snapshot?.isPlaying == true && !snapshot.buffering,

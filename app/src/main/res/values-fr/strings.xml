@@ -463,4 +463,6 @@
     <string name="watch_made_for_you">Conçu pour vous</string>
     <string name="watch_update_connection_missing">Montre non connectée en Bluetooth. Rapprochez-la et réessayez.</string>
     <string name="watch_update_offer_failed">Fluidify sur la montre ne répond pas. Ouvrez cette application et réessayez.</string>
+    <string name="audio_light_title">Lumière réactive à la musique</string>
+    <string name="audio_light_note">La lumière du lecteur et du mini-lecteur suit la musique.</string>
 </resources>

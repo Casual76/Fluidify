@@ -463,4 +463,6 @@
     <string name="watch_made_for_you">Für dich erstellt</string>
     <string name="watch_update_connection_missing">Uhr nicht über Bluetooth verbunden. Näher bringen und erneut versuchen.</string>
     <string name="watch_update_offer_failed">Fluidify auf der Uhr antwortet nicht. App öffnen und erneut versuchen.</string>
+    <string name="audio_light_title">Lichteffekte zur Musik</string>
+    <string name="audio_light_note">Licht im Player und Mini-Player folgt der Musik.</string>
 </resources>

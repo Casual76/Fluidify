@@ -156,4 +156,6 @@
     <string name="unpin">Désépingler</string>
     <string name="pin_failed">Impossible de modifier la playlist épinglée</string>
     <string name="update_retry_cached">Échec de l’installation. Touchez pour réessayer avec l’APK enregistré.</string>
+    <string name="audio_light_title">Lumière réactive à la musique</string>
+    <string name="audio_light_note">Progression doucement lumineuse lorsque le lecteur est visible.</string>
 </resources>

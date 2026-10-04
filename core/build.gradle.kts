@@ -74,6 +74,7 @@ android {
 }
 
 dependencies {
+    testImplementation(libs.junit)
     implementation(libs.androidx.core.ktx)
     // The player is a Media3 SimpleBasePlayer; its type is part of this module's API.
     api(libs.media3.common)

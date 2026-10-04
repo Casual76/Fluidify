@@ -478,4 +478,6 @@
     <string name="watch_made_for_you">आपके लिए बनाया गया</string>
     <string name="watch_update_connection_missing">घड़ी Bluetooth से जुड़ी नहीं है। पास लाएँ और फिर कोशिश करें।</string>
     <string name="watch_update_offer_failed">घड़ी पर Fluidify जवाब नहीं दे रहा। ऐप खोलें और फिर कोशिश करें।</string>
+    <string name="audio_light_title">संगीत के साथ प्रकाश प्रभाव</string>
+    <string name="audio_light_note">प्लेयर और मिनी प्लेयर की रोशनी संगीत के साथ बदलती है।</string>
 </resources>

@@ -114,6 +114,8 @@ class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost {
         dev.lelonio.square.data.LibraryViewStore(this)
     }
     val preferences: PreferencesStore by lazy { PreferencesStore(this) }
+    val audioLightPreferences by lazy { dev.lelonio.square.playback.AudioLightPreferences(this) }
+    val audioLightPublisher by lazy { dev.lelonio.square.wear.AudioLightPublisher(this) }
 
     /** For the shared player in :core; see [dev.lelonio.square.playback.CoreHost]. */
     override val qualityIsAutomatic: Boolean

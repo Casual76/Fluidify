@@ -57,6 +57,8 @@ import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.Canvas
@@ -392,6 +394,9 @@ fun PlayerScreen(
     // the cover stays until this turns true and the clip fades in over it.
     // Reset per track: the next one starts from nothing again.
     var canvasReady by remember(canvas?.url) { mutableStateOf(false) }
+    val audioLight = rememberAudioLight(state.isPlaying && !state.isBuffering, visible = playerOpen())
+    var lightCoverBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
+    var lightOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
 
     // The Canvas gets a layer of its own so the glass over it refracts the clip
     // rather than the app's blurred artwork. It is combined with the app
@@ -471,14 +476,18 @@ fun PlayerScreen(
     LaunchedEffect(videoOn) { if (!videoOn) ambient = null }
 
     val auraColors by dev.lelonio.square.ui.theme.rememberArtworkPalette(
-        state.artworkUrl.takeIf { canvas == null },
+        state.artworkUrl,
     )
+    val lightBottom = animateFloatAsState(
+        targetValue = if (canvasReady || videoOn || panel != PlayerPanel.NONE) 1f else 0f,
+        animationSpec = tween(420), label = "audioLightOrigin")
 
     Box(Modifier.fillMaxSize()) {
         Box(
             Modifier
                 .fillMaxSize()
                 // One layer for both of the things that happen to the stage.
+                .onGloballyPositioned { lightOrigin = it.localToRoot(androidx.compose.ui.geometry.Offset.Zero) }
                 //
                 // The blur is spelled out as a render effect rather than left to
                 // `Modifier.blur`, which takes its radius as an argument and so
@@ -528,7 +537,7 @@ fun PlayerScreen(
             // from its own frames: drawing the cover's aura over that would
             // paint the song's colours on top of the video's.
             if (canvas == null && !videoOn) {
-                CoverAura(colors = auraColors, playing = state.isPlaying)
+                CoverAura(colors = auraColors, playing = state.isPlaying, suppress = { audioLight.value != null })
             }
 
 
@@ -578,12 +587,19 @@ fun PlayerScreen(
                     // A handful of canvases are stills rather than clips.
                     else -> AsyncImage(
                         model = clip.url,
+                        onSuccess = { canvasReady = true },
                         contentDescription = null,
                         contentScale = ContentScale.Crop,
                         modifier = Modifier.fillMaxSize(),
                     )
                 }
             }
+
+            AudioLightHalo(audioLight, color = auraColors.firstOrNull() ?: MaterialTheme.colorScheme.primary,
+                cover = {
+                    if (lightCoverBounds == androidx.compose.ui.geometry.Rect.Zero) null
+                    else lightCoverBounds.translate(-lightOrigin)
+                }, bottomMix = { lightBottom.value })
 
             // Only over a Canvas, and deliberately light. Clips are graded for
             // their own sake and some are near-white; this buys the controls
@@ -674,6 +690,7 @@ fun PlayerScreen(
         // accent is known: an accent is derived for the side it will be read on, and one worked out
         // for paper is not the one this page wants.
         val overCanvas = canvas != null && canvasReady
+        // Inside both recorded backdrops; the controls refract this light instead of an overlay.
         // Halfway through the clip's own crossfade, and not at the start of it.
         //
         // A theme cannot dissolve — it is a set of tokens and it changes between one frame and the
@@ -952,6 +969,7 @@ fun PlayerScreen(
                                         onPrevious,
                                         { immersive = !immersive },
                                         { immersive = false }.takeIf { immersive },
+                                        onBounds = { lightCoverBounds = it },
                                     )
                                 }
                             }
@@ -1760,6 +1778,7 @@ private fun Cover(
     onToggleImmersive: () -> Unit,
     /** Null unless the chrome is already away; see PlayerScreen's `immersive`. */
     onLeaveImmersive: (() -> Unit)?,
+    onBounds: (androidx.compose.ui.geometry.Rect) -> Unit = {},
 ) {
     val coverFraction by animateFloatAsState(
         targetValue = if (panel == PlayerPanel.NONE) 0.82f else 0.44f,
@@ -1801,6 +1820,7 @@ private fun Cover(
         onPullDown = onLeaveImmersive,
         modifier = Modifier
             .size(side)
+            .onGloballyPositioned { onBounds(it.boundsInRoot()) }
             .graphicsLayer {
                 scaleX = playingScale
                 scaleY = playingScale

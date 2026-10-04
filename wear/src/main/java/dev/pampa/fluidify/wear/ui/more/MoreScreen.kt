@@ -135,6 +135,13 @@ fun MoreScreen(
         .collectAsStateWithLifecycle()
 
     WatchList(title = stringResource(R.string.more), modifier = modifier) {
+        item {
+            val prefs = (context.applicationContext as? dev.pampa.fluidify.wear.WearApp)?.audioLightPreferences
+            val enabled by (prefs?.enabled ?: remember { MutableStateFlow(true) }).collectAsStateWithLifecycle()
+            SwitchButton(checked = enabled, onCheckedChange = { prefs?.setEnabled(it) },
+                label = { Text(stringResource(R.string.audio_light_title)) },
+                secondaryLabel = { Text(stringResource(R.string.audio_light_note)) })
+        }
         item { ListSubHeader { Text(stringResource(R.string.group_playback)) } }
         item {
             FluidWearListRow(

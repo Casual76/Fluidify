@@ -156,4 +156,6 @@
     <string name="unpin">Togli dai fissati</string>
     <string name="pin_failed">Impossibile modificare la playlist fissata</string>
     <string name="update_retry_cached">Installazione non riuscita. Tocca per riprovare con l’APK salvato.</string>
+    <string name="audio_light_title">Effetti luminosi sulla musica</string>
+    <string name="audio_light_note">Avanzamento luminoso soffuso quando il lettore è visibile.</string>
 </resources>
