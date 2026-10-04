@@ -28,15 +28,29 @@ import java.util.Date
     val context = LocalContext.current
     val time = remember(tick, ambient.isAmbient) { DateFormat.getTimeFormat(context).format(Date()) }
     val textColor = if (ambient.lowBitAmbient) Color.White else MaterialTheme.colorScheme.onSurfaceVariant
-    Box(modifier.fillMaxSize().background(Color.Black), contentAlignment = Alignment.Center) {
-        Column(Modifier.fillMaxWidth(0.7f).fluidBurnInShift(ambient), horizontalAlignment = Alignment.CenterHorizontally,
-            verticalArrangement = Arrangement.spacedBy(8.dp)) {
-            Text(time, style = MaterialTheme.typography.labelMedium, color = textColor)
-            Text(now.snapshot?.track?.title ?: stringResource(R.string.nothing_playing), style = MaterialTheme.typography.bodySmall,
-                color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
-            now.snapshot?.track?.artist?.takeIf { it.isNotBlank() }?.let {
-                Text(it, style = MaterialTheme.typography.bodyExtraSmall, color = textColor,
-                    maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+    BoxWithConstraints(modifier.fillMaxSize().background(Color.Black)) {
+        val compact = maxWidth < 210.dp
+        val density = androidx.compose.ui.platform.LocalDensity.current
+        val tight = compact && density.fontScale >= 1.2f
+        Column(Modifier.fillMaxWidth(0.72f).align(Alignment.TopCenter)
+            .padding(top = if (tight) 4.dp else dev.antigravity.fluidengine.wear.theme.FluidWearDimens.TimePillTop)
+            .fluidBurnInShift(ambient), horizontalAlignment = Alignment.CenterHorizontally) {
+            androidx.compose.runtime.CompositionLocalProvider(androidx.compose.ui.platform.LocalDensity provides
+                androidx.compose.ui.unit.Density(density.density, if (tight) 1f else density.fontScale)) {
+                Text(time, style = MaterialTheme.typography.labelSmall, color = textColor,
+                    modifier = Modifier.padding(horizontal = dev.antigravity.fluidengine.wear.theme.FluidWearDimens.TimePillPaddingHorizontal,
+                        vertical = dev.antigravity.fluidengine.wear.theme.FluidWearDimens.TimePillPaddingVertical))
+            }
+            Spacer(Modifier.height(if (tight) 2.dp else if (compact) 4.dp else 6.dp))
+            Column(Modifier.fillMaxWidth().padding(vertical = dev.antigravity.fluidengine.wear.theme.FluidWearDimens.CapsulePaddingVertical),
+                horizontalAlignment = Alignment.CenterHorizontally) {
+                Text(now.snapshot?.track?.title ?: stringResource(R.string.nothing_playing),
+                    style = if (compact) MaterialTheme.typography.labelSmall else MaterialTheme.typography.labelMedium,
+                    color = textColor, maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                if (!compact) now.snapshot?.track?.artist?.takeIf { it.isNotBlank() }?.let {
+                    Text(it, style = MaterialTheme.typography.bodyExtraSmall, color = textColor,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
+                }
             }
         }
     }

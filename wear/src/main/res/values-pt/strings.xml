@@ -155,4 +155,5 @@
     <string name="pin">Fixar</string>
     <string name="unpin">Desafixar</string>
     <string name="pin_failed">Não foi possível alterar a playlist fixada</string>
+    <string name="update_retry_cached">A instalação falhou. Toque para tentar com o APK salvo.</string>
 </resources>

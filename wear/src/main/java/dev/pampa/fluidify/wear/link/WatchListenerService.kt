@@ -77,6 +77,7 @@ class WatchListenerService : WearableListenerService() {
             }
             WearPaths.HELLO -> WearCodec.decodeOrNull(Hello.serializer(), event.data)?.let {
                 app.link.onHello(it, event.sourceNodeId)
+                app.updater.onPhoneHello(event.sourceNodeId)
             }
             WearPaths.DOWNLOAD_PLAN -> WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.DownloadRequest.serializer(), event.data)?.let { request ->
                 app.downloads.onRequest(request)

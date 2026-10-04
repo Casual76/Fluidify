@@ -82,6 +82,7 @@ class MainActivity : ComponentActivity() {
 
     private fun takeShortcut(intent: android.content.Intent) {
         val route = when (intent.action) {
+            "dev.pampa.fluidify.WATCH_UPDATES" -> Routes.SETTINGS
             ACTION_SHORTCUT_SEARCH -> Routes.SEARCH
             ACTION_SHORTCUT_LIBRARY -> Routes.LIBRARY
             ACTION_SHORTCUT_RESUME -> {

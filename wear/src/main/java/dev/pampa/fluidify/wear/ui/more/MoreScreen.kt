@@ -307,10 +307,11 @@ fun MoreScreen(
                             UpdatePhase.ACCEPT, UpdatePhase.RECEIVING -> R.string.update_receiving
                             UpdatePhase.INSTALLING -> R.string.update_installing
                             UpdatePhase.AWAITING_CONFIRMATION -> R.string.update_confirm
-                            UpdatePhase.FAILED -> R.string.update_failed
+                            UpdatePhase.FAILED -> if (updater?.canRetry == true) R.string.update_retry_cached else R.string.update_failed
                             else -> R.string.update_receiving
                         },
-                    ),
+                    ) + if (status.phase == UpdatePhase.RECEIVING) " · ${(status.progress * 100).toInt()}%" else "",
+                    onClick = if (status.phase == UpdatePhase.AWAITING_CONFIRMATION || status.phase == UpdatePhase.FAILED && updater?.canRetry == true) ({ updater?.confirmOrRetry() }) else null,
                     leading = { Icon(PhosphorIcons.Regular.ArrowCircleUp, contentDescription = null, modifier = Modifier.size(22.dp)) },
                 )
             }

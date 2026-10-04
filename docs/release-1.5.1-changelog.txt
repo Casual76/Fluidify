@@ -1,0 +1,9 @@
+Bluetooth e telefono al primo posto. L'orologio non richiede piu' il Wi-Fi ad ogni avvio del motore: usa la connessione Bluetooth e osserva le reti disponibili. Un download puo' chiedere il Wi-Fi solo come ripiego, con rilascio al termine. I file mancanti o a una qualita' diversa vengono prima preparati sul telefono e inviati via Bluetooth.
+
+Quando parte la musica sul telefono, l'orologio torna ai suoi controlli e ferma subito il lettore locale. Un vecchio stato in cache o il riflesso della riproduzione dell'orologio non interrompono invece una scelta locale esplicita.
+
+L'aggiornamento Wear mostra percentuale e notifica sul telefono e sull'orologio. L'invio continua tramite WorkManager. La conferma di Android resta recuperabile dalla notifica e da Altro anche dopo che lo schermo o il processo sono stati spenti. Se l'installazione fallisce, l'APK verificato resta sull'orologio: si ritenta senza scaricarlo e trasferirlo di nuovo. Anche il telefono conserva la sua copia.
+
+Il passaggio ad AOD ha una dissolvenza breve, mantiene titolo e ora nella parte alta e rimuove il lettore interattivo al termine, senza animazioni continue in ambient.
+
+Verifiche automatiche e render completati; consumo reale e aggiornamento a schermo spento restano da provare sui dispositivi.

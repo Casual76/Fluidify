@@ -135,3 +135,18 @@ nessuna di queste prove viene dichiarata superata soltanto perché compila.
 - [ ] TalkBack: nomi volume ±, annuncio percentuale, azione Fissa/Togli e azioni play/pausa/avanti/mi piace sulla copertina.
 - [ ] Permesso notifiche cambiato nelle impostazioni → Altro aggiornato al ritorno; rifiuto permanente apre le impostazioni.
 - [ ] Collegare cuffie mentre Now bar sperimentale attiva → le due notifiche non si sostituiscono.
+
+## Patch 1.5.1 — Bluetooth, aggiornamenti, AOD
+
+- [ ] Con telefono vicino, usare il lettore per 15 minuti: nessuna richiesta Wi-Fi attiva di Fluidify in `dumpsys connectivity`; distinguere le registrazioni passive dalle richieste di rete.
+- [ ] Riprodurre download locali: nessuna attivazione Wi-Fi richiesta dall’app; dopo il ritorno al telefono motore e servizio locali si fermano.
+- [ ] Scaricare un brano non presente sul telefono o a qualità diversa: staging sul telefono e trasferimento Bluetooth prima del ripiego Wi-Fi.
+- [ ] Interrompere Bluetooth durante un download: l’eventuale richiesta Wi-Fi finisce con il worker; tornando al telefono non resta una richiesta attiva.
+- [ ] Dopo aver ascoltato sull’orologio, avviare la musica sul telefono/in auto: titolo, coda e controlli tornano al telefono senza aspettare due minuti.
+- [ ] Un handoff esplicito all’orologio resta locale: un vecchio snapshot o un Connect remoto che rappresenta l’orologio non lo annullano.
+- [ ] Inviare un update con schermo del telefono e dell’orologio spenti: progressi reali e notifiche; controllo della ricezione finale.
+- [ ] Con installazione che richiede conferma, lasciare spegnere lo schermo: riaprire la notifica o Altro; la conferma è recuperabile senza un nuovo invio.
+- [ ] Annullare/bloccare l’installazione, poi ritentare: l’APK su Wear resta identico e il contatore dei byte Bluetooth non cresce di altri ~24 MB.
+- [ ] Ricreare i processi prima della conferma: stato e azione restano disponibili; il telefono recupera lo stato sul successivo hello.
+- [ ] AOD da player, copertina e altre schermate: dissolvenza breve, titolo nella parte alta; nessun rendering interattivo continuo dopo la transizione. Provare anche font 130% e pannello low-bit.
+- [ ] Misurare il consumo in sessioni comparabili con 1.5.0/1.5.1: i test JVM non dimostrano una riduzione della batteria sul Galaxy Watch.

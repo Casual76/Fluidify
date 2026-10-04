@@ -155,4 +155,5 @@
     <string name="pin">Épingler</string>
     <string name="unpin">Désépingler</string>
     <string name="pin_failed">Impossible de modifier la playlist épinglée</string>
+    <string name="update_retry_cached">Échec de l’installation. Touchez pour réessayer avec l’APK enregistré.</string>
 </resources>

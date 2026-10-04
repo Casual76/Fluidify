@@ -155,4 +155,5 @@
     <string name="pin">पिन करें</string>
     <string name="unpin">पिन हटाएँ</string>
     <string name="pin_failed">पिन की गई प्लेलिस्ट नहीं बदल सकी</string>
+    <string name="update_retry_cached">इंस्टॉलेशन विफल। सहेजे गए APK से फिर कोशिश करने के लिए टैप करें।</string>
 </resources>

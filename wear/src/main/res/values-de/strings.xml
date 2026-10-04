@@ -155,4 +155,5 @@
     <string name="pin">Anheften</string>
     <string name="unpin">Lösen</string>
     <string name="pin_failed">Angeheftete Playlist konnte nicht geändert werden</string>
+    <string name="update_retry_cached">Installation fehlgeschlagen. Tippe zum erneuten Versuch mit der gespeicherten APK.</string>
 </resources>

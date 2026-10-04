@@ -21,3 +21,5 @@ il varco dell'anello attorno al cuore. La conferma mostra i due tasti Wear M3 e 
 
 Queste immagini non verificano Bluetooth, audio reale, consumo, gesti fisici, TalkBack o Samsung Now bar.
 Usare la checklist in `docs/wear-qa-checklist.md` per quelle prove.
+
+Patch 1.5.1: `player_ambient.png` e `player_aod_same_anchor.png` mostrano ora e titolo nella stessa area superiore. Il test di transizione verifica anche la rimozione della composizione interattiva.

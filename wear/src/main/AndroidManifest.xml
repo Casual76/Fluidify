@@ -48,6 +48,10 @@
             </intent-filter>
         </activity>
 
+        <receiver android:name=".update.WatchInstallResultReceiver" android:exported="false" />
+        <activity android:name=".update.WatchInstallConfirmationActivity" android:exported="false"
+            android:excludeFromRecents="true" android:theme="@android:style/Theme.Translucent.NoTitleBar" />
+
         <!--
           Where the phone's state, covers and replies land, also with the app
           closed. Only Fluidify's own paths wake it.

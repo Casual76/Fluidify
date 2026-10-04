@@ -13,6 +13,11 @@ import dev.lelonio.square.update.WatchApkValidation
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.CancellationException
 import com.google.android.gms.wearable.Wearable
+import com.google.android.gms.wearable.ChannelClient
+import dev.lelonio.square.io.WriteWatchdog
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.ensureActive
+import kotlin.coroutines.coroutineContext
 import dev.antigravity.fluidengine.foundation.AvailableAppUpdate
 import dev.antigravity.fluidengine.foundation.compareVersions
 import dev.antigravity.fluidengine.net.EngineHttp
@@ -31,6 +36,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -65,7 +71,7 @@ class WatchUpdateCoordinator(
         data class Available(val version: String) : State
         data class Downloading(val version: String, val progress: Float?) : State
         data class Offered(val version: String) : State
-        data class Sending(val version: String) : State
+        data class Sending(val version: String, val progress: Float? = null) : State
         data class Installing(val version: String) : State
         data class AwaitingConfirmation(val version: String) : State
         data class Installed(val version: String) : State
@@ -84,6 +90,7 @@ class WatchUpdateCoordinator(
         installer = installer,
     )
     private val lock = Mutex()
+    private val sendLock = Mutex()
 
     private val _state = MutableStateFlow<State>(State.Idle)
     val state: StateFlow<State> = _state.asStateFlow()
@@ -93,6 +100,12 @@ class WatchUpdateCoordinator(
 
     /** The APK ready to send, and the offer that describes it. */
     private var ready: Pair<File, UpdateOffer>? = restoreOffer()
+
+    init {
+        scope.launch {
+            state.collect { WatchUpdateNotifications.show(context, it) }
+        }
+    }
 
     var autoUpdate: Boolean
         get() = prefs.getBoolean(KEY_AUTO, true)
@@ -105,6 +118,12 @@ class WatchUpdateCoordinator(
                 Wearable.getNodeClient(context).connectedNodes.await().firstOrNull { it.id == nodeId }?.displayName
             }.getOrNull() ?: _watch.value?.name.orEmpty()
             _watch.value = WatchInfo(nodeId, name, hello, System.currentTimeMillis())
+            val cached = ready
+            if (cached != null && compareVersions(hello.versionName, cached.second.versionName) >= 0) {
+                _state.value = State.Installed(hello.versionName)
+                clearReady()
+                return@launch
+            }
             val due = System.currentTimeMillis() - prefs.getLong(KEY_CHECKED, 0) > CHECK_EVERY_MS
             if (autoUpdate && due) {
                 val update = check()
@@ -170,6 +189,12 @@ class WatchUpdateCoordinator(
     /** Checks and, if there is something, sends it. The "update the watch" row. */
     fun checkAndPush() {
         scope.launch {
+            val cached = ready ?: restoreOffer()?.also { ready = it }
+            val node = _watch.value?.nodeId
+            if (cached != null && node != null && compareVersions(cached.second.versionName, _watch.value!!.hello.versionName) > 0) {
+                offer(cached.first, cached.second.versionName, cached.second.sha256, requestedByUser = true, nodeId = node)
+                return@launch
+            }
             val update = check() ?: return@launch
             push(update, requestedByUser = true)
         }
@@ -189,7 +214,8 @@ class WatchUpdateCoordinator(
             _state.value = State.Failed("missing-checksum")
             return false
         }
-        val file = runCatching {
+        val cached = ready?.takeIf { it.second.versionName == update.version && it.second.sha256.equals(update.sha256, true) && it.first.isFile }
+        val file = cached?.first ?: runCatching {
             installer.download(update) { progress ->
                 _state.value = State.Downloading(update.version, progress.progress.takeIf { it in 0f..1f })
             }
@@ -199,7 +225,7 @@ class WatchUpdateCoordinator(
             return false
         }
         offer(file, update.version, update.sha256, requestedByUser, nodeId)
-        val success = _state.value is State.Offered
+        val success = ready != null && _state.value !is State.Failed
         if (success) prefs.edit().putLong(KEY_CHECKED, System.currentTimeMillis()).apply()
         return success
     }
@@ -242,47 +268,125 @@ class WatchUpdateCoordinator(
             sha256 = checksum,
             requestedByUser = requestedByUser,
         )
-        val saved = withContext(Dispatchers.IO) { file.copyTo(File(context.cacheDir, "watch-ready.apk"), overwrite = true) }
+        val saved = withContext(Dispatchers.IO) {
+            val target = File(context.filesDir, "watch-ready.apk")
+            if (file.absolutePath != target.absolutePath) file.copyTo(target, overwrite = true) else target
+        }
         ready = saved to offer
         prefs.edit().putString(KEY_OFFER, WearCodec.json.encodeToString(UpdateOffer.serializer(), offer))
             .putString(KEY_OFFER_NODE, node).putLong(KEY_OFFER_AT, System.currentTimeMillis()).commit()
         _state.value = State.Offered(version)
-        link.send(node, WearPaths.UPDATE_OFFER, WearCodec.encode(UpdateOffer.serializer(), offer))
+        if (link.watchNodes(reachableOnly = true).none { it.id == node && it.isNearby } ||
+            !link.send(node, WearPaths.UPDATE_OFFER, WearCodec.encode(UpdateOffer.serializer(), offer))) {
+            _state.value = State.Failed("Bluetooth")
+        }
     }
 
     /** What the watch says about an offer or an install. */
     fun onStatus(nodeId: String, status: UpdateStatus) {
         if (nodeId != prefs.getString(KEY_OFFER_NODE, null) || ready?.second?.versionName != status.versionName) return
         when (status.phase) {
-            UpdatePhase.ACCEPT -> scope.launch { send(nodeId) }
-            UpdatePhase.DECLINE -> _state.value = State.UpToDate(_watch.value?.hello?.versionName ?: status.versionName)
-            UpdatePhase.RECEIVING -> _state.value = State.Sending(status.versionName)
+            UpdatePhase.ACCEPT -> {
+                val work = OneTimeWorkRequestBuilder<WatchUpdateSendWorker>().setInputData(workDataOf("node" to nodeId)).build()
+                WorkManager.getInstance(context).enqueueUniqueWork("watch-update-send", ExistingWorkPolicy.KEEP, work)
+            }
+            UpdatePhase.DECLINE -> {
+                _state.value = if (status.reason == "already-current") State.UpToDate(status.versionName)
+                    else State.Failed(status.reason ?: "declined")
+            }
+            UpdatePhase.RECEIVING -> if (_state.value !is State.Installing && _state.value !is State.AwaitingConfirmation) {
+                sendingProgress(status.versionName, status.progress)
+            }
             UpdatePhase.INSTALLING -> _state.value = State.Installing(status.versionName)
             UpdatePhase.AWAITING_CONFIRMATION -> _state.value = State.AwaitingConfirmation(status.versionName)
-            UpdatePhase.INSTALLED -> _state.value = State.Installed(status.versionName)
+            UpdatePhase.INSTALLED -> { _state.value = State.Installed(status.versionName); clearReady() }
             UpdatePhase.FAILED -> _state.value = State.Failed(status.reason ?: "install")
         }
     }
 
-    private suspend fun send(nodeId: String) {
-        val (file, offer) = ready ?: restoreOffer()?.also { ready = it } ?: run {
-            return
+    suspend fun sendPrepared(nodeId: String): Boolean = sendLock.withLock {
+        val (file, offer) = ready ?: restoreOffer()?.also { ready = it } ?: return@withLock false
+        if (link.watchNodes(reachableOnly = true).none { it.id == nodeId && it.isNearby }) {
+            _state.value = State.Failed("Bluetooth")
+            return@withLock false
         }
-        if (System.currentTimeMillis() - prefs.getLong(KEY_OFFER_AT, 0) > OFFER_TTL_MS) return
         withContext(Dispatchers.IO) { rejectArchive(file, offer.versionName, offer.sha256) }?.let {
             _state.value = State.Failed(it)
-            return
+            return@withLock false
         }
         _state.value = State.Sending(offer.versionName)
-        runCatching {
-            val channels = Wearable.getChannelClient(context)
-            val channel = channels.openChannel(nodeId, WearPaths.UPDATE_APK).await()
-            try { channels.sendFile(channel, Uri.fromFile(file)).await() }
-            finally { withContext(NonCancellable) { runCatching { channels.close(channel).await() } } }
-        }.onFailure {
-            Log.w(TAG, "sending the watch build failed", it)
-            _state.value = State.Failed(it.message ?: "send")
+        val channels = Wearable.getChannelClient(context)
+        var channel: ChannelClient.Channel? = null
+        val finished = CompletableDeferred<Int>()
+        val callback = object : ChannelClient.ChannelCallback() {
+            override fun onOutputClosed(channel: ChannelClient.Channel, closeReason: Int, appSpecificErrorCode: Int) {
+                finished.complete(closeReason)
+            }
         }
+        try {
+            kotlinx.coroutines.withTimeout(15 * 60_000L) {
+                val opened = channels.openChannel(nodeId, WearPaths.UPDATE_APK).await()
+                channel = opened
+                channels.registerChannelCallback(opened, callback).await()
+                val output = channels.getOutputStream(opened).await()
+                withContext(Dispatchers.IO) {
+                    WriteWatchdog(output, 30_000, 15 * 60_000L) { channels.close(opened) }.use { guarded ->
+                        file.inputStream().use { input ->
+                            val buffer = ByteArray(64 * 1024)
+                            var sent = 0L
+                            var lastPercent = -1
+                            while (true) {
+                                coroutineContext.ensureActive()
+                                val count = input.read(buffer)
+                                if (count < 0) break
+                                guarded.write(buffer, 0, count)
+                                sent += count
+                                val fraction = (sent.toFloat() / offer.sizeBytes).coerceIn(0f, 1f)
+                                val percent = (fraction * 100).toInt()
+                                if (percent != lastPercent) {
+                                    sendingProgress(offer.versionName, fraction)
+                                    lastPercent = percent
+                                }
+                            }
+                        }
+                    }
+                }
+                // sendFile's Task only starts a transfer. Wait for actual stream completion before closing the channel.
+                check(finished.await() == ChannelClient.ChannelCallback.CLOSE_REASON_NORMAL) { "transfer-interrupted" }
+            }
+            true
+        } catch (cancelled: CancellationException) {
+            _state.value = State.Failed("transfer-interrupted")
+            throw cancelled
+        } catch (error: Exception) {
+            _state.value = State.Failed(error.message ?: "send")
+            false
+        } finally {
+            withContext(NonCancellable) { channel?.let {
+                runCatching { channels.unregisterChannelCallback(it, callback).await() }
+                runCatching { channels.close(it).await() }
+            } }
+        }
+    }
+
+    private fun sendingProgress(version: String, fraction: Float) {
+        _state.update { current ->
+            if (current is State.Installing || current is State.AwaitingConfirmation || current is State.Installed || current is State.Failed) current
+            else State.Sending(version, maxOf((current as? State.Sending)?.progress ?: 0f, fraction.coerceIn(0f, 1f)))
+        }
+    }
+
+    internal fun onSendWorkerFinished() {
+        scope.launch {
+            kotlinx.coroutines.delay(1_500)
+            WatchUpdateNotifications.show(context, state.value)
+        }
+    }
+
+    private fun clearReady() {
+        ready?.first?.delete()
+        ready = null
+        prefs.edit().remove(KEY_OFFER).remove(KEY_OFFER_AT).remove(KEY_OFFER_NODE).apply()
     }
 
     /** Why this APK must not be offered, or null. */
@@ -290,8 +394,9 @@ class WatchUpdateCoordinator(
         WatchApkValidation.reject(context, file, version, checksum)
 
     private fun restoreOffer(): Pair<File, UpdateOffer>? = runCatching {
-        if (System.currentTimeMillis() - prefs.getLong(KEY_OFFER_AT, 0) > OFFER_TTL_MS) return null
-        val file = File(context.cacheDir, "watch-ready.apk").takeIf { it.isFile } ?: return null
+        if (System.currentTimeMillis() - prefs.getLong(KEY_OFFER_AT, 0) > APK_RETENTION_MS) return null
+        val file = File(context.filesDir, "watch-ready.apk").takeIf { it.isFile }
+            ?: File(context.cacheDir, "watch-ready.apk").takeIf { it.isFile } ?: return null
         val offer = WearCodec.json.decodeFromString(UpdateOffer.serializer(), prefs.getString(KEY_OFFER, null) ?: return null)
         file to offer
     }.getOrNull()
@@ -312,7 +417,7 @@ class WatchUpdateCoordinator(
         private const val KEY_OFFER = "offer"
         private const val KEY_OFFER_NODE = "offer_node"
         private const val KEY_OFFER_AT = "offer_at"
-        private const val OFFER_TTL_MS = 30 * 60_000L
+        private const val APK_RETENTION_MS = 7 * 24 * 60 * 60_000L
         private const val CHECK_EVERY_MS = 6 * 60 * 60_000L
 
         /** The watch build's manifest, beside the phone's own (see docs/pampa-store-release.md). */

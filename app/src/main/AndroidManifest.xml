@@ -228,6 +228,9 @@
             </intent-filter>
         </service>
 
+        <service android:name="androidx.work.impl.foreground.SystemForegroundService"
+            android:foregroundServiceType="dataSync" tools:node="merge" />
+
         <!-- Keeps the phone up while it sends tracks to the watch; see WatchTransferService. -->
         <service
             android:name=".wear.WatchTransferService"

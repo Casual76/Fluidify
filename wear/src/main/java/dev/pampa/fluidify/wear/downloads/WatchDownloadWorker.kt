@@ -81,8 +81,8 @@ class WatchDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
                 for (attempt in TransportPlanner.plan(facts)) {
                     if (TransportPlanner.needsWatchNetwork(attempt)) {
                         if (attempt == Transport.WATCH_ALONE && keysRefused) continue
-                        // Asked once per pass: a Galaxy Watch turns Wi-Fi on for this and takes a moment.
-                        val got = route ?: standalone.network.acquire().also { route = it }
+                        // Only after the preferred Bluetooth attempt failed (or Wi-Fi was explicitly selected).
+                        val got = route ?: standalone.network.acquire(preferWifi = true).also { route = it }
                         if (got != Route.WIFI && got != Route.CELLULAR) continue
                         if (!engineLeased) engineLeased = standalone.engine.acquire()
                         if (!engineLeased) continue
@@ -112,7 +112,7 @@ class WatchDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
             }
         } finally {
             if (engineLeased) standalone.engine.release()
-            if (route != null) standalone.network.release()
+            if (route != null) standalone.network.release(preferWifi = true)
         }
 
         pending = store.pending()

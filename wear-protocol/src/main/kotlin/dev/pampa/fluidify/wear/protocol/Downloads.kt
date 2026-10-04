@@ -51,7 +51,7 @@ data class WatchDownloads(
     /** Why the queue is stopped, when it is: no network, no phone, storage full. */
     val paused: String? = null,
     val qualityKbps: Int = 160,
-    val preference: TransferPreference = TransferPreference.WIFI_FIRST,
+    val preference: TransferPreference = TransferPreference.BLUETOOTH_FIRST,
     val updatedAtEpochMs: Long = 0,
     val unavailable: Int = 0,
 )

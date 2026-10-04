@@ -94,14 +94,16 @@ private fun describe(state: State): String = when (state) {
     State.Checking -> stringResource(R.string.watch_update_checking)
     is State.UpToDate -> stringResource(R.string.watch_update_current, state.version)
     is State.Available -> stringResource(R.string.watch_update_available, state.version)
-    is State.Downloading -> stringResource(R.string.watch_update_downloading, state.version)
+    is State.Downloading -> stringResource(R.string.watch_update_downloading, state.version) + progressLabel(state.progress)
     is State.Offered -> stringResource(R.string.watch_update_offered, state.version)
-    is State.Sending -> stringResource(R.string.watch_update_sending, state.version)
+    is State.Sending -> stringResource(R.string.watch_update_sending, state.version) + progressLabel(state.progress)
     is State.Installing -> stringResource(R.string.watch_update_installing, state.version)
     is State.AwaitingConfirmation -> stringResource(R.string.watch_update_confirm)
     is State.Installed -> stringResource(R.string.watch_update_installed, state.version)
     is State.Failed -> stringResource(R.string.watch_update_failed, state.reason)
 }
+
+private fun progressLabel(progress: Float?): String = progress?.let { " · ${(it.coerceIn(0f, 1f) * 100).toInt()}%" }.orEmpty()
 
 /**
  * What the watch keeps for offline listening, from the phone: how much, how

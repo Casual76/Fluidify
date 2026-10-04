@@ -79,8 +79,8 @@ android {
         // cpal's Android host is AAudio, which the ndk crate gates at API 26.
         minSdk = 26
         targetSdk = 35
-        versionCode = 8
-        versionName = "1.5.0"
+        versionCode = 9
+        versionName = "1.5.1"
 
         // The shipped set, and only that. AGP takes the **union** of this and
         // whatever a build type adds — clearing the build type's own list does
@@ -208,6 +208,11 @@ android {
         }
     }
 
+    testOptions {
+        unitTests.isIncludeAndroidResources = true
+        unitTests.isReturnDefaultValues = true
+    }
+
     packaging {
         // The Rust cdylib is already stripped by the release profile; letting
         // Gradle re-strip it with the wrong tool breaks the arm64 build.
@@ -222,6 +227,9 @@ dependencies {
     // player use is compiled before it is needed rather than while it runs.
     implementation(libs.androidx.profileinstaller)
     testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
+    testImplementation(libs.robolectric)
+    testImplementation(libs.androidx.test.ext.junit)
     implementation(libs.androidx.activity.compose)
     implementation(libs.androidx.browser)
     implementation(libs.androidx.security.crypto)
@@ -348,3 +356,9 @@ val checkNoStaleJniLibs by tasks.registering {
 }
 tasks.named("preBuild") { dependsOn(checkNoStaleJniLibs) }
 
+
+// Robolectric uses Conscrypt's desktop native library; the ADB pairing dependency
+// carries its Android JNI instead. Exclude that duplicate only from JVM tests.
+configurations.matching { it.name.endsWith("UnitTestRuntimeClasspath") }.configureEach {
+    exclude(group = "org.conscrypt", module = "conscrypt-android")
+}

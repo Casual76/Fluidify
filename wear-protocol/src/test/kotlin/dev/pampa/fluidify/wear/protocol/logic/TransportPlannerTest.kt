@@ -27,10 +27,10 @@ class TransportPlannerTest {
         // The phone has it at another quality: it would be fetched again either way, so the
         // watch's Wi-Fi first, then the phone fetching it at the watch's quality.
         Row(true, true, false, WIFI_FIRST, listOf(WATCH_ALONE, PHONE_STAGED)),
-        Row(true, true, false, BLUETOOTH_FIRST, listOf(WATCH_ALONE, PHONE_STAGED)),
+        Row(true, true, false, BLUETOOTH_FIRST, listOf(PHONE_STAGED, WATCH_ALONE)),
         // The phone does not have it.
         Row(true, false, false, WIFI_FIRST, listOf(WATCH_ALONE, PHONE_STAGED)),
-        Row(true, false, true, BLUETOOTH_FIRST, listOf(WATCH_ALONE, PHONE_STAGED)),
+        Row(true, false, true, BLUETOOTH_FIRST, listOf(PHONE_STAGED, WATCH_ALONE)),
         // The phone is away: only the watch's own network.
         Row(false, true, true, WIFI_FIRST, listOf(WATCH_ALONE)),
         Row(false, false, false, BLUETOOTH_FIRST, listOf(WATCH_ALONE)),

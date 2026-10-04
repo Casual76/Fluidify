@@ -54,7 +54,7 @@ class WatchDownloads(private val context: Context) {
 
     var preference: TransferPreference
         get() = prefs.getString(KEY_PREFERENCE, null)?.let { runCatching { TransferPreference.valueOf(it) }.getOrNull() }
-            ?: TransferPreference.WIFI_FIRST
+            ?: TransferPreference.BLUETOOTH_FIRST
         set(value) = prefs.edit { putString(KEY_PREFERENCE, value.name) }
 
     fun keep(uri: String, title: String, artUrl: String? = null) {

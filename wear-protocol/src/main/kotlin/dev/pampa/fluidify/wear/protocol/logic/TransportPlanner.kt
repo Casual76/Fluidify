@@ -24,7 +24,7 @@ enum class Transport {
 
 /** Which way the listener prefers when the phone already has the very same file. */
 enum class TransferPreference {
-    /** The watch's own Wi-Fi when there is some, Bluetooth otherwise. The default. */
+    /** The watch's own Wi-Fi when there is some, Bluetooth otherwise. An explicit preference. */
     WIFI_FIRST,
 
     /** Bluetooth from the phone, the watch's Wi-Fi only if that fails. */
@@ -38,27 +38,13 @@ data class TransportFacts(
     val phoneHasFile: Boolean,
     /** ...in the format the watch wants. A different one would have to be fetched again. */
     val sameQuality: Boolean,
-    val preference: TransferPreference = TransferPreference.WIFI_FIRST,
+    val preference: TransferPreference = TransferPreference.BLUETOOTH_FIRST,
 )
 
 /**
- * Decides how a track should reach the watch, in order of preference.
- *
- * The user's rules, as they gave them:
- *
- * - the phone has the file **and** at the same quality: the setting decides,
- *   the watch's own Wi-Fi first (the default, it is faster) or Bluetooth
- *   first, each falling back to the other;
- * - the phone does not have it, or has it at another quality: the watch
- *   fetches it over its own Wi-Fi (faster than anything the phone could relay),
- *   and only without Wi-Fi does the phone fetch it at the watch's quality and
- *   relay it over Bluetooth;
- * - the phone is out of reach: the watch's own network, or nothing for now.
- *
- * Whether the watch's network actually comes up (a Galaxy Watch switches its
- * Wi-Fi on only when asked, and takes a few seconds) is found out when an
- * attempt runs, not here: an attempt that cannot get a network falls through
- * to the next. An empty plan means "not now"; the queue tries again later.
+ * Bluetooth is the default, including staging on the phone when its download has a different
+ * quality. Existing Wi-Fi remains a fallback, or an explicit preference. Without the phone,
+ * only the watch's own internet can fetch new files.
  */
 object TransportPlanner {
 
@@ -68,7 +54,9 @@ object TransportPlanner {
             TransferPreference.WIFI_FIRST -> listOf(Transport.WATCH_WITH_PHONE_KEY, Transport.PHONE_FILE)
             TransferPreference.BLUETOOTH_FIRST -> listOf(Transport.PHONE_FILE, Transport.WATCH_WITH_PHONE_KEY)
         }
-        else -> listOf(Transport.WATCH_ALONE, Transport.PHONE_STAGED)
+        else -> if (facts.preference == TransferPreference.BLUETOOTH_FIRST)
+            listOf(Transport.PHONE_STAGED, Transport.WATCH_ALONE)
+        else listOf(Transport.WATCH_ALONE, Transport.PHONE_STAGED)
     }
 
     /** Whether [transport] needs the watch's own network (as opposed to Bluetooth to the phone). */

@@ -166,7 +166,7 @@ class PhoneLink(
     private suspend fun findPhone(reachableOnly: Boolean = true): Node? = runCatching {
         val filter = if (reachableOnly) CapabilityClient.FILTER_REACHABLE else CapabilityClient.FILTER_ALL
         val nodes = capabilities.getCapability(WearPaths.CAPABILITY_PHONE, filter).await().nodes
-        (nodes.firstOrNull { it.isNearby } ?: nodes.firstOrNull())?.also { if (reachableOnly) nodeId = it.id }
+        (nodes.firstOrNull { it.isNearby })?.also { if (reachableOnly) nodeId = it.id }
     }.onFailure { Log.i(TAG, "phone lookup failed: ${it.message}") }.getOrNull()
 
     private suspend fun sayHello(node: String) {
@@ -308,6 +308,7 @@ class PhoneLink(
     }
 
     private suspend fun send(node: String, path: String, bytes: ByteArray): Boolean = runCatching {
+        if (Wearable.getNodeClient(context).connectedNodes.await().none { it.id == node && it.isNearby }) return false
         messages.sendMessage(node, path, bytes).await()
         true
     }.onFailure { Log.i(TAG, "send $path failed: ${it.message}") }.getOrDefault(false)

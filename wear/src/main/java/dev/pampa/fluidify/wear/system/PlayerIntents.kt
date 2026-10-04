@@ -16,6 +16,7 @@ import dev.pampa.fluidify.wear.MainActivity
  */
 object PlayerIntents {
 
+    const val ACTION_UPDATES = "dev.pampa.fluidify.wear.UPDATES"
     const val ACTION_SHOW_PLAYER = "dev.pampa.fluidify.wear.SHOW_PLAYER"
     const val ACTION_CONFIRM_UNLIKE = "dev.pampa.fluidify.wear.CONFIRM_UNLIKE"
 
@@ -24,10 +25,11 @@ object PlayerIntents {
     const val EXTRA_CONFIRM_UNLIKE = "confirm_unlike"
 
     /** What an intent asks the app to show. */
-    enum class Request { PLAYER, CONFIRM_UNLIKE }
+    enum class Request { PLAYER, CONFIRM_UNLIKE, UPDATES }
 
     fun requestOf(intent: Intent?): Request? = when {
         intent == null -> null
+        intent.action == ACTION_UPDATES -> Request.UPDATES
         intent.action == ACTION_CONFIRM_UNLIKE || intent.getBooleanExtra(EXTRA_CONFIRM_UNLIKE, false) -> Request.CONFIRM_UNLIKE
         intent.action == ACTION_SHOW_PLAYER || intent.getBooleanExtra(EXTRA_SHOW_PLAYER, false) -> Request.PLAYER
         else -> null
@@ -58,6 +60,9 @@ object PlayerIntents {
                 .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
+
+    fun openUpdates(context: Context): PendingIntent = PendingIntent.getActivity(context, 3,
+        showPlayer(context).setAction(ACTION_UPDATES), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
     private const val REQUEST_OPEN_PLAYER = 1
     private const val REQUEST_CONFIRM_UNLIKE = 2

@@ -3,6 +3,7 @@ package dev.pampa.fluidify.wear.screenshots
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -91,6 +92,35 @@ class PlayerScreenshots {
 
     @Test
     fun ambient() = capture("player_ambient", ambient = true, content = player(sampleSnapshot()))
+
+    @Test fun enteringAmbientKeepsTheTitleAnchorAndDisposesTheInteractivePlayer() {
+        val snapshot = sampleSnapshot()
+        val controls = FakeControls(snapshot)
+        val now = controls.nowPlaying.value
+        val ambient = androidx.compose.runtime.mutableStateOf(dev.antigravity.fluidengine.wear.ambient.FluidAmbientState.preview(false))
+        var disposed = 0
+        compose.mainClock.autoAdvance = false
+        compose.setContent {
+            WatchFrame {
+                CompositionLocalProvider(dev.antigravity.fluidengine.wear.ambient.LocalFluidWearAmbient provides ambient.value) {
+                    dev.pampa.fluidify.wear.ui.player.WatchAmbientSurface(now) {
+                        androidx.compose.runtime.DisposableEffect(Unit) { onDispose { disposed++ } }
+                        PlayerScreen(controls, art, onQueue = {}, onOutput = {}, onEssentials = {})
+                    }
+                }
+            }
+        }
+        compose.mainClock.advanceTimeBy(1_200)
+        val title = snapshot.track!!.title
+        val before = compose.onNodeWithText(title, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        compose.runOnIdle { ambient.value = dev.antigravity.fluidengine.wear.ambient.FluidAmbientState.preview(true) }
+        compose.mainClock.advanceTimeBy(300)
+        compose.waitForIdle()
+        val after = compose.onNodeWithText(title, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        org.junit.Assert.assertEquals(before.top, after.top, 2f)
+        org.junit.Assert.assertEquals(1, disposed)
+        compose.onRoot().captureRoboImage("screenshots/player_aod_same_anchor.png")
+    }
 
     @Test
     fun immersive() = capture("immersive") { ImmersiveScreen(FakeControls(sampleSnapshot()), art) }

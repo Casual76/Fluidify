@@ -9,13 +9,11 @@ import androidx.work.NetworkType
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import dev.antigravity.fluidengine.foundation.AppUpdateInstallState
 import dev.antigravity.fluidengine.net.EngineHttp
 import dev.antigravity.fluidengine.update.AndroidAppUpdateInstaller
 import dev.antigravity.fluidengine.update.EngineAppUpdater
 import dev.antigravity.fluidengine.update.UpdateSource
 import dev.pampa.fluidify.wear.BuildConfig
-import kotlinx.coroutines.flow.takeWhile
 import java.util.concurrent.TimeUnit
 import dev.lelonio.square.update.WatchApkValidation
 import kotlinx.coroutines.Dispatchers
@@ -33,7 +31,7 @@ import kotlinx.coroutines.withContext
 class WatchSelfUpdateWorker(context: Context, params: WorkerParameters) : CoroutineWorker(context, params) {
 
     override suspend fun doWork(): Result {
-        val updates = WatchUpdater(applicationContext)
+        val updates = (applicationContext as dev.pampa.fluidify.wear.WearApp).updater
         if (!updates.autoUpdate) return Result.success()
         val phoneSeenAt = applicationContext.getSharedPreferences("phone_link", Context.MODE_PRIVATE)
             .getLong(KEY_PHONE_SEEN, 0)
@@ -54,21 +52,8 @@ class WatchSelfUpdateWorker(context: Context, params: WorkerParameters) : Corout
         val apk = runCatching { installer.download(update) }.getOrElse { return Result.retry() }
         if (withContext(Dispatchers.IO) { WatchApkValidation.reject(applicationContext, apk, update.version, update.sha256) } != null) return Result.failure()
 
-        var failed = false
-        installer.installFile(apk, update.version, sha256 = update.sha256)
-            .takeWhile { state ->
-                when (state) {
-                    is AppUpdateInstallState.Error -> {
-                        Log.w(TAG, "self-update failed: ${state.message}")
-                        failed = true
-                        false
-                    }
-                    is AppUpdateInstallState.Installed, is AppUpdateInstallState.AwaitingUserAction -> false
-                    else -> true
-                }
-            }
-            .collect { }
-        return if (failed) Result.retry() else Result.success()
+        val app = applicationContext as dev.pampa.fluidify.wear.WearApp
+        return if (app.updater.installDownloaded(apk, update.version, update.sha256)) Result.success() else Result.retry()
     }
 
     companion object {

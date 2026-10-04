@@ -103,6 +103,7 @@ fun WatchRoot(
     LaunchedEffect(request) {
         val asked = request ?: return@LaunchedEffect
         toPlayer()
+        if (asked == PlayerIntents.Request.UPDATES) horizontal.scrollToPage(1)
         if (asked == PlayerIntents.Request.CONFIRM_UNLIKE && app.controls.nowPlaying.value.snapshot?.liked == true) askUnlike()
         onRequestHandled()
     }
@@ -133,7 +134,9 @@ fun WatchRoot(
         dev.pampa.fluidify.wear.ui.debug.FrameLog.scene = if (route == null || route == HOME) scene else route
     }
 
-    AppScaffold(modifier = modifier) {
+    val shown by app.controls.nowPlaying.collectAsStateWithLifecycle()
+    dev.pampa.fluidify.wear.ui.player.WatchAmbientSurface(shown, modifier) {
+    AppScaffold {
         Box(Modifier.fillMaxSize()) {
         SwipeDismissableNavHost(navController = nav, startDestination = HOME) {
             composable(HOME) {
@@ -303,7 +306,6 @@ fun WatchRoot(
             }
         }
         dev.antigravity.fluidengine.wear.components.FluidWearToast(message = notice)
-        val shown by app.controls.nowPlaying.collectAsStateWithLifecycle()
         LaunchedEffect(shown.snapshot?.track?.uri) {
             if (shown.snapshot?.track?.uri != unlikeUri) confirmUnlike = false
         }
@@ -319,10 +321,8 @@ fun WatchRoot(
         )
         val meter by app.glassMeter.visible.collectAsStateWithLifecycle()
         if (meter) GlassMeter()
-        if (dev.antigravity.fluidengine.wear.ambient.LocalFluidWearAmbient.current.isAmbient) {
-            dev.pampa.fluidify.wear.ui.player.AmbientNowPlaying(shown)
         }
-        }
+    }
     }
 }
 

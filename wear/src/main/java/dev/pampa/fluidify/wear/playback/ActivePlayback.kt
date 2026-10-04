@@ -77,16 +77,18 @@ class ActivePlayback(
                 if (mode == PlaybackMode.WATCH) merge(remote.errors, local.errors) else remote.errors
             }.collect(_errors::tryEmit)
         }
-        // The watch has been resting (paused long enough to let its engine go) and the phone starts
-        // playing: the phone is the player again, rather than the watch's old song staying up.
         scope.launch {
             remote.nowPlaying.collect { phone ->
-                val received = phone.received ?: return@collect
-                val fresh = System.currentTimeMillis() - received.receivedAtMs < FRESH_MS
-                val playing = received.snapshot.isPlaying || received.snapshot.playWhenReady
-                if (_mode.value == PlaybackMode.WATCH && local.isResting && fresh && playing && phone.link == dev.pampa.fluidify.wear.link.LinkStatus.CONNECTED) {
-                    local.disconnect()
+                if (_mode.value != PlaybackMode.WATCH) return@collect
+                if (moveJob?.isActive == true) {
+                    // Snapshots received during the explicit handoff belong to that move.
+                    watchSelectionSeq = maxOf(watchSelectionSeq, phone.snapshot?.seq ?: Long.MIN_VALUE)
+                    return@collect
+                }
+                if (PhonePlaybackPriority.shouldFollow(phone, standalone().prefs.deviceId, watchSelectionSeq, System.currentTimeMillis())) {
+                    // The phone started playing: stop the local session now, including its radio lease.
                     _mode.value = PlaybackMode.PHONE
+                    local.stop()
                 }
             }
         }
@@ -98,6 +100,7 @@ class ActivePlayback(
     val moving: StateFlow<Boolean> = _moving.asStateFlow()
 
     private var moveJob: Job? = null
+    private var watchSelectionSeq = Long.MIN_VALUE
 
     /**
      * Plays on the watch, through [output]. Whatever the phone was playing follows, once the
@@ -127,6 +130,7 @@ class ActivePlayback(
         // Already the watch: picking headphones or the speaker in the output list only moves the
         // sound, which the service follows by itself. A request from the phone still moves its music.
         if (_mode.value == PlaybackMode.WATCH && !fromPhone) return
+        watchSelectionSeq = remote.nowPlaying.value.snapshot?.seq ?: Long.MIN_VALUE
         _mode.value = PlaybackMode.WATCH
         local.connect()
         // A start that failed before (the phone away, no network) is tried again now.
@@ -236,7 +240,7 @@ class ActivePlayback(
             // Long enough for Connect to have moved the music off the watch; the service then
             // stops itself once it has been idle, and the engine with it.
             delay(HANDBACK_MS)
-            if (_mode.value == PlaybackMode.PHONE) local.disconnect()
+            if (_mode.value == PlaybackMode.PHONE) local.stop()
         }
     }
 
@@ -305,7 +309,6 @@ class ActivePlayback(
         private const val RESUME_END_MARGIN_MS = 5_000L
 
         /** A phone snapshot younger than this is news, not the last word of a phone that went away. */
-        private const val FRESH_MS = 60_000L
 
         private val PHONE_AWAY = setOf(
             dev.pampa.fluidify.wear.link.LinkStatus.UNREACHABLE,
