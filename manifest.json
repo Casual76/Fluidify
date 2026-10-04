@@ -15,22 +15,30 @@
       "ref": "master"
     },
     "stable": {
-      "version": "1.5.3",
+      "version": "1.6.0",
       "releaseDate": "2026-10-04",
-      "changelog": "Il controllo multimediale di sistema sul Watch può ora aprire direttamente il lettore di Fluidify, attraverso l'azione della app companion cercata da Wear OS. Funziona anche quando Fluidify era chiusa o mostrava un'altra pagina.\n\nResta una sola voce nella Now bar con l'impostazione Automatica: la correzione non aggiunge notifiche, sessioni multimediali, richieste Wi-Fi o riproduzione locale sull'orologio.\n\nVerifica della risoluzione dell'ingresso media e dell'apertura del lettore su Wear OS 6; controllo della Now bar Samsung sul Galaxy Watch da completare da remoto.",
-      "releaseTag": "stable-fluidify-v1.5.3",
-      "apkAsset": "fluidify-1.5.3.apk",
-      "sizeBytes": 19628754
+      "changelog": "Aloni di luce che reagiscono all'audio realmente riprodotto: bordi della copertina, luce inferiore con Canvas e video, otto bande soffuse nel mini player e avanzamento luminoso sul Watch.\n\nDue preferenze indipendenti, attive inizialmente e tradotte nelle otto lingue: telefono/tablet (anche mini player) e orologio. Analisi PCM senza nuovi permessi; modalità leggera sul Watch e soli aggregati via Bluetooth quando controlla il telefono. Gli effetti si fermano in background, AOD, risparmio energetico e movimento ridotto. Nessuna pulsazione simulata per altri dispositivi Connect.\n\nAggiunto anche l'ingresso media pubblico più recente di Wear OS per aprire Fluidify dai controlli remoti di sistema. Il problema della Now bar Samsung segnalato con la 1.5.3 su entrambi i dispositivi richiede ancora la verifica del tocco sul Galaxy Watch: la risoluzione degli intent da sola non dimostra che il sistema Samsung scelga Fluidify.\n\nTest automatici, render, misure CPU sul PC e build minificate firmate per entrambi i dispositivi. Le prove fisiche di sincronizzazione audio, prestazioni, consumo e traffico Bluetooth restano da completare.",
+      "releaseTag": "stable-fluidify-v1.6.0",
+      "apkAsset": "fluidify-1.6.0.apk",
+      "sizeBytes": 19647025
     },
     "beta": {
-      "version": "1.5.3",
+      "version": "1.6.0",
       "releaseDate": "2026-10-04",
-      "changelog": "Il controllo multimediale di sistema sul Watch può ora aprire direttamente il lettore di Fluidify, attraverso l'azione della app companion cercata da Wear OS. Funziona anche quando Fluidify era chiusa o mostrava un'altra pagina.\n\nResta una sola voce nella Now bar con l'impostazione Automatica: la correzione non aggiunge notifiche, sessioni multimediali, richieste Wi-Fi o riproduzione locale sull'orologio.\n\nVerifica della risoluzione dell'ingresso media e dell'apertura del lettore su Wear OS 6; controllo della Now bar Samsung sul Galaxy Watch da completare da remoto.",
-      "releaseTag": "stable-fluidify-v1.5.3",
-      "apkAsset": "fluidify-1.5.3.apk",
-      "sizeBytes": 19628754
+      "changelog": "Aloni di luce che reagiscono all'audio realmente riprodotto: bordi della copertina, luce inferiore con Canvas e video, otto bande soffuse nel mini player e avanzamento luminoso sul Watch.\n\nDue preferenze indipendenti, attive inizialmente e tradotte nelle otto lingue: telefono/tablet (anche mini player) e orologio. Analisi PCM senza nuovi permessi; modalità leggera sul Watch e soli aggregati via Bluetooth quando controlla il telefono. Gli effetti si fermano in background, AOD, risparmio energetico e movimento ridotto. Nessuna pulsazione simulata per altri dispositivi Connect.\n\nAggiunto anche l'ingresso media pubblico più recente di Wear OS per aprire Fluidify dai controlli remoti di sistema. Il problema della Now bar Samsung segnalato con la 1.5.3 su entrambi i dispositivi richiede ancora la verifica del tocco sul Galaxy Watch: la risoluzione degli intent da sola non dimostra che il sistema Samsung scelga Fluidify.\n\nTest automatici, render, misure CPU sul PC e build minificate firmate per entrambi i dispositivi. Le prove fisiche di sincronizzazione audio, prestazioni, consumo e traffico Bluetooth restano da completare.",
+      "releaseTag": "stable-fluidify-v1.6.0",
+      "apkAsset": "fluidify-1.6.0.apk",
+      "sizeBytes": 19647025
     },
     "history": [
+      {
+        "version": "1.5.3",
+        "releaseDate": "2026-10-04",
+        "changelog": "Il controllo multimediale di sistema sul Watch può ora aprire direttamente il lettore di Fluidify, attraverso l'azione della app companion cercata da Wear OS. Funziona anche quando Fluidify era chiusa o mostrava un'altra pagina.\n\nResta una sola voce nella Now bar con l'impostazione Automatica: la correzione non aggiunge notifiche, sessioni multimediali, richieste Wi-Fi o riproduzione locale sull'orologio.\n\nVerifica della risoluzione dell'ingresso media e dell'apertura del lettore su Wear OS 6; controllo della Now bar Samsung sul Galaxy Watch da completare da remoto.",
+        "releaseTag": "stable-fluidify-v1.5.3",
+        "apkAsset": "fluidify-1.5.3.apk",
+        "sizeBytes": 19628754
+      },
       {
         "version": "1.5.2",
         "releaseDate": "2026-10-04",
