@@ -2,6 +2,7 @@ package dev.lelonio.square.wear
 
 import android.content.Context
 import android.content.pm.PackageManager
+import android.os.Build
 import android.net.Uri
 import android.util.Log
 import com.google.android.gms.wearable.Wearable
@@ -257,8 +258,15 @@ class WatchUpdateCoordinator(
         // Signed with this app's own key, or Android on the watch would refuse it as an update
         // of the installed copy, after the whole transfer.
         val ours = WearLink.certificateSha256(context)
-        val theirs = info.signingInfo?.apkContentsSigners?.firstOrNull()?.let { signer ->
-            MessageDigest.getInstance("SHA-256").digest(signer.toByteArray()).joinToString(":") { "%02X".format(it) }
+        // signingInfo is API 28; on 26-27 the old signatures field carries the same certificate.
+        @Suppress("DEPRECATION")
+        val signer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
+            info.signingInfo?.apkContentsSigners?.firstOrNull()
+        } else {
+            info.signatures?.firstOrNull()
+        }
+        val theirs = signer?.let {
+            MessageDigest.getInstance("SHA-256").digest(it.toByteArray()).joinToString(":") { byte -> "%02X".format(byte) }
         }
         if (ours.isNotEmpty() && theirs != null && !ours.equals(theirs, ignoreCase = true)) return "wrong-signature"
         if (compareVersions(version, "0") <= 0) return "wrong-version"

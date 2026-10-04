@@ -43,10 +43,23 @@ class WatchTransferService : Service() {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0,
             )
         }.onFailure {
+            // Left running in the background rather than stopped: a service started with
+            // startForegroundService and stopped before it ever reached the foreground is the
+            // "did not then call startForeground" crash. [stop] ends it when the send does.
             Log.i(TAG, "not in the foreground: ${it.message}")
-            stopSelf()
         }
         return START_NOT_STICKY
+    }
+
+    /**
+     * Android 15's limit on data-sync services: past it the service has a few seconds to stop or
+     * the app is killed. The send goes on without it, and resumes on the watch's next pass if the
+     * phone then sleeps.
+     */
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        Log.i(TAG, "foreground time used up")
+        ServiceCompat.stopForeground(this, ServiceCompat.STOP_FOREGROUND_REMOVE)
+        stopSelf()
     }
 
     private fun notification(): Notification =

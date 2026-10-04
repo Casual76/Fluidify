@@ -3,6 +3,8 @@ package dev.lelonio.square.wear
 import android.content.Context
 import android.media.AudioManager
 import dev.lelonio.square.data.RemoteConnect
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 import kotlin.math.roundToInt
 
 /**
@@ -15,13 +17,17 @@ import kotlin.math.roundToInt
  */
 object ConnectVolume {
 
-    fun set(context: Context, level: Float, deviceId: String?) {
+    /**
+     * Suspends because a Connect device's volume is an HTTP request: called once per bezel step
+     * from the bridge's main-thread scope, it froze the phone's UI for a round trip each time.
+     */
+    suspend fun set(context: Context, level: Float, deviceId: String?) {
         val target = level.coerceIn(0f, 1f)
         val active = RemoteConnect.devices.value.firstOrNull { it.active }
         val remoteId = deviceId?.takeIf { it != PhoneWearBridge.PHONE_DEVICE_ID && !RemoteConnect.isThisPhone(it) }
             ?: active?.takeIf { RemoteConnect.elsewhereActive.value && !it.isThisPhone }?.id
         if (remoteId != null) {
-            RemoteConnect.setVolume(remoteId, (target * MAX_CONNECT).roundToInt())
+            withContext(Dispatchers.IO) { RemoteConnect.setVolume(remoteId, (target * MAX_CONNECT).roundToInt()) }
             return
         }
         val audio = context.getSystemService(AudioManager::class.java) ?: return

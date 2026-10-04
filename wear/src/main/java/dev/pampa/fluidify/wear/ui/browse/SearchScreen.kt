@@ -90,10 +90,10 @@ fun SearchScreen(
             busy -> noticeItem(app.getString(R.string.loading))
             failed -> noticeItem(app.getString(R.string.couldnt_load))
             page != null && page.shelves.all { it.items.isEmpty() } -> noticeItem(app.getString(R.string.no_results))
-            page != null -> page.shelves.forEach { shelf ->
+            page != null -> page.shelves.forEachIndexed { shelfIndex, shelf ->
                 if (shelf.title.isNotEmpty()) item { ListHeader { Text(shelf.title) } }
-                shelf.items.forEach { entry ->
-                    item(key = "${shelf.title}/${entry.uri}") {
+                shelf.items.forEachIndexed { index, entry ->
+                    item(key = "$shelfIndex/$index:${entry.uri}") {
                         FluidWearListRow(
                             title = entry.title,
                             subtitle = entry.subtitle.ifEmpty { null },

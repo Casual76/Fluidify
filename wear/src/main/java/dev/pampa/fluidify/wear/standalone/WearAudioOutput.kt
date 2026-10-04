@@ -32,6 +32,15 @@ class WearAudioOutput : NativeAudioSink {
     @Volatile private var discarding = false
     @Volatile private var gain = 1f
 
+    /**
+     * Set by [release]: the service that owned this output is gone. The engine keeps a reference
+     * until the next service hands it a new one, and may still call in — a Connect transfer to the
+     * watch while only a download holds the engine. Before this, a write rebuilt an AudioTrack
+     * nobody would ever release, and a start reached the stopped fade thread and threw inside a
+     * native callback.
+     */
+    @Volatile private var released = false
+
     /** Where the sound should go: the speaker, a headset. Null is the system's choice. */
     @Volatile var preferredDevice: AudioDeviceInfo? = null
         set(value) {
@@ -43,6 +52,7 @@ class WearAudioOutput : NativeAudioSink {
     private val fadeGeneration = AtomicLong()
 
     override fun start() {
+        if (released) return
         discarding = false
         val output = synchronized(this) { track?.takeIf { it.state == AudioTrack.STATE_INITIALIZED } } ?: return
         runCatching {
@@ -51,10 +61,11 @@ class WearAudioOutput : NativeAudioSink {
             output.play()
         }
         val generation = fadeGeneration.incrementAndGet()
-        fades.execute { ramp(output, 1f, FADE_IN_MS, generation) }
+        execute { ramp(output, 1f, FADE_IN_MS, generation) }
     }
 
     override fun stop() {
+        if (released) return
         discarding = false
         val output = synchronized(this) { track?.takeIf { it.state == AudioTrack.STATE_INITIALIZED } } ?: return
         ramp(output, 0f, FADE_OUT_MS, 0)
@@ -65,7 +76,7 @@ class WearAudioOutput : NativeAudioSink {
     }
 
     override fun write(data: ByteBuffer, sizeInBytes: Int, sampleRate: Int, channels: Int) {
-        if (discarding) return
+        if (discarding || released) return
         val output = synchronized(this) { ensureTrack(sampleRate, channels) } ?: return
         var written = 0
         while (written < sizeInBytes) {
@@ -78,12 +89,12 @@ class WearAudioOutput : NativeAudioSink {
     /** Fades out, drops what is buffered, then runs [action]: the player is loading another track. */
     fun fadeOutThen(action: () -> Unit) {
         val output = synchronized(this) { track?.takeIf { it.state == AudioTrack.STATE_INITIALIZED } }
-        if (output == null) {
+        if (output == null || released) {
             action()
             return
         }
         val generation = fadeGeneration.incrementAndGet()
-        fades.execute {
+        execute {
             ramp(output, 0f, SKIP_FADE_MS, generation)
             discarding = true
             discardBuffered(output)
@@ -97,10 +108,11 @@ class WearAudioOutput : NativeAudioSink {
         discarding = false
         output ?: return
         val generation = fadeGeneration.incrementAndGet()
-        fades.execute { ramp(output, 1f, FADE_IN_MS, generation) }
+        execute { ramp(output, 1f, FADE_IN_MS, generation) }
     }
 
     fun release() {
+        released = true
         synchronized(this) {
             track?.run {
                 runCatching { pause() }
@@ -112,6 +124,11 @@ class WearAudioOutput : NativeAudioSink {
             configuredChannels = 0
         }
         fades.shutdownNow()
+    }
+
+    /** On the fade thread, unless it has been stopped: then nowhere, which is what a released output does. */
+    private fun execute(task: () -> Unit) {
+        runCatching { fades.execute(task) }
     }
 
     private fun discardBuffered(output: AudioTrack) {
@@ -135,6 +152,7 @@ class WearAudioOutput : NativeAudioSink {
     }
 
     private fun ensureTrack(sampleRate: Int, channels: Int): AudioTrack? {
+        if (released) return null
         val existing = track
         if (existing != null && configuredRate == sampleRate && configuredChannels == channels) return existing
         existing?.run {

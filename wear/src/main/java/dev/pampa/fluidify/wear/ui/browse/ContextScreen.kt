@@ -99,8 +99,10 @@ fun ContextScreen(
             page == null && data.failed -> noticeItem(app.getString(R.string.couldnt_load))
             page == null -> noticeItem(app.getString(R.string.loading))
             page.tracks.isEmpty() -> noticeItem(app.getString(R.string.nothing_here))
-            else -> page.tracks.forEach { track ->
-                item(key = track.uri) {
+            // By position as well as by uri: Spotify lets a playlist hold the same song twice, and a
+            // key used twice takes the list down.
+            else -> page.tracks.forEachIndexed { index, track ->
+                item(key = "$index:${track.uri}") {
                     FluidWearListRow(
                         title = track.title,
                         subtitle = track.subtitle.ifEmpty { null },

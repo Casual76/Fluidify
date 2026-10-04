@@ -3,6 +3,8 @@ package dev.pampa.fluidify.wear.standalone
 import android.content.ComponentName
 import android.content.Context
 import android.media.AudioManager
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -82,8 +84,22 @@ class LocalControls(
         override fun onEvents(player: Player, events: Player.Events) = publish(player)
     }
 
-    /** Starts the service (and with it the engine) and binds to it. */
+    private val main = Handler(Looper.getMainLooper())
+
+    /** True while the watch's player is bound. */
+    val isConnected: Boolean get() = controller != null || connecting
+
+    /**
+     * Starts the service (and with it the engine) and binds to it.
+     *
+     * Always on the main thread: a Media3 controller belongs to the looper it is built on, and
+     * every call from another one throws. Callers on a listener's thread are moved here.
+     */
     fun connect() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            main.post(::connect)
+            return
+        }
         if (controller != null || connecting) return
         connecting = true
         val token = SessionToken(context, ComponentName(context, WatchPlaybackService::class.java))
@@ -101,6 +117,10 @@ class LocalControls(
 
     /** Lets the service go; it stops on its own once nothing plays. */
     fun disconnect() {
+        if (Looper.myLooper() != Looper.getMainLooper()) {
+            main.post(::disconnect)
+            return
+        }
         controller?.removeListener(listener)
         controller?.release()
         controller = null
@@ -108,6 +128,17 @@ class LocalControls(
     }
 
     val isPlaying: Boolean get() = controller?.isPlaying == true
+
+    /** Stops for good: what plays stops, the controller goes and so does the service, now. */
+    fun stop() {
+        controller?.let {
+            it.pause()
+            it.clearMediaItems()
+        }
+        pending.clear()
+        disconnect()
+        runCatching { context.stopService(android.content.Intent(context, WatchPlaybackService::class.java)) }
+    }
 
     override fun togglePlay() = withController { if (it.isPlaying) it.pause() else it.play() }
 

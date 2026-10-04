@@ -1,6 +1,7 @@
 package dev.lelonio.square.wear
 
 import android.graphics.Bitmap
+import android.os.Build
 import android.graphics.drawable.BitmapDrawable
 import android.util.Log
 import coil.imageLoader
@@ -75,7 +76,10 @@ class WatchThumbServer(private val app: SquareApplication) {
         }.getOrNull() as? SuccessResult ?: return null
         val bitmap = (result.drawable as? BitmapDrawable)?.bitmap ?: return null
         return ByteArrayOutputStream().use { buffer ->
-            bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, QUALITY, buffer)
+            // WEBP_LOSSY is API 30; before it the old constant is the same lossy WebP.
+            @Suppress("DEPRECATION")
+            val format = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) Bitmap.CompressFormat.WEBP_LOSSY else Bitmap.CompressFormat.WEBP
+            bitmap.compress(format, QUALITY, buffer)
             buffer.toByteArray()
         }
     }

@@ -151,6 +151,22 @@ class ActivePlayback(
         return true
     }
 
+    /**
+     * The phone signed out, so the watch does too: its own playback stops, the engine goes, and
+     * only then is the credential deleted — under a running engine it could be written back.
+     */
+    suspend fun signedOut() {
+        val parts = standalone()
+        if (_mode.value == PlaybackMode.WATCH || local.isConnected) {
+            moveJob?.cancel()
+            _moving.value = false
+            local.stop()
+            _mode.value = PlaybackMode.PHONE
+            withTimeoutOrNull(SIGN_OUT_WAIT_MS) { parts.engine.status.first { it == EngineStatus.OFF } }
+        }
+        withContext(Dispatchers.IO) { parts.auth.signOut() }
+    }
+
     /** Hands the music back to the phone (or to [deviceId], a Connect device the phone can reach). */
     fun moveToPhone(deviceId: String) {
         moveJob?.cancel()
@@ -209,6 +225,9 @@ class ActivePlayback(
 
         /** How long a transfer gets to make the watch's player start. */
         const val START_WAIT_MS = 6_000L
+
+        /** How long a sign-out waits for the engine to stop before deleting what it signed in with. */
+        const val SIGN_OUT_WAIT_MS = 5_000L
 
         /** Below this, starting from the top is as good as resuming. */
         const val RESUME_MIN_MS = 3_000L

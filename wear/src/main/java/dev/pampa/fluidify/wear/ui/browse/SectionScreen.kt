@@ -27,8 +27,9 @@ fun SectionScreen(
             page == null -> noticeItem(app.getString(R.string.loading))
             page.unavailableReason != null -> noticeItem(page.unavailableReason!!)
             page.shelves.all { it.items.isEmpty() } -> noticeItem(app.getString(R.string.nothing_here))
-            else -> page.shelves.flatMap { it.items }.forEach { entry ->
-                item(key = entry.uri) {
+            // All the shelves in one list: the same uri can be on two of them.
+            else -> page.shelves.flatMap { it.items }.forEachIndexed { index, entry ->
+                item(key = "$index:${entry.uri}") {
                     FluidWearListRow(
                         title = entry.title,
                         subtitle = entry.subtitle.ifEmpty { null },

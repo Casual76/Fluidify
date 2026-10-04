@@ -76,10 +76,10 @@ fun HomeScreen(
         when {
             page == null && home.failed -> noticeItem(app.getString(R.string.couldnt_load))
             page == null -> noticeItem(app.getString(R.string.loading))
-            else -> page.shelves.forEach { shelf ->
+            else -> page.shelves.forEachIndexed { shelfIndex, shelf ->
                 if (shelf.title.isNotEmpty()) item { ListSubHeader { Text(shelf.title, maxLines = 2) } }
-                shelf.items.forEach { entry ->
-                    item(key = "${shelf.title}/${entry.uri}") {
+                shelf.items.forEachIndexed { index, entry ->
+                    item(key = "$shelfIndex/$index:${entry.uri}") {
                         val pinnable = entry.kind == LibraryKind.PLAYLIST || entry.kind == LibraryKind.ALBUM || entry.kind == LibraryKind.LIKED
                         FluidWearListRow(
                             title = entry.title,

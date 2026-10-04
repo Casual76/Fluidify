@@ -15,6 +15,7 @@ import dev.pampa.fluidify.wear.protocol.RpcResponse
 import dev.pampa.fluidify.wear.protocol.UpdateOffer
 import dev.pampa.fluidify.wear.protocol.WearCodec
 import dev.pampa.fluidify.wear.protocol.WearPaths
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -78,14 +79,13 @@ class WatchListenerService : WearableListenerService() {
             }
             // "Continua sull'orologio" from the phone: the watch starts its engine and the
             // phone's music follows through Spotify Connect (see ActivePlayback.moveToWatch).
-            WearPaths.HANDOFF_TO_WATCH -> app.playback.moveToWatch(app.standalone.router.best)
+            // On the main thread: the watch's media controller belongs to the thread that builds
+            // it, and this callback's thread is gone a few seconds after it returns.
+            WearPaths.HANDOFF_TO_WATCH -> app.scope.launch { app.playback.moveToWatch(app.standalone.router.best) }
             WearPaths.AUTH_GRANT -> WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AuthGrant.serializer(), event.data)
                 ?.let { app.link.onAuthGrant(it) }
-            // The phone signed out: so does the watch, and its own playback stops.
-            WearPaths.AUTH_LOGOUT -> {
-                app.standalone.auth.signOut()
-                if (app.playback.mode.value == dev.pampa.fluidify.wear.playback.PlaybackMode.WATCH) app.local.disconnect()
-            }
+            // The phone signed out: so does the watch, and its own playback stops first.
+            WearPaths.AUTH_LOGOUT -> app.scope.launch { app.playback.signedOut() }
         }
     }
 
