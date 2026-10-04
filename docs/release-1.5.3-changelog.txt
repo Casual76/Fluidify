@@ -1,0 +1,5 @@
+Il controllo multimediale di sistema sul Watch può ora aprire direttamente il lettore di Fluidify, attraverso l'azione della app companion cercata da Wear OS. Funziona anche quando Fluidify era chiusa o mostrava un'altra pagina.
+
+Resta una sola voce nella Now bar con l'impostazione Automatica: la correzione non aggiunge notifiche, sessioni multimediali, richieste Wi-Fi o riproduzione locale sull'orologio.
+
+Verifica della risoluzione dell'ingresso media e dell'apertura del lettore su Wear OS 6; controllo della Now bar Samsung sul Galaxy Watch da completare da remoto.

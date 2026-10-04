@@ -46,6 +46,12 @@
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
+            <!-- Wear's phone media controls resolve this action in the companion
+                 package before falling back to the system player. -->
+            <intent-filter>
+                <action android:name="com.google.android.wearable.action.MEDIA_CONTROLS" />
+                <category android:name="android.intent.category.DEFAULT" />
+            </intent-filter>
         </activity>
 
         <receiver android:name=".update.WatchInstallResultReceiver" android:exported="false" />

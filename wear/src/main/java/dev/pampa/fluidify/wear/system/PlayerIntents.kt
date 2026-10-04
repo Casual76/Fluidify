@@ -18,6 +18,8 @@ object PlayerIntents {
 
     const val ACTION_UPDATES = "dev.pampa.fluidify.wear.UPDATES"
     const val ACTION_SHOW_PLAYER = "dev.pampa.fluidify.wear.SHOW_PLAYER"
+    /** Wear OS uses this package-scoped action for the phone's system media entry. */
+    const val ACTION_MEDIA_CONTROLS = "com.google.android.wearable.action.MEDIA_CONTROLS"
     const val ACTION_CONFIRM_UNLIKE = "dev.pampa.fluidify.wear.CONFIRM_UNLIKE"
 
     /** The same request as an extra, for launchers that can set extras but not an action. */
@@ -31,7 +33,8 @@ object PlayerIntents {
         intent == null -> null
         intent.action == ACTION_UPDATES -> Request.UPDATES
         intent.action == ACTION_CONFIRM_UNLIKE || intent.getBooleanExtra(EXTRA_CONFIRM_UNLIKE, false) -> Request.CONFIRM_UNLIKE
-        intent.action == ACTION_SHOW_PLAYER || intent.getBooleanExtra(EXTRA_SHOW_PLAYER, false) -> Request.PLAYER
+        intent.action == ACTION_SHOW_PLAYER || intent.action == ACTION_MEDIA_CONTROLS ||
+            intent.getBooleanExtra(EXTRA_SHOW_PLAYER, false) -> Request.PLAYER
         else -> null
     }
 

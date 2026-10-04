@@ -27,7 +27,7 @@ prossimo avvio dell'app.
 
 | Prova | Atteso |
 |---|---|
-| Musica sul telefono, notifiche del telefono attive | sul quadrante **un solo** Fluidify: quello di sistema. Il nostro non compare |
+| Musica sul telefono, notifiche del telefono attive | sul quadrante **un solo** Fluidify: quello di sistema. Tocco → lettore Fluidify sul Watch, anche se l'app è chiusa o era rimasta in una lista |
 | Telefono che comanda il PC senza notifica media attiva | compare la nostra icona; tocco = lettore. Il permesso notifiche negato da solo non implica che i controlli media siano assenti |
 | Altro → "Fluidify sul quadrante" | Automatica → Sempre → Mai, a ogni tocco |
 | Opzioni sviluppatore (7 tocchi su Informazioni) → "Controlli Fluidify sul quadrante" | **esperimento**: dire se il controller Samsung sparisce e se la voce media nella Now bar è la nostra (tocco = lettore, tasti funzionanti). Se sì, diventa il comportamento predefinito |
@@ -158,3 +158,12 @@ nessuna di queste prove viene dichiarata superata soltanto perché compila.
 - [ ] Watch raggiungibile soltanto da cloud: nessun APK inviato. Il messaggio distingue questo caso dal fallimento del messaggio diretto a Fluidify.
 - [ ] Conservare un APK della versione precedente, poi cercare un nuovo aggiornamento: viene proposta la versione più recente; il file conservato resta il ripiego se il manifest non risponde.
 - [ ] Dal Watch tornare ai controlli del telefono: un nodo vicino con capability ancora non aggiornata viene accettato; uno remoto con capability vecchia non viene accettato.
+
+## Hotfix 1.5.3 — destinazione dei controlli media di sistema
+
+- [ ] Con Fluidify 1.5.3 installata sul Watch, musica sul telefono e "Fluidify sul quadrante" su Automatica, resta una sola voce di sistema nella Now bar.
+- [ ] Toccare la voce con Fluidify chiusa: si apre il lettore Fluidify sul Watch, con i controlli della musica sul telefono.
+- [ ] Lasciare Fluidify nella coda, nella Home o in Altro, poi toccare la voce di sistema: tornare al lettore, senza lasciare la pagina precedente sopra di esso.
+- [ ] Provare anche l'apertura automatica dei controlli multimediali, se attiva nelle impostazioni Wear OS.
+- [ ] Verificare play/pausa e avanti dal lettore aperto così; nessuna seconda notifica media e nessun avvio della riproduzione locale o richiesta Wi-Fi.
+- [ ] Durante riproduzione autonoma, l'ingresso della sessione locale continua ad aprire il lettore dell'orologio.
