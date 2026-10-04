@@ -23,6 +23,11 @@ internal object WatchUpdateNotifications {
             is WatchUpdateCoordinator.State.Installing -> R.string.watch_update_installing
             is WatchUpdateCoordinator.State.AwaitingConfirmation -> R.string.watch_update_confirm
             is WatchUpdateCoordinator.State.Installed -> R.string.watch_update_installed
+            is WatchUpdateCoordinator.State.Failed -> when (state.reason) {
+                "watch-not-nearby" -> R.string.watch_update_connection_missing
+                "offer-send-failed" -> R.string.watch_update_offer_failed
+                else -> R.string.watch_update_failed
+            }
             else -> R.string.watch_update_failed
         }, when (state) {
             is WatchUpdateCoordinator.State.Downloading -> state.version

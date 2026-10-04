@@ -150,3 +150,11 @@ nessuna di queste prove viene dichiarata superata soltanto perché compila.
 - [ ] Ricreare i processi prima della conferma: stato e azione restano disponibili; il telefono recupera lo stato sul successivo hello.
 - [ ] AOD da player, copertina e altre schermate: dissolvenza breve, titolo nella parte alta; nessun rendering interattivo continuo dopo la transizione. Provare anche font 130% e pannello low-bit.
 - [ ] Misurare il consumo in sessioni comparabili con 1.5.0/1.5.1: i test JVM non dimostrano una riduzione della batteria sul Galaxy Watch.
+
+## Hotfix 1.5.2 — aggiornamento bloccato su Bluetooth
+
+- [ ] Con Watch identificato tramite hello e collegamento Bluetooth attivo, avviare l’aggiornamento anche subito dopo un riavvio delle app: le capability in ritardo non devono bloccare il trasferimento.
+- [ ] Scollegare e ricollegare Bluetooth durante la verifica iniziale: la breve attesa permette di recuperare il nodo; dopo sei secondi senza connessione il messaggio invita a riavvicinare il Watch.
+- [ ] Watch raggiungibile soltanto da cloud: nessun APK inviato. Il messaggio distingue questo caso dal fallimento del messaggio diretto a Fluidify.
+- [ ] Conservare un APK della versione precedente, poi cercare un nuovo aggiornamento: viene proposta la versione più recente; il file conservato resta il ripiego se il manifest non risponde.
+- [ ] Dal Watch tornare ai controlli del telefono: un nodo vicino con capability ancora non aggiornata viene accettato; uno remoto con capability vecchia non viene accettato.

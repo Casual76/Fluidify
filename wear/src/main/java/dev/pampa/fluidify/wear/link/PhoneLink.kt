@@ -94,6 +94,11 @@ class PhoneLink(
     private val scope: CoroutineScope,
     private val state: WatchState,
     private val art: ArtStore,
+    private val connectedNodes: suspend () -> List<Node> = { Wearable.getNodeClient(context).connectedNodes.await() },
+    private val capabilityNodes: suspend (Boolean) -> Set<Node> = { reachableOnly ->
+        Wearable.getCapabilityClient(context).getCapability(WearPaths.CAPABILITY_PHONE,
+            if (reachableOnly) CapabilityClient.FILTER_REACHABLE else CapabilityClient.FILTER_ALL).await().nodes
+    },
 ) : CommandChannel {
     private val capabilities by lazy { Wearable.getCapabilityClient(context) }
     private val messages by lazy { Wearable.getMessageClient(context) }
@@ -142,12 +147,14 @@ class PhoneLink(
         }
     }
 
-    private val capabilityListener = CapabilityClient.OnCapabilityChangedListener { info ->
-        val reachable = info.nodes.isNotEmpty()
-        when {
-            // Back in range: say hello again, which also settles whether the builds agree.
-            reachable && _status.value != LinkStatus.CONNECTED -> connect()
-            !reachable && _status.value == LinkStatus.CONNECTED -> _status.value = LinkStatus.UNREACHABLE
+    private val capabilityListener = CapabilityClient.OnCapabilityChangedListener {
+        scope.launch {
+            val reachable = findPhone() != null
+            when {
+                // Back in range: say hello again, which also settles whether the builds agree.
+                reachable && _status.value != LinkStatus.CONNECTED -> connect()
+                !reachable && _status.value == LinkStatus.CONNECTED -> _status.value = LinkStatus.UNREACHABLE
+            }
         }
     }
 
@@ -163,11 +170,19 @@ class PhoneLink(
     /** The phone's node when it is in reach, for a channel of one's own (the download transfers). */
     suspend fun reachablePhone(): String? = findPhone()?.id
 
-    private suspend fun findPhone(reachableOnly: Boolean = true): Node? = runCatching {
-        val filter = if (reachableOnly) CapabilityClient.FILTER_REACHABLE else CapabilityClient.FILTER_ALL
-        val nodes = capabilities.getCapability(WearPaths.CAPABILITY_PHONE, filter).await().nodes
-        (nodes.firstOrNull { it.isNearby })?.also { if (reachableOnly) nodeId = it.id }
-    }.onFailure { Log.i(TAG, "phone lookup failed: ${it.message}") }.getOrNull()
+    private suspend fun findPhone(reachableOnly: Boolean = true): Node? = withTimeoutOrNull(3_000) {
+        try {
+            if (!reachableOnly) return@withTimeoutOrNull capabilityNodes(false).firstOrNull()
+            val direct = connectedNodes().filter { it.isNearby }
+            val known = direct.firstOrNull { it.id == nodeId }
+            val found = known ?: run {
+                val advertised = capabilityNodes(true).map { it.id }.toSet()
+                direct.firstOrNull { it.id in advertised }
+            }
+            found?.also { nodeId = it.id }
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (error: Exception) { Log.i(TAG, "phone lookup failed: ${error.javaClass.simpleName}"); null }
+    }
 
     private suspend fun sayHello(node: String) {
         val sent = send(node, WearPaths.HELLO, WearCodec.encode(Hello.serializer(), ownHello()))
@@ -308,7 +323,7 @@ class PhoneLink(
     }
 
     private suspend fun send(node: String, path: String, bytes: ByteArray): Boolean = runCatching {
-        if (Wearable.getNodeClient(context).connectedNodes.await().none { it.id == node && it.isNearby }) return false
+        if (connectedNodes().none { it.id == node && it.isNearby }) return false
         messages.sendMessage(node, path, bytes).await()
         true
     }.onFailure { Log.i(TAG, "send $path failed: ${it.message}") }.getOrDefault(false)

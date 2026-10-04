@@ -476,4 +476,6 @@
     <string name="watch_install_picked">इंस्टॉल होगा: %1$s</string>
     <string name="watch_install_no_release">अभी कोई घड़ी संस्करण प्रकाशित नहीं: फ़ोन पर APK चुनें</string>
     <string name="watch_made_for_you">आपके लिए बनाया गया</string>
+    <string name="watch_update_connection_missing">घड़ी Bluetooth से जुड़ी नहीं है। पास लाएँ और फिर कोशिश करें।</string>
+    <string name="watch_update_offer_failed">घड़ी पर Fluidify जवाब नहीं दे रहा। ऐप खोलें और फिर कोशिश करें।</string>
 </resources>

@@ -189,14 +189,16 @@ class WatchUpdateCoordinator(
     /** Checks and, if there is something, sends it. The "update the watch" row. */
     fun checkAndPush() {
         scope.launch {
+            val update = check()
+            if (update != null) { push(update, requestedByUser = true); return@launch }
+            // A cached update is also usable when the manifest cannot be reached.
+            if (_state.value !is State.Failed) return@launch
             val cached = ready ?: restoreOffer()?.also { ready = it }
             val node = _watch.value?.nodeId
             if (cached != null && node != null && compareVersions(cached.second.versionName, _watch.value!!.hello.versionName) > 0) {
                 offer(cached.first, cached.second.versionName, cached.second.sha256, requestedByUser = true, nodeId = node)
                 return@launch
             }
-            val update = check() ?: return@launch
-            push(update, requestedByUser = true)
         }
     }
 
@@ -276,10 +278,9 @@ class WatchUpdateCoordinator(
         prefs.edit().putString(KEY_OFFER, WearCodec.json.encodeToString(UpdateOffer.serializer(), offer))
             .putString(KEY_OFFER_NODE, node).putLong(KEY_OFFER_AT, System.currentTimeMillis()).commit()
         _state.value = State.Offered(version)
-        if (link.watchNodes(reachableOnly = true).none { it.id == node && it.isNearby } ||
-            !link.send(node, WearPaths.UPDATE_OFFER, WearCodec.encode(UpdateOffer.serializer(), offer))) {
-            _state.value = State.Failed("Bluetooth")
-        }
+        if (!link.awaitNearbyWatch(node)) _state.value = State.Failed("watch-not-nearby")
+        else if (!link.send(node, WearPaths.UPDATE_OFFER, WearCodec.encode(UpdateOffer.serializer(), offer)))
+            _state.value = State.Failed("offer-send-failed")
     }
 
     /** What the watch says about an offer or an install. */
@@ -306,8 +307,8 @@ class WatchUpdateCoordinator(
 
     suspend fun sendPrepared(nodeId: String): Boolean = sendLock.withLock {
         val (file, offer) = ready ?: restoreOffer()?.also { ready = it } ?: return@withLock false
-        if (link.watchNodes(reachableOnly = true).none { it.id == nodeId && it.isNearby }) {
-            _state.value = State.Failed("Bluetooth")
+        if (!link.awaitNearbyWatch(nodeId)) {
+            _state.value = State.Failed("watch-not-nearby")
             return@withLock false
         }
         withContext(Dispatchers.IO) { rejectArchive(file, offer.versionName, offer.sha256) }?.let {

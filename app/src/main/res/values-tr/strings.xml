@@ -476,4 +476,6 @@
     <string name="watch_install_picked">Yüklenecek: %1$s</string>
     <string name="watch_install_no_release">Henüz yayımlanmış saat sürümü yok: telefonda bir APK seçin</string>
     <string name="watch_made_for_you">Senin için hazırlandı</string>
+    <string name="watch_update_connection_missing">Saat Bluetooth ile bağlı değil. Yaklaştırın ve tekrar deneyin.</string>
+    <string name="watch_update_offer_failed">Saatteki Fluidify yanıt vermiyor. Uygulamayı açın ve tekrar deneyin.</string>
 </resources>

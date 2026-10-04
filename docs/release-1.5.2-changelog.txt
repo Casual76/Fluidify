@@ -1,0 +1,9 @@
+Corretto il controllo del collegamento per gli aggiornamenti Wear: dopo che Fluidify ha identificato il Watch, verifica il nodo attualmente connesso invece di richiedere di nuovo la capability della app. Una breve riconnessione viene attesa prima di segnalare un errore. Restano esclusi i nodi raggiungibili solo tramite cloud.
+
+Il Watch usa la stessa verifica della connessione al telefono, senza dipendere dal flag di vicinanza di una capability in ritardo. Gli errori distinguono un collegamento assente da una app Wear che non risponde.
+
+Aprire la sezione Watch sul telefono ristabilisce il dialogo anche con la versione Wear già installata, prima di aggiornarla.
+
+Il controllo manuale cerca la versione più recente; il file conservato resta riutilizzabile e diventa il ripiego quando non si riesce a leggere il manifest.
+
+Regressioni automatiche su scoperta incompleta, riconnessione, nodi cloud e annullamento. Prova Bluetooth sul dispositivo da completare da remoto.

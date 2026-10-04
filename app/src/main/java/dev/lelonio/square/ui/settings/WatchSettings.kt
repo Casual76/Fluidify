@@ -34,6 +34,7 @@ internal fun WatchSection() {
     val context = LocalContext.current
     val app = remember(context) { context.applicationContext as SquareApplication }
     val updates = app.wearBridge.updates
+    LaunchedEffect(app) { app.wearBridge.refreshWatchLink() }
     val watch by updates.watch.collectAsStateWithLifecycle()
     val state by updates.state.collectAsStateWithLifecycle()
     var auto by remember { mutableStateOf(updates.autoUpdate) }
@@ -100,7 +101,11 @@ private fun describe(state: State): String = when (state) {
     is State.Installing -> stringResource(R.string.watch_update_installing, state.version)
     is State.AwaitingConfirmation -> stringResource(R.string.watch_update_confirm)
     is State.Installed -> stringResource(R.string.watch_update_installed, state.version)
-    is State.Failed -> stringResource(R.string.watch_update_failed, state.reason)
+    is State.Failed -> when (state.reason) {
+        "watch-not-nearby" -> stringResource(R.string.watch_update_connection_missing)
+        "offer-send-failed" -> stringResource(R.string.watch_update_offer_failed)
+        else -> stringResource(R.string.watch_update_failed, state.reason)
+    }
 }
 
 private fun progressLabel(progress: Float?): String = progress?.let { " · ${(it.coerceIn(0f, 1f) * 100).toInt()}%" }.orEmpty()

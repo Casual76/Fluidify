@@ -461,4 +461,6 @@
     <string name="watch_install_picked">Se instalará: %1$s</string>
     <string name="watch_install_no_release">Aún no hay una versión para reloj publicada: elige un APK en el teléfono</string>
     <string name="watch_made_for_you">Creado para ti</string>
+    <string name="watch_update_connection_missing">Reloj sin conexión Bluetooth. Acércalo y vuelve a intentarlo.</string>
+    <string name="watch_update_offer_failed">Fluidify en el reloj no responde. Abre la app y vuelve a intentarlo.</string>
 </resources>

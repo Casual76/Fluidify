@@ -122,6 +122,17 @@ class PhoneWearBridge(private val app: SquareApplication) {
      */
     suspend fun handoffToWatch(): Boolean = link.broadcast(WearPaths.HANDOFF_TO_WATCH, ByteArray(0))
 
+    /** Opening Watch settings re-establishes hello, including with older Wear builds. */
+    suspend fun refreshWatchLink() {
+        withTimeoutOrNull(6_000) {
+            for (node in link.watchNodes(reachableOnly = true)) {
+                if (link.awaitNearbyWatch(node.id, timeoutMs = 1_500)) {
+                    link.send(node.id, WearPaths.HELLO, WearCodec.encode(Hello.serializer(), ownHello(wantsReply = true)))
+                }
+            }
+        }
+    }
+
     /** The current player, for the RPC handler. Main thread. */
     internal val currentPlayer: Player? get() = player
 

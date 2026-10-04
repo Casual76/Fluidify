@@ -9,6 +9,9 @@ import com.google.android.gms.wearable.PutDataRequest
 import com.google.android.gms.wearable.Wearable
 import dev.pampa.fluidify.wear.protocol.WearPaths
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeoutOrNull
 import java.security.MessageDigest
 
 /**
@@ -20,7 +23,10 @@ import java.security.MessageDigest
  * looked up and cached rather than assumed: until a watch with the companion
  * installed is known to exist, nothing is written to the Data Layer at all.
  */
-class WearLink(private val context: Context) {
+class WearLink(
+    private val context: Context,
+    private val connectedNodes: suspend () -> List<Node> = { Wearable.getNodeClient(context).connectedNodes.await() },
+) {
 
     private val capabilities by lazy { Wearable.getCapabilityClient(context) }
     private val messages by lazy { Wearable.getMessageClient(context) }
@@ -60,6 +66,21 @@ class WearLink(private val context: Context) {
         installed = true
         installedCheckedAt = System.currentTimeMillis()
     }
+
+    /** A hello already identifies the app. Check its live connection, not capability discovery again. */
+    suspend fun awaitNearbyWatch(nodeId: String, timeoutMs: Long = 6_000): Boolean = withTimeoutOrNull(timeoutMs) {
+        while (true) {
+            val nodes = try { connectedNodes() }
+            catch (cancelled: CancellationException) { throw cancelled }
+            catch (error: Exception) {
+                Log.i(TAG, "connected watch lookup failed: ${error.javaClass.simpleName}")
+                emptyList()
+            }
+            if (nodes.any { it.id == nodeId && it.isNearby }) return@withTimeoutOrNull true
+            delay(300)
+        }
+        @Suppress("UNREACHABLE_CODE") false
+    } ?: false
 
     suspend fun send(nodeId: String, path: String, bytes: ByteArray): Boolean = runCatching {
         messages.sendMessage(nodeId, path, bytes).await()
