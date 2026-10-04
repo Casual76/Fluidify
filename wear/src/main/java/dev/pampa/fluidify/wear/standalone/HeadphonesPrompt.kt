@@ -39,6 +39,7 @@ class HeadphonesReceiver : BroadcastReceiver() {
             }
             HeadphonesPrompt.ACTION_LISTEN -> {
                 HeadphonesPrompt.dismiss(context)
+                app.standalone.router.refresh()
                 val headphones = app.standalone.router.outputs.value.firstOrNull { it.kind == LocalOutput.Kind.HEADPHONES }
                 val phonePlaying = app.remote.nowPlaying.value.snapshot?.let { it.isPlaying || it.playWhenReady } == true
                 // The phone's music follows if there is some; if not, the last thing the watch
@@ -66,7 +67,7 @@ class HeadphonesReceiver : BroadcastReceiver() {
 object HeadphonesPrompt {
     const val ACTION_LISTEN = "dev.pampa.fluidify.wear.HEADPHONES_LISTEN"
     private const val CHANNEL = "headphones"
-    private const val ID = 8
+    private const val ID = 9
 
     /** Gone by itself after a couple of minutes: a prompt that waits all day is clutter. */
     private const val TIMEOUT_MS = 2 * 60_000L

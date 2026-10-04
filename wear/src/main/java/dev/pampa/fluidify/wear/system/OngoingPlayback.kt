@@ -32,6 +32,7 @@ class OngoingPlayback(private val context: Context) {
 
     @Volatile
     private var shown: String? = null
+    private var expiresAtMs = 0L
 
     fun update(snapshot: PlaybackSnapshot?, enabled: Boolean, nowMs: Long = System.currentTimeMillis()) {
         val track = snapshot?.track
@@ -42,16 +43,13 @@ class OngoingPlayback(private val context: Context) {
             return
         }
         val signature = listOf(track.uri, track.title, track.artist, playing).joinToString("|")
-        if (signature == shown) return
+        val remaining = (track.durationMs - snapshot.positionMs).coerceAtLeast(0)
+        val timeout = if (playing) (remaining / snapshot.speed.coerceAtLeast(0.1f)).toLong() + PAUSE_GRACE_MS else PAUSE_GRACE_MS
+        // Repeat-one and backward seeks have the same title/state but a later expiry.
+        if (signature == shown && nowMs + timeout < expiresAtMs + 30_000L && nowMs < expiresAtMs - 30_000L) return
 
         ensureChannel()
         val open = PlayerIntents.openPlayer(context)
-        val timeout = if (playing) {
-            val remaining = (track.durationMs - snapshot.positionMs).coerceAtLeast(0)
-            remaining + PAUSE_GRACE_MS
-        } else {
-            PAUSE_GRACE_MS
-        }
         val builder = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification)
             .setContentTitle(track.title)
@@ -80,7 +78,7 @@ class OngoingPlayback(private val context: Context) {
             .apply(context)
 
         runCatching { manager.notify(NOTIFICATION_ID, builder.build()) }
-            .onSuccess { shown = signature }
+            .onSuccess { shown = signature; expiresAtMs = nowMs + timeout }
     }
 
     fun cancel() {

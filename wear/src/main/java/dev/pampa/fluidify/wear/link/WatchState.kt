@@ -6,6 +6,7 @@ import dev.pampa.fluidify.wear.protocol.WearCodec
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
 import java.io.File
 
@@ -40,6 +41,13 @@ class WatchState(private val file: File) {
     var onAccepted: ((ReceivedSnapshot) -> Unit)? = null
 
     private val offset = dev.pampa.fluidify.wear.protocol.logic.ClockOffset()
+    @Volatile private var clockOffsetMs: Long? = null
+
+    @Synchronized fun observeClock(sentAtRemoteMs: Long, receivedAtMs: Long = System.currentTimeMillis()) {
+        if (sentAtRemoteMs <= 0) return
+        clockOffsetMs = offset.observe(sentAtRemoteMs, receivedAtMs)
+        _current.update { it?.copy(clockOffsetMs = clockOffsetMs) }
+    }
 
     /**
      * Takes [snapshot] if it is newer than the one held. Synchronized: the listener's thread and
@@ -54,7 +62,7 @@ class WatchState(private val file: File) {
         val newer = held == null || snapshot.seq > held.snapshot.seq ||
             snapshot.sentAtEpochMs > held.snapshot.sentAtEpochMs + RESTART_GRACE_MS
         if (!newer) return false
-        val received = ReceivedSnapshot(snapshot, receivedAtMs, offset.observe(snapshot.sentAtEpochMs, receivedAtMs))
+        val received = ReceivedSnapshot(snapshot, receivedAtMs, clockOffsetMs ?: held?.clockOffsetMs ?: 0L)
         _current.value = received
         runCatching {
             file.writeBytes(WearCodec.encode(ReceivedSnapshot.serializer(), received))

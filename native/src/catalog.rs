@@ -76,7 +76,7 @@ pub fn rootlist() -> EngineResult<String> {
                         let name = meta
                             .map(|meta| meta.attributes.name())
                             .filter(|name| !name.is_empty())
-                            .unwrap_or("Senza nome");
+                            .unwrap_or("");
                         let artwork = meta.and_then(|meta| image_url(meta.attributes.picture()));
                         let owner = meta
                             .map(|meta| meta.owner_username())

@@ -5,6 +5,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.File
+import kotlinx.coroutines.flow.update
 
 /**
  * Covers the phone sent, on the watch's own disk.
@@ -21,6 +22,21 @@ class ArtStore(context: Context) {
     private val _revision = MutableStateFlow(0L)
 
     val revision: StateFlow<Long> = _revision.asStateFlow()
+
+    init {
+        // Old or interrupted writes are checked off the composition thread, once per process.
+        toucher.execute {
+            var removed = false
+            directory.listFiles()?.filter { it.extension == "webp" }?.forEach { file ->
+                synchronized(this) {
+                    val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+                    android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
+                    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) removed = file.delete() || removed
+                }
+            }
+            if (removed) _revision.update { it + 1 }
+        }
+    }
 
     /** Told the key of each cover that lands, for the surfaces outside the app (tile, complication). */
     @Volatile
@@ -48,17 +64,24 @@ class ArtStore(context: Context) {
 
     fun has(key: String): Boolean = key.isSafeName() && File(directory, "$key.webp").isFile
 
-    fun store(key: String, bytes: ByteArray) {
+    @Synchronized fun store(key: String, bytes: ByteArray) {
         if (!key.isSafeName() || bytes.isEmpty()) return
+        val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
+        android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
+        if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return
         val target = File(directory, "$key.webp")
-        val part = File(directory, "$key.part")
-        part.writeBytes(bytes)
-        if (!part.renameTo(target)) {
-            target.delete()
-            part.renameTo(target)
+        val part = File.createTempFile("$key-", ".part", directory)
+        try {
+            part.writeBytes(bytes)
+            if (!part.renameTo(target)) {
+                target.delete()
+                check(part.renameTo(target)) { "Cannot commit artwork" }
+            }
+        } finally {
+            part.delete()
         }
         trim()
-        _revision.value = _revision.value + 1
+        _revision.update { it + 1 }
         onStored?.invoke(key)
     }
 

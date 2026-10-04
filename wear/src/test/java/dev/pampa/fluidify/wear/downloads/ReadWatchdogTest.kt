@@ -8,6 +8,14 @@ import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 
 class ReadWatchdogTest {
+    @Test fun progressDoesNotExtendTheOverallDeadline() {
+        val closed = CountDownLatch(1)
+        val stream = object : InputStream() { override fun read(): Int = 1 }
+        ReadWatchdog(stream, 5_000, deadlineMs = 100) { closed.countDown() }.use {
+            repeat(10) { _ -> it.read() }
+            assertTrue(closed.await(1, TimeUnit.SECONDS))
+        }
+    }
     @Test fun blockedReadIsReleasedByChannelClosure() {
         val closed = CountDownLatch(1)
         val stream = object : InputStream() {

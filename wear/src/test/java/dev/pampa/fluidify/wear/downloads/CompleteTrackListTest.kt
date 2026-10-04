@@ -15,6 +15,9 @@ class CompleteTrackListTest {
     @Test fun interruptedSecondPageDoesNotReplaceOfflineTracks() = runBlocking {
         assertNull(CompleteTrackList.read(100, 2) { offset, _ -> if (offset == 0) page(3, "a", "b") else null })
     }
+    @Test fun unavailablePageCannotEraseDownloads() = runBlocking {
+        assertNull(CompleteTrackList.read(100, 2) { _, _ -> page(0).copy(unavailableReason = "Sign in") })
+    }
     @Test fun completeListKeepsDuplicatesAndEmptyListIsAValidEdit() = runBlocking {
         assertEquals(listOf("spotify:track:a", "spotify:track:a", "spotify:track:b"),
             CompleteTrackList.read(100, 2) { offset, _ -> if (offset == 0) page(3, "a", "a") else page(3, "b") }!!.second)

@@ -714,7 +714,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // ones this account may add to, and offering the others is a row
             // that fails with "not yours" after the tap.
             playlists = (_state.value as? UiState.Ready)?.playlists.orEmpty()
-                .filter { it.uri.startsWith("spotify:") && it.editable != false },
+                .filter { it.uri.startsWith("spotify:playlist:") && it.editable == true }
+                .map { it.copy(name = it.name.ifBlank { string(R.string.unnamed) }) },
             liked = trackUri != null && trackUri in _liked.value,
             // No Web API condition: every write here goes through the access
             // point (see addToPlaylist), so a missing developer app is no
@@ -1566,7 +1567,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * missed everything added there.
      */
     private suspend fun playlists(): List<CatalogPlaylist> =
-        withLocalFiles(container.activeBackend.playlists())
+        withLocalFiles(container.activeBackend.playlists().map { it.copy(name = it.name.ifBlank { string(R.string.unnamed) }) })
 
     /**
      * The phone's own music, at the head of whichever library is on screen.

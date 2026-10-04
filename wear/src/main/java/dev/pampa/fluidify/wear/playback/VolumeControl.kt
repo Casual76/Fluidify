@@ -25,26 +25,53 @@ class VolumeControl(private val scope: CoroutineScope, private val controls: Pla
     private val _visible = MutableStateFlow(false)
     private var sendJob: Job? = null
     private var hideJob: Job? = null
+    private var known = false
+    init {
+        scope.launch {
+            var device: Pair<dev.pampa.fluidify.wear.protocol.PlaybackSource?, String?>? = null
+            controls.nowPlaying.collect { now ->
+                val next = now.snapshot?.source to now.snapshot?.device?.id
+                if (next != device) { device = next; reset(now.snapshot?.device?.volume) }
+                else now.snapshot?.device?.volume?.let(::sync)
+            }
+        }
+    }
 
     val level: StateFlow<Float> = _level.asStateFlow()
     val visible: StateFlow<Boolean> = _visible.asStateFlow()
 
     /** What the phone last reported; ignored while the hand is turning. */
     fun sync(remoteLevel: Float) {
+        known = true
         coalescer.syncFromRemote(remoteLevel)
         if (!_visible.value) _level.value = coalescer.target
     }
 
     fun turn(steps: Int) {
+        if (!known || !canSend()) return
         _level.value = coalescer.turn(steps.toFloat())
         show()
         schedule()
     }
 
     fun set(level: Float) {
+        if (!known || !canSend()) return
         _level.value = coalescer.set(level)
         show()
         schedule()
+    }
+
+    private fun canSend(): Boolean = controls.nowPlaying.value.let {
+        it.link == dev.pampa.fluidify.wear.link.LinkStatus.CONNECTED && it.snapshot?.device?.canSetVolume != false
+    }
+
+    fun reset(remoteLevel: Float?) {
+        sendJob?.cancel()
+        hideJob?.cancel()
+        known = remoteLevel != null
+        coalescer.reset(remoteLevel ?: 0f)
+        _level.value = coalescer.target
+        _visible.value = false
     }
 
     private fun schedule() {
@@ -54,6 +81,7 @@ class VolumeControl(private val scope: CoroutineScope, private val controls: Pla
                 val now = System.currentTimeMillis()
                 val due = coalescer.dueAt() ?: break
                 if (due > now) delay(due - now)
+                if (!canSend()) { reset(controls.nowPlaying.value.snapshot?.device?.volume); break }
                 coalescer.take(System.currentTimeMillis())?.let { controls.setVolume(it) }
             }
         }
@@ -64,6 +92,7 @@ class VolumeControl(private val scope: CoroutineScope, private val controls: Pla
         hideJob?.cancel()
         hideJob = scope.launch {
             delay(VISIBLE_MS)
+            _level.value = coalescer.target
             _visible.value = false
         }
     }

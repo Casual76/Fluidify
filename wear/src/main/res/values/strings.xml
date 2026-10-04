@@ -151,4 +151,9 @@
     <string name="error_no_output">Connect headphones to listen on the watch</string>
     <string name="error_end_of_queue">That\'s the end of the queue</string>
     <string name="unavailable_tracks">%1$d unavailable</string>
+    <string name="volume_down">Lower volume</string>
+    <string name="volume_up">Raise volume</string>
+    <string name="pin">Pin</string>
+    <string name="unpin">Unpin</string>
+    <string name="pin_failed">Could not change the pinned playlist</string>
 </resources>

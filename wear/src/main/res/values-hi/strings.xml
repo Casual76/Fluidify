@@ -150,4 +150,9 @@
     <string name="error_no_output">घड़ी पर सुनने के लिए हेडफ़ोन कनेक्ट करें</string>
     <string name="error_end_of_queue">कतार यहीं खत्म होती है</string>
     <string name="unavailable_tracks">%1$d उपलब्ध नहीं</string>
+    <string name="volume_down">आवाज़ कम करें</string>
+    <string name="volume_up">आवाज़ बढ़ाएँ</string>
+    <string name="pin">पिन करें</string>
+    <string name="unpin">पिन हटाएँ</string>
+    <string name="pin_failed">पिन की गई प्लेलिस्ट नहीं बदल सकी</string>
 </resources>

@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package dev.lelonio.square.wear
 
 import dev.lelonio.square.R
@@ -234,6 +236,10 @@ class WearLibrarySource(private val app: SquareApplication) {
     }
 
     suspend fun context(uri: String, offset: Int, limit: Int): ContextPage = withContext(Dispatchers.IO) {
+        if (uri.startsWith("spotify:artist:") && !app.webApi.isReady) {
+            return@withContext ContextPage(uri, "", tracks = emptyList(),
+                unavailableReason = app.getString(R.string.connect_app_in_settings))
+        }
         val tracks = contextsLock.withLock {
             val now = android.os.SystemClock.elapsedRealtime()
             contexts.entries.removeAll { now - it.value.first > 120_000L }
@@ -248,7 +254,7 @@ class WearLibrarySource(private val app: SquareApplication) {
         val art = playlist?.artworkUrl ?: label?.artworkUrl ?: tracks.firstOrNull()?.artworkUrl
         ContextPage(
             uri = uri,
-            title = playlist?.name ?: label?.name ?: tracks.firstOrNull()?.album.orEmpty(),
+            title = playlist?.name ?: label?.name ?: tracks.firstOrNull()?.album.orEmpty().takeIf { uri.startsWith("spotify:album:") }.orEmpty(),
             artKey = artKeyOf(art),
             artUrl = art?.takeIf { it.startsWith("https://") },
             tracks = tracks.drop(offset).take(limit).map { it.toItem() },
@@ -275,7 +281,7 @@ class WearLibrarySource(private val app: SquareApplication) {
 
     private fun CatalogPlaylist.toItem() = LibraryItem(
         uri = uri,
-        title = name,
+        title = name.ifBlank { app.getString(R.string.unnamed) },
         kind = if (uri.endsWith(":collection")) LibraryKind.LIKED else if (uri.startsWith("spotify:album:")) LibraryKind.ALBUM else if (uri.startsWith("spotify:artist:")) LibraryKind.ARTIST else LibraryKind.PLAYLIST,
         artKey = artKeyOf(artworkUrl),
         artUrl = artworkUrl?.takeIf { it.startsWith("https://") },

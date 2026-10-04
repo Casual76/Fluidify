@@ -52,6 +52,13 @@ class SurfacePrefs(context: Context) {
         get() = prefs.getString(KEY_SIGNATURE, null)
         set(value) = prefs.edit { putString(KEY_SIGNATURE, value) }
 
+    internal var lastPhoneSignature: String?
+        get() = prefs.getString("phone_signature", null)
+        set(value) = prefs.edit { putString("phone_signature", value) }
+    internal var lastWatchSignature: String?
+        get() = prefs.getString("watch_signature", null)
+        set(value) = prefs.edit { putString("watch_signature", value) }
+
     private companion object {
         const val KEY_ONGOING = "ongoing_icon"
         const val KEY_NOW_BAR = "now_bar"

@@ -1,6 +1,8 @@
 package dev.pampa.fluidify.wear.ui.sheets
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -17,6 +19,11 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.liveRegion
+import androidx.compose.ui.semantics.LiveRegionMode
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.Icon
@@ -48,7 +55,7 @@ fun VolumeScreen(controls: PlaybackControls, volume: VolumeControl) {
     val fill = MaterialTheme.colorScheme.primary
 
     Box(
-        modifier = Modifier.fillMaxSize().fluidRotarySteps(onSteps = volume::turn),
+        modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background).fluidRotarySteps(onSteps = volume::turn),
         contentAlignment = Alignment.Center,
     ) {
         Canvas(Modifier.fillMaxSize()) {
@@ -61,13 +68,15 @@ fun VolumeScreen(controls: PlaybackControls, volume: VolumeControl) {
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(stringResource(R.string.volume), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("${(level * 100).roundToInt()}", style = MaterialTheme.typography.numeralMedium)
-            Text(now.snapshot?.device?.name.orEmpty(), style = MaterialTheme.typography.bodyExtraSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1)
+            Text("${(level * 100).roundToInt()}", style = MaterialTheme.typography.numeralMedium,
+                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite; stateDescription = "${(level * 100).roundToInt()}%" })
+            Text(now.snapshot?.device?.name.orEmpty(), style = MaterialTheme.typography.bodyExtraSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 28.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                FluidGlassDisc(onClick = { volume.turn(-2) }, backdrop = backdrop, contentDescription = null, size = FluidWearDimens.DiscSmall) {
+                FluidGlassDisc(onClick = { volume.turn(-2) }, backdrop = backdrop, contentDescription = stringResource(R.string.volume_down), size = FluidWearDimens.MinTouchTarget) {
                     Icon(PhosphorIcons.Regular.SpeakerSimpleLow, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
-                FluidGlassDisc(onClick = { volume.turn(2) }, backdrop = backdrop, contentDescription = null, size = FluidWearDimens.DiscSmall) {
+                FluidGlassDisc(onClick = { volume.turn(2) }, backdrop = backdrop, contentDescription = stringResource(R.string.volume_up), size = FluidWearDimens.MinTouchTarget) {
                     Icon(PhosphorIcons.Regular.SpeakerSimpleHigh, contentDescription = null, modifier = Modifier.size(18.dp))
                 }
             }

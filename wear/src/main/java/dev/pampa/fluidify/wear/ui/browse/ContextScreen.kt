@@ -43,6 +43,7 @@ fun ContextScreen(
     val data = rememberPhoneData(uri, { app.library.cachedContext(uri) }, { app.library.peekContext(uri) }) { app.library.context(uri) }
     val page = data.value
     WatchList(title = page?.title?.ifEmpty { null } ?: title) {
+        page?.unavailableReason?.let { noticeItem(it); return@WatchList }
         item {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Thumb(

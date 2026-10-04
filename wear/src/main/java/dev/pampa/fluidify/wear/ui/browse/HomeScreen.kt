@@ -10,6 +10,13 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.text.style.TextOverflow
+import dev.pampa.fluidify.wear.protocol.LibraryItem
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -55,6 +62,27 @@ fun HomeScreen(
     val home = rememberPhoneData("home#$refresh", app.library::cachedHome, app.library::peekHome) { app.library.home() }
     val scope = rememberCoroutineScope()
     val haptics = LocalFluidHaptics.current
+    var pendingPins by remember { mutableStateOf(emptySet<String>()) }
+    var pinError by remember { mutableStateOf<String?>(null) }
+    val pinLabel = stringResource(R.string.pin)
+    val unpinLabel = stringResource(R.string.unpin)
+    fun pin(entry: LibraryItem) {
+        if (entry.uri in pendingPins) return
+        pendingPins = pendingPins + entry.uri
+        scope.launch {
+            try {
+                val pinned = app.library.peekHome()?.shelves?.flatMap { it.items }?.firstOrNull { it.uri == entry.uri }?.pinned ?: entry.pinned
+                if (app.library.setPinned(entry.uri, !pinned)) {
+                    haptics.play(FluidHapticEvent.Threshold)
+                    refresh++
+                } else {
+                    pinError = app.getString(R.string.pin_failed)
+                    haptics.play(FluidHapticEvent.Reject)
+                }
+            } finally { pendingPins = pendingPins - entry.uri }
+        }
+    }
+    LaunchedEffect(pinError) { if (pinError != null) { kotlinx.coroutines.delay(2_600); pinError = null } }
     WatchList(title = null) {
         item {
             ListHeader { Icon(PhosphorIcons.Regular.House, contentDescription = stringResource(R.string.home), modifier = Modifier.size(22.dp)) }
@@ -77,20 +105,20 @@ fun HomeScreen(
             page == null && home.failed -> noticeItem(app.getString(R.string.couldnt_load))
             page == null -> noticeItem(app.getString(R.string.loading))
             else -> page.shelves.forEachIndexed { shelfIndex, shelf ->
-                if (shelf.title.isNotEmpty()) item { ListSubHeader { Text(shelf.title, maxLines = 2) } }
+                if (shelf.title.isNotEmpty()) item { ListSubHeader { Text(shelf.title, maxLines = 2, overflow = TextOverflow.Ellipsis) } }
                 shelf.items.forEachIndexed { index, entry ->
                     item(key = "$shelfIndex/$index:${entry.uri}") {
                         val pinnable = entry.kind == LibraryKind.PLAYLIST || entry.kind == LibraryKind.ALBUM || entry.kind == LibraryKind.LIKED
                         FluidWearListRow(
                             title = entry.title,
+                            modifier = if (pinnable) Modifier.semantics {
+                                customActions = listOf(CustomAccessibilityAction(if (entry.pinned) unpinLabel else pinLabel) { pin(entry); true })
+                            } else Modifier,
                             onClick = { onOpen(entry.uri, entry.title) },
                             // A long press pins or unpins, as on the phone's library.
                             onLongClick = if (pinnable) {
                                 {
-                                    haptics.play(FluidHapticEvent.Threshold)
-                                    scope.launch {
-                                        if (app.library.setPinned(entry.uri, !entry.pinned)) refresh++
-                                    }
+                                    pin(entry)
                                 }
                             } else {
                                 null
@@ -114,4 +142,5 @@ fun HomeScreen(
             }
         }
     }
+    dev.antigravity.fluidengine.wear.components.FluidWearToast(message = pinError)
 }

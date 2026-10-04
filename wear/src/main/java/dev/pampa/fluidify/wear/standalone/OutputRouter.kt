@@ -57,9 +57,18 @@ class OutputRouter(private val context: Context, private val prefs: StandalonePr
         }
     }
 
-    init {
-        audio.registerAudioDeviceCallback(callback, null)
+    private var users = 0
+
+    @Synchronized fun acquire() {
+        if (users++ == 0) audio.registerAudioDeviceCallback(callback, null)
+        refresh()
     }
+
+    @Synchronized fun release() {
+        if (users > 0 && --users == 0) audio.unregisterAudioDeviceCallback(callback)
+    }
+
+    fun refresh() { _outputs.value = read() }
 
     fun deviceFor(output: LocalOutput?): AudioDeviceInfo? =
         output?.let { wanted -> audio.getDevices(AudioManager.GET_DEVICES_OUTPUTS).firstOrNull { it.id == wanted.id } }

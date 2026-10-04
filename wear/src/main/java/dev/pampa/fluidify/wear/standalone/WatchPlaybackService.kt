@@ -64,6 +64,7 @@ class WatchPlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        app.standalone.router.acquire()
         output = WearAudioOutput()
         player = LibrespotPlayer(
             this,
@@ -125,6 +126,7 @@ class WatchPlaybackService : MediaSessionService() {
     }
 
     override fun onDestroy() {
+        app.standalone.router.release()
         handler.removeCallbacks(idleStop)
         session?.release()
         session = null

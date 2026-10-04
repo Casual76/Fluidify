@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -24,8 +25,11 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.Layout
+import androidx.compose.ui.layout.SubcomposeLayout
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
+import androidx.compose.ui.unit.LayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -79,6 +83,7 @@ import dev.pampa.fluidify.wear.ui.common.CoverLayer
 import dev.pampa.fluidify.wear.ui.common.rememberArtworkAccent
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlin.math.roundToInt
+import kotlin.math.cos
 
 /**
  * The player: the screen the app opens on.
@@ -119,6 +124,8 @@ fun PlayerScreen(
     val volumeVisible by (volume?.visible ?: remember { MutableStateFlow(false) }).collectAsStateWithLifecycle()
     val volumeLevel by (volume?.level ?: remember { MutableStateFlow(0f) }).collectAsStateWithLifecycle()
     val ambient = LocalFluidWearAmbient.current
+    if (ambient.isAmbient) { AmbientNowPlaying(now, modifier); return }
+    val started = dev.pampa.fluidify.wear.ui.common.screenStarted()
     val snapshot = now.snapshot
     val track = snapshot?.track
     val accent = rememberArtworkAccent(track?.artKey, art)
@@ -161,7 +168,7 @@ fun PlayerScreen(
                 FluidEdgeGlowRing(
                     positionMs = { now.positionAt(System.currentTimeMillis()) },
                     durationMs = track?.durationMs ?: 0L,
-                    running = active && snapshot?.isPlaying == true && !snapshot.buffering,
+                    running = active && started && snapshot?.isPlaying == true && !snapshot.buffering,
                     clearTop = if (clockWidth > 0.dp) clockWidth + FluidWearDimens.EdgeRingClockMargin * 2 else 0.dp,
                     // Out of the way of the volume's own line of light on the same edge.
                     modifier = Modifier.graphicsLayer { alpha = controlsAlpha },
@@ -177,6 +184,7 @@ fun PlayerScreen(
                     PlayerLayout(
                         compact = compact,
                         arcTop = maxHeight - FluidWearDimens.ArcEdgeClearance - sizes.queue,
+                        arcSideTop = maxHeight / 2 + (minOf(maxWidth, maxHeight) / 2 - FluidWearDimens.ArcEdgeClearance - sizes.arc / 2) * cos(Math.toRadians(sizes.arcSpacing.toDouble())).toFloat() - sizes.arc / 2,
                         modifier = Modifier.graphicsLayer { alpha = controlsAlpha },
                         clock = {
                             FluidGlassTimePill(
@@ -184,17 +192,18 @@ fun PlayerScreen(
                                 modifier = Modifier.onSizeChanged { clockWidth = with(density) { it.width.toDp() } },
                             )
                         },
-                        title = {
+                        title = { showSecond ->
                             TitleCapsule(
                                 now = now,
                                 status = status,
                                 backdrop = backdrop,
                                 compact = compact,
+                                showSecond = showSecond,
                                 onClick = onEssentials,
                                 modifier = Modifier.widthIn(max = maxWidth * CapsuleWidthFraction),
                             )
                         },
-                        transport = { Transport(controls, now, backdrop, sizes) },
+                        transport = { maxDisc -> Transport(controls, now, backdrop, sizes, maxDisc) },
                     )
                     ArcActions(
                         controls = controls,
@@ -234,29 +243,39 @@ fun PlayerScreen(
 private fun PlayerLayout(
     compact: Boolean,
     arcTop: Dp,
+    arcSideTop: Dp,
     modifier: Modifier = Modifier,
     clock: @Composable () -> Unit,
-    title: @Composable () -> Unit,
-    transport: @Composable () -> Unit,
+    title: @Composable (Boolean) -> Unit,
+    transport: @Composable (Dp) -> Unit,
 ) {
-    Layout(
-        contents = listOf(clock, title, transport),
-        modifier = modifier.fillMaxSize(),
-    ) { (clockMeasurables, titleMeasurables, transportMeasurables), constraints ->
+    val density = LocalDensity.current
+    val tight = compact && density.fontScale >= 1.2f
+    SubcomposeLayout(modifier = modifier.fillMaxSize()) { constraints ->
         val loose = Constraints(maxWidth = constraints.maxWidth, maxHeight = constraints.maxHeight)
-        val clockPlaceable = clockMeasurables.firstOrNull()?.measure(loose)
-        val titlePlaceable = titleMeasurables.firstOrNull()?.measure(loose)
-        val transportPlaceable = transportMeasurables.firstOrNull()?.measure(loose)
+        val clockPlaceable = subcompose("clock") {
+            CompositionLocalProvider(LocalDensity provides androidx.compose.ui.unit.Density(density.density, if (tight) 1f else density.fontScale)) { clock() }
+        }.firstOrNull()?.measure(loose)
         val width = constraints.maxWidth
         val height = constraints.maxHeight
-        val gap = (if (compact) CompactGap else RegularGap).roundToPx()
-        val clockTop = FluidWearDimens.TimePillTop.roundToPx()
+        val gap = (if (tight) 2.dp else if (compact) CompactGap else RegularGap).roundToPx()
+        val clockTop = (if (tight) 4.dp else FluidWearDimens.TimePillTop).roundToPx()
         val clockBottom = clockTop + (clockPlaceable?.height ?: 0)
         val titleTop = clockBottom + gap
+        val maxBottom = minOf(arcTop.roundToPx(), arcSideTop.roundToPx()) - gap
+        val minDisc = FluidWearDimens.MinTouchTarget.roundToPx()
+        val detailedTitle = subcompose("title") { title(true) }.firstOrNull()?.measure(loose)
+        val titlePlaceable = if (titleTop + (detailedTitle?.height ?: 0) + gap + minDisc > maxBottom) {
+            subcompose("short-title") { title(false) }.firstOrNull()?.measure(
+                loose.copy(maxHeight = (maxBottom - titleTop - gap - minDisc).coerceAtLeast(0)),
+            )
+        } else detailedTitle
         val titleBottom = titleTop + (titlePlaceable?.height ?: 0)
+        val maxDisc = (maxBottom - titleBottom - gap).coerceAtLeast(minDisc).toDp()
+        val transportPlaceable = subcompose("transport") { transport(maxDisc) }.firstOrNull()?.measure(loose)
         val transportHeight = transportPlaceable?.height ?: 0
-        val lowest = arcTop.roundToPx() - gap - transportHeight
-        val transportTop = maxOf(height / 2 - transportHeight / 2, titleBottom + gap).coerceAtMost(maxOf(lowest, titleBottom + gap / 2))
+        val lowest = maxBottom - transportHeight
+        val transportTop = maxOf(height / 2 - transportHeight / 2, titleBottom + gap).coerceAtMost(lowest)
         layout(width, height) {
             clockPlaceable?.place((width - clockPlaceable.width) / 2, clockTop)
             titlePlaceable?.place((width - titlePlaceable.width) / 2, titleTop)
@@ -271,6 +290,7 @@ private fun TitleCapsule(
     status: String?,
     backdrop: GlassBackdropState,
     compact: Boolean,
+    showSecond: Boolean,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -292,7 +312,7 @@ private fun TitleCapsule(
             // is something to say there that matters more (the phone is away, the watch is starting).
             val notice = status ?: linkMessage(now.link)?.let { stringResource(it) }
             val second = notice ?: track?.artist?.takeUnless { compact }
-            if (!second.isNullOrEmpty()) {
+            if (showSecond && !second.isNullOrEmpty()) {
                 Text(
                     text = second,
                     style = MaterialTheme.typography.bodyExtraSmall,
@@ -307,9 +327,10 @@ private fun TitleCapsule(
 }
 
 @Composable
-private fun Transport(controls: PlaybackControls, now: NowPlaying, backdrop: GlassBackdropState, sizes: DiscSizes) {
+private fun Transport(controls: PlaybackControls, now: NowPlaying, backdrop: GlassBackdropState, sizes: DiscSizes, maxDisc: Dp) {
     val snapshot = now.snapshot
     val track = snapshot?.track
+    CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
     Row(
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(FluidWearDimens.TransportGap),
@@ -318,7 +339,7 @@ private fun Transport(controls: PlaybackControls, now: NowPlaying, backdrop: Gla
             onClick = controls::previous,
             backdrop = backdrop,
             contentDescription = stringResource(R.string.previous),
-            size = sizes.side,
+            size = minOf(sizes.side, maxDisc),
             enabled = track != null,
         ) { Icon(PhosphorIcons.Fill.SkipBack, contentDescription = null, modifier = Modifier.size(FluidWearDimens.IconMedium)) }
         val playing = snapshot?.isPlaying == true || snapshot?.playWhenReady == true
@@ -326,7 +347,7 @@ private fun Transport(controls: PlaybackControls, now: NowPlaying, backdrop: Gla
             onClick = controls::togglePlay,
             backdrop = backdrop,
             contentDescription = stringResource(if (playing) R.string.pause else R.string.play),
-            size = sizes.main,
+            size = minOf(sizes.main, maxDisc),
             haptic = FluidHapticEvent.Confirm,
         ) {
             Icon(
@@ -339,9 +360,10 @@ private fun Transport(controls: PlaybackControls, now: NowPlaying, backdrop: Gla
             onClick = controls::next,
             backdrop = backdrop,
             contentDescription = stringResource(R.string.next),
-            size = sizes.side,
+            size = minOf(sizes.side, maxDisc),
             enabled = track != null,
         ) { Icon(PhosphorIcons.Fill.SkipForward, contentDescription = null, modifier = Modifier.size(FluidWearDimens.IconMedium)) }
+    }
     }
 }
 
@@ -486,7 +508,7 @@ private val CompactMain = 56.dp
 
 /** Between the arc's sides and the play button: bigger than the one, smaller than the other. */
 private val RegularQueue = 58.dp
-private val CompactQueue = 50.dp
+private val CompactQueue = 52.dp
 private val QueueIcon = 26.dp
 private val RegularGap = 6.dp
 private val CompactGap = 4.dp

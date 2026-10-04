@@ -11,6 +11,7 @@ object CompleteTrackList {
         var title: String? = null
         while (true) {
             val page = fetch(offset, pageSize) ?: return null
+            if (page.unavailableReason != null) return null
             if (page.total < 0 || page.total > maxTracks || (total != null && page.total != total)) return null
             total = page.total
             title = title ?: page.title.takeIf { it.isNotEmpty() }

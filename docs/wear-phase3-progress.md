@@ -25,22 +25,22 @@ Queste spunte indicano i commit presenti, non una certificazione su dispositivo.
 - [x] Marcatore Wear, checksum obbligatorio e firma verificati sui due lati e nell'installatore ADB.
 - [x] Offerta salvata sul telefono e scadenza sull'orologio; download dell'aggiornamento in WorkManager.
 - [x] Discovery ADB legata al lifecycle e installatore mantenuto in un ViewModel.
-- [ ] Test dell'esatto albero finale e commit/push verde del blocco.
+- [x] Test dell'esatto albero del blocco; commit/push `3d876f1`.
 
 ## Pezzo 6 — interfaccia e stato (sezioni 7 e 8)
 
-- [ ] Tile: esito dei comandi, dimensioni, nonce persistente, intent e copertine.
-- [ ] Firme delle superfici distinte; rinnovo dell'icona ongoing; stack autonomo pigro.
-- [ ] Volume: livello iniziale, collegamento, cambio dispositivo/modalità e TalkBack.
-- [ ] Errori ripetuti, cache Home, ritorno dalla ricerca, copertine e pin in tutti gli scaffali.
-- [ ] Lifecycle degli anelli, layout 192 dp/font 1.3/stato e trasporto LTR.
-- [ ] Ghiera immersiva, navigazione single-top, sfondi opachi, ellissi e motivi degli errori.
-- [ ] Permessi al ritorno, collector legati alla composizione.
-- [ ] Ambient unico nero, low-bit e protezione burn-in.
-- [ ] Azioni TalkBack della copertina e etichetta Fissa.
-- [ ] VolumeCoalescer, ipotesi play/pausa, stima dello sfasamento da hello/ack, ArtStore atomico.
-- [ ] Collisione degli ID di notifica.
-- [ ] Valutare patch facoltativa dell'accento engine; evitare un rilascio se non necessario.
+- [x] Tile: esito dei comandi, dimensioni, nonce persistente, intent e copertine.
+- [x] Firme delle superfici distinte; rinnovo dell'icona ongoing; stack autonomo pigro.
+- [x] Volume: livello iniziale, collegamento, cambio dispositivo/modalità e TalkBack.
+- [x] Errori ripetuti, cache Home, ritorno dalla ricerca, copertine e pin in tutti gli scaffali.
+- [x] Lifecycle degli anelli, layout 192 dp/font 1.3/stato e trasporto LTR.
+- [x] Ghiera immersiva, navigazione single-top, sfondi opachi, ellissi e motivi degli errori.
+- [x] Permessi al ritorno, collector legati alla composizione.
+- [x] Ambient unico nero, low-bit e protezione burn-in.
+- [x] Azioni TalkBack della copertina e etichetta Fissa.
+- [x] VolumeCoalescer, ipotesi play/pausa, stima dello sfasamento da hello/ack, ArtStore atomico.
+- [x] Collisione degli ID di notifica.
+- [x] Patch facoltativa dell'accento rinviata: engine 2.11.0 invariato; nessuna modifica engine richiesta per questo blocco.
 
 ## Pezzo 7 — igiene e verifica
 

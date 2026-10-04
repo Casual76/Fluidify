@@ -9,6 +9,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
@@ -45,7 +46,7 @@ fun WatchList(
     ScreenScaffold(scrollState = state, modifier = modifier.background(MaterialTheme.colorScheme.background)) { padding ->
         TransformingLazyColumn(state = state, contentPadding = padding) {
             val scope = WatchListScope(this, spec)
-            if (title != null) scope.item { ListHeader { Text(title, maxLines = 2, textAlign = TextAlign.Center) } }
+            if (title != null) scope.item { ListHeader { Text(title, maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center) } }
             scope.content()
         }
     }

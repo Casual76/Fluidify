@@ -150,4 +150,9 @@
     <string name="error_no_output">Collega le cuffie per ascoltare sull\'orologio</string>
     <string name="error_end_of_queue">La coda è finita</string>
     <string name="unavailable_tracks">%1$d non disponibili</string>
+    <string name="volume_down">Abbassa volume</string>
+    <string name="volume_up">Alza volume</string>
+    <string name="pin">Fissa</string>
+    <string name="unpin">Togli dai fissati</string>
+    <string name="pin_failed">Impossibile modificare la playlist fissata</string>
 </resources>

@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package dev.lelonio.square.wear
 
 import android.content.ComponentName
@@ -290,7 +292,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
      * @param force write even if no watch is known to have the companion, which
      *   is the case right after a hello from a watch the cache has not caught up with.
      */
-    suspend fun publishNow(force: Boolean): Long {
+    suspend fun publishNow(force: Boolean, requestedPlaying: Boolean? = null): Long {
         val now = System.currentTimeMillis()
         coalescer.markSent(now)
         publishDue = Long.MAX_VALUE
@@ -298,7 +300,14 @@ class PhoneWearBridge(private val app: SquareApplication) {
         // the state twice. Not when this is that scheduled one.
         publishJob?.takeIf { it !== kotlinx.coroutines.currentCoroutineContext()[Job] }?.cancel()
         if (!force && !link.hasWatch()) return seq.get()
-        val snapshot = withContext(Dispatchers.Main.immediate) { buildSnapshot() }
+        val snapshot = withContext(Dispatchers.Main.immediate) {
+            buildSnapshot().let { built ->
+                if (requestedPlaying == null) built else built.copy(
+                    isPlaying = requestedPlaying && !built.buffering,
+                    playWhenReady = requestedPlaying,
+                )
+            }
+        }
         // Nothing the watch would draw differently: not written. Every snapshot carries a new seq
         // and new times, so the Data Layer never saw two as the same and sent them all.
         val previous = lastPublished
@@ -556,16 +565,27 @@ class PhoneWearBridge(private val app: SquareApplication) {
         abis = Build.SUPPORTED_ABIS.toList(),
         sdk = Build.VERSION.SDK_INT,
         wantsReply = wantsReply,
+        sentAtEpochMs = System.currentTimeMillis(),
     )
 
     /** A command from the watch at [nodeId]. Applies it and acknowledges it. */
     suspend fun onCommand(nodeId: String, envelope: CommandEnvelope) {
         link.noteWatchSeen()
+        val requestedPlaying = withContext(Dispatchers.Main.immediate) {
+            when (envelope.command) {
+                Command.Play -> true
+                Command.Pause -> false
+                Command.TogglePlay -> buildSnapshot().let { !(it.isPlaying || it.playWhenReady) }
+                else -> null
+            }
+        }
         val result = runCatching { withContext(Dispatchers.Main.immediate) { apply(envelope.command) } }
         val error = result.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName }
             ?: result.getOrNull()
-        val appliedSeq = if (error == null) withContext(Dispatchers.Main.immediate) { publishNow(force = true) } else null
-        val ack = CommandAck(id = envelope.id, ok = error == null, error = error, appliedSeq = appliedSeq)
+        // Player callbacks can arrive after the acknowledgement. Its snapshot must already carry
+        // the accepted play/pause state so the wrist does not briefly bounce back to the old one.
+        val appliedSeq = if (error == null) withContext(Dispatchers.Main.immediate) { publishNow(force = true, requestedPlaying) } else null
+        val ack = CommandAck(id = envelope.id, ok = error == null, error = error, appliedSeq = appliedSeq, sentAtEpochMs = System.currentTimeMillis())
         link.send(nodeId, WearPaths.ACK, WearCodec.encode(CommandAck.serializer(), ack))
     }
 

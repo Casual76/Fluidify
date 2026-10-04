@@ -185,6 +185,7 @@ class PhoneLink(
     /** The phone answered a hello (or introduced itself). */
     fun onHello(hello: Hello, fromNode: String) {
         if (hello.role != Role.PHONE) return
+        state.observeClock(hello.sentAtEpochMs)
         nodeId = fromNode
         _phone.value = hello
         // The phone handles updates while it is around; see WatchSelfUpdateWorker.
@@ -301,6 +302,7 @@ class PhoneLink(
     }
 
     fun onAck(ack: CommandAck) {
+        state.observeClock(ack.sentAtEpochMs)
         onPhoneHeard()
         pending.remove(ack.id)?.complete(ack)
     }
@@ -359,6 +361,7 @@ class PhoneLink(
         abis = Build.SUPPORTED_ABIS.toList(),
         sdk = Build.VERSION.SDK_INT,
         wantsReply = wantsReply,
+        sentAtEpochMs = System.currentTimeMillis(),
     )
 
     companion object {

@@ -150,4 +150,9 @@
     <string name="error_no_output">Conecta unos auriculares para escuchar en el reloj</string>
     <string name="error_end_of_queue">Es el final de la cola</string>
     <string name="unavailable_tracks">%1$d no disponibles</string>
+    <string name="volume_down">Bajar volumen</string>
+    <string name="volume_up">Subir volumen</string>
+    <string name="pin">Fijar</string>
+    <string name="unpin">Desfijar</string>
+    <string name="pin_failed">No se pudo cambiar la playlist fijada</string>
 </resources>

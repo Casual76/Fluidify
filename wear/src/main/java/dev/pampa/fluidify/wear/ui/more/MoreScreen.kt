@@ -9,6 +9,14 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import android.app.Activity
+import android.content.Intent
+import android.net.Uri
+import android.provider.Settings
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -95,6 +103,17 @@ fun MoreScreen(
     val askNotifications = rememberLauncherForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
         notificationsAllowed = granted
         onSurfacesChanged()
+    }
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner) {
+        val observer = LifecycleEventObserver { _, event ->
+            if (event == Lifecycle.Event.ON_RESUME) {
+                notificationsAllowed = ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
+                onSurfacesChanged()
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        onDispose { owner.lifecycle.removeObserver(observer) }
     }
     val meterOn by (glassMeter?.enabled ?: remember { MutableStateFlow(false) }).collectAsStateWithLifecycle()
     val developer by (glassMeter?.developer ?: remember { MutableStateFlow(false) }).collectAsStateWithLifecycle()
@@ -198,7 +217,13 @@ fun MoreScreen(
                         val next = NowBarMode.entries[(nowBar.ordinal + 1) % NowBarMode.entries.size]
                         nowBar = next
                         surfaces.nowBar = next
-                        if (next != NowBarMode.NEVER && !notificationsAllowed) askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        if (next != NowBarMode.NEVER && !notificationsAllowed) {
+                            val activity = context as? Activity
+                            val asked = context.getSharedPreferences("first_run", android.content.Context.MODE_PRIVATE).getBoolean("asked_notifications", false)
+                            if (asked && activity != null && !activity.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
+                                context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
+                            } else askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
+                        }
                         onSurfacesChanged()
                     },
                     leading = { Icon(PhosphorIcons.Regular.Watch, contentDescription = null, modifier = Modifier.size(22.dp)) },

@@ -11,6 +11,7 @@ import dev.pampa.fluidify.wear.protocol.RpcMethod
 import dev.pampa.fluidify.wear.protocol.WearCodec
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.sync.withLock
 import kotlinx.serialization.KSerializer
 import java.io.File
 import java.security.MessageDigest
@@ -34,13 +35,19 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
      * which, done in composition, was part of the stutter on the swipe to the Home.
      */
     private val memory = java.util.concurrent.ConcurrentHashMap<String, Any>()
+    private val fetchedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
+    private val homeLock = kotlinx.coroutines.sync.Mutex()
 
     fun peekHome(): LibraryPage? = memory["home"] as? LibraryPage
     fun peekSection(section: LibrarySection): LibraryPage? = memory["section-$section"] as? LibraryPage
     fun peekContext(uri: String): ContextPage? = memory["context-${hash(uri)}"] as? ContextPage
 
     fun cachedHome(): LibraryPage? = read("home", LibraryPage.serializer())
-    suspend fun home(): Result<LibraryPage> = fetch("home", RpcMethod.Home, LibraryPage.serializer())
+    suspend fun home(): Result<LibraryPage> = homeLock.withLock {
+        val cached = peekHome()
+        if (cached != null && System.currentTimeMillis() - (fetchedAt["home"] ?: 0) < 120_000L) Result.success(cached)
+        else fetch("home", RpcMethod.Home, LibraryPage.serializer())
+    }
 
     fun cachedSection(section: LibrarySection): LibraryPage? = read("section-$section", LibraryPage.serializer())
     suspend fun section(section: LibrarySection): Result<LibraryPage> =
@@ -77,8 +84,8 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
             val home = peekHome() ?: withContext(Dispatchers.IO) { cachedHome() }
             home?.let { page ->
                 val updated = page.copy(
-                    shelves = page.shelves.mapIndexed { index, shelf ->
-                        if (index != 0) shelf else shelf.copy(items = shelf.items.map { if (it.uri == uri) it.copy(pinned = pinned) else it })
+                    shelves = page.shelves.map { shelf ->
+                        shelf.copy(items = shelf.items.map { if (it.uri == uri) it.copy(pinned = pinned) else it })
                     },
                 )
                 withContext(Dispatchers.IO) { write("home", LibraryPage.serializer(), updated) }
@@ -112,6 +119,7 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
 
     private fun <T> write(key: String, serializer: KSerializer<T>, value: T) {
         memory[key] = value as Any
+        fetchedAt[key] = System.currentTimeMillis()
         runCatching {
             val part = File(directory, "$key.part")
             part.writeBytes(WearCodec.encode(serializer, value))

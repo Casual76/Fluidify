@@ -37,10 +37,10 @@ class PhoneRemoteTest {
 
     private fun snapshot(seq: Long, playing: Boolean, liked: Boolean? = false) = PlaybackSnapshot(
         seq = seq,
-        sentAtEpochMs = 1_000,
+        sentAtEpochMs = System.currentTimeMillis(),
         track = TrackInfo("spotify:track:a", "A", durationMs = 100_000),
         positionMs = 10_000,
-        sampledAtEpochMs = 1_000,
+        sampledAtEpochMs = System.currentTimeMillis(),
         isPlaying = playing,
         playWhenReady = playing,
         liked = liked,

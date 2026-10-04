@@ -70,6 +70,14 @@ class TileScreenshots {
     @Config(qualifiers = WatchSmall)
     fun playingSmallestWatch() = render("tile_playing_192dp", playing, withCover = true, widthDp = 192)
 
+    @Test @Config(qualifiers = WatchSmall)
+    fun lateSmallest() = render("tile_192dp_late", playing.copy(positionMs = 170_000), true, 192)
+
+    @Test @Config(qualifiers = WatchSmall)
+    fun fullSmallest() = render("tile_192dp_full", playing.copy(isPlaying = false, positionMs = playing.durationMs), true, 192)
+
+    @Test fun fullRegular() = render("tile_240dp_full", playing.copy(isPlaying = false, positionMs = playing.durationMs), true)
+
     @Test
     fun pausedNoCoverYet() = render("tile_paused_no_cover", playing.copy(isPlaying = false, liked = false), withCover = false)
 

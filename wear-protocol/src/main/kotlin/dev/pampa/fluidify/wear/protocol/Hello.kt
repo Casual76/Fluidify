@@ -76,6 +76,8 @@ data class Hello(
     val sdk: Int = 0,
     /** True when this hello expects a hello back. */
     val wantsReply: Boolean = true,
+    /** Clock sample carried by an immediate message, never a queued playback DataItem. */
+    val sentAtEpochMs: Long = 0,
 )
 
 enum class Compatibility {

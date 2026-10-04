@@ -143,4 +143,5 @@ data class ContextPage(
     val artUrl: String? = null,
     val tracks: List<LibraryItem>,
     val total: Int = tracks.size,
+    val unavailableReason: String? = null,
 )

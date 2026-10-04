@@ -74,6 +74,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onStart() {
         super.onStart()
+        app.standalone.router.acquire()
         // Says hello and catches up on what the Data Layer already holds. Nothing
         // is polled while the screen is up: the phone pushes changes.
         app.link.connect()
@@ -81,6 +82,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        app.standalone.router.release()
         app.link.unwatchReachability()
         super.onStop()
     }

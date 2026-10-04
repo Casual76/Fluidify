@@ -150,4 +150,9 @@
     <string name="error_no_output">Verbinde Kopfhörer, um auf der Uhr zu hören</string>
     <string name="error_end_of_queue">Das war das Ende der Warteschlange</string>
     <string name="unavailable_tracks">%1$d nicht verfügbar</string>
+    <string name="volume_down">Lautstärke verringern</string>
+    <string name="volume_up">Lautstärke erhöhen</string>
+    <string name="pin">Anheften</string>
+    <string name="unpin">Lösen</string>
+    <string name="pin_failed">Angeheftete Playlist konnte nicht geändert werden</string>
 </resources>

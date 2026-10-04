@@ -75,7 +75,7 @@ fun SearchScreen(
         input.launch(intent)
     }
     // Straight to the keyboard/voice screen the first time, like Spotify.
-    LaunchedEffect(Unit) { if (query.isEmpty()) ask() }
+    LaunchedEffect(Unit) { if (query.isEmpty()) ask() else if (results == null && !busy) run(query) }
 
     WatchList(title = null) {
         item {

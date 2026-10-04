@@ -96,6 +96,7 @@ data class CommandAck(
     val error: String? = null,
     /** The first snapshot seq that already reflects this command, when there is one. */
     val appliedSeq: Long? = null,
+    val sentAtEpochMs: Long = 0,
 )
 
 /**

@@ -100,7 +100,7 @@ class PhoneFileTransfer(private val context: Context, private val store: WatchDo
                 }
                 if (resumeFrom == 0L && part.isFile) part.delete()
                 identity.writeText(actualId)
-                guarded.timeoutAfterProgress(30_000L)
+                guarded.timeoutAfterProgress(30_000L, deadlineMs = 15 * 60_000L)
                 runInterruptible { FileOutputStream(part, resumeFrom > 0).use { out -> input.copyTo(out, BUFFER) } }
                 if (part.length() != header.totalBytes) {
                     return@withContext Result.failure(IllegalStateException("cut off at ${part.length()} of ${header.totalBytes}"))

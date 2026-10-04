@@ -24,6 +24,8 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * The Fluidify tile: what is playing, with its buttons.
@@ -45,10 +47,9 @@ class PlayerTileService : Material3TileService(allowDynamicTheme = false, defaul
         // Each layout names its buttons afresh (see [TileActions.id]), so a request that carries an
         // id already acted on is the same press seen again — a redraw, the renderer coming back —
         // and pressing "next" once must not skip twice.
-        val clicked = TileActions.nameOf(clickId)?.takeIf { clickId != lastHandled }
+        val clicked = TileActions.nameOf(clickId)?.takeIf { app.tileTaps.claim(clickId) }
         var model = PlayerTileModel.from(app.controls.nowPlaying.value)
         if (clicked != null) {
-            lastHandled = clickId
             TileActions.perform(app, clicked)
             model = model.afterClick(clicked)
             // The tile shows its guess now; once the command has its answer (or none came), it is
@@ -61,8 +62,9 @@ class PlayerTileService : Material3TileService(allowDynamicTheme = false, defaul
                 requestUpdate(app)
             }
         }
-        val cover = CoverImages.compressed(app.art, model.coverKey, COVER_PX)
-        val backdrop = CoverImages.backdrop(app.art, model.coverKey)
+        val (cover, backdrop) = withContext(Dispatchers.IO) {
+            CoverImages.compressed(app.art, model.coverKey, COVER_PX) to CoverImages.backdrop(app.art, model.coverKey)
+        }
         val layout = playerTileLayout(model, ServiceClicks(this@PlayerTileService, protoLayoutScope, model), cover, backdrop = backdrop)
         return tile(timeline(timelineEntry(layout)))
     }
@@ -115,7 +117,6 @@ class PlayerTileService : Material3TileService(allowDynamicTheme = false, defaul
         private const val SETTLE_MS = 150L
 
         /** The last press acted on, by its layout-unique id. */
-        @Volatile private var lastHandled: String? = null
 
         fun requestUpdate(context: Context) {
             runCatching { TileService.getUpdater(context).requestUpdate(PlayerTileService::class.java) }
@@ -185,6 +186,7 @@ class TileActionReceiver : BroadcastReceiver() {
                 app.controls.nowPlaying.first { !it.busy }
             }
             pending.finish()
+            PlayerTileService.requestUpdate(app)
         }
     }
 

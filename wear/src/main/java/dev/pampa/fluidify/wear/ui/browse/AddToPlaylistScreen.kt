@@ -101,6 +101,6 @@ fun AddToPlaylistScreen(
     )
 }
 
-/** A playlist the account can add to: its own, or one it collaborates on. Unknown counts as yes. */
-private fun canTake(item: LibraryItem): Boolean =
-    item.kind == LibraryKind.PLAYLIST && item.uri.startsWith("spotify:playlist:") && item.editable != false
+/** Offer only playlists whose ownership or capabilities confirm that this account can write. */
+internal fun canTake(item: LibraryItem): Boolean =
+    item.kind == LibraryKind.PLAYLIST && item.uri.startsWith("spotify:playlist:") && item.editable == true

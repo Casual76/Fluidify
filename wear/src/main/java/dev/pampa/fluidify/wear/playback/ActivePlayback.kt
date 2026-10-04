@@ -52,11 +52,12 @@ enum class PlaybackMode {
 class ActivePlayback(
     private val scope: CoroutineScope,
     private val remote: PhoneRemote,
-    private val local: LocalControls,
+    private val localFactory: () -> LocalControls,
     private val standalone: () -> Standalone,
     /** Whether the watch keeps [uri] on its own disk. */
     private val keptOnWatch: (String) -> Boolean = { false },
 ) : PlaybackControls {
+    private val local: LocalControls by lazy(localFactory)
 
     private val _mode = MutableStateFlow(PlaybackMode.PHONE)
     val mode: StateFlow<PlaybackMode> = _mode.asStateFlow()
@@ -71,7 +72,11 @@ class ActivePlayback(
     override val errors: SharedFlow<String> = _errors.asSharedFlow()
 
     init {
-        scope.launch { merge(remote.errors, local.errors).collect(_errors::tryEmit) }
+        scope.launch {
+            _mode.flatMapLatest { mode ->
+                if (mode == PlaybackMode.WATCH) merge(remote.errors, local.errors) else remote.errors
+            }.collect(_errors::tryEmit)
+        }
         // The watch has been resting (paused long enough to let its engine go) and the phone starts
         // playing: the phone is the player again, rather than the watch's old song staying up.
         scope.launch {

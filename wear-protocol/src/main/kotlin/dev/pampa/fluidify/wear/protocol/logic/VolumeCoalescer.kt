@@ -23,7 +23,17 @@ class VolumeCoalescer(
 
     /** Adopts a level the phone reported, unless the hand is turning right now. */
     fun syncFromRemote(level: Float) {
-        if (!dirty) target = level.coerceIn(0f, 1f)
+        if (!dirty) {
+            target = level.coerceIn(0f, 1f)
+            lastSentLevel = null
+        }
+    }
+
+    fun reset(level: Float) {
+        dirty = false
+        lastSentAt = null
+        lastSentLevel = null
+        target = level.coerceIn(0f, 1f)
     }
 
     /** One bezel event of [detents] steps (negative turns it down). Returns the new target. */

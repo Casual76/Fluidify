@@ -150,4 +150,9 @@
     <string name="error_no_output">Conecte fones de ouvido para ouvir no relógio</string>
     <string name="error_end_of_queue">É o fim da fila</string>
     <string name="unavailable_tracks">%1$d indisponíveis</string>
+    <string name="volume_down">Baixar volume</string>
+    <string name="volume_up">Aumentar volume</string>
+    <string name="pin">Fixar</string>
+    <string name="unpin">Desafixar</string>
+    <string name="pin_failed">Não foi possível alterar a playlist fixada</string>
 </resources>

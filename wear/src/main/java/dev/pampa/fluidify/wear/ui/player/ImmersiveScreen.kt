@@ -43,6 +43,13 @@ import dev.antigravity.fluidengine.wear.theme.FluidWearAccent
 import dev.antigravity.fluidengine.wear.theme.FluidWearDimens
 import dev.pampa.fluidify.wear.link.ArtStore
 import dev.pampa.fluidify.wear.playback.PlaybackControls
+import dev.pampa.fluidify.wear.playback.VolumeControl
+import dev.antigravity.fluidengine.wear.components.fluidRotarySteps
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.ui.common.CoverLayer
 import dev.pampa.fluidify.wear.ui.common.rememberArtworkAccent
 import kotlinx.coroutines.delay
@@ -65,9 +72,15 @@ fun ImmersiveScreen(
     active: Boolean = true,
     /** Taking a like back asks first, as the heart on the player does; see [LikeActions]. */
     onUnlike: (() -> Unit)? = null,
+    volume: VolumeControl? = null,
 ) {
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
     val ambient = LocalFluidWearAmbient.current
+    if (ambient.isAmbient) { AmbientNowPlaying(now, modifier); return }
+    val started = dev.pampa.fluidify.wear.ui.common.screenStarted()
+    val playLabel = stringResource(if (now.snapshot?.isPlaying == true) R.string.pause else R.string.play)
+    val nextLabel = stringResource(R.string.next)
+    val likeLabel = stringResource(if (now.snapshot?.liked == true) R.string.unlike else R.string.like)
     val haptics = LocalFluidHaptics.current
     val snapshot = now.snapshot
     val accent = rememberArtworkAccent(snapshot?.track?.artKey, art)
@@ -84,6 +97,16 @@ fun ImmersiveScreen(
         Box(
             modifier = modifier
                 .fillMaxSize()
+                .then(if (volume != null) Modifier.fluidRotarySteps(onSteps = volume::turn) else Modifier)
+                .semantics {
+                    customActions = buildList {
+                        add(CustomAccessibilityAction(playLabel) { controls.togglePlay(); true })
+                        add(CustomAccessibilityAction(nextLabel) { controls.next(); true })
+                        if (now.snapshot?.track.likeable()) add(CustomAccessibilityAction(likeLabel) {
+                            LikeActions(controls, onUnlike ?: { controls.setLiked(false) }).toggle(now.snapshot?.liked == true); true
+                        })
+                    }
+                }
                 .pointerInput(Unit) {
                     detectTapGestures(
                         onTap = {
@@ -132,7 +155,7 @@ fun ImmersiveScreen(
                 FluidEdgeGlowRing(
                     positionMs = { now.positionAt(System.currentTimeMillis()) },
                     durationMs = snapshot?.track?.durationMs ?: 0L,
-                    running = active && snapshot?.isPlaying == true && !snapshot.buffering,
+                    running = active && started && snapshot?.isPlaying == true && !snapshot.buffering,
                 )
                 val shown = sign
                 AnimatedVisibility(
@@ -147,6 +170,11 @@ fun ImmersiveScreen(
                     FluidGlassBadge(backdrop = backdrop) {
                         glyph.value?.let { Icon(it, contentDescription = null, modifier = Modifier.size(FluidWearDimens.IconLarge)) }
                     }
+                }
+                if (volume != null) {
+                    val visible by volume.visible.collectAsStateWithLifecycle()
+                    val level by volume.level.collectAsStateWithLifecycle()
+                    VolumeOverlay(visible = visible, level = level, device = snapshot?.device?.name, backdrop = backdrop)
                 }
             }
         }

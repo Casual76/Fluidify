@@ -18,6 +18,12 @@ import kotlinx.coroutines.launch
  * activity alive, so nothing here may assume a screen.
  */
 class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
+    val tileTaps by lazy {
+        val prefs = getSharedPreferences("tile_clicks", MODE_PRIVATE)
+        dev.pampa.fluidify.wear.system.TileTapHistory(prefs.getString("handled", "").orEmpty().split('\n').filter { it.isNotEmpty() }) {
+            prefs.edit().putString("handled", it.joinToString("\n")).commit()
+        }
+    }
 
     val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -75,7 +81,7 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
 
     /** Whichever of the two is in front. */
     val playback: dev.pampa.fluidify.wear.playback.ActivePlayback by lazy {
-        dev.pampa.fluidify.wear.playback.ActivePlayback(scope, remote, local, { standalone }) { uri -> downloads.store.isKept(uri) }
+        dev.pampa.fluidify.wear.playback.ActivePlayback(scope, remote, { local }, { standalone }) { uri -> downloads.store.isKept(uri) }
             .also { active ->
                 // The watch's own session posts its own notification: the watch face follows.
                 scope.launch {

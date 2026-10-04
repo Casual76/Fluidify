@@ -11,6 +11,8 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
 import androidx.navigation.NavHostController
 import androidx.wear.compose.navigation.currentBackStackEntryAsState
 import androidx.wear.compose.foundation.pager.HorizontalPager
@@ -79,7 +81,7 @@ fun WatchRoot(
     val vertical = rememberPagerState(initialPage = PAGE_MAIN) { 3 }
     val horizontal = rememberPagerState(initialPage = 0) { 2 }
     val phoneVersion = remember {
-        app.link.phone.map { it?.versionName }.stateIn(app.scope, SharingStarted.Eagerly, app.link.phone.value?.versionName)
+        app.link.phone.map { it?.versionName }.stateIn(scope, SharingStarted.Eagerly, app.link.phone.value?.versionName)
     }
     val toPlayer: () -> Unit = { backToPlayer(nav, scope, vertical, horizontal) }
     val navigator = remember(nav) { Navigator(nav) }
@@ -87,7 +89,11 @@ fun WatchRoot(
     val open: (String, String) -> Unit = { uri, title -> go(contextRoute(uri, title)) }
     // Taking a like back asks first, from the player, the cover page and the tile alike.
     var confirmUnlike by remember { mutableStateOf(false) }
-    val askUnlike: () -> Unit = { confirmUnlike = true }
+    var unlikeUri by remember { mutableStateOf<String?>(null) }
+    val askUnlike: () -> Unit = {
+        unlikeUri = app.controls.nowPlaying.value.snapshot?.track?.uri
+        confirmUnlike = unlikeUri != null
+    }
     val addToPlaylist: () -> Unit = {
         app.controls.nowPlaying.value.snapshot?.track?.let { track -> go(addToPlaylistRoute(track.uri, track.title)) }
     }
@@ -97,7 +103,7 @@ fun WatchRoot(
     LaunchedEffect(request) {
         val asked = request ?: return@LaunchedEffect
         toPlayer()
-        if (asked == PlayerIntents.Request.CONFIRM_UNLIKE && app.controls.nowPlaying.value.snapshot?.liked == true) confirmUnlike = true
+        if (asked == PlayerIntents.Request.CONFIRM_UNLIKE && app.controls.nowPlaying.value.snapshot?.liked == true) askUnlike()
         onRequestHandled()
     }
     val playerActive by remember {
@@ -128,6 +134,7 @@ fun WatchRoot(
     }
 
     AppScaffold(modifier = modifier) {
+        Box(Modifier.fillMaxSize()) {
         SwipeDismissableNavHost(navController = nav, startDestination = HOME) {
             composable(HOME) {
                 // No page dots: the player is a full-bleed cover with things on every edge, and
@@ -145,7 +152,7 @@ fun WatchRoot(
                         AnimatedPage(pageIndex = page, pagerState = vertical) {
                             when (page) {
                                 PAGE_IMMERSIVE -> ScreenScaffold(timeText = {}) { _ ->
-                                    ImmersiveScreen(app.controls, app.art, active = immersiveActive, onUnlike = askUnlike)
+                                    ImmersiveScreen(app.controls, app.art, active = immersiveActive, onUnlike = askUnlike, volume = app.volume)
                                 }
                                 PAGE_MAIN -> HorizontalPagerScaffold(pagerState = horizontal, pageIndicator = null) {
                                     HorizontalPager(state = horizontal) { inner ->
@@ -284,27 +291,38 @@ fun WatchRoot(
         val context = androidx.compose.ui.platform.LocalContext.current
         val haptics = dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics.current
         LaunchedEffect(app) {
-            app.controls.errors.collectLatest { code ->
-                notice = context.getString(dev.pampa.fluidify.wear.ui.common.ErrorMessages.textFor(code))
+            var hide: kotlinx.coroutines.Job? = null
+            val window = dev.pampa.fluidify.wear.ui.common.NoticeWindow(NOTICE_MS)
+            app.controls.errors.collect { code ->
+                val message = context.getString(dev.pampa.fluidify.wear.ui.common.ErrorMessages.textFor(code))
+                if (!window.accept(message, android.os.SystemClock.uptimeMillis())) return@collect
+                hide?.cancel()
+                notice = message
                 haptics.play(dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent.Reject)
-                kotlinx.coroutines.delay(NOTICE_MS)
-                notice = null
+                hide = launch { kotlinx.coroutines.delay(NOTICE_MS); notice = null }
             }
         }
         dev.antigravity.fluidengine.wear.components.FluidWearToast(message = notice)
         val shown by app.controls.nowPlaying.collectAsStateWithLifecycle()
+        LaunchedEffect(shown.snapshot?.track?.uri) {
+            if (shown.snapshot?.track?.uri != unlikeUri) confirmUnlike = false
+        }
         dev.pampa.fluidify.wear.ui.player.UnlikeDialog(
             visible = confirmUnlike,
             title = shown.snapshot?.track?.title,
             onConfirm = {
                 confirmUnlike = false
                 haptics.play(dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent.ToggleOff)
-                app.controls.setLiked(false)
+                if (app.controls.nowPlaying.value.snapshot?.track?.uri == unlikeUri) app.controls.setLiked(false)
             },
             onDismiss = { confirmUnlike = false },
         )
         val meter by app.glassMeter.visible.collectAsStateWithLifecycle()
         if (meter) GlassMeter()
+        if (dev.antigravity.fluidengine.wear.ambient.LocalFluidWearAmbient.current.isAmbient) {
+            dev.pampa.fluidify.wear.ui.player.AmbientNowPlaying(shown)
+        }
+        }
     }
 }
 
@@ -342,7 +360,7 @@ private class Navigator(private val nav: NavHostController) {
         if (route == last && now - lastAt < DOUBLE_TAP_MS) return
         last = route
         lastAt = now
-        nav.navigate(route) { if ('?' !in route && '/' !in route) launchSingleTop = true }
+        nav.navigate(route) { launchSingleTop = true }
     }
 }
 

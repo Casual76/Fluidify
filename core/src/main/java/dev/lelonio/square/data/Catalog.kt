@@ -128,7 +128,7 @@ data class CatalogPlaylist(
     val owner: String? = null,
     /**
      * Whether this account may add tracks to it: false for a playlist it only follows. Null when
-     * unknown, which callers treat as "try": the write itself is the final word.
+     * unknown; add-to-playlist screens require true before offering a destination.
      */
     @kotlinx.serialization.SerialName("canEdit")
     val editable: Boolean? = null,

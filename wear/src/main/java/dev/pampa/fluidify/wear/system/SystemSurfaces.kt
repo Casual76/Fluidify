@@ -27,6 +27,8 @@ class SystemSurfaces(
     private val prefs: SurfacePrefs = SurfacePrefs(context),
     private val ongoing: OngoingPlayback = OngoingPlayback(context),
 ) {
+    private val signatures = SurfaceSignatures(prefs.lastPhoneSignature, prefs.lastWatchSignature)
+    @Volatile private var watchSnapshot: PlaybackSnapshot? = null
 
     @Volatile
     private var current: PlaybackSnapshot? = null
@@ -43,9 +45,9 @@ class SystemSurfaces(
         current = snapshot
         updateEntry()
         val signature = signatureOf(snapshot)
-        if (signature != prefs.lastSignature) {
-            prefs.lastSignature = signature
-            refreshTileAndComplication()
+        if (signatures.changed(signature, watchSource = false)) {
+            prefs.lastPhoneSignature = signature
+            if (!watchPlaying) refreshTileAndComplication()
         }
     }
 
@@ -54,10 +56,11 @@ class SystemSurfaces(
      * phone (they read whichever player is in front). The watch-face entry is the session's own.
      */
     fun onWatchState(snapshot: PlaybackSnapshot?) {
+        watchSnapshot = snapshot
         if (!watchPlaying) return
-        val signature = "watch|" + signatureOf(snapshot)
-        if (signature != prefs.lastSignature) {
-            prefs.lastSignature = signature
+        val signature = signatureOf(snapshot)
+        if (signatures.changed(signature, watchSource = true)) {
+            prefs.lastWatchSignature = signature
             refreshTileAndComplication()
         }
     }
@@ -96,7 +99,7 @@ class SystemSurfaces(
 
     /** A cover arrived; it matters if it is the one on show. */
     fun onCoverStored(key: String) {
-        if (current?.track?.artKey == key) refreshTileAndComplication()
+        if ((if (watchPlaying) watchSnapshot else current)?.track?.artKey == key) refreshTileAndComplication()
     }
 
     /** A switch about the watch face moved in Altro. */

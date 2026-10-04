@@ -5,6 +5,18 @@ import org.junit.Assert.assertNull
 import org.junit.Test
 
 class VolumeCoalescerTest {
+    @Test fun externalVolumeChangeDoesNotSuppressTheNextSend() {
+        val volume = VolumeCoalescer()
+        volume.set(1f)
+        assertEquals(1f, volume.take(0)!!, 0.001f)
+        volume.syncFromRemote(0.4f)
+        volume.set(1f)
+        assertEquals(1f, volume.take(100)!!, 0.001f)
+        volume.set(0.8f)
+        volume.reset(0.2f)
+        org.junit.Assert.assertNull(volume.take(1_000))
+        assertEquals(0.2f, volume.target, 0.001f)
+    }
 
     @Test
     fun firstTurnIsSentAtOnceThenThrottled() {

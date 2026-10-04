@@ -11,6 +11,7 @@ import dev.pampa.fluidify.wear.protocol.logic.PositionExtrapolator
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -301,10 +302,11 @@ class PhoneRemote(
         val now = System.currentTimeMillis()
         val placed = guess?.let { Guess(ReceivedSnapshot(it, now), confirms) }
         if (placed != null) optimistic.value = placed
-        inFlight.value += 1
+        inFlight.update { it + 1 }
         scope.launch {
-            val ack = ackTimeout(command)?.let { link.send(command, it) } ?: link.send(command)
-            inFlight.value -= 1
+            val ack = try {
+                ackTimeout(command)?.let { link.send(command, it) } ?: link.send(command)
+            } finally { inFlight.update { it - 1 } }
             if (ack == null || !ack.ok) {
                 if (placed == null || optimistic.value === placed) optimistic.value = null
                 _errors.tryEmit(ack?.error ?: "unreachable")

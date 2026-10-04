@@ -2,6 +2,10 @@ package dev.pampa.fluidify.wear.screenshots
 
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
+import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import com.github.takahirom.roborazzi.captureRoboImage
@@ -45,9 +49,13 @@ class PlayerScreenshots {
         storeSampleCover(art)
     }
 
-    private fun capture(name: String, ambient: Boolean = false, content: @androidx.compose.runtime.Composable () -> Unit) {
+    private fun capture(name: String, ambient: Boolean = false, fontScale: Float = 1f, content: @androidx.compose.runtime.Composable () -> Unit) {
         compose.mainClock.autoAdvance = false
-        compose.setContent { WatchFrame(ambient = ambient) { content() } }
+        compose.setContent {
+            CompositionLocalProvider(LocalDensity provides Density(LocalDensity.current.density, fontScale)) {
+                WatchFrame(ambient = ambient) { content() }
+            }
+        }
         compose.mainClock.advanceTimeBy(1_200)
         compose.onRoot().captureRoboImage("screenshots/$name.png")
     }
@@ -97,6 +105,29 @@ class PlayerScreenshots {
     @Test
     @Config(qualifiers = WatchSmall)
     fun playingSmallestWatch() = capture("player_playing_192dp", content = player(sampleSnapshot()))
+
+    @Test @Config(qualifiers = WatchSmall)
+    fun largeFontSmallest() = largeFont("player_192dp_font130_status")
+
+    @Test @Config(qualifiers = Watch40)
+    fun largeFontMedium() = largeFont("player_216dp_font130_status")
+
+    @Test fun largeFontRegular() = largeFont("player_240dp_font130_status")
+
+    private fun largeFont(name: String) {
+        capture(name, fontScale = 1.3f) {
+            PlayerScreen(FakeControls(sampleSnapshot()), art, onQueue = {}, onOutput = {}, onEssentials = {},
+                status = "Connessione in corso")
+        }
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        fun bounds(id: Int) = compose.onNodeWithContentDescription(context.getString(id)).fetchSemanticsNode().boundsInRoot
+        val previous = bounds(dev.pampa.fluidify.wear.R.string.previous)
+        val next = bounds(dev.pampa.fluidify.wear.R.string.next)
+        val pause = bounds(dev.pampa.fluidify.wear.R.string.pause)
+        org.junit.Assert.assertTrue(previous.right <= pause.left)
+        org.junit.Assert.assertTrue(pause.right <= next.left)
+        org.junit.Assert.assertTrue(pause.bottom <= bounds(dev.pampa.fluidify.wear.R.string.queue).top)
+    }
 
     @Test
     fun turningTheVolume() {
