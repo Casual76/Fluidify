@@ -38,7 +38,9 @@ class WatchListenerService : WearableListenerService() {
             val path = item.uri.path ?: return@forEach
             when {
                 path == WearPaths.STATE -> item.data?.let { bytes ->
-                    WearCodec.decodeOrNull(PlaybackSnapshot.serializer(), bytes)?.let { app.state.accept(it) }
+                    WearCodec.decodeOrNull(PlaybackSnapshot.serializer(), bytes)?.let {
+                        if (app.state.accept(it)) app.link.onPhoneHeard()
+                    }
                 }
                 path == WearPaths.ACCOUNT -> item.data?.let { bytes ->
                     WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AccountState.serializer(), bytes)
@@ -69,7 +71,10 @@ class WatchListenerService : WearableListenerService() {
                 runBlocking { withTimeoutOrNull(BUDGET_MS) { app.updater.onOffer(event.sourceNodeId, offer) } }
             }
             WearPaths.ACK -> WearCodec.decodeOrNull(CommandAck.serializer(), event.data)?.let { app.link.onAck(it) }
-            WearPaths.RPC_REPLY -> WearCodec.decodeOrNull(RpcResponse.serializer(), event.data)?.let { app.link.onRpcReply(it) }
+            WearPaths.RPC_REPLY -> WearCodec.decodeOrNull(RpcResponse.serializer(), event.data)?.let {
+                app.link.onPhoneHeard()
+                app.link.onRpcReply(it)
+            }
             WearPaths.HELLO -> WearCodec.decodeOrNull(Hello.serializer(), event.data)?.let {
                 app.link.onHello(it, event.sourceNodeId)
             }
@@ -81,7 +86,7 @@ class WatchListenerService : WearableListenerService() {
             // phone's music follows through Spotify Connect (see ActivePlayback.moveToWatch).
             // On the main thread: the watch's media controller belongs to the thread that builds
             // it, and this callback's thread is gone a few seconds after it returns.
-            WearPaths.HANDOFF_TO_WATCH -> app.scope.launch { app.playback.moveToWatch(app.standalone.router.best) }
+            WearPaths.HANDOFF_TO_WATCH -> app.scope.launch { app.playback.moveToWatch(app.standalone.router.best, fromPhone = true) }
             WearPaths.AUTH_GRANT -> WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AuthGrant.serializer(), event.data)
                 ?.let { app.link.onAuthGrant(it) }
             // The phone signed out: so does the watch, and its own playback stops first.

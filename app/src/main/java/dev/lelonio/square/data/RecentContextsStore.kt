@@ -47,6 +47,12 @@ class RecentContextsStore(context: Context) {
         prefs.edit().putString(KEY, json.encodeToString(serializer, updated)).apply()
     }
 
+    /** Forgets everything: the account it belonged to signed out. */
+    fun clear() {
+        _contexts.value = emptyList()
+        prefs.edit().remove(KEY).apply()
+    }
+
     private fun load(): List<RecentContext> =
         prefs.getString(KEY, null)?.let { runCatching { json.decodeFromString(serializer, it) }.getOrNull() }.orEmpty()
 

@@ -14,6 +14,8 @@ import java.io.File
 data class ReceivedSnapshot(
     val snapshot: PlaybackSnapshot,
     val receivedAtMs: Long,
+    /** How far ahead the watch's clock was of the phone's when this arrived; see [ClockOffset]. */
+    val clockOffsetMs: Long? = null,
 )
 
 /**
@@ -37,6 +39,14 @@ class WatchState(private val file: File) {
     @Volatile
     var onAccepted: ((ReceivedSnapshot) -> Unit)? = null
 
+    private val offset = dev.pampa.fluidify.wear.protocol.logic.ClockOffset()
+
+    /**
+     * Takes [snapshot] if it is newer than the one held. Synchronized: the listener's thread and
+     * the main thread's catch-up both deliver, and a check-then-set between them could put an
+     * older snapshot over a newer one.
+     */
+    @Synchronized
     fun accept(snapshot: PlaybackSnapshot, receivedAtMs: Long = System.currentTimeMillis()): Boolean {
         val held = _current.value
         // A phone whose clock went backwards restarts its counter lower; a snapshot sent well
@@ -44,7 +54,7 @@ class WatchState(private val file: File) {
         val newer = held == null || snapshot.seq > held.snapshot.seq ||
             snapshot.sentAtEpochMs > held.snapshot.sentAtEpochMs + RESTART_GRACE_MS
         if (!newer) return false
-        val received = ReceivedSnapshot(snapshot, receivedAtMs)
+        val received = ReceivedSnapshot(snapshot, receivedAtMs, offset.observe(snapshot.sentAtEpochMs, receivedAtMs))
         _current.value = received
         runCatching {
             file.writeBytes(WearCodec.encode(ReceivedSnapshot.serializer(), received))

@@ -16,6 +16,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.async
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.json.JSONObject
@@ -44,8 +45,12 @@ class WatchPlaybackService : MediaSessionService() {
     private lateinit var player: LibrespotPlayer
     private var session: MediaSession? = null
 
-    /** Whether this service holds a lease on the engine; see WatchEngine.acquire. */
-    @Volatile private var leased = false
+    /**
+     * This service's lease on the engine, as it is being taken; see WatchEngine.acquire. Taken in
+     * the app's scope rather than the service's: a service destroyed while a first sign-in is
+     * still going must still give the lease back once it lands, or the engine stays up for good.
+     */
+    private var lease: kotlinx.coroutines.Deferred<Boolean>? = null
 
     /** Which context and track were adopted last, so a repeat of the same event does nothing. */
     private var adopted: String? = null
@@ -70,6 +75,10 @@ class WatchPlaybackService : MediaSessionService() {
             {},
             {},
         )
+        // The engine is shared by leases; only WatchEngine stops it.
+        player.shutdownEngineOnRelease = false
+        // Music usually arrives here by a handoff, which this side never pressed play for.
+        player.takeFocusOnEnginePlay = true
         // Spotify Connect brought something the queue does not hold (the phone moved
         // its music here): read what the engine is playing and make it the queue.
         player.onUnknownTrack = { uri -> scope.launch { adoptPlayingTrack(uri) } }
@@ -77,22 +86,43 @@ class WatchPlaybackService : MediaSessionService() {
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 handler.removeCallbacks(idleStop)
                 if (!isPlaying) handler.postDelayed(idleStop, IDLE_MS)
+                // Music arriving (a handoff) with nowhere the listener allows it to sound.
+                if (isPlaying && app.standalone.router.best == null) player.pause()
             }
         })
         // Where the listener said, and again whenever they say somewhere else or the
         // headphones come and go.
         scope.launch {
             kotlinx.coroutines.flow.combine(app.standalone.router.chosen, app.standalone.router.outputs) { _, _ -> }
-                .collect { output.preferredDevice = app.standalone.router.deviceFor(app.standalone.router.best) }
+                .collect {
+                    val router = app.standalone.router
+                    val best = router.best
+                    // The headphones went and there is nowhere the listener allows instead (the
+                    // speaker is off in the settings): pause, rather than let the system's default
+                    // — the speaker — carry on out loud.
+                    if (best == null && player.isPlaying) player.pause()
+                    output.preferredDevice = router.deviceFor(best)
+                }
         }
         session = MediaSession.Builder(this, player)
             .setSessionActivity(PlayerIntents.openPlayer(this))
             .build()
-        scope.launch { leased = app.standalone.engine.acquire(player, output) }
+        takeLease()
+        // A start that failed is tried again when the listener picks the watch again.
+        scope.launch {
+            app.standalone.engine.retries.collect {
+                val current = lease
+                if (current == null || (current.isCompleted && !current.getCompleted())) takeLease()
+            }
+        }
         handler.postDelayed(idleStop, IDLE_MS)
     }
 
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
+
+    private fun takeLease() {
+        lease = app.scope.async { app.standalone.engine.acquire(player, output) }
+    }
 
     override fun onDestroy() {
         handler.removeCallbacks(idleStop)
@@ -101,10 +131,10 @@ class WatchPlaybackService : MediaSessionService() {
         player.release()
         val engine = app.standalone.engine
         val player = player
-        if (leased) {
-            // Off the main thread's lifetime: the service is going, the lease still has to.
-            app.scope.launch { engine.release(player) }
-        }
+        val lease = lease
+        // Off the service's lifetime: the service is going, the lease still has to — once it has
+        // been taken, if it is still being taken.
+        if (lease != null) app.scope.launch { if (lease.await()) engine.release(player) }
         output.release()
         scope.cancel()
         super.onDestroy()
@@ -147,10 +177,10 @@ class WatchPlaybackService : MediaSessionService() {
         )
     }
 
-    private companion object {
-        const val TAG = "WatchPlayback"
+    companion object {
+        private const val TAG = "WatchPlayback"
 
-        /** Two minutes paused and the watch stops being a Connect device. */
+        /** Two minutes paused and the watch stops being a Connect device (LocalControls lets go too). */
         const val IDLE_MS = 120_000L
     }
 }

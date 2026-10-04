@@ -147,4 +147,5 @@
     <string name="added_to">%1$s listesine eklendi</string>
     <string name="no_editable_playlists">Ekleyebileceğin bir çalma listen yok</string>
     <string name="error_playlist">Çalma listesine eklenemedi</string>
+    <string name="error_no_output">Saatte dinlemek için kulaklık bağla</string>
 </resources>

@@ -129,6 +129,37 @@ class PhoneLink(
         }
     }
 
+    /**
+     * The phone said something (a new state, an answer): it is there. Before, the status was only
+     * ever set by a hello or a failed send, so "phone unreachable" stayed in the title long after the
+     * phone was back and its music was showing underneath, and an ack cleared only some of it.
+     * The statuses that say something about the builds (outdated, other keys) are kept.
+     */
+    fun onPhoneHeard() {
+        when (_status.value) {
+            LinkStatus.UNKNOWN, LinkStatus.UNREACHABLE, LinkStatus.NOT_FOUND, LinkStatus.NO_ANSWER -> _status.value = LinkStatus.CONNECTED
+            else -> Unit
+        }
+    }
+
+    private val capabilityListener = CapabilityClient.OnCapabilityChangedListener { info ->
+        val reachable = info.nodes.isNotEmpty()
+        when {
+            // Back in range: say hello again, which also settles whether the builds agree.
+            reachable && _status.value != LinkStatus.CONNECTED -> connect()
+            !reachable && _status.value == LinkStatus.CONNECTED -> _status.value = LinkStatus.UNREACHABLE
+        }
+    }
+
+    /** Follows the phone coming and going while a screen is up; see [onPhoneHeard]. */
+    fun watchReachability() {
+        runCatching { capabilities.addListener(capabilityListener, WearPaths.CAPABILITY_PHONE) }
+    }
+
+    fun unwatchReachability() {
+        runCatching { capabilities.removeListener(capabilityListener, WearPaths.CAPABILITY_PHONE) }
+    }
+
     /** The phone's node when it is in reach, for a channel of one's own (the download transfers). */
     suspend fun reachablePhone(): String? = findPhone()?.id
 
@@ -266,10 +297,8 @@ class PhoneLink(
     }
 
     fun onAck(ack: CommandAck) {
+        onPhoneHeard()
         pending.remove(ack.id)?.complete(ack)
-        if (_status.value == LinkStatus.UNREACHABLE || _status.value == LinkStatus.UNKNOWN) {
-            _status.value = LinkStatus.CONNECTED
-        }
     }
 
     private suspend fun send(node: String, path: String, bytes: ByteArray): Boolean = runCatching {

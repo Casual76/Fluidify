@@ -43,6 +43,7 @@ import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.net.HttpURLConnection
 import java.net.URL
 
@@ -62,6 +63,8 @@ class LocalControls(
     private val offlineTracks: (String) -> List<dev.lelonio.square.data.CatalogTrack> = { emptyList() },
     /** Where the last thing played here is remembered; see [resumeLast]. */
     private val prefs: StandalonePrefs? = null,
+    /** Whether a song is in Liked Songs, asked of the phone; null when it cannot say. */
+    private val likedLookup: suspend (String) -> Boolean? = { null },
 ) : PlaybackControls {
 
     /** How the watch appears in its own device row: the same name as in the account's list. */
@@ -82,6 +85,51 @@ class LocalControls(
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) = publish(player)
+
+        override fun onIsPlayingChanged(isPlaying: Boolean) {
+            main.removeCallbacks(idle)
+            if (!isPlaying) main.postDelayed(idle, IDLE_MS)
+        }
+
+        override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (sleepAtTrackEnd && reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) endSleep()
+        }
+
+        override fun onPlaybackStateChanged(playbackState: Int) {
+            if (sleepAtTrackEnd && playbackState == Player.STATE_ENDED) endSleep()
+        }
+    }
+
+    /**
+     * Where the watch's player was when it went to sleep; see [rest]. Its queue is put back from
+     * here the next time anything asks for the player.
+     */
+    private data class ResumePoint(
+        val contextUri: String?,
+        val label: String,
+        val trackUri: String,
+        val positionMs: Long,
+        val shuffle: Boolean,
+    )
+
+    private var resume: ResumePoint? = null
+
+    /**
+     * Paused long enough that the engine, the Wi-Fi and the Connect device go (see [rest]), with the
+     * song still on screen and play still meaning "from here".
+     */
+    val isResting: Boolean get() = controller == null && !connecting && resume != null
+
+    private val idle = Runnable { rest() }
+
+    /** "At the end of this song": what the sleep timer waits for on the watch's own player. */
+    private var sleepAtTrackEnd = false
+
+    /** System volume changes (the side buttons, the system's own slider) shown on the player. */
+    private val volumeObserver = object : android.database.ContentObserver(Handler(Looper.getMainLooper())) {
+        override fun onChange(selfChange: Boolean) {
+            controller?.let(::publish)
+        }
     }
 
     private val main = Handler(Looper.getMainLooper())
@@ -105,14 +153,76 @@ class LocalControls(
         val token = SessionToken(context, ComponentName(context, WatchPlaybackService::class.java))
         val future = MediaController.Builder(context, token).buildAsync()
         future.addListener({
-            connecting = false
-            val built = runCatching { future.get() }.getOrNull() ?: return@addListener
+            val built = runCatching { future.get() }.getOrNull()
+            if (built == null) {
+                connecting = false
+                pending.clear()
+                return@addListener
+            }
             controller = built
             built.addListener(listener)
-            publish(built)
-            pending.toList().forEach { it(built) }
-            pending.clear()
+            runCatching { context.contentResolver.registerContentObserver(android.provider.Settings.System.CONTENT_URI, true, volumeObserver) }
+            val point = resume
+            resume = null
+            if (point == null) {
+                connecting = false
+                publish(built)
+                runPending(built)
+            } else {
+                // Back from a rest: the queue as it was, at the second it was left, before
+                // whatever woke it (play, most likely) runs on it.
+                scope.launch {
+                    restore(built, point)
+                    connecting = false
+                    publish(built)
+                    runPending(built)
+                }
+            }
         }, MoreExecutors.directExecutor())
+    }
+
+    private fun runPending(player: MediaController) {
+        val actions = pending.toList()
+        pending.clear()
+        actions.forEach { it(player) }
+    }
+
+    private suspend fun restore(player: MediaController, point: ResumePoint) {
+        val tracks = loadTracks(point.contextUri ?: point.trackUri) ?: return
+        val index = tracks.indexOfFirst { it.uri == point.trackUri }.takeIf { it >= 0 } ?: return
+        val items = tracks.map { it.toQueueItem(contextUri = point.contextUri ?: point.trackUri, asContext = true, contextLabel = point.label) }
+        player.shuffleModeEnabled = point.shuffle
+        player.setMediaItems(items, index, point.positionMs)
+        player.prepare()
+    }
+
+    /**
+     * Paused for [IDLE_MS]: lets the service go, and with it the engine, the Wi-Fi it held and the
+     * watch's place in the account's device list. Before, the controller stayed bound for as long
+     * as the watch was the player, so the service never stopped and none of that ever went.
+     *
+     * The song stays on screen, paused, and the place in it is kept: play brings the engine back
+     * and goes on from the same second, as if it had never left.
+     */
+    private fun rest() {
+        val current = controller ?: return
+        if (current.isPlaying || current.playWhenReady) return
+        val item = current.currentMediaItem
+        if (item == null) {
+            disconnect()
+            return
+        }
+        val extras = item.mediaMetadata.extras
+        resume = ResumePoint(
+            contextUri = extras?.getString(EXTRA_CONTEXT_URI),
+            label = extras?.getString(EXTRA_CONTEXT_LABEL).orEmpty(),
+            trackUri = item.mediaId,
+            positionMs = current.currentPosition.coerceAtLeast(0),
+            shuffle = current.shuffleModeEnabled,
+        )
+        Log.i(TAG, "paused for a while: letting the engine go")
+        releaseController()
+        // The service has been idle as long; with nothing bound it now stops, and the engine goes.
     }
 
     /** Lets the service go; it stops on its own once nothing plays. */
@@ -121,16 +231,26 @@ class LocalControls(
             main.post(::disconnect)
             return
         }
+        resume = null
+        releaseController()
+        _nowPlaying.value = NowPlaying(null, LinkStatus.CONNECTED)
+    }
+
+    private fun releaseController() {
+        main.removeCallbacks(idle)
+        runCatching { context.contentResolver.unregisterContentObserver(volumeObserver) }
         controller?.removeListener(listener)
         controller?.release()
         controller = null
-        _nowPlaying.value = NowPlaying(null, LinkStatus.CONNECTED)
+        connecting = false
+        pending.clear()
     }
 
     val isPlaying: Boolean get() = controller?.isPlaying == true
 
     /** Stops for good: what plays stops, the controller goes and so does the service, now. */
     fun stop() {
+        resume = null
         controller?.let {
             it.pause()
             it.clearMediaItems()
@@ -161,7 +281,7 @@ class LocalControls(
     override fun setLiked(liked: Boolean) {
         val uri = nowPlaying.value.snapshot?.track?.uri ?: return
         scope.launch {
-            val ok = withContext(Dispatchers.IO) { runCatching { NativeBridge.setLiked(uri, liked) }.isSuccess }
+            val ok = engineReady() && withContext(Dispatchers.IO) { runCatching { NativeBridge.setLiked(uri, liked) }.isSuccess }
             if (ok) {
                 likedOverride = uri to liked
                 controller?.let(::publish)
@@ -173,9 +293,30 @@ class LocalControls(
 
     private var likedOverride: Pair<String, Boolean>? = null
 
+    /** The song whose heart was asked of the phone, so a run of publishes asks once. */
+    private var likedAsked: String? = null
+
+    /**
+     * Whether the engine has a session, waking it for a write when the player is resting: a like
+     * or a playlist needs the account, and a rested watch has let its engine go.
+     */
+    private suspend fun engineReady(): Boolean {
+        fun connected() = runCatching { NativeBridge.isConnected }.getOrDefault(false)
+        if (connected()) return true
+        if (controller == null) withController { }
+        return withTimeoutOrNull(ENGINE_WAKE_MS) {
+            while (!connected()) delay(ENGINE_POLL_MS)
+            true
+        } ?: false
+    }
+
     /** Through the watch's own engine, which is running whenever this is the player in front. */
     override suspend fun addToPlaylist(playlistUri: String, trackUri: String): Boolean {
-        val written = withContext(Dispatchers.IO) { runCatching { NativeBridge.addToPlaylist(playlistUri, trackUri) } }
+        val written = if (!engineReady()) {
+            Result.failure(IllegalStateException("the engine did not start"))
+        } else {
+            withContext(Dispatchers.IO) { runCatching { NativeBridge.addToPlaylist(playlistUri, trackUri) } }
+        }
             .onFailure { Log.w(TAG, "not added to the playlist: ${it.message}") }
         if (written.isFailure) _errors.tryEmit(dev.pampa.fluidify.wear.protocol.AckErrors.PLAYLIST)
         return written.isSuccess
@@ -186,18 +327,14 @@ class LocalControls(
             it.lastContext = contextUri
             it.lastContextLabel = label
         }
+        // Something new to play: what was left before a rest is not coming back.
+        resume = null
         scope.launch {
-            // Through the session when there is one; from the watch's own downloads otherwise,
-            // which is how a run with no phone and no Wi-Fi still plays the playlist.
-            val tracks = runCatching {
-                val uris = if (contextUri.startsWith("spotify:track:")) listOf(contextUri) else Catalog.contextTrackUris(contextUri)
-                Catalog.tracks(uris)
-            }.getOrNull()?.takeIf { it.isNotEmpty() } ?: offlineTracks(contextUri).ifEmpty {
+            val tracks = loadTracks(contextUri) ?: run {
                 Log.w(TAG, "cannot read $contextUri, and nothing of it is kept here")
                 _errors.tryEmit(if (contextUri.startsWith("spotify:station:")) dev.pampa.fluidify.wear.protocol.AckErrors.RADIO else dev.pampa.fluidify.wear.protocol.AckErrors.CONTEXT)
                 return@launch
             }
-            if (tracks.isEmpty()) return@launch
             val items = tracks.map { it.toQueueItem(contextUri = contextUri, asContext = true, contextLabel = label) }
             val start = startTrackUri?.let { uri -> tracks.indexOfFirst { it.uri == uri } }?.takeIf { it >= 0 }
                 ?: if (shuffle) tracks.indices.random() else 0
@@ -209,6 +346,17 @@ class LocalControls(
             }
         }
     }
+
+    /**
+     * A playlist's tracks: through the session when there is one, from the watch's own downloads
+     * otherwise, which is how a run with no phone and no Wi-Fi still plays the playlist. Null when
+     * neither has it.
+     */
+    private suspend fun loadTracks(contextUri: String): List<dev.lelonio.square.data.CatalogTrack>? =
+        runCatching {
+            val uris = if (contextUri.startsWith("spotify:track:")) listOf(contextUri) else Catalog.contextTrackUris(contextUri)
+            Catalog.tracks(uris)
+        }.getOrNull()?.takeIf { it.isNotEmpty() } ?: offlineTracks(contextUri).takeIf { it.isNotEmpty() }
 
     /** Plays again what the watch last played on its own, from the top; nothing when it never did. */
     fun resumeLast() {
@@ -258,6 +406,12 @@ class LocalControls(
     override fun sleep(minutes: Int?, atTrackEnd: Boolean, cancel: Boolean) {
         sleepJob?.cancel()
         sleepInfo = null
+        sleepAtTrackEnd = false
+        if (!cancel && atTrackEnd) {
+            // Until the song changes by itself, or the queue ends: see the listener.
+            sleepAtTrackEnd = true
+            sleepInfo = SleepInfo(atTrackEnd = true)
+        }
         if (!cancel && minutes != null) {
             val endsAt = System.currentTimeMillis() + minutes * 60_000L
             sleepInfo = SleepInfo(endsAtEpochMs = endsAt)
@@ -268,6 +422,13 @@ class LocalControls(
                 controller?.let(::publish)
             }
         }
+        controller?.let(::publish)
+    }
+
+    private fun endSleep() {
+        sleepAtTrackEnd = false
+        sleepInfo = null
+        controller?.pause()
         controller?.let(::publish)
     }
 
@@ -292,6 +453,7 @@ class LocalControls(
             audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         val extras = item?.mediaMetadata?.extras
         val uri = item?.mediaId
+        if (uri != null && uri.startsWith("spotify:track:") && likedOverride?.first != uri && likedAsked != uri) askLiked(uri)
         val snapshot = PlaybackSnapshot(
             seq = ++seq,
             sentAtEpochMs = now,
@@ -336,6 +498,21 @@ class LocalControls(
         _nowPlaying.value = NowPlaying(ReceivedSnapshot(snapshot, now), LinkStatus.CONNECTED)
     }
 
+    /**
+     * The heart of a song playing here: the watch has no way to read Liked Songs by itself, the
+     * phone does. Without it the heart was always empty in watch playback, and taking a like back
+     * — which asks first — could never be offered.
+     */
+    private fun askLiked(uri: String) {
+        likedAsked = uri
+        scope.launch {
+            val liked = runCatching { likedLookup(uri) }.getOrNull() ?: return@launch
+            if (likedOverride?.first == uri) return@launch
+            likedOverride = uri to liked
+            controller?.let(::publish)
+        }
+    }
+
     /** The cover for the player, into the same store the phone's covers go to. */
     private fun fetchArt(key: String, url: String) {
         scope.launch(Dispatchers.IO) {
@@ -363,5 +540,12 @@ class LocalControls(
 
         /** The id the watch uses for itself in output lists; never a Connect id. */
         const val WATCH_DEVICE_ID = "this-watch"
+
+        /** Paused this long, the watch lets its engine go; see [rest]. The service's own idle stop. */
+        private const val IDLE_MS = WatchPlaybackService.IDLE_MS
+
+        /** How long a write waits for a resting engine to come back. */
+        private const val ENGINE_WAKE_MS = 15_000L
+        private const val ENGINE_POLL_MS = 250L
     }
 }

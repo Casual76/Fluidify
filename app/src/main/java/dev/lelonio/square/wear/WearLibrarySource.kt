@@ -139,7 +139,7 @@ class WearLibrarySource(private val app: SquareApplication) {
     }
 
     private val coverCache = java.util.concurrent.ConcurrentHashMap<String, String>()
-    private val homeFile get() = java.io.File(app.filesDir, "wear-home.json")
+    private val homeFile get() = homeFile(app)
 
     private fun saveHome(page: LibraryPage) {
         runCatching { homeFile.writeBytes(dev.pampa.fluidify.wear.protocol.WearCodec.encode(LibraryPage.serializer(), page)) }
@@ -292,17 +292,29 @@ class WearLibrarySource(private val app: SquareApplication) {
         artUrl = artworkUrl?.takeIf { it.startsWith("https://") },
     )
 
-    private companion object {
-        const val HOME_TOP_ROWS = 10
-        const val MADE_FOR_YOU_ROWS = 8
-        const val SHELF_ITEMS = 10
-        const val MAX_COVER_LOOKUPS = 12
-        const val ENGINE_WAIT_MS = 6_000L
-        const val ENGINE_POLL_MS = 200L
-        const val MADE_FOR_YOU_PREFS = "wear_made_for_you"
-        const val KEY_MADE = "items"
-        const val KEY_SEARCHED_AT = "searched_at"
-        const val SEARCH_EVERY_MS = 24 * 60 * 60_000L
+    companion object {
+        private const val HOME_TOP_ROWS = 10
+        private const val MADE_FOR_YOU_ROWS = 8
+        private const val SHELF_ITEMS = 10
+        private const val MAX_COVER_LOOKUPS = 12
+        private const val ENGINE_WAIT_MS = 6_000L
+        private const val ENGINE_POLL_MS = 200L
+        fun homeFile(context: android.content.Context) = java.io.File(context.filesDir, "wear-home.json")
+
+        /**
+         * What the watch's Home remembers of an account — its last Home, the made-for-you lists
+         * found for it — gone with the account: the next one to sign in must not be shown the last
+         * one's Discover Weekly, nor have its own search skipped because those ids looked known.
+         */
+        fun forgetAccount(context: android.content.Context) {
+            homeFile(context).delete()
+            context.getSharedPreferences(MADE_FOR_YOU_PREFS, android.content.Context.MODE_PRIVATE).edit().clear().apply()
+        }
+
+        private const val MADE_FOR_YOU_PREFS = "wear_made_for_you"
+        private const val KEY_MADE = "items"
+        private const val KEY_SEARCHED_AT = "searched_at"
+        private const val SEARCH_EVERY_MS = 24 * 60 * 60_000L
 
         /** Their names are the same in every language Spotify ships. */
         val SEARCHES = listOf("Discover Weekly", "Release Radar")

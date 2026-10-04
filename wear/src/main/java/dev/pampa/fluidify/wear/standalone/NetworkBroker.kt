@@ -6,10 +6,10 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import android.net.NetworkRequest
 import android.util.Log
-import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.withTimeoutOrNull
 
 /** How the watch is reaching the internet for the music. */
@@ -45,15 +45,27 @@ enum class Route {
 class NetworkBroker(private val context: Context, private val prefs: StandalonePrefs) {
 
     private val connectivity = context.getSystemService(ConnectivityManager::class.java)
-    private var callback: ConnectivityManager.NetworkCallback? = null
     private val _route = MutableStateFlow(Route.NONE)
+
+    /** Guards [holders], [callback] and [bound]: the engine, the download queue and the system's callbacks all reach them. */
+    private val lock = Any()
 
     /**
      * How many hold the network: the engine while it plays, the download queue
-     * while it fetches. Each [acquire] is paired with one [release]; the network
-     * goes only when the last one lets go.
+     * while it fetches. Each [acquire] (or [hold]) is paired with one [release];
+     * the network goes only when the last one lets go.
      */
     private var holders = 0
+
+    /**
+     * The one request for a better network, shared by every holder. Before, each acquire dropped
+     * the request in flight and made its own, so the engine and the download queue asking a moment
+     * apart cancelled each other's Wi-Fi.
+     */
+    private var callback: ConnectivityManager.NetworkCallback? = null
+
+    /** The network the process is bound to now; null between a loss and the next one. */
+    private val bound = MutableStateFlow<Network?>(null)
 
     val route: StateFlow<Route> = _route.asStateFlow()
 
@@ -64,68 +76,103 @@ class NetworkBroker(private val context: Context, private val prefs: StandaloneP
     /**
      * Asks for the best network there is, waiting up to [timeoutMs] for Wi-Fi to come up.
      * Returns what the music will travel over.
+     *
+     * The hold is taken first and given back if the wait is cancelled (a worker stopped by
+     * WorkManager, a service going): a cancelled acquire used to keep the Wi-Fi request alive
+     * until the process died.
      */
     suspend fun acquire(timeoutMs: Long = WIFI_WAIT_MS): Route {
-        synchronized(this) { holders++ }
-        if (_route.value == Route.WIFI || _route.value == Route.CELLULAR) return _route.value
-        val transports = buildList {
-            add(NetworkCapabilities.TRANSPORT_WIFI)
-            if (prefs.allowCellular && hasCellular) add(NetworkCapabilities.TRANSPORT_CELLULAR)
+        hold()
+        var done = false
+        try {
+            val now = _route.value
+            if (now == Route.WIFI || now == Route.CELLULAR) {
+                done = true
+                return now
+            }
+            val granted = withTimeoutOrNull(timeoutMs) { bound.first { it != null } }
+            val route = granted?.let(::routeOf) ?: fallback()
+            synchronized(lock) { if (holders > 0 && bound.value == granted) _route.value = route }
+            Log.i(TAG, "streaming over $route")
+            done = true
+            return route
+        } finally {
+            if (!done) release()
         }
-        val granted = request(transports, timeoutMs)
-        val route = when {
-            granted == null -> if (proxyAvailable()) Route.PROXY else Route.NONE
-            connectivity.getNetworkCapabilities(granted)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true -> Route.WIFI
-            else -> Route.CELLULAR
+    }
+
+    /**
+     * Takes a hold and asks for a network without waiting for it: for an engine that starts on
+     * whatever there is and moves to Wi-Fi when it comes. Paired with one [release], like [acquire].
+     */
+    fun hold() {
+        synchronized(lock) {
+            holders++
+            if (callback == null) register()
+            if (_route.value == Route.NONE) _route.value = bound.value?.let(::routeOf) ?: fallback()
         }
-        _route.value = route
-        Log.i(TAG, "streaming over $route")
-        return route
     }
 
     /** Lets go of the network; the last holder returns the process to the system's default. */
     fun release() {
-        val last = synchronized(this) {
+        synchronized(lock) {
             holders = (holders - 1).coerceAtLeast(0)
-            holders == 0
+            if (holders == 0) drop()
         }
-        if (last) drop()
     }
 
+    /** Under [lock]. */
     private fun drop() {
         callback?.let { runCatching { connectivity.unregisterNetworkCallback(it) } }
         callback = null
+        bound.value = null
         connectivity.bindProcessToNetwork(null)
         _route.value = Route.NONE
     }
 
-    private suspend fun request(transports: List<Int>, timeoutMs: Long): Network? {
-        drop()
-        val available = CompletableDeferred<Network>()
+    /** Under [lock]. */
+    private fun register() {
+        val transports = buildList {
+            add(NetworkCapabilities.TRANSPORT_WIFI)
+            if (prefs.allowCellular && hasCellular) add(NetworkCapabilities.TRANSPORT_CELLULAR)
+        }
         val request = NetworkRequest.Builder()
             .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
             .apply { transports.forEach { addTransportType(it) } }
             .build()
         val cb = object : ConnectivityManager.NetworkCallback() {
             override fun onAvailable(network: Network) {
-                if (connectivity.bindProcessToNetwork(network)) available.complete(network)
+                synchronized(lock) {
+                    if (callback !== this) return
+                    if (!connectivity.bindProcessToNetwork(network)) return
+                    bound.value = network
+                    // Also after a loss: the Wi-Fi coming back is the route again, not the proxy.
+                    _route.value = routeOf(network)
+                }
             }
 
             override fun onLost(network: Network) {
-                // The radio went away under the music: back to the proxy, which the engine's
-                // reconnect will find by itself.
-                connectivity.bindProcessToNetwork(null)
-                _route.value = if (proxyAvailable()) Route.PROXY else Route.NONE
+                synchronized(lock) {
+                    if (callback !== this || bound.value != network) return
+                    // The radio went away under the music: back to the proxy, which the engine's
+                    // reconnect will find by itself.
+                    connectivity.bindProcessToNetwork(null)
+                    bound.value = null
+                    _route.value = fallback()
+                }
             }
         }
         callback = cb
         runCatching { connectivity.requestNetwork(request, cb) }.onFailure {
             Log.w(TAG, "network request refused: ${it.message}")
             callback = null
-            return null
         }
-        return withTimeoutOrNull(timeoutMs) { available.await() }
     }
+
+    private fun routeOf(network: Network): Route =
+        if (connectivity.getNetworkCapabilities(network)?.hasTransport(NetworkCapabilities.TRANSPORT_WIFI) == true) Route.WIFI else Route.CELLULAR
+
+    private fun fallback(): Route = if (proxyAvailable()) Route.PROXY else Route.NONE
 
     /** The system's default network, which on a paired watch is the Bluetooth proxy. */
     private fun proxyAvailable(): Boolean {

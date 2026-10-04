@@ -277,6 +277,24 @@ class LibrespotPlayer(
      */
     var onUnknownTrack: ((String) -> Unit)? = null
 
+    /**
+     * Whether releasing this player also shuts the engine down. True on the phone, where the
+     * player and the engine live and die together. The watch sets it false: there the engine is
+     * shared by leases (the download queue holds one too) and only the last one out stops it.
+     */
+    var shutdownEngineOnRelease: Boolean = true
+
+    /**
+     * Whether music the engine starts by itself — a Spotify Connect transfer, another device
+     * pointing this one at a song — takes audio focus here, as a play pressed on this side does.
+     *
+     * Off on the phone, where it has its own way of picking up a transfer. On the watch, where a
+     * handoff is the usual way music arrives, without it nothing listened for "becoming noisy": the
+     * earbuds disconnecting moved the song to the speaker instead of pausing it, and a call did
+     * not pause it either.
+     */
+    var takeFocusOnEnginePlay: Boolean = false
+
     /** The last one handed over, so a run of events asks for it once. */
     private var unknownAsked: String? = null
 
@@ -1591,7 +1609,7 @@ class LibrespotPlayer(
         released = true
         handler.removeCallbacks(settleSkip)
         focus.release()
-        engine("shutdown") { NativeBridge.shutdown() }
+        if (shutdownEngineOnRelease) engine("shutdown") { NativeBridge.shutdown() }
         return Futures.immediateVoidFuture()
     }
 
@@ -1746,6 +1764,12 @@ class LibrespotPlayer(
                 handler.removeCallbacks(stallWatch)
             }
             "playing" -> {
+                // Music this side did not start (see [takeFocusOnEnginePlay]): asked for now, and
+                // refused means something else has the output, so it stops rather than talk over it.
+                if (takeFocusOnEnginePlay && !focus.requestFocus()) {
+                    engine("pause") { NativeBridge.pause() }
+                    return
+                }
                 playbackState = Player.STATE_READY
                 playWhenReady = true
                 if (uri.isNotEmpty()) bandwidth.playing(uri)

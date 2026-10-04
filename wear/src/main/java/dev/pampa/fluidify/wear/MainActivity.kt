@@ -77,6 +77,12 @@ class MainActivity : ComponentActivity() {
         // Says hello and catches up on what the Data Layer already holds. Nothing
         // is polled while the screen is up: the phone pushes changes.
         app.link.connect()
+        app.link.watchReachability()
+    }
+
+    override fun onStop() {
+        app.link.unwatchReachability()
+        super.onStop()
     }
 
     /**

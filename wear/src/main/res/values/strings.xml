@@ -148,4 +148,5 @@
     <string name="added_to">Added to %1$s</string>
     <string name="no_editable_playlists">None of your playlists can take songs</string>
     <string name="error_playlist">Couldn\'t add it to the playlist</string>
+    <string name="error_no_output">Connect headphones to listen on the watch</string>
 </resources>

@@ -12,7 +12,9 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -88,17 +90,39 @@ class PhoneRemoteTest {
     }
 
     @Test
-    fun thePhonesNextWordReplacesTheGuess() = runTest(UnconfinedTestDispatcher()) {
+    fun aSnapshotThatDoesNotShowTheGuessWaitsForTheHold() = runTest(UnconfinedTestDispatcher()) {
         val watch = state().apply { accept(snapshot(1, playing = false)) }
         val channel = FakeChannel()
         val remote = PhoneRemote(backgroundScope, watch, channel)
 
         remote.togglePlay()
-        // The phone says something else entirely (it was paused by a headset meanwhile).
+        // The snapshot sent with the ack, taken before the player moved: the button must not
+        // flick back to "play" for it.
         watch.accept(snapshot(2, playing = false))
+        assertTrue(remote.nowPlaying.value.snapshot!!.isPlaying)
 
+        // The phone said yes, and still shows paused after a while (a headset paused it): then
+        // that is what is true.
+        channel.reply.complete(CommandAck(id = 1, ok = true, appliedSeq = 2))
+        // The hold runs in the remote's (background) scope, which advanceUntilIdle leaves alone.
+        advanceTimeBy(2_100)
+        runCurrent()
         assertFalse(remote.nowPlaying.value.snapshot!!.isPlaying)
         assertEquals(2, remote.nowPlaying.value.snapshot!!.seq)
+    }
+
+    @Test
+    fun aPlayingSnapshotFromLongAgoShowsPaused() = runTest(UnconfinedTestDispatcher()) {
+        val now = System.currentTimeMillis()
+        // Sent ten minutes ago, at 10 s into a 100 s song, on the same clock: the song ended long ago.
+        val old = snapshot(1, playing = true).copy(sentAtEpochMs = now - 600_000, sampledAtEpochMs = now - 600_000)
+        val watch = state().apply { accept(old, receivedAtMs = now - 600_000) }
+        val remote = PhoneRemote(backgroundScope, watch, FakeChannel())
+
+        val shown = remote.nowPlaying.value.snapshot!!
+        assertFalse(shown.isPlaying)
+        assertFalse(shown.playWhenReady)
+        assertEquals(100_000, shown.positionMs)
     }
 
     @Test

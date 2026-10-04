@@ -15,6 +15,8 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asSharedFlow
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -31,7 +33,7 @@ data class NowPlaying(
     /** Where the song is at [nowMs], on this watch's clock. */
     fun positionAt(nowMs: Long): Long {
         val r = received ?: return 0
-        return PositionExtrapolator.positionAt(r.snapshot, r.receivedAtMs, nowMs)
+        return PositionExtrapolator.positionAt(r.snapshot, r.receivedAtMs, nowMs, r.clockOffsetMs)
     }
 }
 
@@ -85,19 +87,63 @@ class PhoneRemote(
     private val link: CommandChannel,
 ) : PlaybackControls {
 
-    /** The guess layered over the phone's last word, while a command is in flight. */
-    private val optimistic = MutableStateFlow<ReceivedSnapshot?>(null)
+    /**
+     * A guess layered over the phone's last word, while a command is in flight: the state it
+     * should lead to, and how to tell a snapshot that shows it.
+     */
+    private class Guess(val shown: ReceivedSnapshot, val confirmedBy: (PlaybackSnapshot) -> Boolean)
+
+    private val optimistic = MutableStateFlow<Guess?>(null)
     private val inFlight = MutableStateFlow(0)
     private val _errors = MutableSharedFlow<String>(extraBufferCapacity = 4)
+
+    /** Bumped when the snapshot held turns stale, so the state is worked out again without a new one. */
+    private val staleTick = MutableStateFlow(0)
 
     override val errors: SharedFlow<String> = _errors.asSharedFlow()
 
     override val nowPlaying: StateFlow<NowPlaying> =
-        combine(state.current, optimistic, link.status, inFlight) { real, guess, status, busy ->
-            // The guess stands until the phone has spoken after it.
-            val shown = if (guess != null && (real == null || real.snapshot.seq <= guess.snapshot.seq)) guess else real
-            NowPlaying(shown, status, busy > 0)
-        }.stateIn(scope, SharingStarted.Eagerly, NowPlaying(state.current.value, link.status.value))
+        combine(state.current, optimistic, link.status, inFlight, staleTick) { real, guess, status, busy, _ ->
+            // The guess stands until the phone has shown it — not merely spoken after it: the
+            // snapshot sent with the ack is often taken before the player has moved, and dropping
+            // the guess on it made the play button flick back and forth on every press.
+            val shown = if (guess != null && (real == null || real.snapshot.seq <= guess.shown.snapshot.seq || !guess.confirmedBy(real.snapshot))) {
+                guess.shown
+            } else {
+                real
+            }
+            NowPlaying(shown?.let(::believable), status, busy > 0)
+        }.stateIn(scope, SharingStarted.Eagerly, NowPlaying(state.current.value?.let(::believable), link.status.value))
+
+    init {
+        // A snapshot that says "playing" turns stale when its song would have ended long ago;
+        // worked out again then, without waiting for news that may not come.
+        scope.launch {
+            state.current.collectLatest { received ->
+                received ?: return@collectLatest
+                val end = PositionExtrapolator.endsAtLocal(received.snapshot, received.receivedAtMs, received.clockOffsetMs) ?: return@collectLatest
+                val wait = end + PositionExtrapolator.STALE_GRACE_MS - System.currentTimeMillis()
+                if (wait > 0) delay(wait + STALE_CHECK_SLACK_MS)
+                staleTick.value++
+            }
+        }
+    }
+
+    /**
+     * [received] as it can be believed now: a "playing" whose song ended long ago, with nothing
+     * heard since, is shown paused at its end — the phone was killed or went out of range.
+     */
+    private fun believable(received: ReceivedSnapshot): ReceivedSnapshot {
+        val snapshot = received.snapshot
+        if (!PositionExtrapolator.isStale(snapshot, received.receivedAtMs, System.currentTimeMillis(), received.clockOffsetMs)) return received
+        return received.copy(
+            snapshot = snapshot.copy(
+                isPlaying = false,
+                playWhenReady = false,
+                positionMs = snapshot.track?.durationMs ?: snapshot.positionMs,
+            ),
+        )
+    }
 
     override fun togglePlay() {
         val current = nowPlaying.value
@@ -113,7 +159,15 @@ class PhoneRemote(
                 sentAtEpochMs = now,
             )
         }
-        dispatch(Command.TogglePlay, guess)
+        dispatch(Command.TogglePlay, guess) { real -> guess != null && (real.isPlaying || real.playWhenReady) == guess.isPlaying }
+    }
+
+    /** Pauses the phone's player; nothing when it is already paused. */
+    fun pause() {
+        val now = System.currentTimeMillis()
+        val current = nowPlaying.value
+        val guess = current.snapshot?.copy(isPlaying = false, playWhenReady = false, positionMs = current.positionAt(now), sampledAtEpochMs = now, sentAtEpochMs = now)
+        dispatch(Command.Pause, guess) { real -> !real.isPlaying && !real.playWhenReady }
     }
 
     /**
@@ -137,7 +191,7 @@ class PhoneRemote(
         } else {
             null
         }
-        dispatch(Command.Next, guess)
+        dispatch(Command.Next, guess) { real -> real.track?.uri == upcoming?.uri }
     }
 
     override fun previous() = dispatch(Command.Previous, null)
@@ -149,14 +203,14 @@ class PhoneRemote(
     }
 
     override fun setShuffle(enabled: Boolean) =
-        dispatch(Command.SetShuffle(enabled), nowPlaying.value.snapshot?.copy(shuffle = enabled))
+        dispatch(Command.SetShuffle(enabled), nowPlaying.value.snapshot?.copy(shuffle = enabled)) { it.shuffle == enabled }
 
     override fun setRepeat(mode: RepeatMode) =
-        dispatch(Command.SetRepeat(mode), nowPlaying.value.snapshot?.copy(repeat = mode))
+        dispatch(Command.SetRepeat(mode), nowPlaying.value.snapshot?.copy(repeat = mode)) { it.repeat == mode }
 
     override fun setLiked(liked: Boolean) {
         val uri = nowPlaying.value.snapshot?.track?.uri ?: return
-        dispatch(Command.SetLiked(uri, liked), nowPlaying.value.snapshot?.copy(liked = liked))
+        dispatch(Command.SetLiked(uri, liked), nowPlaying.value.snapshot?.copy(liked = liked)) { it.track?.uri != uri || it.liked == liked }
     }
 
     override fun playContext(contextUri: String, startTrackUri: String?, shuffle: Boolean, label: String) =
@@ -184,7 +238,10 @@ class PhoneRemote(
     override fun setVolume(level: Float, deviceId: String?) {
         val snapshot = nowPlaying.value.snapshot
         val guess = snapshot?.device?.let { device -> snapshot.copy(device = device.copy(volume = level.coerceIn(0f, 1f))) }
-        dispatch(Command.SetVolume(level.coerceIn(0f, 1f), deviceId), guess)
+        dispatch(Command.SetVolume(level.coerceIn(0f, 1f), deviceId), guess) { real ->
+            val volume = real.device?.volume
+            volume == null || kotlin.math.abs(volume - level.coerceIn(0f, 1f)) < VOLUME_MATCH
+        }
     }
 
     override fun sleep(minutes: Int?, atTrackEnd: Boolean, cancel: Boolean) {
@@ -213,23 +270,47 @@ class PhoneRemote(
 
         /** A write to the account: the phone may first have to wake its engine (7 s at most). */
         const val WRITE_ACK_MS = 10_000L
+
+        /**
+         * A command the phone may have to wake up for — its playback service, its engine, a
+         * playlist read — and that used to show an error after the usual 3 s while it was still
+         * being done.
+         */
+        const val SLOW_ACK_MS = 12_000L
+
+        /** How long a confirmed command's guess may stand while the phone's state catches up. */
+        const val GUESS_HOLD_MS = 2_000L
+        const val VOLUME_MATCH = 0.02f
+        const val STALE_CHECK_SLACK_MS = 100L
+
+        fun ackTimeout(command: Command): Long? = when (command) {
+            is Command.PlayContext, is Command.AddToQueue, is Command.StartRadio, is Command.PlayQueueIndex,
+            Command.Play, Command.TogglePlay,
+            -> SLOW_ACK_MS
+            is Command.SetLiked -> WRITE_ACK_MS
+            else -> null
+        }
     }
 
-    private fun dispatch(command: Command, guess: PlaybackSnapshot?) {
+    /**
+     * Sends [command], showing [guess] until a snapshot [confirms] it (or, once the phone has said
+     * yes, for [GUESS_HOLD_MS] at most). A command the phone refused, or never answered, takes the
+     * guess back at once and says why.
+     */
+    private fun dispatch(command: Command, guess: PlaybackSnapshot?, confirms: (PlaybackSnapshot) -> Boolean = { true }) {
         val now = System.currentTimeMillis()
-        if (guess != null) optimistic.value = ReceivedSnapshot(guess, now)
+        val placed = guess?.let { Guess(ReceivedSnapshot(it, now), confirms) }
+        if (placed != null) optimistic.value = placed
         inFlight.value += 1
         scope.launch {
-            val ack = link.send(command)
+            val ack = ackTimeout(command)?.let { link.send(command, it) } ?: link.send(command)
             inFlight.value -= 1
             if (ack == null || !ack.ok) {
-                optimistic.value = null
+                if (placed == null || optimistic.value === placed) optimistic.value = null
                 _errors.tryEmit(ack?.error ?: "unreachable")
-            } else if (ack.appliedSeq != null) {
-                // The phone's snapshot carrying the change is at least appliedSeq; once it is
-                // here the guess is no longer needed. If it is already here, drop it now.
-                val real = state.current.value
-                if (real != null && real.snapshot.seq >= ack.appliedSeq!!) optimistic.value = null
+            } else if (placed != null) {
+                delay(GUESS_HOLD_MS)
+                if (optimistic.value === placed) optimistic.value = null
             }
         }
     }

@@ -147,4 +147,5 @@
     <string name="added_to">Ajouté à %1$s</string>
     <string name="no_editable_playlists">Aucune de vos playlists ne peut le recevoir</string>
     <string name="error_playlist">Impossible de l\'ajouter à la playlist</string>
+    <string name="error_no_output">Connectez un casque pour écouter sur la montre</string>
 </resources>

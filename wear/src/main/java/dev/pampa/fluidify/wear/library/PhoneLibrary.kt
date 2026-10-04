@@ -57,6 +57,16 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
 
     suspend fun devices(): Result<DeviceList> = link.request(RpcMethod.Devices, DeviceList.serializer())
 
+    /** Whether [uri] is in Liked Songs, as the phone knows it; null when it cannot say. */
+    suspend fun isLiked(uri: String): Boolean? {
+        val answer = link.request(RpcMethod.Liked(listOf(uri)), dev.pampa.fluidify.wear.protocol.LikedAnswer.serializer()).getOrNull() ?: return null
+        return when (uri) {
+            in answer.liked -> true
+            in answer.notLiked -> false
+            else -> null
+        }
+    }
+
     /**
      * Pins or unpins [uri] on the phone, and updates the kept Home at once so the change shows
      * before the next answer from the phone. True when the phone took it.

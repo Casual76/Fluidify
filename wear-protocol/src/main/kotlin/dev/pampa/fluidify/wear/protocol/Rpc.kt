@@ -43,7 +43,21 @@ sealed interface RpcMethod {
     /** What the phone has downloaded of these tracks. Answers [PhoneDownloads]. */
     @Serializable @SerialName("phone-downloads")
     data class Downloads(val uris: List<String>) : RpcMethod
+
+    /**
+     * Which of these songs are in Liked Songs: for the heart while the watch plays on its own,
+     * which has no way to read the library by itself. Answers [LikedAnswer].
+     */
+    @Serializable @SerialName("liked")
+    data class Liked(val uris: List<String>) : RpcMethod
 }
+
+/** The songs asked about that are in Liked Songs, and those that are not; one the phone could not tell is in neither. */
+@Serializable
+data class LikedAnswer(
+    val liked: List<String> = emptyList(),
+    val notLiked: List<String> = emptyList(),
+)
 
 @Serializable
 data class RpcRequest(val id: Long, val method: RpcMethod)

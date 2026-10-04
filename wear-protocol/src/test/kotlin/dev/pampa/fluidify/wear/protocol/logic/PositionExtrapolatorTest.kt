@@ -66,4 +66,40 @@ class PositionExtrapolatorTest {
     fun nowBeforeTheSampleDoesNotRewind() {
         assertEquals(10_000, PositionExtrapolator.positionAt(snapshot(), 100_050, 99_000))
     }
+
+    @Test
+    fun aLateDeliveryIsNotASkewedClock() {
+        // The clocks agree (the offset learnt is 30 ms); this snapshot arrived 20 s late, the watch
+        // coming back into range. The position is the phone's, not 20 s behind.
+        val late = 100_020 + 20_000L
+        assertEquals(30_020, PositionExtrapolator.positionAt(snapshot(), late, late, clockOffsetMs = 30))
+    }
+
+    @Test
+    fun aKnownOffsetCorrectsASkewedClock() {
+        val hour = 3_600_000L
+        // An hour ahead, learnt from earlier snapshots: the sample is moved by exactly that.
+        assertEquals(100_000 + hour, PositionExtrapolator.sampleTimeLocal(snapshot(), 100_050 + hour, clockOffsetMs = hour))
+    }
+
+    @Test
+    fun theSmallestGapIsTheOffset() {
+        val offset = ClockOffset(window = 3)
+        assertEquals(40, offset.observe(sentAtRemoteMs = 1_000, receivedAtLocalMs = 1_040))
+        // A late one does not move it.
+        assertEquals(40, offset.observe(sentAtRemoteMs = 2_000, receivedAtLocalMs = 9_000))
+        assertEquals(25, offset.observe(sentAtRemoteMs = 3_000, receivedAtLocalMs = 3_025))
+        // The window moves on: the oldest gaps are forgotten.
+        assertEquals(25, offset.observe(sentAtRemoteMs = 4_000, receivedAtLocalMs = 4_100))
+    }
+
+    @Test
+    fun aPlayingSnapshotPastItsSongIsStale() {
+        // 190 s left of the song from 100 000; stale 30 s after it would have ended.
+        val s = snapshot()
+        assertEquals(290_000L, PositionExtrapolator.endsAtLocal(s, 100_050, clockOffsetMs = 0))
+        assertEquals(false, PositionExtrapolator.isStale(s, 100_050, 300_000, clockOffsetMs = 0))
+        assertEquals(true, PositionExtrapolator.isStale(s, 100_050, 330_001, clockOffsetMs = 0))
+        assertEquals(false, PositionExtrapolator.isStale(snapshot(playing = false), 100_050, 10_000_000, clockOffsetMs = 0))
+    }
 }

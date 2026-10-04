@@ -39,6 +39,12 @@ class PinnedPlaylistStore(context: Context) {
         prefs.edit().putString(KEY_PINNED, updated.joinToString(SEPARATOR)).commit()
     }
 
+    /** Forgets every pin: the account they belonged to signed out. */
+    fun clear() {
+        _pinned.value = emptyList()
+        prefs.edit().remove(KEY_PINNED).commit()
+    }
+
     private fun load(): List<String> =
         prefs.getString(KEY_PINNED, null)
             ?.split(SEPARATOR)

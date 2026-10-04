@@ -531,7 +531,15 @@ class PhoneWearBridge(private val app: SquareApplication) {
             is Command.Transfer -> {
                 val here = command.deviceId == PHONE_DEVICE_ID || RemoteConnect.isThisPhone(command.deviceId)
                 if (here) {
-                    RemoteConnect.request(RemoteConnect.TransferRequest.Here)
+                    // False when nothing is listening for it (the playback service is not up):
+                    // said as a failure rather than acknowledged with nothing happening.
+                    if (!RemoteConnect.request(RemoteConnect.TransferRequest.Here)) {
+                        wakePlayback()
+                        withTimeoutOrNull(LISTENER_WAIT_MS) {
+                            while (!RemoteConnect.request(RemoteConnect.TransferRequest.Here)) delay(ENGINE_POLL_MS)
+                            true
+                        } ?: return AckErrors.TRANSFER
+                    }
                     return null
                 }
                 return if (transferTo(command.deviceId)) null else AckErrors.TRANSFER
@@ -552,6 +560,11 @@ class PhoneWearBridge(private val app: SquareApplication) {
             else -> Unit
         }
         val player = ensurePlayer() ?: return "phone-unavailable"
+        // These read the catalogue through the engine's session, which a phone the watch has just
+        // woken does not have yet: waited for, within the watch's patience, then tried anyway.
+        if (command is Command.PlayContext || command is Command.AddToQueue || command is Command.StartRadio) {
+            engineReady(ENGINE_COMMAND_WAIT_MS)
+        }
         when (command) {
             Command.Play -> playWhenLoaded(player)
             Command.Pause -> player.pause()
@@ -632,6 +645,15 @@ class PhoneWearBridge(private val app: SquareApplication) {
     suspend fun wakePlayback(): Boolean = withContext(Dispatchers.Main.immediate) { ensurePlayer() != null }
 
     /**
+     * The phone signed out: the watch is told, so it signs out too and stops playing as that
+     * account. Before, only a backend method nobody called did this, and the watch went on streaming
+     * and downloading as the old account until a screen next said hello.
+     */
+    fun signedOut() {
+        scope.launch { runCatching { auth.onSignedOut() }.onFailure { Log.w(TAG, "watch not told of the sign-out: ${it.message}") } }
+    }
+
+    /**
      * Waits, at most [budgetMs], for the engine to have a session: what a write to the account (a
      * like, a playlist) and a read of the library need. Wakes the playback service for it, as the
      * watch's commands do; inside a budget, because the watch is waiting for the answer and an
@@ -680,6 +702,9 @@ class PhoneWearBridge(private val app: SquareApplication) {
         /** How long a command that writes to the account waits for the engine: inside the watch's ack timeout. */
         private const val ENGINE_COMMAND_WAIT_MS = 7_000L
         private const val ENGINE_POLL_MS = 200L
+
+        /** For a playback service just woken to start listening for a transfer. */
+        private const val LISTENER_WAIT_MS = 2_000L
 
         /** What this phone build can do for a watch. Grows with each milestone. */
         val PHONE_FEATURES: Set<String> = setOf(

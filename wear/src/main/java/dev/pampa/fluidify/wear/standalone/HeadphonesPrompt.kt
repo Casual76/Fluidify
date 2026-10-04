@@ -41,7 +41,9 @@ class HeadphonesReceiver : BroadcastReceiver() {
                 HeadphonesPrompt.dismiss(context)
                 val headphones = app.standalone.router.outputs.value.firstOrNull { it.kind == LocalOutput.Kind.HEADPHONES }
                 val phonePlaying = app.remote.nowPlaying.value.snapshot?.let { it.isPlaying || it.playWhenReady } == true
-                app.playback.moveToWatch(headphones)
+                // The phone's music follows if there is some; if not, the last thing the watch
+                // played starts, with no handoff to pull anything over it.
+                app.playback.moveToWatch(headphones, fromPhone = true, handoff = phonePlaying)
                 if (!phonePlaying) app.local.resumeLast()
                 context.startActivity(dev.pampa.fluidify.wear.system.PlayerIntents.showPlayer(context))
             }

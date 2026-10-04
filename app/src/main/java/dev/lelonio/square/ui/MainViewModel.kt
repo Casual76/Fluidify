@@ -1384,6 +1384,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // next account signs in.
         contextCache.clear()
         viewModelScope.launch { container.contextCache.clear() }
+        // The watch signs out with the phone (its own credential, its playback), and what the
+        // watch's Home kept of this account goes too.
+        container.recentContexts.clear()
+        container.pinnedPlaylists.clear()
+        dev.lelonio.square.wear.WearLibrarySource.forgetAccount(container)
+        container.wearBridge.signedOut()
         _playlist.value = PlaylistState()
         _feed.value = FeedState()
         _state.value = UiState.LoggedOut

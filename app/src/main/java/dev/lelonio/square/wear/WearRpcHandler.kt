@@ -38,7 +38,8 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
     suspend fun onRequest(nodeId: String, request: RpcRequest) {
         val response = runCatching { RpcResponse(request.id, ok = true, payload = answer(request.method)) }
             .getOrElse { error ->
-                Log.w(TAG, "rpc ${request.method} failed", error)
+                // The method's kind only: a search's words and the listener's playlists stay out of the log.
+                Log.w(TAG, "rpc ${request.method::class.simpleName} failed: ${error.javaClass.simpleName}")
                 RpcResponse(request.id, ok = false, error = error.message ?: error.javaClass.simpleName)
             }
         val bytes = WearCodec.encode(RpcResponse.serializer(), response)
@@ -57,6 +58,15 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
         is RpcMethod.Context -> encode(dev.pampa.fluidify.wear.protocol.ContextPage.serializer(), library.context(method.uri, method.offset, method.limit))
         is RpcMethod.Search -> encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), library.search(method.query))
         is RpcMethod.Downloads -> encode(dev.pampa.fluidify.wear.protocol.PhoneDownloads.serializer(), phoneDownloads(method.uris))
+        is RpcMethod.Liked -> encode(dev.pampa.fluidify.wear.protocol.LikedAnswer.serializer(), liked(method.uris))
+    }
+
+    private suspend fun liked(uris: List<String>): dev.pampa.fluidify.wear.protocol.LikedAnswer {
+        val answers = uris.take(MAX_LIKED_QUERY).associateWith { uri -> runCatching { app.likedTracks.isLiked(uri) }.getOrNull() }
+        return dev.pampa.fluidify.wear.protocol.LikedAnswer(
+            liked = answers.filterValues { it == true }.keys.toList(),
+            notLiked = answers.filterValues { it == false }.keys.toList(),
+        )
     }
 
     /**
@@ -101,7 +111,9 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
     private suspend fun devices(): DeviceList {
         // The cluster the engine follows; a refresh first, so a speaker switched on a
         // moment ago is in the list.
-        withContext(Dispatchers.IO) { runCatching { RemoteConnect.refresh() } }
+        // On the main thread, where the player refreshes it too: RemoteConnect's maps are not
+        // shared across threads, and a refresh from IO raced the player's.
+        withContext(Dispatchers.Main.immediate) { runCatching { RemoteConnect.refresh() } }
         val phone = withContext(Dispatchers.Main.immediate) { bridge.currentDevice() }
         val others = RemoteConnect.devices.value.filterNot { it.isThisPhone }.map { device ->
             DeviceInfo(
@@ -140,5 +152,6 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
     private companion object {
         const val TAG = "WearRpc"
         const val MAX_DOWNLOAD_QUERY = 200
+        const val MAX_LIKED_QUERY = 20
     }
 }

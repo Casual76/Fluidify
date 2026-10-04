@@ -69,6 +69,7 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
             art,
             offlineTracks = { uri -> downloads.store.offlineTracks(uri) },
             prefs = standalone.prefs,
+            likedLookup = { uri -> library.isLiked(uri) },
         )
     }
 
