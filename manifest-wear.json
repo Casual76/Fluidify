@@ -9,22 +9,22 @@
       "repoName": "Fluidify"
     },
     "stable": {
-      "version": "1.5.2",
+      "version": "1.5.3",
       "releaseDate": "2026-10-04",
-      "changelog": "Corretto il controllo del collegamento per gli aggiornamenti Wear: dopo che Fluidify ha identificato il Watch, verifica il nodo attualmente connesso invece di richiedere di nuovo la capability della app. Una breve riconnessione viene attesa prima di segnalare un errore. Restano esclusi i nodi raggiungibili solo tramite cloud.\n\nIl Watch usa la stessa verifica della connessione al telefono, senza dipendere dal flag di vicinanza di una capability in ritardo. Gli errori distinguono un collegamento assente da una app Wear che non risponde.\n\nAprire la sezione Watch sul telefono ristabilisce il dialogo anche con la versione Wear già installata, prima di aggiornarla.\n\nIl controllo manuale cerca la versione più recente; il file conservato resta riutilizzabile e diventa il ripiego quando non si riesce a leggere il manifest.\n\nRegressioni automatiche su scoperta incompleta, riconnessione, nodi cloud e annullamento. Prova Bluetooth sul dispositivo da completare da remoto.\n",
-      "releaseTag": "stable-fluidify-v1.5.2",
-      "apkAsset": "fluidify-wear-1.5.2.apk",
-      "sizeBytes": 23835203,
-      "sha256": "00510ddbb6303d7f80a208ab178950f046af2b5352a57e7024c4b8cb38b63126"
+      "changelog": "Il controllo multimediale di sistema sul Watch può ora aprire direttamente il lettore di Fluidify, attraverso l'azione della app companion cercata da Wear OS. Funziona anche quando Fluidify era chiusa o mostrava un'altra pagina.\n\nResta una sola voce nella Now bar con l'impostazione Automatica: la correzione non aggiunge notifiche, sessioni multimediali, richieste Wi-Fi o riproduzione locale sull'orologio.\n\nVerifica della risoluzione dell'ingresso media e dell'apertura del lettore su Wear OS 6; controllo della Now bar Samsung sul Galaxy Watch da completare da remoto.\n",
+      "releaseTag": "stable-fluidify-v1.5.3",
+      "apkAsset": "fluidify-wear-1.5.3.apk",
+      "sizeBytes": 23835269,
+      "sha256": "b8f637679f0ba65f77b7dc9154de77d1950e3887055d18a2d3cd9dabc84feea1"
     },
     "beta": {
-      "version": "1.5.2",
+      "version": "1.5.3",
       "releaseDate": "2026-10-04",
-      "changelog": "Corretto il controllo del collegamento per gli aggiornamenti Wear: dopo che Fluidify ha identificato il Watch, verifica il nodo attualmente connesso invece di richiedere di nuovo la capability della app. Una breve riconnessione viene attesa prima di segnalare un errore. Restano esclusi i nodi raggiungibili solo tramite cloud.\n\nIl Watch usa la stessa verifica della connessione al telefono, senza dipendere dal flag di vicinanza di una capability in ritardo. Gli errori distinguono un collegamento assente da una app Wear che non risponde.\n\nAprire la sezione Watch sul telefono ristabilisce il dialogo anche con la versione Wear già installata, prima di aggiornarla.\n\nIl controllo manuale cerca la versione più recente; il file conservato resta riutilizzabile e diventa il ripiego quando non si riesce a leggere il manifest.\n\nRegressioni automatiche su scoperta incompleta, riconnessione, nodi cloud e annullamento. Prova Bluetooth sul dispositivo da completare da remoto.\n",
-      "releaseTag": "stable-fluidify-v1.5.2",
-      "apkAsset": "fluidify-wear-1.5.2.apk",
-      "sizeBytes": 23835203,
-      "sha256": "00510ddbb6303d7f80a208ab178950f046af2b5352a57e7024c4b8cb38b63126"
+      "changelog": "Il controllo multimediale di sistema sul Watch può ora aprire direttamente il lettore di Fluidify, attraverso l'azione della app companion cercata da Wear OS. Funziona anche quando Fluidify era chiusa o mostrava un'altra pagina.\n\nResta una sola voce nella Now bar con l'impostazione Automatica: la correzione non aggiunge notifiche, sessioni multimediali, richieste Wi-Fi o riproduzione locale sull'orologio.\n\nVerifica della risoluzione dell'ingresso media e dell'apertura del lettore su Wear OS 6; controllo della Now bar Samsung sul Galaxy Watch da completare da remoto.\n",
+      "releaseTag": "stable-fluidify-v1.5.3",
+      "apkAsset": "fluidify-wear-1.5.3.apk",
+      "sizeBytes": 23835269,
+      "sha256": "b8f637679f0ba65f77b7dc9154de77d1950e3887055d18a2d3cd9dabc84feea1"
     }
   }
 }
