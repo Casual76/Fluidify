@@ -88,4 +88,5 @@ Il dialogo unlike viene chiuso se cambia brano e non può rimuovere il like del 
 Log locali in `build/phase3-exact-tree.log`, `build/phase3-cargo-check.log`,
 `build/phase3-cargo-test.log` e `build/phase3-engine-doctor.log`.
 Le prove fisiche, incluse handoff, rete, audio, installazione e TalkBack, restano da eseguire
-in `docs/wear-qa-checklist.md`. Non è stata pubblicata una release sullo store.
+in `docs/wear-qa-checklist.md`. La release stabile 1.5.0 (versionCode 8) include entrambi gli APK;
+la prova sui dispositivi viene eseguita da remoto dall’utente dopo la pubblicazione.
