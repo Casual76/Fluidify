@@ -149,4 +149,5 @@
     <string name="no_editable_playlists">None of your playlists can take songs</string>
     <string name="error_playlist">Couldn\'t add it to the playlist</string>
     <string name="error_no_output">Connect headphones to listen on the watch</string>
+    <string name="error_end_of_queue">That\'s the end of the queue</string>
 </resources>

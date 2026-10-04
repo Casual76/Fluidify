@@ -148,4 +148,5 @@
     <string name="no_editable_playlists">No tienes playlists a las que añadirla</string>
     <string name="error_playlist">No se pudo añadir a la playlist</string>
     <string name="error_no_output">Conecta unos auriculares para escuchar en el reloj</string>
+    <string name="error_end_of_queue">Es el final de la cola</string>
 </resources>

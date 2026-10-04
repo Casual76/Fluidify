@@ -28,6 +28,7 @@ import dev.lelonio.square.ui.EXTRA_CONTEXT_URI
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -251,20 +252,24 @@ class MediaBrowseTree(
      * reaches the player without going through a session.
      */
     fun startRadio(player: androidx.media3.common.Player) {
-        val uri = player.currentMediaItem?.mediaId ?: return
-        if (!uri.startsWith("spotify:track:")) return
+        scope.launch { startRadioNow(player) }
+    }
 
-        scope.launch {
-            val station = "spotify:station:track:${uri.substringAfterLast(':')}"
-            val tracks = runCatching { Catalog.tracks(Catalog.contextTrackUris(station)) }
-                .onFailure { android.util.Log.w(TAG, "no station for $uri: $it") }
-                .getOrDefault(emptyList())
-            if (tracks.isEmpty()) return@launch
-
+    /** [startRadio], waited for: true once the station is loaded and playing, false when there is none. */
+    suspend fun startRadioNow(player: androidx.media3.common.Player): Boolean {
+        val uri = player.currentMediaItem?.mediaId ?: return false
+        if (!uri.startsWith("spotify:track:")) return false
+        val station = "spotify:station:track:${uri.substringAfterLast(':')}"
+        val tracks = runCatching { Catalog.tracks(Catalog.contextTrackUris(station)) }
+            .onFailure { android.util.Log.w(TAG, "no station for $uri: $it") }
+            .getOrDefault(emptyList())
+        if (tracks.isEmpty()) return false
+        withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
             player.setMediaItems(tracks.map { queueItem(it, strings.getString(R.string.radio)) })
             player.prepare()
             player.play()
         }
+        return true
     }
 
     override fun onGetLibraryRoot(

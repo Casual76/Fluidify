@@ -117,6 +117,9 @@ object AckErrors {
     /** Nothing loaded to skip in (the account's last song, not playing anywhere). */
     const val NOTHING_TO_SKIP = "nothing-to-skip"
 
+    /** The last song of a queue that does not repeat: there is no next. */
+    const val END_OF_QUEUE = "end-of-queue"
+
     /** A radio could not be made from this song. */
     const val RADIO = "radio"
 

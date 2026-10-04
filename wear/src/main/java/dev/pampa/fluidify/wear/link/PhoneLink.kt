@@ -289,7 +289,11 @@ class PhoneLink(
         val channels = Wearable.getChannelClient(context)
         val bytes = runCatching {
             channels.getInputStream(channel).await().use { it.readBytes() }
-        }.getOrNull() ?: return
+        }.getOrNull()
+        // Closed from this side too once read; see the phone's WearRpcHandler.stream.
+        runCatching { channels.close(channel).await() }
+        bytes ?: return
+        onPhoneHeard()
         val response = runCatching { WearCodec.gunzip(bytes) }.getOrNull()
             ?.let { WearCodec.decodeOrNull(RpcResponse.serializer(), it) }
             ?: return

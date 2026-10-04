@@ -10,6 +10,7 @@ import dev.pampa.fluidify.wear.protocol.RpcRequest
 import dev.pampa.fluidify.wear.protocol.UpdateStatus
 import dev.pampa.fluidify.wear.protocol.WearCodec
 import dev.pampa.fluidify.wear.protocol.WearPaths
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -21,6 +22,14 @@ import kotlinx.coroutines.withTimeoutOrNull
  * duration of the callback. So the work is done inside the callback, bounded,
  * rather than handed to a scope that would be frozen with the process the
  * moment the callback returns.
+ *
+ * Except for questions (a Home, a playlist, a token), which may take long: Play
+ * Services hands messages to this service one at a time, and a Home built from
+ * cold held the thread for twenty seconds or more — a Pause pressed meanwhile
+ * waited behind it, the watch gave up and said so, and the phone paused much
+ * later. A question now runs on its own, with the callback waiting only a moment
+ * for it, so the next message is taken at once; it is answered within its own
+ * budget either way. Commands stay in the callback, in order.
  */
 class PhoneWearListenerService : WearableListenerService() {
 
@@ -57,12 +66,13 @@ class PhoneWearListenerService : WearableListenerService() {
             }
             WearPaths.RPC -> {
                 val request = WearCodec.decodeOrNull(RpcRequest.serializer(), event.data) ?: return
-                handle { bridge.rpc.onRequest(event.sourceNodeId, request) }
+                // Bounded inside: the answer goes back within the watch's patience, whatever happens.
+                handleAside { bridge.rpc.onRequest(event.sourceNodeId, request) }
             }
             WearPaths.AUTH_REQUEST -> {
                 val request = WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AuthRequest.serializer(), event.data) ?: return
                 // A refresh over the phone's own network may take longer than an ordinary request.
-                handle(AUTH_BUDGET_MS) { bridge.auth.onRequest(event.sourceNodeId, request) }
+                handleAside { withTimeoutOrNull(AUTH_BUDGET_MS) { bridge.auth.onRequest(event.sourceNodeId, request) } }
             }
             WearPaths.UPDATE_STATUS -> {
                 val status = WearCodec.decodeOrNull(UpdateStatus.serializer(), event.data) ?: return
@@ -79,8 +89,20 @@ class PhoneWearListenerService : WearableListenerService() {
         }
     }
 
+    /** Runs [block] on its own, waiting for it here only [INLINE_MS]: see the class's note. */
+    private fun handleAside(block: suspend () -> Unit) {
+        val job = questions.launch { block() }
+        runBlocking { withTimeoutOrNull(INLINE_MS) { job.join() } }
+    }
+
     companion object {
         private const val TAG = "PhoneWearListener"
+
+        /** Where questions run, outliving any one callback. */
+        private val questions = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+
+        /** Most questions are answered in this long, inside the callback as before. */
+        private const val INLINE_MS = 1_500L
 
         /** Play Services gives a listener callback about ten seconds; leave room to spare. */
         private const val CALLBACK_BUDGET_MS = 9_000L

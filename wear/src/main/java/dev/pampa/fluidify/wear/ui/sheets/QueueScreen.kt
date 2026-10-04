@@ -54,7 +54,10 @@ fun QueueScreen(
                 // the window carries a few for the phone's sake, and on a watch they are only
                 // rows to scroll past before reaching the point of the screen.
                 val playing = current.items.firstOrNull { it.index == current.currentIndex }
-                val upcoming = current.items.filter { it.index > current.currentIndex }
+                // After the current one in the order given, which is the order of play: with
+                // shuffle on, that is not the order of the list.
+                val upcoming = current.items.dropWhile { it.index != current.currentIndex }.drop(1)
+                    .ifEmpty { current.items.filter { it.index > current.currentIndex && playing == null } }
                 if (playing != null) {
                     item { ListSubHeader { Text(stringResource(R.string.now_playing)) } }
                     item(key = "q${playing.index}") {

@@ -29,7 +29,19 @@ class PathfinderKeys(context: Context) {
 
     private val prefs = context.applicationContext
         .getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
-    private val client = OkHttpClient()
+    /**
+     * Short timeouts: this runs before the watch's Home and before a playlist is read, and with
+     * the default ten seconds a slow or blocked host spent most of the watch's patience on a file
+     * that only ever refreshes what is already known.
+     */
+    private val client = OkHttpClient.Builder()
+        .connectTimeout(TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(TIMEOUT_S, java.util.concurrent.TimeUnit.SECONDS)
+        .callTimeout(TIMEOUT_S * 2, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+
+    /** When a read last failed: tried again only after [RETRY_AFTER_FAILURE_MS], not on every request. */
+    @Volatile private var failedAt = 0L
 
     /** The hash for the `home` query, freshest first. */
     val home: String get() = prefs.getString(KEY_HOME, null) ?: DEFAULT_HOME
@@ -71,7 +83,9 @@ class PathfinderKeys(context: Context) {
      */
     suspend fun refresh() = withContext(Dispatchers.IO) {
         val last = prefs.getLong(KEY_CHECKED, 0)
-        if (System.currentTimeMillis() - last < INTERVAL_MS) return@withContext
+        val now = System.currentTimeMillis()
+        if (now - last < INTERVAL_MS) return@withContext
+        if (now - failedAt < RETRY_AFTER_FAILURE_MS) return@withContext
 
         runCatching {
             val request = Request.Builder().url(URL).build()
@@ -93,7 +107,10 @@ class PathfinderKeys(context: Context) {
                     ?.let { edit.putString(KEY_VERSION, it) }
                 edit.apply()
             }
-        }.onFailure { android.util.Log.i(TAG, "keeping the known query hashes: $it") }
+        }.onFailure {
+            failedAt = System.currentTimeMillis()
+            android.util.Log.i(TAG, "keeping the known query hashes: $it")
+        }
 
         // The fork's own file, read after upstream's and never instead of it.
         //
@@ -127,6 +144,10 @@ class PathfinderKeys(context: Context) {
 
         /** Once a day: these change with Spotify's releases, not with ours. */
         const val INTERVAL_MS = 24 * 60 * 60 * 1000L
+
+        /** After a failed read: an hour, then again. */
+        const val RETRY_AFTER_FAILURE_MS = 60 * 60 * 1000L
+        const val TIMEOUT_S = 4L
 
         /** A sha256 in hex, and a way to notice a file that says something else. */
         const val HASH_LENGTH = 64

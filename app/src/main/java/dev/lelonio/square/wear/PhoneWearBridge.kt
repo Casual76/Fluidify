@@ -151,10 +151,19 @@ class PhoneWearBridge(private val app: SquareApplication) {
         return withContext(Dispatchers.IO) { RemoteConnect.transferTo(deviceId) }
     }
 
+    /**
+     * Asks the playback service to post its notification again: for a setting that changes how it
+     * is built (see [phoneMediaLocalOnly]), which otherwise waited for the next player event — never,
+     * while paused.
+     */
+    val notificationRefresh = kotlinx.coroutines.flow.MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+
     /** The watch published its [WatchSurfaces]. */
     fun onWatchSurfaces(bytes: ByteArray) {
         val surfaces = WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.WatchSurfaces.serializer(), bytes) ?: return
+        val changedLocalOnly = surfaces.phoneMediaLocalOnly != phoneMediaLocalOnly
         surfacePrefs.edit().putBoolean(KEY_LOCAL_ONLY, surfaces.phoneMediaLocalOnly).apply()
+        if (changedLocalOnly) notificationRefresh.tryEmit(Unit)
         scope.launch { changed(urgent = true) }
     }
 
@@ -185,6 +194,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 Player.EVENT_TIMELINE_CHANGED,
                 Player.EVENT_PLAYBACK_PARAMETERS_CHANGED,
             )
+            if (player.isPlaying && events.contains(Player.EVENT_IS_PLAYING_CHANGED)) playbackStartedAt = System.currentTimeMillis()
             changed(urgent)
             if (player.isPlaying && events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) {
                 rememberContext(player)
@@ -202,7 +212,13 @@ class PhoneWearBridge(private val app: SquareApplication) {
         val uri = extras.getString(dev.lelonio.square.ui.EXTRA_CONTEXT_URI) ?: return
         if (!dev.lelonio.square.data.RecentContextsStore.isRememberable(uri)) return
         val label = extras.getString(dev.lelonio.square.ui.EXTRA_CONTEXT_LABEL).orEmpty()
-        val name = label.ifBlank { player.mediaMetadata.albumTitle?.toString().orEmpty() }
+        // The album's title names an album; for a playlist with no label (a handover from another
+        // device, the car) it named the playlist after whatever song was playing, and renamed it
+        // with every track. Unlabelled, a playlist keeps the name it had, or is not recorded.
+        val known = app.recentContexts.contexts.value.firstOrNull { it.uri == uri }?.name
+        val name = label.ifBlank {
+            if (uri.startsWith("spotify:album:")) player.mediaMetadata.albumTitle?.toString().orEmpty() else known.orEmpty()
+        }
         // An album's cover is the track's; a playlist's is its own, looked up when the Home is built.
         val art = if (uri.startsWith("spotify:album:")) player.mediaMetadata.artworkUri?.toString()?.takeIf { it.startsWith("https://") } else null
         app.recentContexts.record(uri, name, art)
@@ -245,7 +261,12 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 dev.lelonio.square.playback.SleepTimer.atTrackEnd,
             ) { liked, elsewhere, devices, sleepAt, sleepEnd -> listOf(liked, elsewhere, devices, sleepAt, sleepEnd) }
                 .distinctUntilChanged()
-                .collect { changed(urgent = true) }
+                .collect {
+                    // The library changed (a like taken back in the app, in the car): what was
+                    // looked up for the current song may be out of date.
+                    likedLookup = null
+                    changed(urgent = true)
+                }
         }
     }
 
@@ -273,14 +294,39 @@ class PhoneWearBridge(private val app: SquareApplication) {
         val now = System.currentTimeMillis()
         coalescer.markSent(now)
         publishDue = Long.MAX_VALUE
+        // A publish now makes the one scheduled for later redundant: each command used to write
+        // the state twice. Not when this is that scheduled one.
+        publishJob?.takeIf { it !== kotlinx.coroutines.currentCoroutineContext()[Job] }?.cancel()
         if (!force && !link.hasWatch()) return seq.get()
         val snapshot = withContext(Dispatchers.Main.immediate) { buildSnapshot() }
+        // Nothing the watch would draw differently: not written. Every snapshot carries a new seq
+        // and new times, so the Data Layer never saw two as the same and sent them all.
+        val previous = lastPublished
+        if (!force && previous != null && sameForTheWatch(previous, snapshot)) return previous.seq
         val request = PutDataRequest.create(WearPaths.STATE)
             .setData(WearCodec.encode(PlaybackSnapshot.serializer(), snapshot))
             .setUrgent()
         link.put(request)
+        lastPublished = snapshot
         sendCovers(snapshot)
         return snapshot.seq
+    }
+
+    private var lastPublished: PlaybackSnapshot? = null
+
+    /**
+     * Whether [next] says nothing [previous] did not: equal apart from the counter and the clock, and
+     * with a position the watch would have worked out from [previous] anyway.
+     */
+    private fun sameForTheWatch(previous: PlaybackSnapshot, next: PlaybackSnapshot): Boolean {
+        val aligned = previous.copy(seq = next.seq, sentAtEpochMs = next.sentAtEpochMs, sampledAtEpochMs = next.sampledAtEpochMs, positionMs = next.positionMs)
+        if (aligned != next) return false
+        val expected = if (previous.isPlaying && !previous.buffering) {
+            previous.positionMs + ((next.sampledAtEpochMs - previous.sampledAtEpochMs) * previous.speed).toLong()
+        } else {
+            previous.positionMs
+        }
+        return kotlin.math.abs(expected - next.positionMs) < POSITION_DRIFT_MS
     }
 
     private fun sendCovers(snapshot: PlaybackSnapshot) {
@@ -293,7 +339,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
         val nextKey = snapshot.nextArtKey
         val nextUrl = nextItem(current)?.mediaMetadata?.artworkUri?.toString()
         scope.launch(Dispatchers.IO) {
-            if (key != null) artwork.ensure(key, bytes, url)
+            if (key != null) artwork.ensure(key, bytes, url, urgent = true)
             if (nextKey != null && nextKey != key) artwork.ensure(nextKey, null, nextUrl)
         }
     }
@@ -344,7 +390,9 @@ class PhoneWearBridge(private val app: SquareApplication) {
             },
             liked = likedFor(uri),
             hasPrevious = current.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS),
-            hasNext = current.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT),
+            // Whether there is a next song, not whether the player has a "next" button (it always
+            // has): another device decides for itself, this one is out of songs at the queue's end.
+            hasNext = elsewhere || current.hasNextMediaItem(),
             context = extras?.getString(dev.lelonio.square.ui.EXTRA_CONTEXT_URI)?.let { contextUri ->
                 ContextInfo(contextUri, extras.getString(dev.lelonio.square.ui.EXTRA_CONTEXT_LABEL).orEmpty())
             },
@@ -375,15 +423,27 @@ class PhoneWearBridge(private val app: SquareApplication) {
      * entry on the watch face and take it away again on every play.
      */
     private fun mediaNotificationShowing(current: Player?): Boolean {
-        if (!androidx.core.app.NotificationManagerCompat.from(app).areNotificationsEnabled()) return false
+        // Not "are notifications allowed": a media session's notification is exempt from that
+        // permission on Android 13+ and shows (and reaches the watch) without it; asking said "no"
+        // and put a second Fluidify on the watch face next to the system's.
         val manager = app.getSystemService(android.app.NotificationManager::class.java)
         val posted = runCatching {
             manager?.activeNotifications?.any { it.notification.extras.containsKey(android.app.Notification.EXTRA_MEDIA_SESSION) } == true
         }.getOrDefault(false)
         if (posted) return true
-        return current != null && current.mediaItemCount > 0 &&
+        // The listener blocked the media channel: nothing will be posted, so nothing is coming.
+        val channel = runCatching {
+            manager?.getNotificationChannel(androidx.media3.session.DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID)
+        }.getOrNull()
+        if (channel != null && channel.importance == android.app.NotificationManager.IMPORTANCE_NONE) return false
+        // About to be: only just after a start, not for as long as a queue is loaded.
+        val starting = System.currentTimeMillis() - playbackStartedAt < NOTIFICATION_GRACE_MS
+        return starting && current != null && current.mediaItemCount > 0 &&
             current.playbackState != Player.STATE_IDLE && current.playbackState != Player.STATE_ENDED
     }
+
+    /** When the player last started playing; see [mediaNotificationShowing]. */
+    private var playbackStartedAt = 0L
 
     private fun sleepInfo(): SleepInfo? {
         val endsAt = dev.lelonio.square.playback.SleepTimer.endsAt.value
@@ -400,7 +460,13 @@ class PhoneWearBridge(private val app: SquareApplication) {
         likedLookup = uri to null
         likedJob?.cancel()
         likedJob = scope.launch {
-            val answer = withContext(Dispatchers.IO) { app.likedTracks.isLiked(uri) }
+            var answer = withContext(Dispatchers.IO) { app.likedTracks.isLiked(uri) }
+            // Null is also "someone else is asking right now" (the car, the app): asked again once
+            // that has had time to land, rather than left as an empty heart for the whole song.
+            if (answer == null) {
+                delay(LIKED_RETRY_MS)
+                answer = withContext(Dispatchers.IO) { app.likedTracks.isLiked(uri) }
+            }
             if (likedLookup?.first == uri) {
                 likedLookup = uri to answer
                 changed(urgent = true)
@@ -569,7 +635,9 @@ class PhoneWearBridge(private val app: SquareApplication) {
             Command.Play -> playWhenLoaded(player)
             Command.Pause -> player.pause()
             Command.TogglePlay -> if (player.isPlaying || player.playWhenReady) player.pause() else playWhenLoaded(player)
-            Command.Next -> if (!dev.lelonio.square.playback.PlaybackTransport.skip(player, forward = true)) return AckErrors.NOTHING_TO_SKIP
+            Command.Next -> if (!dev.lelonio.square.playback.PlaybackTransport.skip(player, forward = true)) {
+                return if (player.mediaItemCount > 0 && !RemoteConnect.elsewhereActive.value) AckErrors.END_OF_QUEUE else AckErrors.NOTHING_TO_SKIP
+            }
             Command.Previous -> if (!dev.lelonio.square.playback.PlaybackTransport.skip(player, forward = false)) return AckErrors.NOTHING_TO_SKIP
             is Command.SeekTo -> player.seekTo(command.positionMs.coerceAtLeast(0))
             is Command.SetShuffle -> player.shuffleModeEnabled = command.enabled
@@ -589,7 +657,8 @@ class PhoneWearBridge(private val app: SquareApplication) {
             }
             is Command.StartRadio -> {
                 val tree = browseTree ?: return "phone-unavailable"
-                tree.startRadio(player)
+                // Answered once the station is playing or known not to be, not before.
+                if (!tree.startRadioNow(player)) return AckErrors.RADIO
             }
             is Command.PlayContext -> {
                 val tracks = withContext(Dispatchers.IO) { app.spotifyBackend.tracksOf(command.contextUri) }
@@ -702,6 +771,13 @@ class PhoneWearBridge(private val app: SquareApplication) {
         /** How long a command that writes to the account waits for the engine: inside the watch's ack timeout. */
         private const val ENGINE_COMMAND_WAIT_MS = 7_000L
         private const val ENGINE_POLL_MS = 200L
+        private const val LIKED_RETRY_MS = 2_000L
+
+        /** How far a position may stray from the extrapolated one and still be "the same". */
+        private const val POSITION_DRIFT_MS = 1_500L
+
+        /** How long after a start the notification counts as on its way. */
+        private const val NOTIFICATION_GRACE_MS = 3_000L
 
         /** For a playback service just woken to start listening for a transfer. */
         private const val LISTENER_WAIT_MS = 2_000L

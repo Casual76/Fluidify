@@ -26,7 +26,9 @@ class WearAuthGranter(private val app: SquareApplication, private val link: Wear
 
     suspend fun onRequest(nodeId: String, request: AuthRequest) {
         val grant = when {
-            !app.spotifySignedIn -> AuthGrant(request.id, ok = false, error = AuthErrors.SIGNED_OUT)
+            // The second: the engine's credential is still here but the app's own sign-in was
+            // cleared, so no token can be minted — "unavailable" made the watch ask again forever.
+            !app.spotifySignedIn || !app.tokenStore.isLoggedIn -> AuthGrant(request.id, ok = false, error = AuthErrors.SIGNED_OUT)
             else -> runCatching {
                 val token = app.tokenStore.validAccessToken()
                 AuthGrant(
@@ -56,11 +58,17 @@ class WearAuthGranter(private val app: SquareApplication, private val link: Wear
             changedAtEpochMs = System.currentTimeMillis(),
         )
         if (!link.hasWatch()) return
+        // Written when it changes, not on every hello: the new timestamp alone made each one a
+        // fresh item for the Data Layer to carry.
+        val said = account.signedIn to account.username
+        if (said == lastPublished) return
         val request = PutDataRequest.create(WearPaths.ACCOUNT)
             .setData(WearCodec.encode(AccountState.serializer(), account))
             .setUrgent()
-        link.put(request)
+        if (link.put(request)) lastPublished = said
     }
+
+    @Volatile private var lastPublished: Pair<Boolean, String?>? = null
 
     /** The phone signed out: the watch drops its credential now if it can hear, or when it next connects. */
     suspend fun onSignedOut() {

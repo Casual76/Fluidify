@@ -47,12 +47,15 @@ class WearArtworkSender(private val context: Context, private val link: WearLink
      *
      * @param bytes the encoded cover the player already holds, when it has one.
      * @param url where to fetch it otherwise: https, or a file:// of a download.
+     * @param urgent the cover of the song playing now: sent at once, not when the Data Layer gets
+     *   round to it, which may be many minutes. The next song's, sent ahead, can wait.
      */
-    suspend fun ensure(key: String, bytes: ByteArray?, url: String?) = lock.withLock {
+    suspend fun ensure(key: String, bytes: ByteArray?, url: String?, urgent: Boolean = false) = lock.withLock {
         if (key in recent) return@withLock
         val image = withContext(Dispatchers.IO) { render(bytes, url) } ?: return@withLock
         val request = PutDataRequest.create(WearPaths.art(key)).apply {
             putAsset(ASSET_KEY, Asset.createFromBytes(image))
+            if (urgent) setUrgent()
         }
         if (!link.put(request)) return@withLock
         recent.addLast(key)

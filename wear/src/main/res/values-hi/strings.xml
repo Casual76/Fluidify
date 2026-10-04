@@ -148,4 +148,5 @@
     <string name="no_editable_playlists">जोड़ने के लिए आपकी कोई प्लेलिस्ट नहीं है</string>
     <string name="error_playlist">प्लेलिस्ट में नहीं जोड़ा जा सका</string>
     <string name="error_no_output">घड़ी पर सुनने के लिए हेडफ़ोन कनेक्ट करें</string>
+    <string name="error_end_of_queue">कतार यहीं खत्म होती है</string>
 </resources>

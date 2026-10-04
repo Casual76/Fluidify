@@ -42,7 +42,15 @@ class WearLink(private val context: Context) {
     suspend fun hasWatch(): Boolean {
         val now = System.currentTimeMillis()
         if (now - installedCheckedAt < INSTALLED_CACHE_MS) return installed
-        installed = watchNodes().isNotEmpty()
+        val nodes = runCatching {
+            capabilities.getCapability(WearPaths.CAPABILITY_WATCH, CapabilityClient.FILTER_ALL).await().nodes
+        }.getOrElse {
+            // A lookup that failed says nothing about the watch: not remembered as "none" for five
+            // minutes, which stopped every state update for as long.
+            Log.i(TAG, "no watch capability: ${it.message}")
+            return installed
+        }
+        installed = nodes.isNotEmpty()
         installedCheckedAt = now
         return installed
     }

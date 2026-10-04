@@ -148,4 +148,5 @@
     <string name="no_editable_playlists">Keine eigene Playlist zum Hinzufügen</string>
     <string name="error_playlist">Nicht zur Playlist hinzugefügt</string>
     <string name="error_no_output">Verbinde Kopfhörer, um auf der Uhr zu hören</string>
+    <string name="error_end_of_queue">Das war das Ende der Warteschlange</string>
 </resources>

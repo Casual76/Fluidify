@@ -19,6 +19,8 @@ import dev.pampa.fluidify.wear.protocol.artKeyOf
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.async
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonElement
 
@@ -35,19 +37,55 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
 
     private val library by lazy { WearLibrarySource(app) }
 
+    /** Where answers are worked out; see [onRequest]. */
+    private val answers = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Answers [request], always: within [budgetFor] the method, and with an error (or, for the
+     * Home, the last one answered) when that runs out — sent even then, where a timeout used to
+     * cancel the reply along with the work and the watch waited its full twelve seconds for nothing.
+     */
     suspend fun onRequest(nodeId: String, request: RpcRequest) {
-        val response = runCatching { RpcResponse(request.id, ok = true, payload = answer(request.method)) }
-            .getOrElse { error ->
-                // The method's kind only: a search's words and the listener's playlists stay out of the log.
-                Log.w(TAG, "rpc ${request.method::class.simpleName} failed: ${error.javaClass.simpleName}")
-                RpcResponse(request.id, ok = false, error = error.message ?: error.javaClass.simpleName)
+        val kind = request.method::class.simpleName
+        // Not a child of this call: much of an answer is blocking native and network work that no
+        // timeout can interrupt, and a child would hold the reply until it ended. Raced instead,
+        // and left to finish on its own when it loses (a Home built late is still kept for next time).
+        val work = answers.async { answer(request.method) }
+        val response = try {
+            val payload = withTimeoutOrNull(budgetFor(request.method)) { work.await() }
+            if (payload != null || work.isCompleted) {
+                RpcResponse(request.id, ok = true, payload = payload)
+            } else {
+                Log.w(TAG, "rpc $kind ran out of time")
+                fallback(request) ?: RpcResponse(request.id, ok = false, error = "timeout")
             }
-        val bytes = WearCodec.encode(RpcResponse.serializer(), response)
-        if (bytes.size <= RPC_MESSAGE_LIMIT) {
-            bridge.link.send(nodeId, WearPaths.RPC_REPLY, bytes)
-        } else {
-            stream(nodeId, request.id, WearCodec.gzip(bytes))
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            // The method's kind only: a search's words and the listener's playlists stay out of the log.
+            Log.w(TAG, "rpc $kind failed: ${error.javaClass.simpleName}")
+            RpcResponse(request.id, ok = false, error = error.message ?: error.javaClass.simpleName)
         }
+        withContext(kotlinx.coroutines.NonCancellable) {
+            val bytes = WearCodec.encode(RpcResponse.serializer(), response)
+            if (bytes.size <= RPC_MESSAGE_LIMIT) {
+                bridge.link.send(nodeId, WearPaths.RPC_REPLY, bytes)
+            } else {
+                stream(nodeId, request.id, WearCodec.gzip(bytes))
+            }
+        }
+    }
+
+    /** What stands in for an answer that did not come in time: the last Home, for the Home. */
+    private fun fallback(request: RpcRequest): RpcResponse? = when (request.method) {
+        RpcMethod.Home -> library.cachedHome()?.let { RpcResponse(request.id, ok = true, payload = encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), it)) }
+        else -> null
+    }
+
+    /** Inside the watch's own timeouts (12 s for most, 20 s for a search), with room for the reply. */
+    private fun budgetFor(method: RpcMethod): Long = when (method) {
+        is RpcMethod.Search -> SEARCH_BUDGET_MS
+        else -> ANSWER_BUDGET_MS
     }
 
     private suspend fun answer(method: RpcMethod): JsonElement? = when (method) {
@@ -87,13 +125,30 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
         )
     }
 
+    /**
+     * The queue around what plays, in the order it will play: with shuffle on, ExoPlayer keeps the
+     * items in their list order and plays them in another, and the watch was shown the list. Each
+     * entry keeps its place in the list, which is what playing it from the watch refers to.
+     */
     private fun queue(method: RpcMethod.Queue): QueueWindow {
         val player = bridge.currentPlayer ?: return QueueWindow(currentIndex = -1, total = 0, items = emptyList())
         val count = player.mediaItemCount
+        if (count == 0) return QueueWindow(currentIndex = -1, total = 0, items = emptyList())
         val current = player.currentMediaItemIndex.takeIf { it != C.INDEX_UNSET } ?: 0
-        val from = (current - method.before).coerceAtLeast(0)
-        val to = (current + method.after).coerceAtMost(count - 1)
-        val items = if (count == 0) emptyList() else (from..to).map { index ->
+        val timeline = player.currentTimeline
+        val shuffle = player.shuffleModeEnabled
+        val order = if (timeline.isEmpty) {
+            ((current - method.before).coerceAtLeast(0)..(current + method.after).coerceAtMost(count - 1)).toList()
+        } else {
+            val before = generateSequence(current) { index ->
+                timeline.getPreviousWindowIndex(index, androidx.media3.common.Player.REPEAT_MODE_OFF, shuffle).takeIf { it != C.INDEX_UNSET }
+            }.drop(1).take(method.before).toList().reversed()
+            val after = generateSequence(current) { index ->
+                timeline.getNextWindowIndex(index, androidx.media3.common.Player.REPEAT_MODE_OFF, shuffle).takeIf { it != C.INDEX_UNSET }
+            }.drop(1).take(method.after).toList()
+            before + current + after
+        }
+        val items = order.filter { it in 0 until count }.map { index ->
             val item = player.getMediaItemAt(index)
             val art = item.mediaMetadata.artworkUri?.toString()
             QueueEntry(
@@ -139,11 +194,15 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
     }
 
     private suspend fun stream(nodeId: String, id: Long, gzipped: ByteArray) {
+        val channels = Wearable.getChannelClient(app)
+        var channel: com.google.android.gms.wearable.ChannelClient.Channel? = null
         runCatching {
-            val channels = Wearable.getChannelClient(app)
-            val channel = channels.openChannel(nodeId, WearPaths.rpcStream(id)).await()
-            channels.getOutputStream(channel).await().use { it.write(gzipped) }
-        }.onFailure { Log.w(TAG, "rpc stream $id failed", it) }
+            channel = channels.openChannel(nodeId, WearPaths.rpcStream(id)).await()
+            channels.getOutputStream(channel!!).await().use { it.write(gzipped) }
+        }.onFailure { Log.w(TAG, "rpc stream $id failed: ${it.message}") }
+        // Closed both ways once written: closing the stream only ends one direction, and every
+        // large answer used to leave a channel open until the devices disconnected.
+        channel?.let { runCatching { channels.close(it).await() } }
     }
 
     private fun <T> encode(serializer: KSerializer<T>, value: T): JsonElement =
@@ -152,6 +211,8 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
     private companion object {
         const val TAG = "WearRpc"
         const val MAX_DOWNLOAD_QUERY = 200
+        const val ANSWER_BUDGET_MS = 10_000L
+        const val SEARCH_BUDGET_MS = 18_000L
         const val MAX_LIKED_QUERY = 20
     }
 }

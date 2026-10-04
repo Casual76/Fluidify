@@ -200,6 +200,8 @@ class PlaybackService : MediaLibraryService() {
         // The watch remote follows whichever player is current; see PhoneWearBridge.
         container.wearBridge.browseTree = browseTree
         container.wearBridge.attach(player)
+        // A watch setting that changes how the notification is built, applied now.
+        scope.launch { container.wearBridge.notificationRefresh.collect { session?.let { onUpdateNotification(it, false) } } }
 
         // The app's own mark in the shade, instead of Media3's generic note.
         // The provider is built rather than subclassed: the small icon is the

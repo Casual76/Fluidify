@@ -81,17 +81,7 @@ class WearLibrarySource(private val app: SquareApplication) {
     }
 
     /** Starts the phone's engine if it is not running, and waits a little for it to connect. */
-    private suspend fun engineReady(): Boolean {
-        if (runCatching { NativeBridge.isConnected }.getOrDefault(false)) return true
-        app.wearBridge.wakePlayback()
-        // Asked as well, for a service that is up with its engine stopped; a background start
-        // can be refused, and binding above is what counts.
-        runCatching { dev.lelonio.square.playback.PlaybackService.connect(app) }
-        return withTimeoutOrNull(ENGINE_WAIT_MS) {
-            while (!runCatching { NativeBridge.isConnected }.getOrDefault(false)) delay(ENGINE_POLL_MS)
-            true
-        } ?: false
-    }
+    private suspend fun engineReady(): Boolean = app.wearBridge.engineReady(ENGINE_WAIT_MS)
 
     /**
      * The made-for-you playlists found before, and once a day a search for the two that matter
@@ -128,9 +118,14 @@ class WearLibrarySource(private val app: SquareApplication) {
     private suspend fun withCovers(entries: List<HomeEntry>): Map<String, HomeEntry> {
         var lookups = 0
         return entries.associate { entry ->
-            val art = entry.artworkUrl ?: coverCache[entry.uri] ?: if (lookups < MAX_COVER_LOOKUPS && entry.uri.startsWith("spotify:playlist:")) {
+            val art = entry.artworkUrl ?: coverCache[entry.uri] ?: if (
+                lookups < MAX_COVER_LOOKUPS && entry.uri.startsWith("spotify:playlist:") && entry.uri !in noCover
+            ) {
                 lookups++
-                runCatching { dev.lelonio.square.data.Catalog.playlistCover(entry.uri) }.getOrNull()?.also { coverCache[entry.uri] = it }
+                // A playlist with no cover is remembered as such too: asked again on every Home, the
+                // same twelve lookups ran each time and pushed the answer past the watch's patience.
+                runCatching { dev.lelonio.square.data.Catalog.playlistCover(entry.uri) }.getOrNull()
+                    ?.also { coverCache[entry.uri] = it } ?: null.also { noCover += entry.uri }
             } else {
                 null
             }
@@ -139,6 +134,7 @@ class WearLibrarySource(private val app: SquareApplication) {
     }
 
     private val coverCache = java.util.concurrent.ConcurrentHashMap<String, String>()
+    private val noCover: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
     private val homeFile get() = homeFile(app)
 
     private fun saveHome(page: LibraryPage) {
@@ -146,7 +142,7 @@ class WearLibrarySource(private val app: SquareApplication) {
     }
 
     /** The last Home answered, with the pins as they are now. */
-    private fun cachedHome(): LibraryPage? {
+    fun cachedHome(): LibraryPage? {
         val page = runCatching { dev.pampa.fluidify.wear.protocol.WearCodec.decodeOrNull(LibraryPage.serializer(), homeFile.readBytes()) }.getOrNull()
             ?: return null
         val pinned = app.pinnedPlaylists.pinned.value.toSet()
@@ -298,7 +294,6 @@ class WearLibrarySource(private val app: SquareApplication) {
         private const val SHELF_ITEMS = 10
         private const val MAX_COVER_LOOKUPS = 12
         private const val ENGINE_WAIT_MS = 6_000L
-        private const val ENGINE_POLL_MS = 200L
         fun homeFile(context: android.content.Context) = java.io.File(context.filesDir, "wear-home.json")
 
         /**

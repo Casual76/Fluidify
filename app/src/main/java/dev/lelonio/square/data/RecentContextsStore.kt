@@ -40,7 +40,9 @@ class RecentContextsStore(context: Context) {
         if (!isRememberable(uri) || name.isBlank()) return
         val current = _contexts.value
         val previous = current.firstOrNull { it.uri == uri }
-        if (current.firstOrNull()?.uri == uri && previous?.artworkUrl != null) return
+        // Already the newest, and nothing new to say about it: not written again. A playlist has no
+        // cover to add here, and was rewritten (and serialised on the main thread) on every song.
+        if (current.firstOrNull()?.uri == uri && previous?.name == name && (artworkUrl == null || previous.artworkUrl != null)) return
         val entry = RecentContext(uri, name, artworkUrl ?: previous?.artworkUrl, nowMs)
         val updated = (listOf(entry) + current.filterNot { it.uri == uri }).take(LIMIT)
         _contexts.value = updated

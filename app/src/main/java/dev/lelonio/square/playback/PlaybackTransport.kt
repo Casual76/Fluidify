@@ -18,7 +18,11 @@ import kotlinx.coroutines.withContext
  */
 object PlaybackTransport {
 
-    /** Skips forward or back. False when there is nothing loaded to skip in. */
+    /**
+     * Skips forward or back. False when nothing happened: nothing loaded, the end of a queue that
+     * does not repeat, or the other device not taking the command — each of which used to be
+     * acknowledged to the watch as done.
+     */
     suspend fun skip(player: Player, forward: Boolean): Boolean {
         if (SpotifyVideoMode.enabled.value) {
             SpotifyVideoMode.skip(forward)
@@ -26,13 +30,13 @@ object PlaybackTransport {
         }
         val remote = RemoteConnect.playback.value
         if (RemoteConnect.elsewhereActive.value && remote != null) {
-            withContext(Dispatchers.IO) {
+            return withContext(Dispatchers.IO) {
                 if (forward) RemoteConnect.next(remote.deviceId) else RemoteConnect.previous(remote.deviceId)
             }
-            return true
         }
         if (player.mediaItemCount == 0) return false
         if (forward) {
+            if (!player.hasNextMediaItem()) return false
             player.seekToNextMediaItem()
         } else if (player.hasPreviousMediaItem()) {
             player.seekToPreviousMediaItem()

@@ -18,6 +18,7 @@ object ErrorMessages {
         AckErrors.PHONE_UNAVAILABLE -> R.string.error_phone_unavailable
         AckErrors.TRANSFER -> R.string.error_transfer
         AckErrors.NOTHING_TO_SKIP -> R.string.error_nothing_to_skip
+        AckErrors.END_OF_QUEUE -> R.string.error_end_of_queue
         AckErrors.RADIO -> R.string.error_radio
         AckErrors.LIKE -> R.string.error_like
         AckErrors.PLAYLIST -> R.string.error_playlist
