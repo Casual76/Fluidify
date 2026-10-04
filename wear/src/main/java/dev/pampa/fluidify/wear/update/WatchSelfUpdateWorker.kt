@@ -17,6 +17,9 @@ import dev.antigravity.fluidengine.update.UpdateSource
 import dev.pampa.fluidify.wear.BuildConfig
 import kotlinx.coroutines.flow.takeWhile
 import java.util.concurrent.TimeUnit
+import dev.lelonio.square.update.WatchApkValidation
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
 
 /**
  * The watch updating itself, for when the phone is not around to do it.
@@ -47,9 +50,12 @@ class WatchSelfUpdateWorker(context: Context, params: WorkerParameters) : Corout
             Log.i(TAG, "self-update check failed: ${it.message}")
             return Result.retry()
         } ?: return Result.success()
+        if (!update.sha256.matches(Regex("[a-fA-F0-9]{64}"))) return Result.failure()
+        val apk = runCatching { installer.download(update) }.getOrElse { return Result.retry() }
+        if (withContext(Dispatchers.IO) { WatchApkValidation.reject(applicationContext, apk, update.version, update.sha256) } != null) return Result.failure()
 
         var failed = false
-        installer.install(update)
+        installer.installFile(apk, update.version, sha256 = update.sha256)
             .takeWhile { state ->
                 when (state) {
                     is AppUpdateInstallState.Error -> {

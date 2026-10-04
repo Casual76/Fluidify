@@ -149,4 +149,5 @@
     <string name="error_playlist">Non è stato aggiunto alla playlist</string>
     <string name="error_no_output">Collega le cuffie per ascoltare sull\'orologio</string>
     <string name="error_end_of_queue">La coda è finita</string>
+    <string name="unavailable_tracks">%1$d non disponibili</string>
 </resources>

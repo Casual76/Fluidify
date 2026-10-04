@@ -26,6 +26,7 @@ class WatchDownloadStoreTest {
     fun setUp() {
         val app = ApplicationProvider.getApplicationContext<WearApp>()
         File(app.filesDir, "downloads").deleteRecursively()
+        app.getSharedPreferences("watch_download_failures", 0).edit().clear().commit()
         store = WatchDownloadStore(app)
     }
 
@@ -43,8 +44,8 @@ class WatchDownloadStoreTest {
     @Test
     fun pathsAreTheNativeStoresShards() {
         // native/src/downloads.rs: <root>/audio/<xx>/<rest>, <root>/meta/<xx>/<rest>.json
-        assertTrue(store.audioFile(track)!!.path.endsWith("downloads/audio/b3/9fe8081e1f4c54be38e8d6f9f12bb9"))
-        assertTrue(store.metaFile(track)!!.path.endsWith("downloads/meta/b3/9fe8081e1f4c54be38e8d6f9f12bb9.json"))
+        assertTrue(store.audioFile(track)!!.path.replace('\\', '/').endsWith("downloads/audio/b3/9fe8081e1f4c54be38e8d6f9f12bb9"))
+        assertTrue(store.metaFile(track)!!.path.replace('\\', '/').endsWith("downloads/meta/b3/9fe8081e1f4c54be38e8d6f9f12bb9.json"))
         assertNull(store.audioFile("spotify:album:5sWHDYs0csV6RS48xBl0tH"))
     }
 
@@ -111,5 +112,20 @@ class WatchDownloadStoreTest {
         assertEquals(96, WatchDownloadStore.formatKbps("OGG_VORBIS_96"))
         assertNull(WatchDownloadStore.formatKbps("MP3_160_ENC"))
         assertNull(WatchDownloadStore.formatKbps(null))
+    }
+
+    @Test fun unavailableTracksStopRetryingAfterThreePassesAndSurviveRestart() {
+        store.clearFailure(track)
+        store.keep("spotify:playlist:a", "A")
+        store.setTracks("spotify:playlist:a", listOf(track))
+        repeat(2) { store.recordFailure(track) }
+        assertEquals(listOf(track), store.pending())
+        store.recordFailure(track)
+        assertTrue(store.pending().isEmpty())
+        assertEquals(1, store.unavailableCount())
+        val again = WatchDownloadStore(ApplicationProvider.getApplicationContext())
+        assertEquals(1, again.unavailableCount())
+        again.delete(track)
+        assertEquals(listOf(track), again.pending())
     }
 }

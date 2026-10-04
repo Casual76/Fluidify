@@ -149,4 +149,5 @@
     <string name="error_playlist">Impossible de l\'ajouter à la playlist</string>
     <string name="error_no_output">Connectez un casque pour écouter sur la montre</string>
     <string name="error_end_of_queue">C\'est la fin de la file d\'attente</string>
+    <string name="unavailable_tracks">%1$d indisponibles</string>
 </resources>

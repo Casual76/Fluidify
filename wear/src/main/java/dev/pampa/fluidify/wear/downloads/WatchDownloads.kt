@@ -18,6 +18,12 @@ import dev.pampa.fluidify.wear.protocol.logic.TransferPreference
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.tasks.await
 import java.util.concurrent.TimeUnit
 
@@ -32,9 +38,14 @@ class WatchDownloads(private val context: Context) {
 
     val store = WatchDownloadStore(context)
     private val prefs = context.getSharedPreferences("watch_downloads", Context.MODE_PRIVATE)
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    @Volatile private var measuredAt = 0L
+    @Volatile private var usedBytes = 0L
+    @Volatile private var freeBytes = 0L
 
     private val _status = MutableStateFlow(snapshot())
     val status: StateFlow<WatchDownloadsStatus> = _status.asStateFlow()
+    init { scope.launch { measureStorage() } }
 
     /** The watch's own quality, 160 unless set: the phone's default, and what a watch speaker can tell apart. */
     var qualityKbps: Int
@@ -87,6 +98,7 @@ class WatchDownloads(private val context: Context) {
 
     /** Tells the phone what the watch has. Not urgent: a screen of progress, not a command. */
     suspend fun publish() {
+        withContext(Dispatchers.IO) { measureStorage() }
         val bytes = WearCodec.encode(WatchDownloadsStatus.serializer(), _status.value)
         runCatching {
             Wearable.getDataClient(context).putDataItem(PutDataRequest.create(WearPaths.DOWNLOAD_STATUS).setData(bytes)).await()
@@ -95,15 +107,25 @@ class WatchDownloads(private val context: Context) {
 
     private fun snapshot(active: String? = null, paused: String? = null) = WatchDownloadsStatus(
         owners = store.ownerStatus(),
-        bytesUsed = store.bytesUsed(),
-        bytesFree = store.bytesFree(),
+        bytesUsed = usedBytes,
+        bytesFree = freeBytes,
         waiting = store.pending().size,
         active = active,
         paused = paused,
         qualityKbps = qualityKbps,
         preference = preference,
         updatedAtEpochMs = System.currentTimeMillis(),
+        unavailable = store.unavailableCount(),
     )
+
+    @Synchronized private fun measureStorage() {
+        val now = System.currentTimeMillis()
+        if (now - measuredAt < 30_000L) return
+        usedBytes = store.bytesUsed()
+        freeBytes = store.bytesFree()
+        measuredAt = now
+        _status.update { it.copy(bytesUsed = usedBytes, bytesFree = freeBytes) }
+    }
 
     companion object {
         private const val TAG = "WatchDownloads"

@@ -149,4 +149,5 @@
     <string name="error_playlist">No se pudo añadir a la playlist</string>
     <string name="error_no_output">Conecta unos auriculares para escuchar en el reloj</string>
     <string name="error_end_of_queue">Es el final de la cola</string>
+    <string name="unavailable_tracks">%1$d no disponibles</string>
 </resources>

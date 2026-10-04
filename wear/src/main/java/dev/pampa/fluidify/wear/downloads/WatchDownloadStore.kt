@@ -44,19 +44,20 @@ class WatchDownloadStore(context: Context) {
 
     val root: File = File(context.filesDir, "downloads").apply { mkdirs() }
     private val ownersFile = File(root, "owners.json")
+    private val failures = context.getSharedPreferences("watch_download_failures", Context.MODE_PRIVATE)
     private val _owners = MutableStateFlow(load())
 
     val owners: StateFlow<List<KeptOwner>> = _owners.asStateFlow()
 
     fun isKept(uri: String): Boolean = _owners.value.any { it.uri == uri }
 
-    fun keep(uri: String, title: String, artUrl: String? = null) {
+    @Synchronized fun keep(uri: String, title: String, artUrl: String? = null) {
         if (isKept(uri)) return
         save(_owners.value + KeptOwner(uri, title, artUrl = artUrl, addedAtEpochMs = System.currentTimeMillis()))
     }
 
     /** Stops keeping [uri], and deletes the tracks no other kept owner has. */
-    fun drop(uri: String) {
+    @Synchronized fun drop(uri: String) {
         val leaving = _owners.value.firstOrNull { it.uri == uri } ?: return
         val remaining = _owners.value - leaving
         val stillWanted = remaining.flatMap { it.tracks }.toSet()
@@ -65,7 +66,7 @@ class WatchDownloadStore(context: Context) {
     }
 
     /** The owner's tracks as read now; tracks taken out of the playlist go from the disk too. */
-    fun setTracks(uri: String, tracks: List<String>, title: String? = null) {
+    @Synchronized fun setTracks(uri: String, tracks: List<String>, title: String? = null) {
         val owner = _owners.value.firstOrNull { it.uri == uri } ?: return
         val removed = owner.tracks.toSet() - tracks.toSet()
         val updated = _owners.value.map { if (it.uri == uri) it.copy(tracks = tracks, title = title ?: it.title) else it }
@@ -76,7 +77,14 @@ class WatchDownloadStore(context: Context) {
 
     /** Every kept track not yet on the disk, in the order the owners were added. */
     fun pending(): List<String> =
-        _owners.value.flatMap { it.tracks }.distinct().filterNot(::has)
+        _owners.value.flatMap { it.tracks }.distinct().filterNot { has(it) || unavailable(it) }
+
+    fun unavailable(uri: String): Boolean = failures.getInt(uri, 0) >= MAX_FAILURES
+    @Synchronized fun recordFailure(uri: String) {
+        failures.edit().putInt(uri, (failures.getInt(uri, 0) + 1).coerceAtMost(MAX_FAILURES)).commit()
+    }
+    @Synchronized fun clearFailure(uri: String) { failures.edit().remove(uri).commit() }
+    fun unavailableCount(): Int = _owners.value.flatMap { it.tracks }.distinct().count { !has(it) && unavailable(it) }
 
     fun has(trackUri: String): Boolean = metaFile(trackUri)?.isFile == true && audioFile(trackUri)?.isFile == true
 
@@ -90,6 +98,7 @@ class WatchDownloadStore(context: Context) {
 
     fun audioFile(trackUri: String): File? = shard("audio", trackUri, "")
     fun partFile(trackUri: String): File? = audioFile(trackUri)?.let { File(it.path + ".part") }
+    fun partIdentityFile(trackUri: String): File? = partFile(trackUri)?.let { File(it.path + ".id") }
     fun metaFile(trackUri: String): File? = shard("meta", trackUri, ".json")
 
     /**
@@ -97,7 +106,7 @@ class WatchDownloadStore(context: Context) {
      * sidecar is written last, through a temporary file — its presence is the one
      * signal the engine trusts that a download is complete.
      */
-    fun adopt(trackUri: String, sidecarJson: String): Boolean {
+    @Synchronized fun adopt(trackUri: String, sidecarJson: String): Boolean {
         val part = partFile(trackUri) ?: return false
         val audio = audioFile(trackUri) ?: return false
         val meta = metaFile(trackUri) ?: return false
@@ -107,13 +116,15 @@ class WatchDownloadStore(context: Context) {
         meta.parentFile?.mkdirs()
         val tmp = File(meta.path + ".tmp")
         tmp.writeText(sidecarJson)
-        return tmp.renameTo(meta)
+        return tmp.renameTo(meta).also { if (it) { partIdentityFile(trackUri)?.delete(); clearFailure(trackUri) } }
     }
 
-    fun delete(trackUri: String) {
+    @Synchronized fun delete(trackUri: String) {
         metaFile(trackUri)?.delete()
         audioFile(trackUri)?.delete()
         partFile(trackUri)?.delete()
+        partIdentityFile(trackUri)?.delete()
+        clearFailure(trackUri)
     }
 
     /**
@@ -148,7 +159,7 @@ class WatchDownloadStore(context: Context) {
     }
 
     fun ownerStatus(): List<WatchDownloadOwner> = _owners.value.map { owner ->
-        WatchDownloadOwner(owner.uri, owner.title, tracks = owner.tracks.size, done = owner.tracks.count(::has))
+        WatchDownloadOwner(owner.uri, owner.title, tracks = owner.tracks.size, done = owner.tracks.count(::has), unavailable = owner.tracks.count { !has(it) && unavailable(it) })
     }
 
     fun bytesUsed(): Long = root.walkTopDown().filter { it.isFile }.sumOf { it.length() }
@@ -173,6 +184,7 @@ class WatchDownloadStore(context: Context) {
     }
 
     companion object {
+        const val MAX_FAILURES = 3
         /** "OGG_VORBIS_320" → 320; the formats without a number are the phone's MP3/AAC, which a watch never asks for. */
         fun formatKbps(format: String?): Int? = format?.substringAfterLast('_')?.toIntOrNull()
     }

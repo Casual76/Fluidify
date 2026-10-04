@@ -14,6 +14,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.CancellationException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.io.File
 import java.net.InetAddress
 
@@ -51,6 +54,8 @@ class WatchInstaller(private val context: Context) {
     data class Found(val host: String? = null, val pairingPort: Int? = null, val connectPort: Int? = null)
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val installing = AtomicBoolean()
+    @Volatile private var discovering = false
     private val _step = MutableStateFlow<Step>(Step.Idle)
     val step: StateFlow<Step> = _step.asStateFlow()
 
@@ -74,6 +79,7 @@ class WatchInstaller(private val context: Context) {
      */
     fun startDiscovery() {
         stopDiscovery()
+        discovering = true
         multicast = runCatching {
             context.applicationContext.getSystemService(WifiManager::class.java)
                 ?.createMulticastLock(MULTICAST_TAG)
@@ -93,6 +99,7 @@ class WatchInstaller(private val context: Context) {
     }
 
     fun stopDiscovery() {
+        discovering = false
         runCatching { pairingMdns?.stop() }
         runCatching { connectMdns?.stop() }
         pairingMdns = null
@@ -104,12 +111,12 @@ class WatchInstaller(private val context: Context) {
     }
 
     private fun onPairing(host: String?, port: Int) {
-        if (host == null) return
+        if (host == null || !discovering) return
         _found.value = _found.value.copy(host = host, pairingPort = port)
     }
 
     private fun onConnect(host: String?, port: Int) {
-        if (host == null) return
+        if (host == null || !discovering) return
         _found.value = _found.value.copy(host = _found.value.host ?: host, connectPort = port)
     }
 
@@ -137,6 +144,7 @@ class WatchInstaller(private val context: Context) {
      */
     @Suppress("DEPRECATION")
     private fun resolve(manager: NsdManager, info: NsdServiceInfo, onFound: (String?, Int) -> Unit, attempt: Int) {
+        if (!discovering) return
         runCatching {
             manager.resolveService(
                 info,
@@ -170,6 +178,7 @@ class WatchInstaller(private val context: Context) {
         connectPort: Int?,
         apk: suspend ((Float?) -> Unit) -> Result<File>,
     ) {
+        if (!installing.compareAndSet(false, true)) return
         scope.launch {
             val adb = WatchAdb(context)
             try {
@@ -218,14 +227,18 @@ class WatchInstaller(private val context: Context) {
                 exec(adb, "am start -n $PACKAGE/$ACTIVITY")
                 _step.value = Step.Done
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 Log.w(TAG, "install stopped: ${error.message}", error)
                 _step.value = Step.Failed(Reason.REFUSED, error.message.orEmpty().take(MAX_DETAIL))
             } finally {
+                installing.set(false)
                 runCatching { adb.disconnect() }
                 runCatching { adb.close() }
             }
         }
     }
+
+    fun close() { stopDiscovery(); scope.cancel() }
 
     fun reset() {
         _step.value = Step.Idle

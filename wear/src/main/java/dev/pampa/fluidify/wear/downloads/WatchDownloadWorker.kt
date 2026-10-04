@@ -12,8 +12,10 @@ import dev.pampa.fluidify.wear.protocol.RpcMethod
 import dev.pampa.fluidify.wear.protocol.logic.Transport
 import dev.pampa.fluidify.wear.protocol.logic.TransportFacts
 import dev.pampa.fluidify.wear.protocol.logic.TransportPlanner
+import dev.pampa.fluidify.wear.protocol.logic.DownloadFailure
 import dev.pampa.fluidify.wear.standalone.Route
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.withContext
 
 /**
@@ -74,6 +76,8 @@ class WatchDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
                     preference = downloads.preference,
                 )
                 var done = false
+                var attempted = false
+                var unavailable = false
                 for (attempt in TransportPlanner.plan(facts)) {
                     if (TransportPlanner.needsWatchNetwork(attempt)) {
                         if (attempt == Transport.WATCH_ALONE && keysRefused) continue
@@ -83,6 +87,7 @@ class WatchDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
                         if (!engineLeased) engineLeased = standalone.engine.acquire()
                         if (!engineLeased) continue
                     }
+                    attempted = true
                     val outcome = runCatching {
                         when (attempt) {
                             Transport.WATCH_WITH_PHONE_KEY -> withContext(Dispatchers.IO) { NativeBridge.downloadWithSidecar(phoneSidecar!!) }
@@ -91,16 +96,19 @@ class WatchDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
                             Transport.PHONE_STAGED -> transfer.fetch(phone!!, track, stageKbps = downloads.qualityKbps).getOrThrow()
                         }
                     }
+                    (outcome.exceptionOrNull() as? CancellationException)?.let { throw it }
                     if (outcome.isSuccess && store.has(track)) {
                         done = true
                         break
                     }
                     val message = outcome.exceptionOrNull()?.message.orEmpty()
+                    unavailable = unavailable || DownloadFailure.unavailable(message)
                     Log.i(TAG, "$attempt failed for $track: $message")
                     // Spotify refusing keys is about the pace, not this track: stop asking for the rest of the pass.
                     if (message.contains(KEY_THROTTLED)) keysRefused = true
                 }
-                if (!done) Log.i(TAG, "$track not fetched this pass")
+                if (done) store.clearFailure(track)
+                else if (attempted && unavailable && !keysRefused && !isStopped) store.recordFailure(track)
             }
         } finally {
             if (engineLeased) standalone.engine.release()
@@ -116,17 +124,10 @@ class WatchDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
     /** Each kept owner's tracks as the phone reads them now. */
     private suspend fun refreshTrackLists(store: WatchDownloadStore) {
         for (owner in store.owners.value) {
-            val tracks = mutableListOf<String>()
-            var offset = 0
-            var title: String? = null
-            while (true) {
-                val page = app.link.request(RpcMethod.Context(owner.uri, offset, PAGE), ContextPage.serializer()).getOrNull() ?: break
-                title = title ?: page.title.takeIf { it.isNotEmpty() }
-                tracks += page.tracks.map { it.uri }.filter { it.startsWith("spotify:track:") }
-                offset += page.tracks.size
-                if (page.tracks.isEmpty() || offset >= page.total || offset >= MAX_TRACKS) break
-            }
-            if (tracks.isNotEmpty()) store.setTracks(owner.uri, tracks, title)
+            val complete = CompleteTrackList.read(MAX_TRACKS, PAGE) { offset, limit ->
+                app.link.request(RpcMethod.Context(owner.uri, offset, limit), ContextPage.serializer()).getOrNull()
+            } ?: continue
+            store.setTracks(owner.uri, complete.second, complete.first)
         }
     }
 

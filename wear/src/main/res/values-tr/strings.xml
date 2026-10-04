@@ -149,4 +149,5 @@
     <string name="error_playlist">Çalma listesine eklenemedi</string>
     <string name="error_no_output">Saatte dinlemek için kulaklık bağla</string>
     <string name="error_end_of_queue">Sıranın sonuna gelindi</string>
+    <string name="unavailable_tracks">%1$d kullanılamıyor</string>
 </resources>

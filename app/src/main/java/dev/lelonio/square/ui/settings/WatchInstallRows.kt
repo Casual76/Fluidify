@@ -21,6 +21,11 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.lifecycle.compose.LocalLifecycleOwner
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.AndroidViewModel
+import androidx.lifecycle.viewmodel.compose.viewModel
 import dev.lelonio.square.R
 import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.wear.install.WatchInstaller
@@ -40,10 +45,20 @@ internal fun WatchInstallRows(app: SquareApplication) {
         ActionRow(stringResource(R.string.watch_install), destructive = false) { open = true }
         return
     }
-    val installer = remember { WatchInstaller(app) }
-    DisposableEffect(Unit) {
-        installer.startDiscovery()
-        onDispose { installer.stopDiscovery() }
+    val model: WatchInstallViewModel = viewModel()
+    val installer = model.installer
+    val owner = LocalLifecycleOwner.current
+    DisposableEffect(owner, installer) {
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_START -> installer.startDiscovery()
+                Lifecycle.Event.ON_STOP -> installer.stopDiscovery()
+                else -> Unit
+            }
+        }
+        owner.lifecycle.addObserver(observer)
+        if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) installer.startDiscovery()
+        onDispose { owner.lifecycle.removeObserver(observer); installer.stopDiscovery() }
     }
     val found by installer.found.collectAsStateWithLifecycle()
     val step by installer.step.collectAsStateWithLifecycle()
@@ -121,6 +136,11 @@ internal fun WatchInstallRows(app: SquareApplication) {
             pickApk.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream"))
         }
     }
+}
+
+class WatchInstallViewModel(application: android.app.Application) : AndroidViewModel(application) {
+    val installer = WatchInstaller(application)
+    override fun onCleared() { installer.close() }
 }
 
 @Composable

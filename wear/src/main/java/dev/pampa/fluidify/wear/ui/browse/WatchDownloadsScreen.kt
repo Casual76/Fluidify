@@ -43,6 +43,7 @@ fun WatchDownloadsScreen(downloads: WatchDownloads, onOpen: (String, String) -> 
 
     WatchList(title = stringResource(R.string.downloads)) {
         if (status.owners.isEmpty()) noticeItem(context.getString(R.string.watch_downloads_empty))
+        if (status.unavailable > 0) noticeItem(context.getString(R.string.unavailable_tracks, status.unavailable))
         status.owners.forEach { owner ->
             item(key = owner.uri) {
                 FluidWearListRow(

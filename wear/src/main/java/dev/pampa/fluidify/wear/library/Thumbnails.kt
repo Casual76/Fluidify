@@ -5,6 +5,7 @@ import android.util.Log
 import androidx.compose.runtime.staticCompositionLocalOf
 import com.google.android.gms.wearable.Wearable
 import dev.pampa.fluidify.wear.link.PhoneLink
+import dev.pampa.fluidify.wear.link.LinkStatus
 import dev.pampa.fluidify.wear.protocol.ThumbHeader
 import dev.pampa.fluidify.wear.protocol.ThumbRequest
 import dev.pampa.fluidify.wear.protocol.ThumbWant
@@ -21,6 +22,11 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.runInterruptible
+import kotlinx.coroutines.flow.update
+import dev.lelonio.square.io.ReadWatchdog
 import java.io.DataInputStream
 import java.io.File
 import java.io.InputStream
@@ -46,6 +52,16 @@ class Thumbnails(context: Context, private val link: PhoneLink, private val scop
     private var job: Job? = null
 
     val revision: StateFlow<Long> = _revision.asStateFlow()
+    init {
+        scope.launch {
+            link.status.collect { status ->
+                if (status == LinkStatus.CONNECTED) {
+                    synchronized(this@Thumbnails) { gaveUp.clear() }
+                    _revision.update { it + 1 }
+                }
+            }
+        }
+    }
 
     /** The kept cover for [key]; never writes, so it is safe to ask from composition. */
     fun fileFor(key: String?): File? {
@@ -67,7 +83,7 @@ class Thumbnails(context: Context, private val link: PhoneLink, private val scop
     fun want(key: String, url: String?) {
         if (!key.isSafeName() || File(directory, "$key.webp").isFile) return
         synchronized(this) {
-            if (key in inFlight || key in wanted) return
+                if (key in inFlight || key in wanted) return
             val until = gaveUp[key]
             if (until != null && System.currentTimeMillis() < until) return
             wanted[key] = url
@@ -84,20 +100,28 @@ class Thumbnails(context: Context, private val link: PhoneLink, private val scop
             val batch = synchronized(this) {
                 val taken = wanted.entries.take(ThumbRequest.MAX_WANTS).map { ThumbWant(it.key, it.value) }
                 taken.forEach { wanted.remove(it.key); inFlight += it.key }
+                if (taken.isEmpty()) job = null
                 taken
             }
             if (batch.isEmpty()) return
-            val received = runCatching { fetch(batch) }
-                .onFailure { Log.i(TAG, "thumbnails stopped: ${it.message}") }
+            val reachable = link.reachablePhone() != null
+            val received = runCatching { if (reachable) fetch(batch) else emptySet() }
+                .onFailure {
+                    if (it is CancellationException) {
+                        synchronized(this) { batch.forEach { want -> inFlight -= want.key }; job = null }
+                        throw it
+                    }
+                    Log.i(TAG, "thumbnails stopped: ${it.message}")
+                }
                 .getOrDefault(emptySet())
             val now = System.currentTimeMillis()
             synchronized(this) {
                 batch.forEach { want ->
                     inFlight -= want.key
-                    if (want.key !in received) gaveUp[want.key] = now + RETRY_AFTER_MS
+                    if (reachable && link.status.value == LinkStatus.CONNECTED && want.key !in received) gaveUp[want.key] = now + RETRY_AFTER_MS
                 }
             }
-            _revision.value = _revision.value + 1
+            if (reachable) _revision.update { it + 1 }
         }
     }
 
@@ -111,22 +135,22 @@ class Thumbnails(context: Context, private val link: PhoneLink, private val scop
                 out.write('\n'.code)
                 out.flush()
             }
-            DataInputStream(channels.getInputStream(channel).await()).use { input ->
+            DataInputStream(ReadWatchdog(channels.getInputStream(channel).await(), ANSWER_WAIT_MS) { channels.close(channel) }).use { input ->
                 while (true) {
-                    val line = withTimeoutOrNull(ANSWER_WAIT_MS) { readLine(input) } ?: break
+                    val line = runInterruptible { readLine(input) } ?: break
                     val header = WearCodec.decodeOrNull(ThumbHeader.serializer(), line.encodeToByteArray()) ?: break
                     if (header.bytes !in 1..MAX_BYTES) break
                     val bytes = ByteArray(header.bytes)
-                    input.readFully(bytes)
+                    runInterruptible { input.readFully(bytes) }
                     if (store(header.key, bytes)) {
                         received += header.key
                         // Rows redraw as covers land, not only when the whole batch is in.
-                        if (received.size % REDRAW_EVERY == 0) _revision.value = _revision.value + 1
+                        if (received.size % REDRAW_EVERY == 0) _revision.update { it + 1 }
                     }
                 }
             }
         } finally {
-            runCatching { channels.close(channel).await() }
+            withContext(NonCancellable) { runCatching { channels.close(channel).await() } }
         }
         trim()
         received

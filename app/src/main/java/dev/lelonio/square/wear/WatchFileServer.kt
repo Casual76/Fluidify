@@ -1,6 +1,9 @@
 package dev.lelonio.square.wear
 
 import android.util.Log
+import android.content.ComponentName
+import androidx.media3.session.MediaController
+import androidx.media3.session.SessionToken
 import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.Wearable
 import dev.lelonio.square.SquareApplication
@@ -11,6 +14,10 @@ import dev.pampa.fluidify.wear.protocol.FileRequest
 import dev.pampa.fluidify.wear.protocol.WearCodec
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.guava.await as awaitController
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -23,6 +30,9 @@ import java.io.InputStream
 import java.io.OutputStream
 import java.io.RandomAccessFile
 import java.util.concurrent.atomic.AtomicInteger
+import dev.pampa.fluidify.wear.protocol.logic.FileResume
+import dev.pampa.fluidify.wear.protocol.logic.DownloadFailure
+import dev.lelonio.square.io.ReadWatchdog
 
 /**
  * Sends the watch a downloaded track over Bluetooth.
@@ -51,26 +61,30 @@ class WatchFileServer(private val app: SquareApplication) {
 
     fun serve(channel: ChannelClient.Channel) {
         scope.launch {
+            cleanAbandonedStaging()
             if (running.incrementAndGet() == 1) WatchTransferService.start(app)
             try {
                 transfer(channel)
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 Log.i(TAG, "transfer to the watch stopped: ${error.message}")
             } finally {
-                runCatching { channels.close(channel).await() }
+                withContext(NonCancellable) { runCatching { channels.close(channel).await() } }
                 if (running.decrementAndGet() == 0) WatchTransferService.stop(app)
             }
         }
     }
 
     private suspend fun transfer(channel: ChannelClient.Channel) {
-        val input = channels.getInputStream(channel).await()
-        val line = readLine(input) ?: return
+        val line = ReadWatchdog(channels.getInputStream(channel).await(), 30_000L) { channels.close(channel) }.use { readLine(it) } ?: return
         val request = WearCodec.decodeOrNull(FileRequest.serializer(), line.encodeToByteArray()) ?: return
         channels.getOutputStream(channel).await().use { out ->
-            val stagedRoot = request.stageKbps?.let { staging }
+            val stagedRoot = request.stageKbps?.let { File(staging, java.util.UUID.randomUUID().toString()) }
             val sidecar = if (stagedRoot != null) {
-                stage(request.uri, request.stageKbps!!, stagedRoot)
+                stage(request.uri, request.stageKbps!!, stagedRoot).getOrElse {
+                    header(out, FileHeader(ok = false, error = if (DownloadFailure.unavailable(it.message)) "track-unavailable" else "temporarily-unavailable"))
+                    return
+                }
             } else {
                 runCatching { NativeBridge.setDownloadRoot(app.downloads.root.absolutePath) }
                 runCatching { NativeBridge.downloadState(request.uri) }.getOrNull()?.takeIf { it != "null" }
@@ -85,8 +99,9 @@ class WatchFileServer(private val app: SquareApplication) {
                 return
             }
             val total = audio.length()
-            val offset = request.offset.takeIf { it in 1 until total } ?: 0L
-            header(out, FileHeader(ok = true, sidecar = sidecar, totalBytes = total))
+            val actualId = runCatching { (WearCodec.json.parseToJsonElement(sidecar) as JsonObject)["fileId"]?.jsonPrimitive?.content }.getOrNull()
+            val offset = FileResume.offset(request.offset, total, request.fileId, actualId)
+            header(out, FileHeader(ok = true, sidecar = sidecar, totalBytes = total, offset = offset))
             RandomAccessFile(audio, "r").use { file ->
                 file.seek(offset)
                 val buffer = ByteArray(BUFFER)
@@ -102,17 +117,31 @@ class WatchFileServer(private val app: SquareApplication) {
     }
 
     /** Fetches the track at the watch's quality into [root], with the phone's engine. */
-    private suspend fun stage(uri: String, kbps: Int, root: File): String? {
-        app.wearBridge.wakePlayback()
+    private suspend fun stage(uri: String, kbps: Int, root: File): Result<String> {
+        if (!app.spotifySignedIn || !app.tokenStore.isLoggedIn || kbps !in setOf(96, 160, 320)) return Result.failure(IllegalStateException("signed-out"))
+        // A distinct binding lasts through the blocking native download, even when the command
+        // waker's short hold expires. Every overlapping staging owns its own binding.
+        val controller = withContext(Dispatchers.Main) {
+            MediaController.Builder(app, SessionToken(app, ComponentName(app, PlaybackService::class.java)))
+                .buildAsync().awaitController()
+        }
+        try {
         runCatching { PlaybackService.connect(app) }
         val connected = withTimeoutOrNull(ENGINE_WAIT_MS) {
             while (!NativeBridge.isConnected) delay(POLL_MS)
             true
         } ?: false
-        if (!connected) return null
+        if (!connected) return Result.failure(IllegalStateException("engine-unavailable"))
         return runCatching { NativeBridge.downloadTrackInto(uri, kbps, root.absolutePath) }
-            .onFailure { Log.i(TAG, "staging $uri failed: ${it.message}") }
-            .getOrNull()
+            .onFailure { if (it is CancellationException) throw it; Log.i(TAG, "staging failed: ${it.message}") }
+        } finally {
+            withContext(NonCancellable + Dispatchers.Main) { controller.release() }
+        }
+    }
+
+    private fun cleanAbandonedStaging() {
+        val before = System.currentTimeMillis() - 24 * 60 * 60_000L
+        staging.walkTopDown().filter { it.isFile && it.lastModified() < before }.forEach { it.delete() }
     }
 
     private fun cleanUp(root: File, sidecar: String) {

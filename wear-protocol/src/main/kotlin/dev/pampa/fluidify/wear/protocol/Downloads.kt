@@ -35,6 +35,7 @@ data class WatchDownloadOwner(
     val title: String,
     val tracks: Int = 0,
     val done: Int = 0,
+    val unavailable: Int = 0,
 )
 
 /** Watch to phone, DataItem at [WearPaths.DOWNLOAD_STATUS]. */
@@ -52,6 +53,7 @@ data class WatchDownloads(
     val qualityKbps: Int = 160,
     val preference: TransferPreference = TransferPreference.WIFI_FIRST,
     val updatedAtEpochMs: Long = 0,
+    val unavailable: Int = 0,
 )
 
 /** What the phone has of one track: its sidecar (format, file id, key), or nothing. */
@@ -78,6 +80,8 @@ data class FileRequest(
     val uri: String,
     val offset: Long = 0,
     val stageKbps: Int? = null,
+    /** Identity of the partial file, required before an offset can be trusted. */
+    val fileId: String? = null,
 )
 
 /** The first line the phone writes back, before the bytes. */
@@ -88,4 +92,6 @@ data class FileHeader(
     /** The whole file's length; the bytes that follow start at the request's offset. */
     val totalBytes: Long = 0,
     val error: String? = null,
+    /** The actual accepted offset; zero when the partial file belongs to another encoding. */
+    val offset: Long = 0,
 )

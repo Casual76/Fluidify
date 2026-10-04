@@ -9,6 +9,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.key
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -50,7 +51,7 @@ fun Thumb(
             ?: smallVariant(artUrl, large).takeIf { thumbnails == null || thumbnails.unavailable(artKey) }
     }
     if (model == null && artKey != null && thumbnails != null) {
-        LaunchedEffect(artKey) { thumbnails.want(artKey, artUrl) }
+        LaunchedEffect(artKey, thumbRevision) { thumbnails.want(artKey, artUrl) }
     }
     Box(
         modifier = modifier
@@ -60,12 +61,14 @@ fun Thumb(
     ) {
         Icon(fallback, contentDescription = null, tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(size * 0.45f))
         if (model != null) {
+            key(model, thumbRevision) {
             AsyncImage(
                 model = model,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
             )
+            }
         }
     }
 }

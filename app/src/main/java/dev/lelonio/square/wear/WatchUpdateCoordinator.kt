@@ -5,6 +5,13 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.net.Uri
 import android.util.Log
+import androidx.work.WorkManager
+import androidx.work.OneTimeWorkRequestBuilder
+import androidx.work.ExistingWorkPolicy
+import androidx.work.workDataOf
+import dev.lelonio.square.update.WatchApkValidation
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.CancellationException
 import com.google.android.gms.wearable.Wearable
 import dev.antigravity.fluidengine.foundation.AvailableAppUpdate
 import dev.antigravity.fluidengine.foundation.compareVersions
@@ -85,7 +92,7 @@ class WatchUpdateCoordinator(
     val watch: StateFlow<WatchInfo?> = _watch.asStateFlow()
 
     /** The APK ready to send, and the offer that describes it. */
-    private var ready: Pair<File, UpdateOffer>? = null
+    private var ready: Pair<File, UpdateOffer>? = restoreOffer()
 
     var autoUpdate: Boolean
         get() = prefs.getBoolean(KEY_AUTO, true)
@@ -111,10 +118,10 @@ class WatchUpdateCoordinator(
         val watch = _watch.value ?: return null
         _state.value = State.Checking
         val result = updater.check(watch.hello.versionName)
-        prefs.edit().putLong(KEY_CHECKED, System.currentTimeMillis()).apply()
         result.fold(
             onSuccess = { update ->
                 _state.value = if (update == null) State.UpToDate(watch.hello.versionName) else State.Available(update.version)
+                if (update == null) prefs.edit().putLong(KEY_CHECKED, System.currentTimeMillis()).apply()
                 update
             },
             onFailure = {
@@ -137,10 +144,11 @@ class WatchUpdateCoordinator(
             val missing = error.message.orEmpty().contains("404")
             return@withLock Result.failure(if (missing) dev.lelonio.square.wear.install.NoReleaseException() else error)
         } ?: return@withLock Result.failure(dev.lelonio.square.wear.install.NoReleaseException())
+        if (!update.sha256.matches(Regex("[a-fA-F0-9]{64}"))) return@withLock Result.failure(IllegalStateException("missing-checksum"))
         val file = runCatching {
             installer.download(update) { progress -> onProgress(progress.progress.takeIf { it in 0f..1f }) }
         }.getOrElse { return@withLock Result.failure(it) }
-        rejectArchive(file, update.version)?.let { return@withLock Result.failure(IllegalStateException(it)) }
+        rejectArchive(file, update.version, update.sha256)?.let { return@withLock Result.failure(IllegalStateException(it)) }
         Result.success(file)
     }
 
@@ -167,16 +175,33 @@ class WatchUpdateCoordinator(
         }
     }
 
-    private suspend fun push(update: AvailableAppUpdate, requestedByUser: Boolean) {
+    private fun push(update: AvailableAppUpdate, requestedByUser: Boolean) {
+        val watch = _watch.value ?: return
+        val work = OneTimeWorkRequestBuilder<WatchUpdateDownloadWorker>().setInputData(workDataOf(
+            "version" to update.version, "url" to update.downloadUrl, "sha256" to update.sha256,
+            "bytes" to update.sizeBytes, "node" to watch.nodeId, "user" to requestedByUser,
+        )).build()
+        WorkManager.getInstance(context).enqueueUniqueWork("watch-update-download", ExistingWorkPolicy.KEEP, work)
+    }
+
+    suspend fun downloadAndOffer(update: AvailableAppUpdate, nodeId: String, requestedByUser: Boolean): Boolean {
+        if (!update.sha256.matches(Regex("[a-fA-F0-9]{64}"))) {
+            _state.value = State.Failed("missing-checksum")
+            return false
+        }
         val file = runCatching {
             installer.download(update) { progress ->
                 _state.value = State.Downloading(update.version, progress.progress.takeIf { it in 0f..1f })
             }
         }.getOrElse {
+            if (it is CancellationException) throw it
             _state.value = State.Failed(it.message ?: "download")
-            return
+            return false
         }
-        offer(file, update.version, update.sha256, requestedByUser)
+        offer(file, update.version, update.sha256, requestedByUser, nodeId)
+        val success = _state.value is State.Offered
+        if (success) prefs.edit().putLong(KEY_CHECKED, System.currentTimeMillis()).apply()
+        return success
     }
 
     /** Development builds: send an APK picked on the phone. */
@@ -197,12 +222,12 @@ class WatchUpdateCoordinator(
         }
     }
 
-    private suspend fun offer(file: File, version: String, sha256: String, requestedByUser: Boolean) {
-        val watch = _watch.value ?: run {
+    private suspend fun offer(file: File, version: String, sha256: String, requestedByUser: Boolean, nodeId: String? = _watch.value?.nodeId) {
+        val node = nodeId ?: run {
             _state.value = State.Failed("no-watch")
             return
         }
-        rejectArchive(file, version)?.let { reason ->
+        withContext(Dispatchers.IO) { rejectArchive(file, version) }?.let { reason ->
             _state.value = State.Failed(reason)
             return
         }
@@ -217,13 +242,17 @@ class WatchUpdateCoordinator(
             sha256 = checksum,
             requestedByUser = requestedByUser,
         )
-        ready = file to offer
+        val saved = withContext(Dispatchers.IO) { file.copyTo(File(context.cacheDir, "watch-ready.apk"), overwrite = true) }
+        ready = saved to offer
+        prefs.edit().putString(KEY_OFFER, WearCodec.json.encodeToString(UpdateOffer.serializer(), offer))
+            .putString(KEY_OFFER_NODE, node).putLong(KEY_OFFER_AT, System.currentTimeMillis()).commit()
         _state.value = State.Offered(version)
-        link.send(watch.nodeId, WearPaths.UPDATE_OFFER, WearCodec.encode(UpdateOffer.serializer(), offer))
+        link.send(node, WearPaths.UPDATE_OFFER, WearCodec.encode(UpdateOffer.serializer(), offer))
     }
 
     /** What the watch says about an offer or an install. */
     fun onStatus(nodeId: String, status: UpdateStatus) {
+        if (nodeId != prefs.getString(KEY_OFFER_NODE, null) || ready?.second?.versionName != status.versionName) return
         when (status.phase) {
             UpdatePhase.ACCEPT -> scope.launch { send(nodeId) }
             UpdatePhase.DECLINE -> _state.value = State.UpToDate(_watch.value?.hello?.versionName ?: status.versionName)
@@ -236,12 +265,20 @@ class WatchUpdateCoordinator(
     }
 
     private suspend fun send(nodeId: String) {
-        val (file, offer) = ready ?: return
+        val (file, offer) = ready ?: restoreOffer()?.also { ready = it } ?: run {
+            return
+        }
+        if (System.currentTimeMillis() - prefs.getLong(KEY_OFFER_AT, 0) > OFFER_TTL_MS) return
+        withContext(Dispatchers.IO) { rejectArchive(file, offer.versionName, offer.sha256) }?.let {
+            _state.value = State.Failed(it)
+            return
+        }
         _state.value = State.Sending(offer.versionName)
         runCatching {
             val channels = Wearable.getChannelClient(context)
             val channel = channels.openChannel(nodeId, WearPaths.UPDATE_APK).await()
-            channels.sendFile(channel, Uri.fromFile(file)).await()
+            try { channels.sendFile(channel, Uri.fromFile(file)).await() }
+            finally { withContext(NonCancellable) { runCatching { channels.close(channel).await() } } }
         }.onFailure {
             Log.w(TAG, "sending the watch build failed", it)
             _state.value = State.Failed(it.message ?: "send")
@@ -249,46 +286,21 @@ class WatchUpdateCoordinator(
     }
 
     /** Why this APK must not be offered, or null. */
-    private fun rejectArchive(file: File, version: String): String? {
-        val info = runCatching {
-            context.packageManager.getPackageArchiveInfo(file.absolutePath, PackageManager.GET_SIGNING_CERTIFICATES)
-        }.getOrNull() ?: return "not-an-apk"
-        if (info.packageName != context.packageName) return "wrong-package"
-        if (!info.versionName.isNullOrBlank() && info.versionName != version) return "wrong-version"
-        // Signed with this app's own key, or Android on the watch would refuse it as an update
-        // of the installed copy, after the whole transfer.
-        val ours = WearLink.certificateSha256(context)
-        // signingInfo is API 28; on 26-27 the old signatures field carries the same certificate.
-        @Suppress("DEPRECATION")
-        val signer = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
-            info.signingInfo?.apkContentsSigners?.firstOrNull()
-        } else {
-            info.signatures?.firstOrNull()
-        }
-        val theirs = signer?.let {
-            MessageDigest.getInstance("SHA-256").digest(it.toByteArray()).joinToString(":") { byte -> "%02X".format(byte) }
-        }
-        if (ours.isNotEmpty() && theirs != null && !ours.equals(theirs, ignoreCase = true)) return "wrong-signature"
-        if (compareVersions(version, "0") <= 0) return "wrong-version"
-        return null
-    }
+    private fun rejectArchive(file: File, version: String, checksum: String = WatchApkValidation.sha256(file)): String? =
+        WatchApkValidation.reject(context, file, version, checksum)
+
+    private fun restoreOffer(): Pair<File, UpdateOffer>? = runCatching {
+        if (System.currentTimeMillis() - prefs.getLong(KEY_OFFER_AT, 0) > OFFER_TTL_MS) return null
+        val file = File(context.cacheDir, "watch-ready.apk").takeIf { it.isFile } ?: return null
+        val offer = WearCodec.json.decodeFromString(UpdateOffer.serializer(), prefs.getString(KEY_OFFER, null) ?: return null)
+        file to offer
+    }.getOrNull()
 
     private fun archiveVersion(file: File): String? = runCatching {
         context.packageManager.getPackageArchiveInfo(file.absolutePath, 0)?.versionName
     }.getOrNull()
 
-    private fun sha256Of(file: File): String {
-        val digest = MessageDigest.getInstance("SHA-256")
-        file.inputStream().use { input ->
-            val buffer = ByteArray(64 * 1024)
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                digest.update(buffer, 0, read)
-            }
-        }
-        return digest.digest().joinToString("") { "%02x".format(it) }
-    }
+    private fun sha256Of(file: File): String = WatchApkValidation.sha256(file)
 
     companion object {
         /** Older than any build: what "the watch has nothing installed" is checked as. */
@@ -297,6 +309,10 @@ class WatchUpdateCoordinator(
         private const val TAG = "WatchUpdate"
         private const val KEY_AUTO = "auto_update"
         private const val KEY_CHECKED = "checked_at"
+        private const val KEY_OFFER = "offer"
+        private const val KEY_OFFER_NODE = "offer_node"
+        private const val KEY_OFFER_AT = "offer_at"
+        private const val OFFER_TTL_MS = 30 * 60_000L
         private const val CHECK_EVERY_MS = 6 * 60 * 60_000L
 
         /** The watch build's manifest, beside the phone's own (see docs/pampa-store-release.md). */

@@ -26,6 +26,7 @@
         android:label="@string/app_name"
         android:supportsRtl="true"
         android:theme="@style/Theme.FluidifyWear">
+        <meta-data android:name="dev.pampa.fluidify.WEAR_APK" android:value="true" />
 
         <!--
           Not standalone: the remote is the point, and the phone app is what it

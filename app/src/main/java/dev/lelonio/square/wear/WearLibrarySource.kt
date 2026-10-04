@@ -18,6 +18,8 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 /**
  * The phone's library, read the way the phone's own screens read it, without a screen.
@@ -29,6 +31,8 @@ import kotlinx.coroutines.withTimeoutOrNull
  * needs no network at all.
  */
 class WearLibrarySource(private val app: SquareApplication) {
+    private val contextsLock = Mutex()
+    private val contexts = LinkedHashMap<String, Pair<Long, List<CatalogTrack>>>()
 
     /**
      * The watch's Home: the listener's pins on top, then what they played lately, then what they
@@ -230,7 +234,15 @@ class WearLibrarySource(private val app: SquareApplication) {
     }
 
     suspend fun context(uri: String, offset: Int, limit: Int): ContextPage = withContext(Dispatchers.IO) {
-        val tracks = app.spotifyBackend.tracksOf(uri)
+        val tracks = contextsLock.withLock {
+            val now = android.os.SystemClock.elapsedRealtime()
+            contexts.entries.removeAll { now - it.value.first > 120_000L }
+            if (offset == 0) contexts.remove(uri)
+            contexts[uri]?.second ?: app.spotifyBackend.tracksOf(uri).also {
+                if (contexts.size >= 8) contexts.remove(contexts.keys.first())
+                contexts[uri] = now to it
+            }
+        }
         val playlist = runCatching { app.spotifyBackend.playlists().firstOrNull { it.uri == uri } }.getOrNull()
         val label = app.downloads.labelOf(uri)
         val art = playlist?.artworkUrl ?: label?.artworkUrl ?: tracks.firstOrNull()?.artworkUrl
