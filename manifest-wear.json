@@ -7,6 +7,24 @@
     "repository": {
       "repoOwner": "Casual76",
       "repoName": "Fluidify"
+    },
+    "stable": {
+      "version": "1.5.0",
+      "releaseDate": "2026-10-04",
+      "changelog": "Fluidify arriva su Wear OS 6: controlli del telefono via Bluetooth, ascolto autonomo sull'orologio, playlist e album offline, coda, ricerca, tile e complicazione. L'app dell'orologio si installa dalle impostazioni del telefono e riceve gli aggiornamenti dalla stessa release.\n\nIl lettore ha una coda piu' grande, un volume in vetro e comandi adattati agli schermi piccoli. Togliere un Mi piace chiede conferma; tenere premuto il cuore aggiunge il brano a una playlist modificabile. La tile lascia spazio al cuore e mostra l'avanzamento sui due lati.\n\nCorretti passaggi tra telefono e orologio, scollegamento delle cuffie, ripresa del motore e spegnimento dopo la pausa. Il ponte del telefono risponde ai comandi anche durante le richieste lente. I download conservano i brani gia' scaricati se una pagina fallisce, ripartono in sicurezza e segnalano quelli non disponibili.\n\nSchermate ambient su fondo nero, supporto ai caratteri grandi e a TalkBack, stato di volume e riproduzione piu' coerente. Aggiornamenti Wear con controllo di firma, checksum e tipo di APK.\n\nVerificati 149 test, 33 render e le build release minificate di telefono e orologio. La checklist delle prove sui dispositivi e' disponibile in docs/wear-qa-checklist.md; queste prove restano da eseguire.\n",
+      "releaseTag": "stable-fluidify-v1.5.0",
+      "apkAsset": "fluidify-wear-1.5.0.apk",
+      "sizeBytes": 23817547,
+      "sha256": "b56bc4008e92415a22d71e3aa551fc8d36ad2e609ea4fdbec090ddaf5aa78647"
+    },
+    "beta": {
+      "version": "1.5.0",
+      "releaseDate": "2026-10-04",
+      "changelog": "Fluidify arriva su Wear OS 6: controlli del telefono via Bluetooth, ascolto autonomo sull'orologio, playlist e album offline, coda, ricerca, tile e complicazione. L'app dell'orologio si installa dalle impostazioni del telefono e riceve gli aggiornamenti dalla stessa release.\n\nIl lettore ha una coda piu' grande, un volume in vetro e comandi adattati agli schermi piccoli. Togliere un Mi piace chiede conferma; tenere premuto il cuore aggiunge il brano a una playlist modificabile. La tile lascia spazio al cuore e mostra l'avanzamento sui due lati.\n\nCorretti passaggi tra telefono e orologio, scollegamento delle cuffie, ripresa del motore e spegnimento dopo la pausa. Il ponte del telefono risponde ai comandi anche durante le richieste lente. I download conservano i brani gia' scaricati se una pagina fallisce, ripartono in sicurezza e segnalano quelli non disponibili.\n\nSchermate ambient su fondo nero, supporto ai caratteri grandi e a TalkBack, stato di volume e riproduzione piu' coerente. Aggiornamenti Wear con controllo di firma, checksum e tipo di APK.\n\nVerificati 149 test, 33 render e le build release minificate di telefono e orologio. La checklist delle prove sui dispositivi e' disponibile in docs/wear-qa-checklist.md; queste prove restano da eseguire.\n",
+      "releaseTag": "stable-fluidify-v1.5.0",
+      "apkAsset": "fluidify-wear-1.5.0.apk",
+      "sizeBytes": 23817547,
+      "sha256": "b56bc4008e92415a22d71e3aa551fc8d36ad2e609ea4fdbec090ddaf5aa78647"
     }
   }
 }
