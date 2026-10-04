@@ -17,14 +17,19 @@ import dev.pampa.fluidify.wear.system.Bridging
 import dev.pampa.fluidify.wear.system.PlayerIntents
 import dev.pampa.fluidify.wear.ui.WatchRoot
 import dev.pampa.fluidify.wear.ui.theme.FluidifyWearBrand
-import kotlinx.coroutines.flow.MutableSharedFlow
+import kotlinx.coroutines.flow.MutableStateFlow
 
 class MainActivity : ComponentActivity() {
 
     private val app get() = application as WearApp
 
-    /** Asks the screen to go back to the player: from the watch face icon, the tile, the complication. */
-    private val showPlayer = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+    /**
+     * What the screen is asked to show: the player, from the watch face icon, the tile or the
+     * complication, or the question the tile's heart asks. Held until the screen has handled it,
+     * not dropped when no one is listening yet: an activity Android had destroyed is recreated by
+     * the very tap that carries the request, and it arrives before the screen exists.
+     */
+    private val requests = MutableStateFlow<PlayerIntents.Request?>(null)
 
     private val notificationPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -45,6 +50,9 @@ class MainActivity : ComponentActivity() {
         Bridging.apply(this, app.surfacePrefs.phoneNotifications)
         askForNotificationsOnce()
         dev.pampa.fluidify.wear.ui.debug.FrameLog.attach(this)
+        // Opened by a tap that asks for something (a fresh start, or recreated after Android let it
+        // go): the intent is here, not in onNewIntent. Not on a recreation of the same screen.
+        if (savedInstanceState == null) requests.value = PlayerIntents.requestOf(intent)
         setContent {
             val ambient = rememberFluidAmbientState(this)
             CompositionLocalProvider(
@@ -52,7 +60,7 @@ class MainActivity : ComponentActivity() {
                 dev.pampa.fluidify.wear.library.LocalThumbnails provides app.thumbnails,
             ) {
                 FluidWearTheme(brand = FluidifyWearBrand) {
-                    WatchRoot(app, showPlayer = showPlayer)
+                    WatchRoot(app, requests = requests, onRequestHandled = { requests.value = null })
                 }
             }
         }
@@ -61,7 +69,7 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        if (PlayerIntents.wantsPlayer(intent)) showPlayer.tryEmit(Unit)
+        PlayerIntents.requestOf(intent)?.let { requests.value = it }
     }
 
     override fun onStart() {

@@ -142,4 +142,9 @@
     <string name="group_playback">Oynatma</string>
     <string name="group_watch">Saat</string>
     <string name="group_updates">Güncellemeler</string>
+    <string name="add_to_playlist">Çalma listesine ekle</string>
+    <string name="unlike_confirm">Beğenilen Şarkılar\'dan kaldırılsın mı?</string>
+    <string name="added_to">%1$s listesine eklendi</string>
+    <string name="no_editable_playlists">Ekleyebileceğin bir çalma listen yok</string>
+    <string name="error_playlist">Çalma listesine eklenemedi</string>
 </resources>

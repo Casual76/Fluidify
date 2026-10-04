@@ -271,6 +271,7 @@ class WearLibrarySource(private val app: SquareApplication) {
         kind = if (uri.endsWith(":collection")) LibraryKind.LIKED else if (uri.startsWith("spotify:album:")) LibraryKind.ALBUM else if (uri.startsWith("spotify:artist:")) LibraryKind.ARTIST else LibraryKind.PLAYLIST,
         artKey = artKeyOf(artworkUrl),
         artUrl = artworkUrl?.takeIf { it.startsWith("https://") },
+        editable = editable,
     )
 
     private fun CatalogTrack.toItem() = LibraryItem(

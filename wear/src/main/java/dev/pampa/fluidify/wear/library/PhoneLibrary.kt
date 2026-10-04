@@ -78,8 +78,9 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
     }
 
     /** Puts pages in the cache as if the phone had sent them: for previews and screenshot tests. */
-    internal fun seed(home: LibraryPage? = null, contexts: List<ContextPage> = emptyList()) {
+    internal fun seed(home: LibraryPage? = null, contexts: List<ContextPage> = emptyList(), sections: Map<LibrarySection, LibraryPage> = emptyMap()) {
         home?.let { write("home", LibraryPage.serializer(), it) }
+        sections.forEach { (section, page) -> write("section-$section", LibraryPage.serializer(), page) }
         contexts.forEach { write("context-${hash(it.uri)}", ContextPage.serializer(), it) }
     }
 

@@ -142,4 +142,9 @@
     <string name="group_playback">Reproducción</string>
     <string name="group_watch">Reloj</string>
     <string name="group_updates">Actualizaciones</string>
+    <string name="add_to_playlist">Añadir a playlist</string>
+    <string name="unlike_confirm">¿Quitar de Canciones que te gustan?</string>
+    <string name="added_to">Añadida a %1$s</string>
+    <string name="no_editable_playlists">No tienes playlists a las que añadirla</string>
+    <string name="error_playlist">No se pudo añadir a la playlist</string>
 </resources>

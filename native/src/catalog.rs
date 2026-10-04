@@ -37,39 +37,78 @@ pub fn username() -> EngineResult<String> {
 /// live in `meta_items`, parallel to `items`, and are absent for folders and for
 /// playlists whose metadata was not decorated, so they are matched by position
 /// and defaulted rather than assumed present.
+///
+/// Read a page at a time: the endpoint answers 120 entries unless asked for
+/// more, and an account with more playlists than that (folders count) lost the
+/// rest without a word.
+///
+/// Each playlist also says who owns it and whether this account may add to it
+/// (`capabilities.can_edit_items`, decorated in the same answer): a list that
+/// offers "add to playlist" should not offer the ones that will refuse it.
+/// `canEdit` is null when the answer did not say, and then true for the
+/// account's own lists.
 pub fn rootlist() -> EngineResult<String> {
     let session = with_session(|s| s.clone())?;
     block_on(async move {
-        let bytes = session
-            .spclient()
-            .get_rootlist(0, None)
-            .await
-            .map_err(|e| format!("rootlist failed: {e}"))?;
+        let me = session.username();
+        let mut playlists: Vec<Value> = Vec::new();
+        let mut from = 0usize;
+        for _ in 0..ROOTLIST_MAX_PAGES {
+            let bytes = session
+                .spclient()
+                .get_rootlist(from, Some(ROOTLIST_PAGE))
+                .await
+                .map_err(|e| format!("rootlist failed: {e}"))?;
 
-        let list = SelectedListContent::parse_from_bytes(&bytes)
-            .map_err(|e| format!("rootlist was not a SelectedListContent: {e}"))?;
+            let list = SelectedListContent::parse_from_bytes(&bytes)
+                .map_err(|e| format!("rootlist was not a SelectedListContent: {e}"))?;
 
-        let contents = list.contents;
-        let playlists: Vec<Value> = contents
-            .items
-            .iter()
-            .enumerate()
-            .filter(|(_, item)| item.uri().starts_with("spotify:playlist:"))
-            .map(|(index, item)| {
-                let meta = contents.meta_items.get(index);
-                let name = meta
-                    .map(|meta| meta.attributes.name())
-                    .filter(|name| !name.is_empty())
-                    .unwrap_or("Senza nome");
-                let artwork = meta.and_then(|meta| image_url(meta.attributes.picture()));
-                json!({ "uri": item.uri(), "name": name, "artworkUrl": artwork })
-            })
-            .collect();
+            let contents = list.contents;
+            let count = contents.items.len();
+            playlists.extend(
+                contents
+                    .items
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, item)| item.uri().starts_with("spotify:playlist:"))
+                    .map(|(index, item)| {
+                        let meta = contents.meta_items.get(index);
+                        let name = meta
+                            .map(|meta| meta.attributes.name())
+                            .filter(|name| !name.is_empty())
+                            .unwrap_or("Senza nome");
+                        let artwork = meta.and_then(|meta| image_url(meta.attributes.picture()));
+                        let owner = meta
+                            .map(|meta| meta.owner_username())
+                            .filter(|owner| !owner.is_empty());
+                        let can_edit = meta
+                            .and_then(|meta| meta.capabilities.as_ref())
+                            .filter(|capabilities| capabilities.has_can_edit_items())
+                            .map(|capabilities| capabilities.can_edit_items())
+                            .or_else(|| owner.map(|owner| owner == me));
+                        json!({
+                            "uri": item.uri(),
+                            "name": name,
+                            "artworkUrl": artwork,
+                            "owner": owner,
+                            "canEdit": can_edit,
+                        })
+                    }),
+            );
+            if !contents.truncated() || count == 0 {
+                break;
+            }
+            from += count;
+        }
 
         log::info!("rootlist returned {} playlists", playlists.len());
         Ok(Value::from(playlists).to_string())
     })
 }
+
+/// Entries asked for at a time, and how many pages at most: 2000 entries.
+const ROOTLIST_PAGE: usize = 250;
+const ROOTLIST_MAX_PAGES: usize = 8;
 
 /// Lyrics for a track, as the access point's own JSON.
 ///

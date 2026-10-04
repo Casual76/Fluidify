@@ -66,6 +66,10 @@ sealed interface Command {
     @Serializable @SerialName("transfer")
     data class Transfer(val deviceId: String) : Command
 
+    /** Adds [trackUri] at the end of [playlistUri], one of the account's own playlists. */
+    @Serializable @SerialName("add-to-playlist")
+    data class AddToPlaylist(val playlistUri: String, val trackUri: String) : Command
+
     /** Pins (or unpins) a playlist to the top of the library, on the phone and so on the watch. */
     @Serializable @SerialName("pin")
     data class SetPinned(val uri: String, val pinned: Boolean) : Command
@@ -118,6 +122,9 @@ object AckErrors {
 
     /** The heart could not be set. */
     const val LIKE = "like"
+
+    /** The track could not be added to the playlist (not the account's, or the write failed). */
+    const val PLAYLIST = "playlist"
 
     /** The playlist or album could not be played. */
     const val CONTEXT = "context"

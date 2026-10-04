@@ -18,6 +18,7 @@ import dev.pampa.fluidify.wear.protocol.AckErrors
 import dev.pampa.fluidify.wear.protocol.Command
 import dev.pampa.fluidify.wear.protocol.CommandAck
 import dev.pampa.fluidify.wear.protocol.CommandEnvelope
+import dev.lelonio.square.nativecore.NativeBridge
 import dev.pampa.fluidify.wear.protocol.ContextInfo
 import dev.pampa.fluidify.wear.protocol.DeviceInfo
 import dev.pampa.fluidify.wear.protocol.DeviceKind
@@ -506,9 +507,21 @@ class PhoneWearBridge(private val app: SquareApplication) {
     private suspend fun apply(command: Command): String? {
         when (command) {
             is Command.SetLiked -> {
-                withContext(Dispatchers.IO) { app.likedTracks.set(command.uri, command.liked) }
+                // A write to the account, which needs the engine's session: a phone the watch
+                // woke has none until its service is up.
+                if (!engineReady(ENGINE_COMMAND_WAIT_MS)) return AckErrors.LIKE
+                val written = runCatching { app.likedTracks.set(command.uri, command.liked) }
+                    .onFailure { Log.w(TAG, "like not written: ${it.message}") }
+                if (written.isFailure) return AckErrors.LIKE
                 if (likedLookup?.first == command.uri) likedLookup = command.uri to command.liked
                 return null
+            }
+            is Command.AddToPlaylist -> {
+                if (!engineReady(ENGINE_COMMAND_WAIT_MS)) return AckErrors.PLAYLIST
+                val written = withContext(Dispatchers.IO) {
+                    runCatching { NativeBridge.addToPlaylist(command.playlistUri, command.trackUri) }
+                }.onFailure { Log.w(TAG, "not added to the playlist: ${it.message}") }
+                return if (written.isSuccess) null else AckErrors.PLAYLIST
             }
             is Command.SetVolume -> {
                 ConnectVolume.set(app, command.level, command.deviceId)
@@ -618,6 +631,25 @@ class PhoneWearBridge(private val app: SquareApplication) {
      */
     suspend fun wakePlayback(): Boolean = withContext(Dispatchers.Main.immediate) { ensurePlayer() != null }
 
+    /**
+     * Waits, at most [budgetMs], for the engine to have a session: what a write to the account (a
+     * like, a playlist) and a read of the library need. Wakes the playback service for it, as the
+     * watch's commands do; inside a budget, because the watch is waiting for the answer and an
+     * answer that comes after its timeout is no answer at all.
+     */
+    suspend fun engineReady(budgetMs: Long): Boolean {
+        fun connected() = runCatching { NativeBridge.isConnected }.getOrDefault(false)
+        if (connected()) return true
+        return withTimeoutOrNull(budgetMs) {
+            wakePlayback()
+            // Asked as well, for a service that is up with its engine stopped; a background start
+            // can be refused, and binding above is what counts.
+            runCatching { dev.lelonio.square.playback.PlaybackService.connect(app) }
+            while (!connected()) delay(ENGINE_POLL_MS)
+            true
+        } ?: false
+    }
+
     private suspend fun ensurePlayer(): Player? {
         player?.let { return it }
         if (waker == null) {
@@ -644,6 +676,10 @@ class PhoneWearBridge(private val app: SquareApplication) {
         private const val QUEUE_WAIT_MS = 4_000L
         private const val ATTACH_WAIT_MS = 8_000L
         private const val WAKER_HOLD_MS = 30_000L
+
+        /** How long a command that writes to the account waits for the engine: inside the watch's ack timeout. */
+        private const val ENGINE_COMMAND_WAIT_MS = 7_000L
+        private const val ENGINE_POLL_MS = 200L
 
         /** What this phone build can do for a watch. Grows with each milestone. */
         val PHONE_FEATURES: Set<String> = setOf(

@@ -69,6 +69,9 @@ data class PlayerTileModel(
 ) {
     val isEmpty: Boolean get() = trackUri == null
 
+    /** Only songs go in Liked Songs: an episode or a file on the phone has no heart to fill. */
+    val likeable: Boolean get() = trackUri?.startsWith("spotify:track:") == true
+
     data class Next(val title: String, val artist: String, val trackUri: String, val coverKey: String?, val durationMs: Long)
 
     /** How far the song is, 0..1, at the moment the model was made. */
@@ -100,7 +103,6 @@ data class PlayerTileModel(
         } ?: copy(positionMs = 0, sampledAtEpochMs = nowMs)
         TileActions.PREVIOUS -> copy(positionMs = 0, sampledAtEpochMs = nowMs)
         TileActions.LIKE -> copy(liked = true)
-        TileActions.UNLIKE -> copy(liked = false)
         else -> this
     }
 
@@ -154,6 +156,7 @@ fun MaterialScope.playerTileLayout(
     backdrop: ByteArray? = null,
 ): LayoutElement {
     if (model.isEmpty) return emptyTileLayout(clicks)
+    val sizes = TileSizes.of(deviceConfiguration.screenWidthDp.toFloat())
     val playLabel = context.getString(if (model.isPlaying) R.string.pause else R.string.play)
     val content = primaryLayout(
         titleSlot = { text(model.title.layoutString, maxLines = 1, color = colorScheme.onSurface) },
@@ -167,11 +170,11 @@ fun MaterialScope.playerTileLayout(
                 ),
                 spacer(height = ROW_GAP_DP.dp),
                 row(
-                    transportButton(clicks.previous, R.drawable.ic_tile_previous, context.getString(R.string.previous)),
-                    spacer(width = BUTTON_GAP_DP.dp),
-                    centreButton(model, clicks.toggle, cover, coverSizePx, playLabel),
-                    spacer(width = BUTTON_GAP_DP.dp),
-                    transportButton(clicks.next, R.drawable.ic_tile_next, context.getString(R.string.next)),
+                    transportButton(clicks.previous, R.drawable.ic_tile_previous, context.getString(R.string.previous), sizes.side),
+                    spacer(width = sizes.gap.dp),
+                    centreButton(model, clicks.toggle, cover, coverSizePx, playLabel, sizes.centre),
+                    spacer(width = sizes.gap.dp),
+                    transportButton(clicks.next, R.drawable.ic_tile_next, context.getString(R.string.next), sizes.side),
                     verticalAlignment = VERTICAL_ALIGN_CENTER,
                 ),
                 horizontalAlignment = HORIZONTAL_ALIGN_CENTER,
@@ -212,19 +215,30 @@ fun MaterialScope.playerTileLayout(
 }
 
 /**
- * The song's progress around the edge, with a gap at the top for the title. Live while playing:
- * the renderer computes it from the platform's clock every second.
+ * The song's progress around the edge, in two arcs: open at the top for the title and at the
+ * bottom for the edge button (see [RingHalves]). The first half of the song fills the right arc
+ * downwards, the second the left one upwards, so the progress still goes round clockwise. Live
+ * while playing: the renderer computes it from the platform's clock every second.
  */
 private fun MaterialScope.progressRing(model: PlayerTileModel): LayoutElement {
     val live = if (model.isPlaying) LiveProgress.expression(model.positionMs, model.sampledAtEpochMs, model.durationMs) else null
-    return circularProgressIndicator(
-        staticProgress = model.progress,
-        dynamicProgress = live,
-        startAngleDegrees = RING_GAP_DEGREES / 2f,
-        endAngleDegrees = 360f - RING_GAP_DEGREES / 2f,
+    val (right, left) = RingHalves.split(model.progress)
+    val bottomHalfGap = RingHalves.bottomGapDegrees(deviceConfiguration.screenWidthDp.toFloat()) / 2f
+    val topHalfGap = RING_GAP_DEGREES / 2f
+    fun arc(progress: Float, index: Int, start: Float, end: Float) = circularProgressIndicator(
+        staticProgress = progress,
+        dynamicProgress = live?.let { LiveProgress.half(it, index) },
+        startAngleDegrees = start,
+        endAngleDegrees = end,
         strokeWidth = CircularProgressIndicatorDefaults.SMALL_STROKE_WIDTH,
         colors = ProgressIndicatorColors(colorScheme.primary, TRACK.argb),
         size = expand(),
+    )
+    return box(
+        arc(right, 0, topHalfGap, 180f - bottomHalfGap),
+        arc(left, 1, 180f + bottomHalfGap, 360f - topHalfGap),
+        width = expand(),
+        height = expand(),
     )
 }
 
@@ -250,13 +264,13 @@ private fun glassButtonColors(icon: LayoutColor = Color.White.toArgb().argb): Bu
     return ButtonColors(GLASS.argb, icon, white, white)
 }
 
-private fun MaterialScope.transportButton(onClick: Clickable, drawable: Int, label: String): LayoutElement =
+private fun MaterialScope.transportButton(onClick: Clickable, drawable: Int, label: String, size: Float): LayoutElement =
     iconButton(
         onClick = onClick,
         iconContent = { icon(imageResource(androidImageResource(drawable)), protoLayoutResourceId = "icon_$drawable") },
         modifier = LayoutModifier.contentDescription(label),
-        width = SIDE_BUTTON_DP.dp,
-        height = SIDE_BUTTON_DP.dp,
+        width = size.dp,
+        height = size.dp,
         colors = glassButtonColors(),
     )
 
@@ -266,6 +280,7 @@ private fun MaterialScope.centreButton(
     cover: ByteArray?,
     coverSizePx: Int,
     label: String,
+    size: Float,
 ): LayoutElement {
     val glyph = if (model.isPlaying) R.drawable.ic_tile_pause else R.drawable.ic_tile_play
     if (cover == null || model.coverKey == null) {
@@ -273,18 +288,18 @@ private fun MaterialScope.centreButton(
             onClick = onClick,
             iconContent = { icon(imageResource(androidImageResource(glyph)), protoLayoutResourceId = "icon_$glyph") },
             modifier = LayoutModifier.contentDescription(label),
-            width = CENTRE_BUTTON_DP.dp,
-            height = CENTRE_BUTTON_DP.dp,
+            width = size.dp,
+            height = size.dp,
             colors = filledButtonColors(),
         )
     }
     return box(
         protoLayoutScope.basicImage(
             imageResource(inlineImage = inlineImageResource(cover, coverSizePx, coverSizePx)),
-            width = CENTRE_BUTTON_DP.dp,
-            height = CENTRE_BUTTON_DP.dp,
+            width = size.dp,
+            height = size.dp,
             protoLayoutResourceId = "cover_${model.coverKey}",
-            modifier = LayoutModifier.clip(CENTRE_CORNER_DP),
+            modifier = LayoutModifier.clip(size * CENTRE_CORNER_FRACTION),
         ),
         box(
             icon(
@@ -292,14 +307,14 @@ private fun MaterialScope.centreButton(
                 protoLayoutResourceId = "icon_$glyph",
                 tintColor = Color.White.toArgb().argb,
             ),
-            width = CENTRE_BUTTON_DP.dp,
-            height = CENTRE_BUTTON_DP.dp,
-            modifier = LayoutModifier.background(SCRIM.argb).clip(CENTRE_CORNER_DP),
+            width = size.dp,
+            height = size.dp,
+            modifier = LayoutModifier.background(SCRIM.argb).clip(size * CENTRE_CORNER_FRACTION),
             horizontalAlignment = HORIZONTAL_ALIGN_CENTER,
             verticalAlignment = VERTICAL_ALIGN_CENTER,
         ),
-        width = CENTRE_BUTTON_DP.dp,
-        height = CENTRE_BUTTON_DP.dp,
+        width = size.dp,
+        height = size.dp,
         modifier = LayoutModifier.clickable(onClick).contentDescription(label),
     )
 }
@@ -347,10 +362,8 @@ fun fluidifyTileColors(): ColorScheme {
 }
 
 internal const val COVER_PX = 160
-private const val CENTRE_BUTTON_DP = 80f
-private const val CENTRE_CORNER_DP = 22f
-private const val SIDE_BUTTON_DP = 52f
-private const val BUTTON_GAP_DP = 8f
+/** The cover's corners against its side: 22 dp on the 80 dp cover. */
+private const val CENTRE_CORNER_FRACTION = 22f / 80f
 private const val ROW_GAP_DP = 8f
 
 /** Black at 35%: enough for the white mark to read on a bright cover, not so much it hides it. */
@@ -367,3 +380,32 @@ private const val RING_GAP_DEGREES = 64f
 
 /** The backdrop's pixels; see [CoverImages.backdrop]. */
 private const val BACKDROP_INLINE_PX = 48
+
+/**
+ * The transport row's sizes for a [screen][of] that wide: 52 + 8 + 80 + 8 + 52 dp on a 240 dp
+ * watch, which is 200 dp and ran off a 192 dp one. Below 240 the side buttons and the gaps scale
+ * with the screen (the sides never under 44 dp) and the cover takes what room is left.
+ */
+internal data class TileSizes(val side: Float, val centre: Float, val gap: Float) {
+    companion object {
+        fun of(screenWidthDp: Float): TileSizes {
+            val scale = (screenWidthDp / REFERENCE_DP).coerceIn(MIN_SCALE, 1f)
+            val side = (SIDE_DP * scale).coerceAtLeast(MIN_SIDE_DP)
+            val gap = GAP_DP * scale
+            // The cover takes what is left of the row, up to its full size.
+            val room = screenWidthDp * ROW_FRACTION - 2 * side - 2 * gap
+            return TileSizes(side = side, centre = room.coerceIn(MIN_CENTRE_DP, CENTRE_DP), gap = gap)
+        }
+
+        private const val REFERENCE_DP = 240f
+
+        /** How much of the screen's width the main slot leaves the row, at the row's height. */
+        private const val ROW_FRACTION = 0.84f
+        private const val MIN_CENTRE_DP = 52f
+        private const val MIN_SCALE = 0.7f
+        private const val SIDE_DP = 52f
+        private const val CENTRE_DP = 80f
+        private const val GAP_DP = 8f
+        private const val MIN_SIDE_DP = 44f
+    }
+}

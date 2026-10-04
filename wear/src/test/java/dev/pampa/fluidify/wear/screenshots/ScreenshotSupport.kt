@@ -146,4 +146,5 @@ class FakeControls(snapshot: PlaybackSnapshot?, link: LinkStatus = LinkStatus.CO
     override fun transfer(deviceId: String) = Unit
     override fun setVolume(level: Float, deviceId: String?) = Unit
     override fun sleep(minutes: Int?, atTrackEnd: Boolean, cancel: Boolean) = Unit
+    override suspend fun addToPlaylist(playlistUri: String, trackUri: String): Boolean = true
 }

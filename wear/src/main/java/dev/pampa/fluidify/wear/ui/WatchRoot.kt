@@ -27,6 +27,8 @@ import androidx.wear.compose.navigation.composable
 import androidx.wear.compose.navigation.rememberSwipeDismissableNavController
 import dev.pampa.fluidify.wear.WearApp
 import dev.pampa.fluidify.wear.protocol.LibrarySection
+import dev.pampa.fluidify.wear.system.PlayerIntents
+import dev.pampa.fluidify.wear.ui.browse.AddToPlaylistScreen
 import dev.pampa.fluidify.wear.ui.browse.ContextScreen
 import dev.pampa.fluidify.wear.ui.browse.HomeScreen
 import dev.pampa.fluidify.wear.ui.browse.LibraryScreen
@@ -42,10 +44,10 @@ import dev.pampa.fluidify.wear.ui.sheets.QueueScreen
 import dev.pampa.fluidify.wear.ui.sheets.SleepScreen
 import dev.pampa.fluidify.wear.ui.sheets.VolumeScreen
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
@@ -66,7 +68,12 @@ import kotlinx.coroutines.launch
  * between layers rather than as a strip of screens being dragged.
  */
 @Composable
-fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit> = emptyFlow()) {
+fun WatchRoot(
+    app: WearApp,
+    modifier: Modifier = Modifier,
+    requests: StateFlow<PlayerIntents.Request?> = MutableStateFlow(null),
+    onRequestHandled: () -> Unit = {},
+) {
     val nav = rememberSwipeDismissableNavController()
     val scope = rememberCoroutineScope()
     val vertical = rememberPagerState(initialPage = PAGE_MAIN) { 3 }
@@ -75,9 +82,24 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
         app.link.phone.map { it?.versionName }.stateIn(app.scope, SharingStarted.Eagerly, app.link.phone.value?.versionName)
     }
     val toPlayer: () -> Unit = { backToPlayer(nav, scope, vertical, horizontal) }
-    val open: (String, String) -> Unit = { uri, title -> nav.navigate(contextRoute(uri, title)) }
-    // The watch face icon, the tile and the complication all land on the player.
-    LaunchedEffect(showPlayer) { showPlayer.collect { toPlayer() } }
+    val navigator = remember(nav) { Navigator(nav) }
+    val go: (String) -> Unit = navigator::go
+    val open: (String, String) -> Unit = { uri, title -> go(contextRoute(uri, title)) }
+    // Taking a like back asks first, from the player, the cover page and the tile alike.
+    var confirmUnlike by remember { mutableStateOf(false) }
+    val askUnlike: () -> Unit = { confirmUnlike = true }
+    val addToPlaylist: () -> Unit = {
+        app.controls.nowPlaying.value.snapshot?.track?.let { track -> go(addToPlaylistRoute(track.uri, track.title)) }
+    }
+    // The watch face icon, the tile and the complication all land on the player; the tile's
+    // filled heart lands on it with the question.
+    val request by requests.collectAsStateWithLifecycle()
+    LaunchedEffect(request) {
+        val asked = request ?: return@LaunchedEffect
+        toPlayer()
+        if (asked == PlayerIntents.Request.CONFIRM_UNLIKE && app.controls.nowPlaying.value.snapshot?.liked == true) confirmUnlike = true
+        onRequestHandled()
+    }
     val playerActive by remember {
         derivedStateOf {
             (vertical.currentPage == PAGE_MAIN || vertical.isScrollInProgress) &&
@@ -123,7 +145,7 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                         AnimatedPage(pageIndex = page, pagerState = vertical) {
                             when (page) {
                                 PAGE_IMMERSIVE -> ScreenScaffold(timeText = {}) { _ ->
-                                    ImmersiveScreen(app.controls, app.art, active = immersiveActive)
+                                    ImmersiveScreen(app.controls, app.art, active = immersiveActive, onUnlike = askUnlike)
                                 }
                                 PAGE_MAIN -> HorizontalPagerScaffold(pagerState = horizontal, pageIndicator = null) {
                                     HorizontalPager(state = horizontal) { inner ->
@@ -136,16 +158,18 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                                                         volume = app.volume,
                                                         status = standaloneStatus(app),
                                                         active = playerActive,
-                                                        onQueue = { nav.navigate(QUEUE) },
-                                                        onOutput = { nav.navigate(OUTPUT) },
-                                                        onEssentials = { nav.navigate(ESSENTIALS) },
+                                                        onQueue = { go(QUEUE) },
+                                                        onOutput = { go(OUTPUT) },
+                                                        onEssentials = { go(ESSENTIALS) },
+                                                        onUnlike = askUnlike,
+                                                        onAddToPlaylist = addToPlaylist,
                                                     )
                                                 }
                                                 else -> MoreScreen(
                                                     controls = app.controls,
-                                                    onOutput = { nav.navigate(OUTPUT) },
-                                                    onVolume = { nav.navigate(VOLUME) },
-                                                    onSleep = { nav.navigate(SLEEP) },
+                                                    onOutput = { go(OUTPUT) },
+                                                    onVolume = { go(VOLUME) },
+                                                    onSleep = { go(SLEEP) },
                                                     updater = app.updater,
                                                     phoneVersion = phoneVersion,
                                                     surfaces = app.surfacePrefs,
@@ -156,7 +180,7 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                                                     },
                                                     glassMeter = app.glassMeter,
                                                     standalone = app.standalone,
-                                                    onDownloads = { nav.navigate(WATCH_DOWNLOADS) },
+                                                    onDownloads = { go(WATCH_DOWNLOADS) },
                                                 )
                                             }
                                         }
@@ -164,8 +188,8 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                                 }
                                 else -> HomeScreen(
                                     app = app,
-                                    onSearch = { nav.navigate(SEARCH) },
-                                    onLibrary = { nav.navigate(LIBRARY) },
+                                    onSearch = { go(SEARCH) },
+                                    onLibrary = { go(LIBRARY) },
                                     onOpen = open,
                                 )
                             }
@@ -176,10 +200,19 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
             composable(ESSENTIALS) {
                 EssentialsScreen(
                     controls = app.controls,
-                    onQueue = { nav.navigate(QUEUE) },
-                    onSleep = { nav.navigate(SLEEP) },
-                    onOpenContext = { uri -> open(uri, "") },
+                    onQueue = { go(QUEUE) },
+                    onSleep = { go(SLEEP) },
+                    onOpenContext = open,
                     onRadio = toPlayer,
+                    onAddToPlaylist = addToPlaylist,
+                )
+            }
+            composable("$ADD_TO_PLAYLIST?track={track}&title={title}") { entry ->
+                AddToPlaylistScreen(
+                    app = app,
+                    trackUri = entry.arguments?.getString("track").orEmpty(),
+                    trackTitle = entry.arguments?.getString("title").orEmpty(),
+                    onDone = toPlayer,
                 )
             }
             composable(QUEUE) { QueueScreen(app.controls, app.art, load = app::queue, onPlayed = toPlayer) }
@@ -199,7 +232,7 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
                         app.playback.moveToWatch(output)
                         // Asked once, on a watch that has a radio at all; see CellularScreen.
                         val prefs = app.standalone.prefs
-                        if (app.standalone.network.hasCellular && !prefs.cellularOffered) nav.navigate(CELLULAR)
+                        if (app.standalone.network.hasCellular && !prefs.cellularOffered) go(CELLULAR)
                     },
                     onConnectHeadphones = { app.standalone.router.openHeadphonePicker() },
                 )
@@ -208,8 +241,8 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
             composable(VOLUME) { VolumeScreen(app.controls, app.volume) }
             composable(LIBRARY) {
                 LibraryScreen(
-                    onSection = { section, title -> nav.navigate(sectionRoute(section, title)) },
-                    onWatchDownloads = { nav.navigate(WATCH_DOWNLOADS) },
+                    onSection = { section, title -> go(sectionRoute(section, title)) },
+                    onWatchDownloads = { go(WATCH_DOWNLOADS) },
                 )
             }
             composable("$SECTION/{section}?title={title}") { entry ->
@@ -259,6 +292,17 @@ fun WatchRoot(app: WearApp, modifier: Modifier = Modifier, showPlayer: Flow<Unit
             }
         }
         dev.antigravity.fluidengine.wear.components.FluidWearToast(message = notice)
+        val shown by app.controls.nowPlaying.collectAsStateWithLifecycle()
+        dev.pampa.fluidify.wear.ui.player.UnlikeDialog(
+            visible = confirmUnlike,
+            title = shown.snapshot?.track?.title,
+            onConfirm = {
+                confirmUnlike = false
+                haptics.play(dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent.ToggleOff)
+                app.controls.setLiked(false)
+            },
+            onDismiss = { confirmUnlike = false },
+        )
         val meter by app.glassMeter.visible.collectAsStateWithLifecycle()
         if (meter) GlassMeter()
     }
@@ -283,6 +327,25 @@ private fun standaloneStatus(app: WearApp): String? {
     return androidx.compose.ui.res.stringResource(id)
 }
 
+/**
+ * Opens screens, once per tap: a quick second tap on a row (the transition still running) opened
+ * the same screen twice, and it then had to be swiped away twice, each fetching its data again.
+ * The same route asked for again within [DOUBLE_TAP_MS] is the same tap. Screens without
+ * arguments are also single-top; a playlist opened from a playlist is a new screen.
+ */
+private class Navigator(private val nav: NavHostController) {
+    private var last: String? = null
+    private var lastAt = 0L
+
+    fun go(route: String) {
+        val now = android.os.SystemClock.uptimeMillis()
+        if (route == last && now - lastAt < DOUBLE_TAP_MS) return
+        last = route
+        lastAt = now
+        nav.navigate(route) { if ('?' !in route && '/' !in route) launchSingleTop = true }
+    }
+}
+
 /** Back to the player, wherever the person was: the stack emptied and the pagers reset. */
 private fun backToPlayer(nav: NavHostController, scope: CoroutineScope, vertical: PagerState, horizontal: PagerState) {
     nav.popBackStack(HOME, inclusive = false)
@@ -294,6 +357,7 @@ private fun backToPlayer(nav: NavHostController, scope: CoroutineScope, vertical
 
 private fun contextRoute(uri: String, title: String) = "$CONTEXT?uri=${Uri.encode(uri)}&title=${Uri.encode(title)}"
 private fun sectionRoute(section: LibrarySection, title: String) = "$SECTION/${section.name}?title=${Uri.encode(title)}"
+private fun addToPlaylistRoute(track: String, title: String) = "$ADD_TO_PLAYLIST?track=${Uri.encode(track)}&title=${Uri.encode(title)}"
 
 private const val HOME = "home"
 private const val ESSENTIALS = "essentials"
@@ -307,6 +371,10 @@ private const val CONTEXT = "context"
 private const val SEARCH = "search"
 private const val CELLULAR = "cellular"
 private const val WATCH_DOWNLOADS = "watch-downloads"
+private const val ADD_TO_PLAYLIST = "add-to-playlist"
+
+/** Two taps on the same thing closer than this are one. */
+private const val DOUBLE_TAP_MS = 700L
 
 /** How long a notice stays up. */
 private const val NOTICE_MS = 2_600L

@@ -124,6 +124,14 @@ data class CatalogPlaylist(
     val name: String,
     /** Null when the playlist has no custom cover; the UI draws a tile instead. */
     val artworkUrl: String? = null,
+    /** The account that owns it; null when the access point did not say. */
+    val owner: String? = null,
+    /**
+     * Whether this account may add tracks to it: false for a playlist it only follows. Null when
+     * unknown, which callers treat as "try": the write itself is the final word.
+     */
+    @kotlinx.serialization.SerialName("canEdit")
+    val editable: Boolean? = null,
 )
 
 /** One credited artist: what to write, and where it leads. */

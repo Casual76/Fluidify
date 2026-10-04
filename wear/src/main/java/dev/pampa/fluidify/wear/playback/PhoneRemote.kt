@@ -59,6 +59,13 @@ interface PlaybackControls {
     fun transfer(deviceId: String)
     fun setVolume(level: Float, deviceId: String? = null)
     fun sleep(minutes: Int? = null, atTrackEnd: Boolean = false, cancel: Boolean = false)
+
+    /**
+     * Adds [trackUri] to the end of [playlistUri], and says whether it went in. Suspends, unlike
+     * the rest: the screen that asks waits for the answer before saying "added". A failure is
+     * also reported on [errors].
+     */
+    suspend fun addToPlaylist(playlistUri: String, trackUri: String): Boolean
 }
 
 /**
@@ -194,9 +201,18 @@ class PhoneRemote(
         dispatch(Command.SleepTimer(minutes, atTrackEnd, cancel), guess)
     }
 
+    override suspend fun addToPlaylist(playlistUri: String, trackUri: String): Boolean {
+        val ack = link.send(Command.AddToPlaylist(playlistUri, trackUri), WRITE_ACK_MS)
+        if (ack?.ok != true) _errors.tryEmit(ack?.error ?: dev.pampa.fluidify.wear.protocol.AckErrors.UNREACHABLE)
+        return ack?.ok == true
+    }
+
     private companion object {
         /** The phone's own waits for a transfer (device listed, queue republished) plus margin. */
         const val TRANSFER_ACK_MS = 9_000L
+
+        /** A write to the account: the phone may first have to wake its engine (7 s at most). */
+        const val WRITE_ACK_MS = 10_000L
     }
 
     private fun dispatch(command: Command, guess: PlaybackSnapshot?) {

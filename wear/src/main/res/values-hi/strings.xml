@@ -142,4 +142,9 @@
     <string name="group_playback">प्लेबैक</string>
     <string name="group_watch">घड़ी</string>
     <string name="group_updates">अपडेट</string>
+    <string name="add_to_playlist">प्लेलिस्ट में जोड़ें</string>
+    <string name="unlike_confirm">पसंद किए गए गानों से हटाएं?</string>
+    <string name="added_to">%1$s में जोड़ा गया</string>
+    <string name="no_editable_playlists">जोड़ने के लिए आपकी कोई प्लेलिस्ट नहीं है</string>
+    <string name="error_playlist">प्लेलिस्ट में नहीं जोड़ा जा सका</string>
 </resources>

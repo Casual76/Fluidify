@@ -96,6 +96,11 @@ data class LibraryItem(
     val artUrl: String? = null,
     /** Pinned to the top of the library on the phone. */
     val pinned: Boolean = false,
+    /**
+     * For a playlist: whether the account may add tracks to it (false for one it only follows).
+     * Null when the phone did not say, which the watch treats as "try".
+     */
+    val editable: Boolean? = null,
 )
 
 @Serializable

@@ -63,6 +63,8 @@ fun ImmersiveScreen(
     art: ArtStore,
     modifier: Modifier = Modifier,
     active: Boolean = true,
+    /** Taking a like back asks first, as the heart on the player does; see [LikeActions]. */
+    onUnlike: (() -> Unit)? = null,
 ) {
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
     val ambient = LocalFluidWearAmbient.current
@@ -98,15 +100,21 @@ fun ImmersiveScreen(
                             controls.next()
                         },
                         // A long press on the cover is the heart, as a double tap is in Spotify's
-                        // own cover view; the disc says which way it went.
+                        // own cover view. Liking shows the filled heart on its disc; taking a like
+                        // back asks first, as everywhere.
                         onLongPress = {
                             val snapshot = controls.nowPlaying.value.snapshot
-                            if (snapshot?.track?.uri?.startsWith("spotify:track:") == true) {
-                                val liked = snapshot.liked == true
-                                sign = if (liked) PhosphorIcons.Regular.Heart else PhosphorIcons.Fill.Heart
-                                signal++
-                                haptics.play(if (liked) FluidHapticEvent.ToggleOff else FluidHapticEvent.ToggleOn)
-                                controls.setLiked(!liked)
+                            if (snapshot?.track.likeable()) {
+                                val liked = snapshot?.liked == true
+                                if (liked && onUnlike != null) {
+                                    haptics.play(FluidHapticEvent.Tap)
+                                    onUnlike()
+                                } else {
+                                    sign = if (liked) PhosphorIcons.Regular.Heart else PhosphorIcons.Fill.Heart
+                                    signal++
+                                    haptics.play(if (liked) FluidHapticEvent.ToggleOff else FluidHapticEvent.ToggleOn)
+                                    controls.setLiked(!liked)
+                                }
                             }
                         },
                     )

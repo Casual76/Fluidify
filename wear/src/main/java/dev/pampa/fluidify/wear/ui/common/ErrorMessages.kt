@@ -19,6 +19,7 @@ object ErrorMessages {
         AckErrors.NOTHING_TO_SKIP -> R.string.error_nothing_to_skip
         AckErrors.RADIO -> R.string.error_radio
         AckErrors.LIKE -> R.string.error_like
+        AckErrors.PLAYLIST -> R.string.error_playlist
         AckErrors.CONTEXT, AckErrors.EMPTY -> R.string.error_context
         AckErrors.NOT_FOUND -> R.string.error_not_found
         AckErrors.NOT_IN_QUEUE -> R.string.error_not_in_queue

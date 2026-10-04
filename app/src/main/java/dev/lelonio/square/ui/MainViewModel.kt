@@ -709,16 +709,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // list also carries File locali, which is the phone's own music and
             // has no playlist behind it anywhere: offered here it is a row that
             // can only ever fail, and it looks exactly like the ones that work.
+            //
+            // Nor the playlists it only follows: the access point says which
+            // ones this account may add to, and offering the others is a row
+            // that fails with "not yours" after the tap.
             playlists = (_state.value as? UiState.Ready)?.playlists.orEmpty()
-                .filter { it.uri.startsWith("spotify:") },
+                .filter { it.uri.startsWith("spotify:") && it.editable != false },
             liked = trackUri != null && trackUri in _liked.value,
-            error = when {
-                trackUri?.startsWith("spotify:track:") != true ->
-                    string(R.string.track_cannot_be_added)
-                !container.webApi.isReady ->
-                    string(R.string.connect_app_in_settings)
-                else -> null
-            },
+            // No Web API condition: every write here goes through the access
+            // point (see addToPlaylist), so a missing developer app is no
+            // reason to refuse the sheet.
+            error = if (trackUri?.startsWith("spotify:track:") != true) string(R.string.track_cannot_be_added) else null,
         )
     }
 

@@ -173,6 +173,14 @@ class LocalControls(
 
     private var likedOverride: Pair<String, Boolean>? = null
 
+    /** Through the watch's own engine, which is running whenever this is the player in front. */
+    override suspend fun addToPlaylist(playlistUri: String, trackUri: String): Boolean {
+        val written = withContext(Dispatchers.IO) { runCatching { NativeBridge.addToPlaylist(playlistUri, trackUri) } }
+            .onFailure { Log.w(TAG, "not added to the playlist: ${it.message}") }
+        if (written.isFailure) _errors.tryEmit(dev.pampa.fluidify.wear.protocol.AckErrors.PLAYLIST)
+        return written.isSuccess
+    }
+
     override fun playContext(contextUri: String, startTrackUri: String?, shuffle: Boolean, label: String) {
         prefs?.let {
             it.lastContext = contextUri

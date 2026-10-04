@@ -212,6 +212,7 @@ class ActivePlayback(
     override fun startRadio() = front.startRadio()
     override fun setVolume(level: Float, deviceId: String?) = front.setVolume(level, deviceId)
     override fun sleep(minutes: Int?, atTrackEnd: Boolean, cancel: Boolean) = front.sleep(minutes, atTrackEnd, cancel)
+    override suspend fun addToPlaylist(playlistUri: String, trackUri: String): Boolean = front.addToPlaylist(playlistUri, trackUri)
 
     private companion object {
         const val TAG = "ActivePlayback"

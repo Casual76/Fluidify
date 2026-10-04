@@ -50,9 +50,27 @@ class PlayerTileModelTest {
     }
 
     @Test
-    fun theHeartFollowsThePress() {
-        assertEquals(false, playing.afterClick(TileActions.UNLIKE).liked)
+    fun theHeartFollowsALike() {
         assertEquals(true, playing.copy(liked = false).afterClick(TileActions.LIKE).liked)
+    }
+
+    @Test
+    fun aPressIsNamedByItsLayout() {
+        val first = TileActions.id(TileActions.NEXT, layout = 1)
+        val second = TileActions.id(TileActions.NEXT, layout = 2)
+        assertEquals(TileActions.NEXT, TileActions.nameOf(first))
+        assertTrue(first != second)
+        // Taking a like back is not a tile press: it asks first, in the app.
+        assertEquals(null, TileActions.nameOf("unlike@3"))
+        assertEquals(null, TileActions.nameOf("open"))
+        assertEquals(null, TileActions.nameOf(null))
+    }
+
+    @Test
+    fun onlySongsHaveAHeart() {
+        assertTrue(playing.copy(trackUri = "spotify:track:1").likeable)
+        assertFalse(playing.copy(trackUri = "spotify:episode:1").likeable)
+        assertFalse(playing.copy(trackUri = "spotify:local:a:b:c:1").likeable)
     }
 
     @Test

@@ -41,11 +41,25 @@ class PlayerTileService : Material3TileService(allowDynamicTheme = false, defaul
     private val app get() = application as WearApp
 
     override suspend fun MaterialScope.tileResponse(requestParams: TileRequest): Tile {
-        val clicked = requestParams.currentState.lastClickableId.takeIf { it in TileActions.ALL }
+        val clickId = requestParams.currentState.lastClickableId
+        // Each layout names its buttons afresh (see [TileActions.id]), so a request that carries an
+        // id already acted on is the same press seen again — a redraw, the renderer coming back —
+        // and pressing "next" once must not skip twice.
+        val clicked = TileActions.nameOf(clickId)?.takeIf { clickId != lastHandled }
         var model = PlayerTileModel.from(app.controls.nowPlaying.value)
         if (clicked != null) {
+            lastHandled = clickId
             TileActions.perform(app, clicked)
             model = model.afterClick(clicked)
+            // The tile shows its guess now; once the command has its answer (or none came), it is
+            // drawn again from what is true, so a press that failed does not stay on the tile.
+            app.scope.launch {
+                withTimeoutOrNull(ANSWER_BUDGET_MS) {
+                    delay(SETTLE_MS)
+                    app.controls.nowPlaying.first { !it.busy }
+                }
+                requestUpdate(app)
+            }
         }
         val cover = CoverImages.compressed(app.art, model.coverKey, COVER_PX)
         val backdrop = CoverImages.backdrop(app.art, model.coverKey)
@@ -69,14 +83,39 @@ class PlayerTileService : Material3TileService(allowDynamicTheme = false, defaul
         override val previous: Clickable = action(TileActions.PREVIOUS)
         override val toggle: Clickable = action(TileActions.TOGGLE)
         override val next: Clickable = action(TileActions.NEXT)
-        override val like: Clickable = action(if (model.liked == true) TileActions.UNLIKE else TileActions.LIKE)
+
+        /**
+         * Liking is a press here like the others. Taking a like back asks first, and a tile cannot
+         * ask: the filled heart opens the app on the question. Not a song (an episode, a file on the
+         * phone): the heart just opens the player.
+         */
+        override val like: Clickable = when {
+            !model.likeable -> open
+            model.liked == true -> scope.clickable(
+                PlayerIntents.confirmUnlike(context),
+                id = ID_CONFIRM_UNLIKE,
+                fallbackAction = ActionBuilders.launchAction(
+                    ComponentName(context, MainActivity::class.java),
+                    mapOf(PlayerIntents.EXTRA_CONFIRM_UNLIKE to ActionBuilders.booleanExtra(true)),
+                ),
+            )
+            else -> action(TileActions.LIKE)
+        }
         override val resume: Clickable = action(TileActions.TOGGLE)
 
-        private fun action(name: String): Clickable = clickable(action = loadAction(), id = name)
+        private val layout = System.nanoTime()
+
+        private fun action(name: String): Clickable = clickable(action = loadAction(), id = TileActions.id(name, layout))
     }
 
     companion object {
         private const val ID_OPEN = "open"
+        private const val ID_CONFIRM_UNLIKE = "confirm-unlike"
+        private const val ANSWER_BUDGET_MS = 6_000L
+        private const val SETTLE_MS = 150L
+
+        /** The last press acted on, by its layout-unique id. */
+        @Volatile private var lastHandled: String? = null
 
         fun requestUpdate(context: Context) {
             runCatching { TileService.getUpdater(context).requestUpdate(PlayerTileService::class.java) }
@@ -90,10 +129,15 @@ internal object TileActions {
     const val TOGGLE = "toggle"
     const val NEXT = "next"
     const val LIKE = "like"
-    const val UNLIKE = "unlike"
 
-    /** The ids a tile press can come back with. */
-    val ALL = setOf(PREVIOUS, TOGGLE, NEXT, LIKE, UNLIKE)
+    /** The presses a tile can come back with. Taking a like back is not one: it asks first, in the app. */
+    val ALL = setOf(PREVIOUS, TOGGLE, NEXT, LIKE)
+
+    /** A button's id in one layout: its name and the layout's mark, so every layout's presses are new. */
+    fun id(name: String, layout: Long): String = "$name@$layout"
+
+    /** The press an id names, if it is one of [ALL]. */
+    fun nameOf(id: String?): String? = id?.substringBefore('@')?.takeIf { it in ALL }
 
     private const val ACTION = "dev.pampa.fluidify.wear.TILE_ACTION"
     private const val EXTRA_NAME = "name"
@@ -105,7 +149,6 @@ internal object TileActions {
             TOGGLE -> controls.togglePlay()
             NEXT -> controls.next()
             LIKE -> controls.setLiked(true)
-            UNLIKE -> controls.setLiked(false)
         }
     }
 
@@ -117,7 +160,7 @@ internal object TileActions {
             PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
         )
 
-    fun nameOf(intent: Intent): String? = intent.getStringExtra(EXTRA_NAME).takeIf { intent.action == ACTION }
+    fun nameOf(intent: Intent): String? = intent.getStringExtra(EXTRA_NAME).takeIf { intent.action == ACTION }?.takeIf { it in ALL }
 }
 
 /**

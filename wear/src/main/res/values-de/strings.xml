@@ -142,4 +142,9 @@
     <string name="group_playback">Wiedergabe</string>
     <string name="group_watch">Uhr</string>
     <string name="group_updates">Updates</string>
+    <string name="add_to_playlist">Zur Playlist hinzufügen</string>
+    <string name="unlike_confirm">Aus Lieblingssongs entfernen?</string>
+    <string name="added_to">Zu %1$s hinzugefügt</string>
+    <string name="no_editable_playlists">Keine eigene Playlist zum Hinzufügen</string>
+    <string name="error_playlist">Nicht zur Playlist hinzugefügt</string>
 </resources>

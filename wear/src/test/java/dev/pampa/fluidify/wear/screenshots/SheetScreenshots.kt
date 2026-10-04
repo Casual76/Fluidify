@@ -119,7 +119,7 @@ class SheetScreenshots {
             FakeControls(snapshot.copy(track = snapshot.track!!.copy(artistUri = "spotify:artist:x", albumUri = "spotify:album:y", album = "Riflessi"))),
             onQueue = {},
             onSleep = {},
-            onOpenContext = {},
+            onOpenContext = { _, _ -> },
             onRadio = {},
         )
     }
@@ -178,5 +178,34 @@ class SheetScreenshots {
             ),
         )
         capture("context") { ContextScreen(app, "spotify:playlist:a", "Notturni", onPlaying = {}) }
+    }
+
+    @Test
+    fun addToPlaylist() {
+        app.library.seed(
+            sections = mapOf(
+                dev.pampa.fluidify.wear.protocol.LibrarySection.PLAYLISTS to LibraryPage(
+                    listOf(
+                        LibraryShelf(
+                            "",
+                            listOf(
+                                LibraryItem("spotify:playlist:1", "Corsa del mattino", artKey = SampleArtKey, editable = true),
+                                LibraryItem("spotify:playlist:2", "Top 50 Italia", editable = false),
+                                LibraryItem("spotify:playlist:3", "Viaggio in treno", editable = true),
+                                LibraryItem("spotify:playlist:4", "Cena con amici"),
+                            ),
+                        ),
+                    ),
+                ),
+            ),
+        )
+        capture("add_to_playlist") {
+            dev.pampa.fluidify.wear.ui.browse.AddToPlaylistScreen(app, "spotify:track:1", "Notturno sul lago", onDone = {})
+        }
+    }
+
+    @Test
+    fun unlikeDialog() = capture("unlike_dialog") {
+        dev.pampa.fluidify.wear.ui.player.UnlikeDialog(visible = true, title = "Notturno sul lago", onConfirm = {}, onDismiss = {})
     }
 }

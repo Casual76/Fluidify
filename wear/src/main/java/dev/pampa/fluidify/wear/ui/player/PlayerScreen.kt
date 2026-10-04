@@ -108,6 +108,10 @@ fun PlayerScreen(
     /** A word on the watch's own playback (starting, needs the phone), in place of the artist. */
     status: String? = null,
     active: Boolean = true,
+    /** Taking a like back: asks first (see [LikeActions]). Without one, the heart unlikes at once. */
+    onUnlike: (() -> Unit)? = null,
+    /** The long press on the heart: the song into a playlist. */
+    onAddToPlaylist: (() -> Unit)? = null,
 ) {
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
     val remoteVolume = now.snapshot?.device?.volume
@@ -165,10 +169,14 @@ fun PlayerScreen(
 
                 BoxWithConstraints(Modifier.fillMaxSize()) {
                     val compact = maxWidth < CompactScreen
-                    val sizes = if (compact) DiscSizes.Compact else DiscSizes.Regular
+                    val sizes = when {
+                        compact -> DiscSizes.Compact
+                        maxWidth < MediumScreen -> DiscSizes.Medium
+                        else -> DiscSizes.Regular
+                    }
                     PlayerLayout(
                         compact = compact,
-                        arcTop = maxHeight - FluidWearDimens.ArcEdgeClearance - sizes.arc,
+                        arcTop = maxHeight - FluidWearDimens.ArcEdgeClearance - sizes.queue,
                         modifier = Modifier.graphicsLayer { alpha = controlsAlpha },
                         clock = {
                             FluidGlassTimePill(
@@ -193,9 +201,12 @@ fun PlayerScreen(
                         now = now,
                         backdrop = backdrop,
                         size = sizes.arc,
+                        queueSize = sizes.queue,
                         spacing = sizes.arcSpacing,
                         onQueue = onQueue,
                         onOutput = onOutput,
+                        likes = LikeActions(controls, confirmUnlike = onUnlike ?: { controls.setLiked(false) }),
+                        onAddToPlaylist = onAddToPlaylist,
                         modifier = Modifier.graphicsLayer { alpha = controlsAlpha },
                     )
                 }
@@ -334,16 +345,24 @@ private fun Transport(controls: PlaybackControls, now: NowPlaying, backdrop: Gla
     }
 }
 
-/** Output, queue and like, hugging the bottom of the bezel. */
+/**
+ * Output, queue and like, hugging the bottom of the bezel.
+ *
+ * The queue, in the middle, is a size up from the two beside it: it sits where the bezel is
+ * lowest, and at the sides' size it left a hole between itself and the play button.
+ */
 @Composable
 private fun ArcActions(
     controls: PlaybackControls,
     now: NowPlaying,
     backdrop: GlassBackdropState,
     size: Dp,
+    queueSize: Dp,
     spacing: Float,
     onQueue: () -> Unit,
     onOutput: () -> Unit,
+    likes: LikeActions,
+    onAddToPlaylist: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
     val snapshot = now.snapshot
@@ -363,8 +382,8 @@ private fun ArcActions(
             onClick = onQueue,
             backdrop = backdrop,
             contentDescription = stringResource(R.string.queue),
-            size = size,
-        ) { Icon(PhosphorIcons.Regular.Queue, contentDescription = null, modifier = Modifier.size(FluidWearDimens.IconMedium)) }
+            size = queueSize,
+        ) { Icon(PhosphorIcons.Regular.Queue, contentDescription = null, modifier = Modifier.size(QueueIcon)) }
         val liked = snapshot?.liked == true
         // The heart fills with a little spring when it is lit; the one action here that is a feeling.
         val heart = remember { Animatable(1f) }
@@ -376,14 +395,17 @@ private fun ArcActions(
             }
             lastLiked = liked
         }
+        val likeable = track.likeable()
         FluidGlassDisc(
-            onClick = { controls.setLiked(!liked) },
+            onClick = { likes.toggle(liked) },
+            onLongClick = onAddToPlaylist?.takeIf { likeable },
             backdrop = backdrop,
             contentDescription = stringResource(if (liked) R.string.unlike else R.string.like),
             size = size,
-            enabled = track?.uri?.startsWith("spotify:track:") == true,
+            enabled = likeable,
             selected = liked,
-            haptic = if (liked) FluidHapticEvent.ToggleOff else FluidHapticEvent.ToggleOn,
+            // Taking it back only opens the question; the answer is what toggles it off.
+            haptic = if (liked) FluidHapticEvent.Tap else FluidHapticEvent.ToggleOn,
         ) {
             Icon(
                 imageVector = if (liked) PhosphorIcons.Fill.Heart else PhosphorIcons.Regular.Heart,
@@ -437,20 +459,35 @@ private fun AmbientCaption(now: NowPlaying, modifier: Modifier = Modifier) {
     }
 }
 
-/** The disc sizes of a screen class. */
-private enum class DiscSizes(val main: Dp, val side: Dp, val arc: Dp, val arcSpacing: Float) {
-    Regular(FluidWearDimens.DiscLarge, FluidWearDimens.DiscMedium, FluidWearDimens.DiscArc, RegularArcSpacing),
+/** The disc sizes of a screen class: the transport's play and sides, the arc's sides and its queue. */
+private enum class DiscSizes(val main: Dp, val side: Dp, val arc: Dp, val queue: Dp, val arcSpacing: Float) {
+    Regular(FluidWearDimens.DiscLarge, FluidWearDimens.DiscMedium, FluidWearDimens.DiscArc, RegularQueue, RegularArcSpacing),
+
+    /**
+     * A 216 dp watch: the regular discs, with the arc's sides brought down towards the queue. At
+     * the regular angle they rose into previous and next, the transport sitting lower here under a
+     * title that takes the same room as on a big screen.
+     */
+    Medium(FluidWearDimens.DiscLarge, FluidWearDimens.DiscMedium, FluidWearDimens.DiscArc, RegularQueue, MediumArcSpacing),
 
     /**
      * A 192 dp watch: everything a step down, still never under Wear's 48 dp touch target, and the
      * arc opened wider so its outer discs clear previous and next.
      */
-    Compact(CompactMain, FluidWearDimens.MinTouchTarget, FluidWearDimens.MinTouchTarget, CompactArcSpacing),
+    Compact(CompactMain, FluidWearDimens.MinTouchTarget, FluidWearDimens.MinTouchTarget, CompactQueue, CompactArcSpacing),
 }
 
 /** Below this the player takes its compact sizes: the 192 dp class of watch. */
 private val CompactScreen = 210.dp
+
+/** Below this, and above [CompactScreen], the 216 dp class. */
+private val MediumScreen = 228.dp
 private val CompactMain = 56.dp
+
+/** Between the arc's sides and the play button: bigger than the one, smaller than the other. */
+private val RegularQueue = 58.dp
+private val CompactQueue = 50.dp
+private val QueueIcon = 26.dp
 private val RegularGap = 6.dp
 private val CompactGap = 4.dp
 
@@ -459,6 +496,7 @@ private const val CapsuleWidthFraction = 0.72f
 
 /** Degrees between the arc's discs: wide enough that thumb-sized discs never touch the transport. */
 private const val RegularArcSpacing = 52f
+private const val MediumArcSpacing = 44f
 private const val CompactArcSpacing = 45f
 
 /** How faint the controls get while the volume is being turned. */
