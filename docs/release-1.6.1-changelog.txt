@@ -1,0 +1,5 @@
+Aloni musicali più visibili sul telefono, sia nel lettore completo sia nel mini player: colori luminosi ricavati dalla copertina, maggiore espansione e luce più presente dietro il vetro. La variante compatta mantiene un'intensità ridotta.
+
+Sul Watch l'avanzamento reattivo diventa un alone diffuso, con dissolvenza verso l'interno e alle estremità, senza il bordo netto dell'arco precedente. Conservati il varco dell'ora e il significato dell'avanzamento.
+
+Nessuna modifica all'analisi audio, alle sottoscrizioni o alla gestione delle radio. Render aggiornati e build minificate firmate per telefono e Watch. La resa in movimento e i consumi sui dispositivi fisici restano da verificare.

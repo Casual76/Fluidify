@@ -85,7 +85,7 @@ class AudioLightScreenshots {
             compose.onRoot().captureRoboImage(offFile)
             val off = BitmapFactory.decodeFile(offFile).getPixel(x, y)
             Assert.assertTrue("The mini player must actually show and remove its light",
-                kotlin.math.abs(android.graphics.Color.red(lit) - android.graphics.Color.red(off)) > 5)
+                kotlin.math.abs(android.graphics.Color.red(lit) - android.graphics.Color.red(off)) > 20)
         }
     }
     @Test fun phoneDark()=capture("phone_dark")

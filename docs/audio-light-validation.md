@@ -34,3 +34,13 @@ APK di release firmato installato nell'emulatore temporaneo Wear OS 6: risoluzio
 La checklist 1.6.0 in `wear-qa-checklist.md` conserva le prove da fare su telefono/tablet e Galaxy Watch collegati: sincronizzazione reale con Spotify/file/video, transizione Canvas, pausa/buffering, prestazioni CPU/GPU, consumi, traffico Bluetooth e assenza di traffico dopo AOD/background. Nessun dispositivo fisico è disponibile via ADB in questa sessione. La risoluzione di un intent sull'emulatore non equivale a toccare la Now bar Samsung.
 
 Fluid Engine resta alla versione 2.11.0; nessuna modifica al submodule.
+
+## Correzione visiva 1.6.1
+
+In seguito alla prova dell'utente, l'arco Watch non è più un contorno luminoso stretto: un campo luminoso combina dissolvenza radiale e angolare, così anche le estremità sfumano. La diffusione verso l'interno è più ampia; il varco dell'ora resta vuoto e la dissolvenza finale termina nella posizione del brano. Shader e geometria sono riutilizzati; il disegno resta confinato alla parte utile dell'arco, evitando di elaborare il centro trasparente o la parte non raggiunta. Nessun blur, analisi o traffico aggiuntivo.
+
+Sul telefono il colore della copertina viene trasformato in luce conservandone la tonalità ma alzandone la luminanza minima. Maggiore espansione e intensità nel lettore, maggiore altezza e intensità nel mini player dietro il vetro; la variante compatta resta attenuata. Nessuna modifica alle preferenze del vetro.
+
+Aggiornati e controllati i 17 render, inclusi tema chiaro/scuro, Canvas, mini player compatto e Watch 192/216/240 dp. Il controllo di visibilità del mini player richiede ora una differenza superiore a 20 nel canale rosso tra segnale presente e assente, rispetto alla soglia di 5 della 1.6.0. La resa animata e i consumi sui dispositivi fisici restano da verificare; i render statici non dimostrano questi risultati.
+
+Il benchmark host aggiornato misura circa 19,36 ms CPU per disegno telefono, 5,91 ms mini player e 1,02 ms anello Watch. Il primo prototipo Watch che disegnava l'intero disco misurava 4,47 ms: confinare la stessa luce alla geometria utile elimina gran parte di quel lavoro. L'analisi resta circa 0,25 ms FFT / 0,016 ms leggera. Dati JBR/Robolectric con Canvas software, non GPU Android né misure di consumo sul Watch; il disegno più ampio richiede comunque la verifica fisica.

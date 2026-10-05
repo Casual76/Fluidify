@@ -184,3 +184,9 @@ nessuna di queste prove viene dichiarata superata soltanto perché compila.
 - [ ] Musica su PC o altro dispositivo Connect: aspetto precedente, nessuna pulsazione simulata. Telefono/Watch con versioni precedenti: controlli normali senza telemetry incompatibile.
 - [ ] Sessioni comparabili con effetti accesi/spenti: Perfetto/gfxinfo e CPU su telefono/tablet e Watch; batteria e Bluetooth sul Galaxy Watch. Registrare durata, schermi, luminosità, brano e condizioni radio; non dedurre consumi dai benchmark JVM.
 - [ ] **Now bar Samsung ancora da verificare:** con 1.6.0 su entrambi e modalità Automatica, una sola voce; il tocco deve aprire Fluidify a processo chiuso e dalla Coda/Altro. Confermare controllo del telefono, nessuna seconda sessione media e nessun passaggio involontario al motore Watch.
+
+### Correzione visiva 1.6.1 — prove fisiche da completare
+
+- [ ] Watch lettore e copertina immersiva: alone soffuso senza fascia netta o estremità tagliate, anche con bassi forti; ora e controlli sempre leggibili.
+- [ ] Telefono lettore e mini player: luce chiaramente percepibile mentre cambia con la musica, con copertine scure/chiare, Canvas e diverse preferenze del vetro; nessuna pulsazione durante il silenzio.
+- [ ] Confrontare frame time e consumi con 1.6.0 ed effetti disattivati: i benchmark sul PC non sostituiscono queste misure.

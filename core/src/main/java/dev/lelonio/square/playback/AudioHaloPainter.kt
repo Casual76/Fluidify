@@ -12,26 +12,46 @@ class AudioHaloPainter {
     private var filter: ColorFilter? = null
     private val levels = FloatArray(8)
     private var lastNs = 0L
-    private var ringShader: RadialGradient? = null
+    private var ringShader: Shader? = null
     private var ringTint = 0
     private var ringWidth = -1f
-    /** The gradient spans the band, so neither its inside nor its outside has a hard edge. */
+    private var ringDiameter = -1f
+    private var ringSweep = -1f
+    private var ringGap = -1f
+    private val ringMatrix = Matrix()
+    /** A light field with radial and angular falloff; the arc geometry only bounds its shading. */
     fun drawRing(canvas: Canvas, diameter: Float, progress: Float, gapDegrees: Float, tint: Int, energy: Float, bass: Float) {
         if (diameter <= 0 || progress <= 0) return
         val radius = diameter / 2
-        val width = diameter * (0.045f + 0.045f * bass)
-        if (ringShader == null || ringTint != tint || abs(width - ringWidth) > 0.5f) {
-            ringTint = tint; ringWidth = width
+        val width = diameter * (0.13f + 0.07f * bass.coerceIn(0f, 1f))
+        val sweep = (360 - gapDegrees).coerceIn(0f, 360f) * progress.coerceIn(0f, 1f)
+        if (sweep <= 0f) return
+        if (ringShader == null || ringTint != tint || abs(width - ringWidth) > 1f ||
+            ringDiameter != diameter || abs(sweep - ringSweep) > .35f || ringGap != gapDegrees) {
+            ringTint = tint; ringWidth = width; ringDiameter = diameter; ringSweep = sweep; ringGap = gapDegrees
             val transparent = tint and 0xffffff
-            ringShader = RadialGradient(radius, radius, radius,
-                intArrayOf(transparent, transparent, tint or (0xff shl 24), transparent),
-                floatArrayOf(0f, (1 - width / radius).coerceAtLeast(.01f), 1 - width / radius * .3f, 1f), Shader.TileMode.CLAMP)
+            fun shade(alpha: Int) = transparent or (alpha shl 24)
+            val inner = 1 - width / radius
+            val radial = RadialGradient(radius, radius, radius,
+                intArrayOf(transparent, transparent, shade(12), shade(45), shade(105), shade(170), shade(100), transparent),
+                floatArrayOf(0f, inner, inner + .22f * (1 - inner), inner + .45f * (1 - inner),
+                    inner + .68f * (1 - inner), inner + .84f * (1 - inner), inner + .94f * (1 - inner), 1f), Shader.TileMode.CLAMP)
+            // Keep the time endpoint exact, but let light dissolve before it instead of ending in a cut.
+            val end = (sweep / 360f).coerceAtMost(.9999f)
+            val feather = min(14f / 360f, end * .45f)
+            val angular = SweepGradient(radius, radius,
+                intArrayOf(0x00ffffff, -1, -1, 0x00ffffff, 0x00ffffff),
+                floatArrayOf(0f, feather, end - feather, end, 1f))
+            ringMatrix.setRotate(-90 + gapDegrees / 2, radius, radius)
+            angular.setLocalMatrix(ringMatrix)
+            ringShader = ComposeShader(radial, angular, PorterDuff.Mode.DST_IN)
         }
-        paint.shader = ringShader; paint.alpha = (100 + 130 * energy).toInt().coerceIn(0, 255)
+        paint.shader = ringShader; paint.alpha = (120 + 135 * energy).toInt().coerceIn(0, 255)
+        // Skip the transparent centre and unused arc. Both edges of this geometry have zero
+        // shader alpha, so this does not introduce an outline or a cut at either endpoint.
         paint.style = Paint.Style.STROKE; paint.strokeWidth = width
-        // Outer edge remains on the bezel; modulation only spreads inward.
         oval.set(width / 2, width / 2, diameter - width / 2, diameter - width / 2)
-        canvas.drawArc(oval, -90 + gapDegrees / 2, (360 - gapDegrees) * progress, false, paint)
+        canvas.drawArc(oval, -90 + gapDegrees / 2, sweep, false, paint)
         paint.style = Paint.Style.FILL
     }
     fun reset() { levels.fill(0f); lastNs = 0 }
@@ -42,7 +62,12 @@ class AudioHaloPainter {
         lastNs = nowNs
         if (filter == null || tint != color) {
             color = tint
-            filter = PorterDuffColorFilter(tint or (0xff shl 24), PorterDuff.Mode.SRC_IN)
+            // Dark artwork colours need emitted-light luminance to remain visible behind glass.
+            val hsv = FloatArray(3)
+            Color.colorToHSV(tint, hsv)
+            hsv[1] = hsv[1].coerceAtMost(.72f)
+            hsv[2] = hsv[2].coerceAtLeast(.88f)
+            filter = PorterDuffColorFilter(Color.HSVToColor(hsv), PorterDuff.Mode.SRC_IN)
         }
         val time = (frame?.positionMs ?: 0) / 1000f
         for (i in 0..7) {
@@ -57,13 +82,13 @@ class AudioHaloPainter {
                 val along = if (i % 2 == 0) 0.28f else 0.72f
                 x = when (i / 2) { 0 -> cover.left + cover.width() * along; 1 -> cover.right; 2 -> cover.left + cover.width() * along; else -> cover.left }
                 y = when (i / 2) { 0 -> cover.top; 1 -> cover.top + cover.height() * along; 2 -> cover.bottom; else -> cover.top + cover.height() * along }
-                radiusX = cover.width() * (0.16f + 0.24f * v + 0.12f * bass)
+                radiusX = cover.width() * (0.20f + 0.28f * v + 0.13f * bass)
                 radiusY = radiusX
             } else {
                 x = width * (i + 0.5f) / 8 + if (mini) 0f else sin(time * 1.2f + i) * width * 0.025f * v
-                y = height * if (mini) 1.04f else 1.02f
+                y = height * if (mini) .98f else 1.02f
                 radiusX = width * if (mini) 0.20f else 0.23f + 0.04f * bass
-                radiusY = height * if (mini) (if (compact) .68f else .90f) * (.55f + .60f * v) else 0.18f + 0.24f * v + 0.12f * bass
+                radiusY = height * if (mini) (if (compact) .82f else 1.15f) * (.60f + .65f * v) else 0.18f + 0.24f * v + 0.12f * bass
             }
             if (cover != null && bottomMix > 0f) {
                 x += (width * (i + .5f) / 8 - x) * bottomMix
@@ -73,8 +98,8 @@ class AudioHaloPainter {
             }
             val haloPaint = haloPaints[i]
             haloPaint.colorFilter = filter
-            haloPaint.alpha = (if (mini) (if (compact) .36f else .48f) * sqrt(v.coerceAtLeast(0f)) * 255
-                else .46f * v * 255).toInt().coerceIn(0, 130)
+            haloPaint.alpha = ((if (mini) (if (compact) .80f else 1.05f) else .90f) * sqrt(v.coerceAtLeast(0f)) * 255)
+                .toInt().coerceIn(0, 245)
             oval.set(x - radiusX, y - radiusY, x + radiusX, y + radiusY)
             canvas.drawBitmap(haloTexture, null, oval, haloPaint)
         }
