@@ -81,18 +81,5 @@ internal fun AudioLightHalo(frame: State<AudioLightFrame?>, color: Color, cover:
     }
 }
 
-/** A different cover swatch for light over Canvas; monochrome palettes get a related accent. */
-internal fun contrastingAudioLightColor(base: Color, palette: List<Color>, fallback: Color): Color {
-    fun hsv(color: Color) = FloatArray(3).also { android.graphics.Color.colorToHSV(color.toArgb(), it) }
-    val primary = hsv(base)
-    fun separation(hue: Float): Float {
-        val distance = kotlin.math.abs(hue - primary[0])
-        return minOf(distance, 360f - distance)
-    }
-    if (primary[1] < .1f) return fallback
-    val candidate = palette.map { it to hsv(it) }.filter { it.second[1] >= .2f }
-        .maxByOrNull { separation(it.second[0]) }
-    if (candidate != null && separation(candidate.second[0]) >= 45f) return candidate.first
-    // No frame readback or colour polling: one stable hue per cover, not a colour chasing the video.
-    return Color(android.graphics.Color.HSVToColor(floatArrayOf((primary[0] + 100f) % 360f, .60f, .95f)))
-}
+/** The requested violet/fuchsia light over Canvas and music video, independent of artwork hues. */
+internal val CanvasAudioLightColor = Color(0xFFD36BE8)

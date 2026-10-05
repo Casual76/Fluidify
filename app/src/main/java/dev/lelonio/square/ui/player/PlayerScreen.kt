@@ -482,10 +482,6 @@ fun PlayerScreen(
         targetValue = if (canvasReady || videoOn || panel != PlayerPanel.NONE) 1f else 0f,
         animationSpec = tween(420), label = "audioLightOrigin")
     val lightColor = auraColors.firstOrNull() ?: MaterialTheme.colorScheme.primary
-    val lightFallback = MaterialTheme.colorScheme.primary
-    val canvasLightColor = remember(auraColors, lightColor, lightFallback) {
-        contrastingAudioLightColor(lightColor, auraColors, lightFallback)
-    }
     val lightContrast = animateFloatAsState(
         targetValue = if (canvasReady || videoOn) 1f else 0f,
         animationSpec = tween(420), label = "audioLightContrast")
@@ -607,7 +603,7 @@ fun PlayerScreen(
                 cover = {
                     if (lightCoverBounds == androidx.compose.ui.geometry.Rect.Zero) null
                     else lightCoverBounds.translate(-lightOrigin)
-                }, bottomMix = { lightBottom.value }, contrastColor = canvasLightColor, contrastMix = { lightContrast.value })
+                }, bottomMix = { lightBottom.value }, contrastColor = CanvasAudioLightColor, contrastMix = { lightContrast.value })
 
             // Only over a Canvas, and deliberately light. Clips are graded for
             // their own sake and some are near-white; this buys the controls

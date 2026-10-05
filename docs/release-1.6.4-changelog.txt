@@ -1,0 +1,5 @@
+L'alone musicale sopra Canvas e video usa ora un viola/fucsia stabile, invece di ricavare un colore alternativo dalla copertina che poteva diventare verde. Conservate altezza, intensità e transizione del colore.
+
+La luce attorno alla copertina e il mini player mantengono i colori della copertina. Nessun cambiamento visivo dell'orologio: questo APK accompagna la stessa versione del telefono.
+
+Verificati render e build minificate firmate; resa animata e consumi reali restano da verificare sui dispositivi fisici.

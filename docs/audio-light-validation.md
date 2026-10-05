@@ -62,3 +62,11 @@ Sul telefono, Canvas pronto e video usano il colore della palette più distante 
 Test nuovi: tre casi di palette; ingresso AOD con rilascio dell'albero interattivo nei primi frame, posizione del titolo invariata, pixel della copertina presenti e attenuati, ritorno ai controlli, assenza di immagine low-bit. Render AOD a 192/216/240 dp e low-bit, ingresso/ritorno, oltre agli 11 render telefono/tablet e mini player. Le prove automatiche non verificano il comportamento del firmware Samsung o i consumi fisici; questi controlli restano nella checklist.
 
 Cinque suite: 187 test senza errori (7 core, 61 protocollo, 72 Wear, 21 app, 26 engine-wear). Cinque test AOD separati passati nella variante Debug, compresa la transizione di andata/ritorno. Nei render AOD il 11,37% / 11,70% / 14,05% dei pixel interni al disco è diverso dal nero a 240 / 192 / 216 dp; low-bit 2,34%. Sono misure di immagini statiche, non della luminosità del pannello o della batteria.
+
+## Colore Canvas 1.6.4
+
+Su richiesta dell'utente, sostituita la scelta automatica del colore alternativo con un viola/fucsia fisso (`#D36BE8`) sopra Canvas e video musicale. La tonalità alternativa della 1.6.3 poteva produrre un verde poco gradito. Altezza, intensità, geometria e transizione restano uguali; copertina e mini player conservano la tinta della copertina. Nessuna modifica funzionale o visiva sul Watch, né al Fluid Engine.
+
+Rimossi i tre test del selettore di palette eliminato; i render delle schermate reali verificano ora direttamente il colore richiesto, Canvas pronto/in caricamento, video e ritorno all'aspetto senza effetti. Le verifiche fisiche già elencate restano da completare.
+
+Passati gli 11 render telefono/tablet e mini player e le cinque suite (184 test, senza errori). Gli APK minificati sono pubblicati insieme come 1.6.4 (16), con la stessa firma di release.
