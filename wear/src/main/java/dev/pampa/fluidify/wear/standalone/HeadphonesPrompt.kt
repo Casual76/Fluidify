@@ -1,6 +1,7 @@
 package dev.pampa.fluidify.wear.standalone
 
 import android.Manifest
+import android.annotation.SuppressLint
 import android.app.NotificationChannel
 import android.app.NotificationManager
 import android.bluetooth.BluetoothClass
@@ -44,12 +45,16 @@ class HeadphonesReceiver : BroadcastReceiver() {
         HeadphonesPrompt.show(context, name(context, device))
     }
 
+    // Both read the device only after [allowed] has said BLUETOOTH_CONNECT is granted; lint cannot
+    // see through the helper.
+    @SuppressLint("MissingPermission")
     private fun isAudio(context: Context, device: BluetoothDevice): Boolean {
         if (!allowed(context)) return false
         val major = runCatching { device.bluetoothClass?.majorDeviceClass }.getOrNull() ?: return false
         return major == BluetoothClass.Device.Major.AUDIO_VIDEO
     }
 
+    @SuppressLint("MissingPermission")
     private fun name(context: Context, device: BluetoothDevice): String =
         if (allowed(context)) runCatching { device.name }.getOrNull().orEmpty() else ""
 

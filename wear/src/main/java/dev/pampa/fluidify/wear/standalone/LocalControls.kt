@@ -508,6 +508,7 @@ class LocalControls(
         }
     }
 
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     private fun publish(player: Player) {
         val item = player.currentMediaItem
         val now = System.currentTimeMillis()

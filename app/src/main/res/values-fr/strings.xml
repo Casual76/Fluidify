@@ -85,18 +85,22 @@
     <plurals name="playlist_count">
         <item quantity="one">%1$d playlist</item>
         <item quantity="other">%1$d playlists</item>
+        <item quantity="many">%1$d playlists</item>
     </plurals>
     <plurals name="item_count">
         <item quantity="one">%1$d élément</item>
         <item quantity="other">%1$d éléments</item>
+        <item quantity="many">%1$d éléments</item>
     </plurals>
     <plurals name="artist_count">
         <item quantity="one">%1$d artiste</item>
         <item quantity="other">%1$d artistes</item>
+        <item quantity="many">%1$d artistes</item>
     </plurals>
     <plurals name="album_count">
         <item quantity="one">%1$d album</item>
         <item quantity="other">%1$d albums</item>
+        <item quantity="many">%1$d albums</item>
     </plurals>
 
     <string name="playlist_order">Ordre de la playlist</string>
@@ -109,6 +113,7 @@
     <plurals name="track_count_and_length">
         <item quantity="one">" · %1$d titre · %2$s"</item>
         <item quantity="other">" · %1$d titres · %2$s"</item>
+        <item quantity="many">" · %1$d titres · %2$s"</item>
     </plurals>
     <string name="hours_minutes">%1$d h %2$d min</string>
     <string name="minutes_only">%1$d min</string>
@@ -266,6 +271,7 @@
     <plurals name="crossfade_seconds">
         <item quantity="one">%1$d seconde</item>
         <item quantity="other">%1$d secondes</item>
+        <item quantity="many">%1$d secondes</item>
     </plurals>
     <string name="crossfade_note">Un morceau se fond dans le suivant. Seulement quand il se termine seul, pas quand vous passez au suivant.</string>
     <string name="page_playback">Lecture</string>
@@ -346,6 +352,7 @@
     <plurals name="download_count">
         <item quantity="one">%1$d téléchargé</item>
         <item quantity="other">%1$d téléchargés</item>
+        <item quantity="many">%1$d téléchargés</item>
     </plurals>
     <string name="download_progress_count">%1$d sur %2$d</string>
     <string name="download_waiting_wifi">En attente du Wi‑Fi</string>
@@ -364,10 +371,12 @@
     <plurals name="download_artist_confirm">
         <item quantity="one">Télécharger %1$d titre de %2$s ? Cela représente environ %3$s.</item>
         <item quantity="other">Télécharger %1$d titres de %2$s ? Cela représente environ %3$s.</item>
+        <item quantity="many">Télécharger %1$d titres de %2$s ? Cela représente environ %3$s.</item>
     </plurals>
     <plurals name="download_failed_count">
         <item quantity="one">%1$d n\'a pas pu être téléchargé</item>
         <item quantity="other">%1$d n\'ont pas pu être téléchargés</item>
+        <item quantity="many">%1$d n\'ont pas pu être téléchargés</item>
     </plurals>
     <string name="download_retry_failed">Réessayer</string>
     <string name="downloaded_tracks">Titres téléchargés</string>
@@ -436,6 +445,7 @@
     <plurals name="watch_downloads_summary">
         <item quantity="one">%1$d sur %2$d titre · %3$s utilisés, %4$s libres</item>
         <item quantity="other">%1$d sur %2$d titres · %3$s utilisés, %4$s libres</item>
+        <item quantity="many">%1$d sur %2$d titres · %3$s utilisés, %4$s libres</item>
     </plurals>
     <string name="watch_downloads_paused">En pause</string>
     <string name="watch_downloads_paused_storage">La montre est presque pleine</string>
@@ -490,10 +500,13 @@
     <plurals name="watch_downloads_waiting">
         <item quantity="one">%1$d modification attend la montre et sera envoyée dès qu\'elle sera de nouveau à portée</item>
         <item quantity="other">%1$d modifications attendent la montre et seront envoyées dès qu\'elle sera de nouveau à portée</item>
+        <item quantity="many">%1$d modifications attendent la montre et seront envoyées dès qu\'elle sera de nouveau à portée</item>
     </plurals>
     <string name="audio_light_title">Lumière réactive à la musique</string>
     <string name="audio_light_note">La lumière du lecteur et du mini-lecteur suit la musique.</string>
     <string name="audio_light_section">Lumière du lecteur</string>
     <string name="unknown">Inconnu</string>
     <string name="kbps_value">%1$d kbps</string>
+    <string name="widget_open_app">Ouvrir Fluidify</string>
+    <string name="widget_settings">Réglages du widget</string>
 </resources>

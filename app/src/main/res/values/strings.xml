@@ -517,4 +517,6 @@
     <string name="audio_light_section">Player light</string>
     <string name="unknown">Unknown</string>
     <string name="kbps_value">%1$d kbps</string>
+    <string name="widget_open_app">Open Fluidify</string>
+    <string name="widget_settings">Widget settings</string>
 </resources>

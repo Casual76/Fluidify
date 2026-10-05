@@ -37,7 +37,7 @@ import androidx.wear.protolayout.modifiers.clip
 import androidx.wear.protolayout.modifiers.contentDescription
 import androidx.wear.protolayout.types.LayoutColor
 import androidx.wear.protolayout.types.argb
-import androidx.wear.protolayout.types.dp
+import androidx.wear.protolayout.DimensionBuilders.dp
 import androidx.wear.protolayout.types.layoutString
 import dev.antigravity.fluidengine.ui.theme.fluidColorScheme
 import dev.antigravity.fluidengine.wear.theme.FluidWearDefaults
@@ -168,12 +168,12 @@ fun MaterialScope.playerTileLayout(
                     color = colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 ),
-                spacer(height = ROW_GAP_DP.dp),
+                spacer(height = dp(ROW_GAP_DP.toFloat())),
                 row(
                     transportButton(clicks.previous, R.drawable.ic_tile_previous, context.getString(R.string.previous), sizes.side),
-                    spacer(width = sizes.gap.dp),
+                    spacer(width = dp(sizes.gap.toFloat())),
                     centreButton(model, clicks.toggle, cover, coverSizePx, playLabel, sizes.centre),
-                    spacer(width = sizes.gap.dp),
+                    spacer(width = dp(sizes.gap.toFloat())),
                     transportButton(clicks.next, R.drawable.ic_tile_next, context.getString(R.string.next), sizes.side),
                     verticalAlignment = VERTICAL_ALIGN_CENTER,
                 ),
@@ -269,8 +269,8 @@ private fun MaterialScope.transportButton(onClick: Clickable, drawable: Int, lab
         onClick = onClick,
         iconContent = { icon(imageResource(androidImageResource(drawable)), protoLayoutResourceId = "icon_$drawable") },
         modifier = LayoutModifier.contentDescription(label),
-        width = size.dp,
-        height = size.dp,
+        width = dp(size.toFloat()),
+        height = dp(size.toFloat()),
         colors = glassButtonColors(),
     )
 
@@ -288,16 +288,16 @@ private fun MaterialScope.centreButton(
             onClick = onClick,
             iconContent = { icon(imageResource(androidImageResource(glyph)), protoLayoutResourceId = "icon_$glyph") },
             modifier = LayoutModifier.contentDescription(label),
-            width = size.dp,
-            height = size.dp,
+            width = dp(size.toFloat()),
+            height = dp(size.toFloat()),
             colors = filledButtonColors(),
         )
     }
     return box(
         protoLayoutScope.basicImage(
             imageResource(inlineImage = inlineImageResource(cover, coverSizePx, coverSizePx)),
-            width = size.dp,
-            height = size.dp,
+            width = dp(size.toFloat()),
+            height = dp(size.toFloat()),
             protoLayoutResourceId = "cover_${model.coverKey}",
             modifier = LayoutModifier.clip(size * CENTRE_CORNER_FRACTION),
         ),
@@ -307,14 +307,14 @@ private fun MaterialScope.centreButton(
                 protoLayoutResourceId = "icon_$glyph",
                 tintColor = Color.White.toArgb().argb,
             ),
-            width = size.dp,
-            height = size.dp,
+            width = dp(size.toFloat()),
+            height = dp(size.toFloat()),
             modifier = LayoutModifier.background(SCRIM.argb).clip(size * CENTRE_CORNER_FRACTION),
             horizontalAlignment = HORIZONTAL_ALIGN_CENTER,
             verticalAlignment = VERTICAL_ALIGN_CENTER,
         ),
-        width = size.dp,
-        height = size.dp,
+        width = dp(size.toFloat()),
+        height = dp(size.toFloat()),
         modifier = LayoutModifier.clickable(onClick).contentDescription(label),
     )
 }

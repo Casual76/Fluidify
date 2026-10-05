@@ -1,3 +1,5 @@
+@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+
 package dev.pampa.fluidify.wear.standalone
 
 import android.os.Handler

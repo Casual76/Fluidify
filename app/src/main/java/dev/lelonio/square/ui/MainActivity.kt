@@ -109,6 +109,8 @@ class MainActivity : ComponentActivity() {
         if (route != null) shortcut = route to ((shortcut?.second ?: 0) + 1)
     }
 
+    // SquareApp takes Media3's player types, which are still marked unstable.
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         // Transparent bars; SquareTheme sets the icon colour, because it is the

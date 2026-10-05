@@ -1,7 +1,10 @@
 package dev.pampa.fluidify.wear.standalone
 
 import android.bluetooth.BluetoothManager
+import android.Manifest
 import android.content.Context
+import android.content.pm.PackageManager
+import androidx.core.content.ContextCompat
 import android.os.Build
 import android.provider.Settings
 
@@ -19,9 +22,12 @@ object WatchName {
         val candidates = sequence {
             yield(runCatching { Settings.Global.getString(context.contentResolver, Settings.Global.DEVICE_NAME) }.getOrNull())
             yield(
-                runCatching {
-                    context.getSystemService(BluetoothManager::class.java)?.adapter?.name
-                }.getOrNull(),
+                // The adapter's name needs BLUETOOTH_CONNECT; without it the next candidate answers.
+                if (ContextCompat.checkSelfPermission(context, Manifest.permission.BLUETOOTH_CONNECT) == PackageManager.PERMISSION_GRANTED) {
+                    runCatching { context.getSystemService(BluetoothManager::class.java)?.adapter?.name }.getOrNull()
+                } else {
+                    null
+                },
             )
             yield(Build.MODEL)
         }

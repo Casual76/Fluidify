@@ -77,6 +77,9 @@ class OngoingPlayback(private val context: Context) {
             .build()
             .apply(context)
 
+        // Without the notification permission there is no ongoing icon to show: the system would
+        // drop it anyway, and nothing is remembered as shown.
+        if (ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) return
         runCatching { manager.notify(NOTIFICATION_ID, builder.build()) }
             .onSuccess { shown = signature; expiresAtMs = nowMs + timeout }
     }

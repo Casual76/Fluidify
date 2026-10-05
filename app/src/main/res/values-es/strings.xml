@@ -85,18 +85,22 @@
     <plurals name="playlist_count">
         <item quantity="one">%1$d playlist</item>
         <item quantity="other">%1$d playlists</item>
+        <item quantity="many">%1$d playlists</item>
     </plurals>
     <plurals name="item_count">
         <item quantity="one">%1$d elemento</item>
         <item quantity="other">%1$d elementos</item>
+        <item quantity="many">%1$d elementos</item>
     </plurals>
     <plurals name="artist_count">
         <item quantity="one">%1$d artista</item>
         <item quantity="other">%1$d artistas</item>
+        <item quantity="many">%1$d artistas</item>
     </plurals>
     <plurals name="album_count">
         <item quantity="one">%1$d álbum</item>
         <item quantity="other">%1$d álbumes</item>
+        <item quantity="many">%1$d álbumes</item>
     </plurals>
 
     <string name="playlist_order">Orden de la playlist</string>
@@ -109,6 +113,7 @@
     <plurals name="track_count_and_length">
         <item quantity="one">" · %1$d canción · %2$s"</item>
         <item quantity="other">" · %1$d canciones · %2$s"</item>
+        <item quantity="many">" · %1$d canciones · %2$s"</item>
     </plurals>
     <string name="hours_minutes">%1$d h %2$d min</string>
     <string name="minutes_only">%1$d min</string>
@@ -266,6 +271,7 @@
     <plurals name="crossfade_seconds">
         <item quantity="one">%1$d segundo</item>
         <item quantity="other">%1$d segundos</item>
+        <item quantity="many">%1$d segundos</item>
     </plurals>
     <string name="crossfade_note">Una canción se funde con la siguiente. Solo cuando termina sola, no al saltarla.</string>
     <string name="page_playback">Reproducción</string>
@@ -346,6 +352,7 @@
     <plurals name="download_count">
         <item quantity="one">%1$d descargado</item>
         <item quantity="other">%1$d descargados</item>
+        <item quantity="many">%1$d descargados</item>
     </plurals>
     <string name="download_progress_count">%1$d de %2$d</string>
     <string name="download_waiting_wifi">Esperando al Wi‑Fi</string>
@@ -364,10 +371,12 @@
     <plurals name="download_artist_confirm">
         <item quantity="one">¿Descargar %1$d canción de %2$s? Son unos %3$s.</item>
         <item quantity="other">¿Descargar %1$d canciones de %2$s? Son unos %3$s.</item>
+        <item quantity="many">¿Descargar %1$d canciones de %2$s? Son unos %3$s.</item>
     </plurals>
     <plurals name="download_failed_count">
         <item quantity="one">%1$d no se pudo descargar</item>
         <item quantity="other">%1$d no se pudieron descargar</item>
+        <item quantity="many">%1$d no se pudieron descargar</item>
     </plurals>
     <string name="download_retry_failed">Reintentar</string>
     <string name="downloaded_tracks">Canciones descargadas</string>
@@ -436,6 +445,7 @@
     <plurals name="watch_downloads_summary">
         <item quantity="one">%1$d de %2$d canción · %3$s usados, %4$s libres</item>
         <item quantity="other">%1$d de %2$d canciones · %3$s usados, %4$s libres</item>
+        <item quantity="many">%1$d de %2$d canciones · %3$s usados, %4$s libres</item>
     </plurals>
     <string name="watch_downloads_paused">En pausa</string>
     <string name="watch_downloads_paused_storage">El reloj está casi lleno</string>
@@ -490,10 +500,13 @@
     <plurals name="watch_downloads_waiting">
         <item quantity="one">%1$d cambio espera al reloj y se enviará en cuanto vuelva a estar al alcance</item>
         <item quantity="other">%1$d cambios esperan al reloj y se enviarán en cuanto vuelva a estar al alcance</item>
+        <item quantity="many">%1$d cambios esperan al reloj y se enviarán en cuanto vuelva a estar al alcance</item>
     </plurals>
     <string name="audio_light_title">Luz que reacciona a la música</string>
     <string name="audio_light_note">La luz del reproductor y minirreproductor sigue la música.</string>
     <string name="audio_light_section">Luz del reproductor</string>
     <string name="unknown">Desconocido</string>
     <string name="kbps_value">%1$d kbps</string>
+    <string name="widget_open_app">Abrir Fluidify</string>
+    <string name="widget_settings">Ajustes del widget</string>
 </resources>

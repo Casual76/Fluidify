@@ -212,7 +212,7 @@
         android:layout_width="42dp"
         android:layout_height="42dp"
         android:background="@drawable/bg_media_control"
-        android:contentDescription="Traccia precedente"
+        android:contentDescription="@string/previous"
         android:padding="10dp"
         android:src="@drawable/ic_widget_previous" />
 
@@ -228,7 +228,7 @@
           android:layout_width="match_parent"
           android:layout_height="match_parent"
           android:background="@drawable/bg_media_control_primary"
-          android:contentDescription="Play pausa"
+          android:contentDescription="@string/play"
           android:padding="0dp"
           android:src="@null" />
 
@@ -278,7 +278,7 @@
         android:layout_width="42dp"
         android:layout_height="42dp"
         android:background="@drawable/bg_media_control"
-        android:contentDescription="Traccia successiva"
+        android:contentDescription="@string/next"
         android:padding="10dp"
         android:src="@drawable/ic_widget_next" />
     </LinearLayout>
@@ -298,7 +298,7 @@
         android:layout_width="42dp"
         android:layout_height="42dp"
         android:background="@drawable/bg_media_control"
-        android:contentDescription="Aggiorna widget"
+        android:contentDescription="@string/refresh"
         android:padding="10dp"
         android:src="@drawable/ic_widget_refresh" />
 
@@ -309,7 +309,7 @@
         android:layout_marginStart="14dp"
         android:layout_marginEnd="14dp"
         android:background="@drawable/bg_media_control"
-        android:contentDescription="Apri app musicale"
+        android:contentDescription="@string/widget_open_app"
         android:padding="10dp"
         android:src="@drawable/ic_widget_open_app" />
 
@@ -318,7 +318,7 @@
         android:layout_width="42dp"
         android:layout_height="42dp"
         android:background="@drawable/bg_media_control"
-        android:contentDescription="Apri Pampa"
+        android:contentDescription="@string/widget_settings"
         android:padding="10dp"
         android:src="@drawable/ic_widget_settings" />
     </LinearLayout>

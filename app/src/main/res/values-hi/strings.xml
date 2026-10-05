@@ -511,4 +511,6 @@
     <string name="audio_light_section">प्लेयर की रोशनी</string>
     <string name="unknown">अज्ञात</string>
     <string name="kbps_value">%1$d kbps</string>
+    <string name="widget_open_app">Fluidify खोलें</string>
+    <string name="widget_settings">विजेट सेटिंग</string>
 </resources>

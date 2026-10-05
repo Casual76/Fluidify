@@ -496,4 +496,6 @@
     <string name="audio_light_section">Licht im Player</string>
     <string name="unknown">Unbekannt</string>
     <string name="kbps_value">%1$d kbps</string>
+    <string name="widget_open_app">Fluidify öffnen</string>
+    <string name="widget_settings">Widget-Einstellungen</string>
 </resources>

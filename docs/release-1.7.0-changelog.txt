@@ -1,0 +1,9 @@
+Una revisione di tutta l'app, telefono e orologio, dopo l'arrivo di Wear OS.
+
+Orologio: i tasti della tile funzionano a ogni pressione (prima rispondevano una volta sola), il passaggio "Continua sull'orologio" aspetta che Spotify conosca davvero l'orologio, la musica non resta muta dopo un cambio di cuffie, il Wi-Fi resta acceso mentre serve allo streaming. Schermate con caricamento, "non aggiornato" e Riprova; l'ambient non fa piu' perdere la posizione nelle liste; meno lavoro in background e meno batteria.
+
+Telefono: la luce musicale costa molto meno (niente ridisegni inutili, si spegne davvero quando non si vede) e passa dall'aura all'alone in dissolvenza. Plurali veri, accenti corretti nelle traduzioni, interruttori e scelte leggibili da TalkBack, pagina Orologio con stati di ricerca ed errore, installazione dell'orologio con avanzamento. Il widget non accetta piu' comandi da altre app.
+
+Motore: niente chiusure improvvise allo spegnimento, la sessione salvata non si perde per una rete assente, skip e aggiunte in coda non vengono mai ripetuti due volte, coda inviata a Spotify in misura giusta, ascolti offline conservati finche' non c'e' rete, trasferimenti verso l'orologio piu' robusti.
+
+Verificati test automatici, render e build release minificate. Passaggio all'orologio, trasferimenti, luce musicale e tile restano da provare sui dispositivi.

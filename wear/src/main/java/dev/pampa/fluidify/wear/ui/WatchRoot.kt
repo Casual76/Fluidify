@@ -140,8 +140,10 @@ fun WatchRoot(
             }
         }
     }
+    // The resources the composition answers to, so a language change is followed.
+    val resources = androidx.compose.ui.platform.LocalResources.current
     LaunchedEffect(app) {
-        app.controls.errors.collect { code -> showNotice.show(context.getString(ErrorMessages.textFor(code)), failure = true) }
+        app.controls.errors.collect { code -> showNotice.show(resources.getString(ErrorMessages.textFor(code)), failure = true) }
     }
     val noHeadphonePicker = stringResource(R.string.headphone_picker_unavailable)
 
