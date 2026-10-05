@@ -9,22 +9,22 @@
       "repoName": "Fluidify"
     },
     "stable": {
-      "version": "1.6.4",
+      "version": "1.7.2",
       "releaseDate": "2026-10-05",
-      "changelog": "L'alone musicale sopra Canvas e video usa ora un viola/fucsia stabile, invece di ricavare un colore alternativo dalla copertina che poteva diventare verde. Conservate altezza, intensità e transizione del colore.\n\nLa luce attorno alla copertina e il mini player mantengono i colori della copertina. Nessun cambiamento visivo dell'orologio: questo APK accompagna la stessa versione del telefono.\n\nVerificati render e build minificate firmate; resa animata e consumi reali restano da verificare sui dispositivi fisici.\n",
-      "releaseTag": "stable-fluidify-v1.6.4",
-      "apkAsset": "fluidify-wear-1.6.4.apk",
-      "sizeBytes": 23869892,
-      "sha256": "02d9187301b0301185b2e1adbf4e2a41e3e36db0838e67c5040587a2e2f00800"
+      "changelog": "Display sempre acceso che e' il lettore attenuato; controlli che si nascondono trascinando in giu' sul lettore; tasti della tile che rispondono sempre; aggiornamenti con il Wi-Fi dell'orologio, mai durante la musica, con le novita' dopo l'installazione; canale Stabile/Beta come il telefono.",
+      "releaseTag": "stable-fluidify-v1.7.2",
+      "apkAsset": "fluidify-wear-1.7.2.apk",
+      "sizeBytes": 24001775,
+      "sha256": "8de1930cdd99cc4d84eeca3ca6e01ba434bacf62fa48316119d74a4bfd079043"
     },
     "beta": {
-      "version": "1.7.1",
+      "version": "1.7.2",
       "releaseDate": "2026-10-05",
-      "changelog": "Il display sempre acceso e' il lettore con le luci abbassate: copertina scurita, orologio e titolo al loro posto, niente controlli, in dissolvenza. Trascinando in giu' sul lettore i controlli spariscono (la copertina diventa il comando), trascinando in su tornano. Aggiornamenti: canale Stabile/Beta come il telefono, novita' dopo ogni aggiornamento, niente installazioni mentre suona, controllo manuale da Altro, e dalla prossima versione download con il Wi-Fi dell'orologio invece del Bluetooth.",
-      "releaseTag": "beta-fluidify-v1.7.1",
-      "apkAsset": "fluidify-wear-1.7.1.apk",
-      "sizeBytes": 24001786,
-      "sha256": "9ea9238d855a8e891ca4b11742769fb810b30037dd059067c23d706a34b15eb9"
+      "changelog": "Display sempre acceso che e' il lettore attenuato; controlli che si nascondono trascinando in giu' sul lettore; tasti della tile che rispondono sempre; aggiornamenti con il Wi-Fi dell'orologio, mai durante la musica, con le novita' dopo l'installazione; canale Stabile/Beta come il telefono.",
+      "releaseTag": "stable-fluidify-v1.7.2",
+      "apkAsset": "fluidify-wear-1.7.2.apk",
+      "sizeBytes": 24001775,
+      "sha256": "8de1930cdd99cc4d84eeca3ca6e01ba434bacf62fa48316119d74a4bfd079043"
     }
   }
 }
