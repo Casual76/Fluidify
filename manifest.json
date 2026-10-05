@@ -15,22 +15,30 @@
       "ref": "master"
     },
     "stable": {
-      "version": "1.6.0",
-      "releaseDate": "2026-10-04",
-      "changelog": "Aloni di luce che reagiscono all'audio realmente riprodotto: bordi della copertina, luce inferiore con Canvas e video, otto bande soffuse nel mini player e avanzamento luminoso sul Watch.\n\nDue preferenze indipendenti, attive inizialmente e tradotte nelle otto lingue: telefono/tablet (anche mini player) e orologio. Analisi PCM senza nuovi permessi; modalità leggera sul Watch e soli aggregati via Bluetooth quando controlla il telefono. Gli effetti si fermano in background, AOD, risparmio energetico e movimento ridotto. Nessuna pulsazione simulata per altri dispositivi Connect.\n\nAggiunto anche l'ingresso media pubblico più recente di Wear OS per aprire Fluidify dai controlli remoti di sistema. Il problema della Now bar Samsung segnalato con la 1.5.3 su entrambi i dispositivi richiede ancora la verifica del tocco sul Galaxy Watch: la risoluzione degli intent da sola non dimostra che il sistema Samsung scelga Fluidify.\n\nTest automatici, render, misure CPU sul PC e build minificate firmate per entrambi i dispositivi. Le prove fisiche di sincronizzazione audio, prestazioni, consumo e traffico Bluetooth restano da completare.",
-      "releaseTag": "stable-fluidify-v1.6.0",
-      "apkAsset": "fluidify-1.6.0.apk",
-      "sizeBytes": 19647025
+      "version": "1.6.1",
+      "releaseDate": "2026-10-05",
+      "changelog": "Aloni musicali più visibili sul telefono, sia nel lettore completo sia nel mini player: colori luminosi ricavati dalla copertina, maggiore espansione e luce più presente dietro il vetro. La variante compatta mantiene un'intensità ridotta.\n\nSul Watch l'avanzamento reattivo diventa un alone diffuso, con dissolvenza verso l'interno e alle estremità, senza il bordo netto dell'arco precedente. Conservati il varco dell'ora e il significato dell'avanzamento.\n\nNessuna modifica all'analisi audio, alle sottoscrizioni o alla gestione delle radio. Render aggiornati e build minificate firmate per telefono e Watch. La resa in movimento e i consumi sui dispositivi fisici restano da verificare.",
+      "releaseTag": "stable-fluidify-v1.6.1",
+      "apkAsset": "fluidify-1.6.1.apk",
+      "sizeBytes": 19647022
     },
     "beta": {
-      "version": "1.6.0",
-      "releaseDate": "2026-10-04",
-      "changelog": "Aloni di luce che reagiscono all'audio realmente riprodotto: bordi della copertina, luce inferiore con Canvas e video, otto bande soffuse nel mini player e avanzamento luminoso sul Watch.\n\nDue preferenze indipendenti, attive inizialmente e tradotte nelle otto lingue: telefono/tablet (anche mini player) e orologio. Analisi PCM senza nuovi permessi; modalità leggera sul Watch e soli aggregati via Bluetooth quando controlla il telefono. Gli effetti si fermano in background, AOD, risparmio energetico e movimento ridotto. Nessuna pulsazione simulata per altri dispositivi Connect.\n\nAggiunto anche l'ingresso media pubblico più recente di Wear OS per aprire Fluidify dai controlli remoti di sistema. Il problema della Now bar Samsung segnalato con la 1.5.3 su entrambi i dispositivi richiede ancora la verifica del tocco sul Galaxy Watch: la risoluzione degli intent da sola non dimostra che il sistema Samsung scelga Fluidify.\n\nTest automatici, render, misure CPU sul PC e build minificate firmate per entrambi i dispositivi. Le prove fisiche di sincronizzazione audio, prestazioni, consumo e traffico Bluetooth restano da completare.",
-      "releaseTag": "stable-fluidify-v1.6.0",
-      "apkAsset": "fluidify-1.6.0.apk",
-      "sizeBytes": 19647025
+      "version": "1.6.1",
+      "releaseDate": "2026-10-05",
+      "changelog": "Aloni musicali più visibili sul telefono, sia nel lettore completo sia nel mini player: colori luminosi ricavati dalla copertina, maggiore espansione e luce più presente dietro il vetro. La variante compatta mantiene un'intensità ridotta.\n\nSul Watch l'avanzamento reattivo diventa un alone diffuso, con dissolvenza verso l'interno e alle estremità, senza il bordo netto dell'arco precedente. Conservati il varco dell'ora e il significato dell'avanzamento.\n\nNessuna modifica all'analisi audio, alle sottoscrizioni o alla gestione delle radio. Render aggiornati e build minificate firmate per telefono e Watch. La resa in movimento e i consumi sui dispositivi fisici restano da verificare.",
+      "releaseTag": "stable-fluidify-v1.6.1",
+      "apkAsset": "fluidify-1.6.1.apk",
+      "sizeBytes": 19647022
     },
     "history": [
+      {
+        "version": "1.6.0",
+        "releaseDate": "2026-10-04",
+        "changelog": "Aloni di luce che reagiscono all'audio realmente riprodotto: bordi della copertina, luce inferiore con Canvas e video, otto bande soffuse nel mini player e avanzamento luminoso sul Watch.\n\nDue preferenze indipendenti, attive inizialmente e tradotte nelle otto lingue: telefono/tablet (anche mini player) e orologio. Analisi PCM senza nuovi permessi; modalità leggera sul Watch e soli aggregati via Bluetooth quando controlla il telefono. Gli effetti si fermano in background, AOD, risparmio energetico e movimento ridotto. Nessuna pulsazione simulata per altri dispositivi Connect.\n\nAggiunto anche l'ingresso media pubblico più recente di Wear OS per aprire Fluidify dai controlli remoti di sistema. Il problema della Now bar Samsung segnalato con la 1.5.3 su entrambi i dispositivi richiede ancora la verifica del tocco sul Galaxy Watch: la risoluzione degli intent da sola non dimostra che il sistema Samsung scelga Fluidify.\n\nTest automatici, render, misure CPU sul PC e build minificate firmate per entrambi i dispositivi. Le prove fisiche di sincronizzazione audio, prestazioni, consumo e traffico Bluetooth restano da completare.",
+        "releaseTag": "stable-fluidify-v1.6.0",
+        "apkAsset": "fluidify-1.6.0.apk",
+        "sizeBytes": 19647025
+      },
       {
         "version": "1.5.3",
         "releaseDate": "2026-10-04",
