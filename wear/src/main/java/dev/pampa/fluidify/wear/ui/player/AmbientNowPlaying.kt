@@ -2,12 +2,19 @@ package dev.pampa.fluidify.wear.ui.player
 
 import android.text.format.DateFormat
 import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.*
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import coil.compose.AsyncImage
+import coil.request.ImageRequest
+import dev.pampa.fluidify.wear.link.ArtStore
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
@@ -19,10 +26,11 @@ import dev.antigravity.fluidengine.wear.ambient.LocalFluidWearAmbient
 import dev.antigravity.fluidengine.wear.ambient.fluidBurnInShift
 import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.playback.NowPlaying
+import dev.pampa.fluidify.wear.WearApp
 import java.util.Date
 
 /** One sparse, opaque ambient surface for every route, including low-bit displays. */
-@Composable fun AmbientNowPlaying(now: NowPlaying, modifier: Modifier = Modifier) {
+@Composable fun AmbientNowPlaying(now: NowPlaying, modifier: Modifier = Modifier, art: ArtStore? = null) {
     val ambient = LocalFluidWearAmbient.current
     val tick = ambient.updateTick
     val context = LocalContext.current
@@ -51,6 +59,19 @@ import java.util.Date
                     Text(it, style = MaterialTheme.typography.bodyExtraSmall, color = textColor,
                         maxLines = 1, overflow = TextOverflow.Ellipsis, textAlign = TextAlign.Center)
                 }
+            }
+        }
+        // Static, small and dim: the cover remains recognisable without lighting the whole panel.
+        // No image on a low-bit panel; the title and time remain sufficient in that mode.
+        if (!ambient.lowBitAmbient) {
+            val store = art ?: (context.applicationContext as? WearApp)?.art
+            val artKey = now.snapshot?.track?.artKey
+            val cover = remember(artKey, store, tick) { store?.fileFor(artKey) }
+            cover?.let {
+                AsyncImage(ImageRequest.Builder(context).data(it).crossfade(false).build(),
+                    contentDescription = null, contentScale = ContentScale.Crop,
+                    modifier = Modifier.align(Alignment.Center).size(if (compact) 52.dp else 64.dp)
+                        .fluidBurnInShift(ambient).clip(RoundedCornerShape(8.dp)).alpha(.22f))
             }
         }
     }

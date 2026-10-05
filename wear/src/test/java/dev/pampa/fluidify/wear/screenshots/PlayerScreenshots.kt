@@ -93,17 +93,36 @@ class PlayerScreenshots {
     @Test
     fun ambient() = capture("player_ambient", ambient = true, content = player(sampleSnapshot()))
 
+    @Test @Config(qualifiers = WatchSmall)
+    fun ambientSmallestWatch() = capture("player_ambient_192dp", ambient = true, content = player(sampleSnapshot()))
+
+    @Test @Config(qualifiers = Watch40)
+    fun ambientMediumWatch() = capture("player_ambient_216dp", ambient = true, content = player(sampleSnapshot()))
+
+    @Test fun ambientLowBitHasNoImage() {
+        capture("player_ambient_low_bit") {
+            CompositionLocalProvider(dev.antigravity.fluidengine.wear.ambient.LocalFluidWearAmbient provides
+                dev.antigravity.fluidengine.wear.ambient.FluidAmbientState.preview(true, lowBitAmbient = true)) {
+                PlayerScreen(FakeControls(sampleSnapshot()), art, onQueue = {}, onOutput = {}, onEssentials = {})
+            }
+        }
+        val bitmap = android.graphics.BitmapFactory.decodeFile("screenshots/player_ambient_low_bit.png")
+        org.junit.Assert.assertEquals(android.graphics.Color.BLACK, bitmap.getPixel(bitmap.width / 2, bitmap.height / 2))
+    }
+
     @Test fun enteringAmbientKeepsTheTitleAnchorAndDisposesTheInteractivePlayer() {
         val snapshot = sampleSnapshot()
         val controls = FakeControls(snapshot)
         val now = controls.nowPlaying.value
-        val ambient = androidx.compose.runtime.mutableStateOf(dev.antigravity.fluidengine.wear.ambient.FluidAmbientState.preview(false))
+        val ambient = dev.antigravity.fluidengine.wear.ambient.FluidAmbientState.preview(false)
+        // Mutate the same observed state, as AmbientLifecycleObserver does on the device.
+        val setAmbient = ambient.javaClass.methods.single { it.name.startsWith("setAmbient") }
         var disposed = 0
         compose.mainClock.autoAdvance = false
         compose.setContent {
             WatchFrame {
-                CompositionLocalProvider(dev.antigravity.fluidengine.wear.ambient.LocalFluidWearAmbient provides ambient.value) {
-                    dev.pampa.fluidify.wear.ui.player.WatchAmbientSurface(now) {
+                CompositionLocalProvider(dev.antigravity.fluidengine.wear.ambient.LocalFluidWearAmbient provides ambient) {
+                    dev.pampa.fluidify.wear.ui.player.WatchAmbientSurface(now, art = art) {
                         androidx.compose.runtime.DisposableEffect(Unit) { onDispose { disposed++ } }
                         PlayerScreen(controls, art, onQueue = {}, onOutput = {}, onEssentials = {})
                     }
@@ -113,13 +132,32 @@ class PlayerScreenshots {
         compose.mainClock.advanceTimeBy(1_200)
         val title = snapshot.track!!.title
         val before = compose.onNodeWithText(title, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        compose.runOnIdle { ambient.value = dev.antigravity.fluidengine.wear.ambient.FluidAmbientState.preview(true) }
+        compose.runOnIdle { setAmbient.invoke(ambient, true) }
+        // Wear can suspend animation frames as soon as it enters ambient. No transition may
+        // keep the interactive player (and its polling jobs) alive waiting for later frames.
+        compose.mainClock.advanceTimeByFrame()
+        compose.mainClock.advanceTimeByFrame() // Commit the snapshot and then its recomposition.
+        compose.waitForIdle()
+        org.junit.Assert.assertEquals("Dispose without waiting for animation frames", 1, disposed)
         compose.mainClock.advanceTimeBy(300)
         compose.waitForIdle()
         val after = compose.onNodeWithText(title, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         org.junit.Assert.assertEquals(before.top, after.top, 2f)
         org.junit.Assert.assertEquals(1, disposed)
         compose.onRoot().captureRoboImage("screenshots/player_aod_same_anchor.png")
+        val bitmap = android.graphics.BitmapFactory.decodeFile("screenshots/player_aod_same_anchor.png")
+        val center = bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)
+        val brightness = maxOf(android.graphics.Color.red(center), android.graphics.Color.green(center), android.graphics.Color.blue(center))
+        org.junit.Assert.assertTrue("Cached cover remains visible and dim in AOD", brightness in 1..80)
+        compose.runOnIdle { setAmbient.invoke(ambient, false) }
+        compose.mainClock.advanceTimeByFrame()
+        compose.mainClock.advanceTimeByFrame()
+        compose.waitForIdle()
+        compose.mainClock.advanceTimeBy(300)
+        compose.waitForIdle()
+        compose.onRoot().captureRoboImage("screenshots/player_aod_return.png")
+        val context = ApplicationProvider.getApplicationContext<android.content.Context>()
+        compose.onNodeWithContentDescription(context.getString(dev.pampa.fluidify.wear.R.string.next), useUnmergedTree = true).assertExists()
     }
 
     @Test

@@ -75,7 +75,7 @@ fun ImmersiveScreen(
 ) {
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
     val ambient = LocalFluidWearAmbient.current
-    if (ambient.isAmbient) { AmbientNowPlaying(now, modifier); return }
+    if (ambient.isAmbient) { AmbientNowPlaying(now, modifier, art); return }
     val started = dev.pampa.fluidify.wear.ui.common.screenStarted()
     val playLabel = stringResource(if (now.snapshot?.isPlaying == true) R.string.pause else R.string.play)
     val nextLabel = stringResource(R.string.next)

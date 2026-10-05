@@ -190,3 +190,10 @@ nessuna di queste prove viene dichiarata superata soltanto perché compila.
 - [ ] Watch lettore e copertina immersiva: alone soffuso senza fascia netta o estremità tagliate, anche con bassi forti; ora e controlli sempre leggibili.
 - [ ] Telefono lettore e mini player: luce chiaramente percepibile mentre cambia con la musica, con copertine scure/chiare, Canvas e diverse preferenze del vetro; nessuna pulsazione durante il silenzio.
 - [ ] Confrontare frame time e consumi con 1.6.0 ed effetti disattivati: i benchmark sul PC non sostituiscono queste misure.
+
+### Correzioni 1.6.3 — prove fisiche da completare
+
+- [ ] Galaxy Watch: ingresso AOD dal lettore e dalla copertina immersiva; piccola copertina attenuata presente, titolo fermo, luce musicale spenta. Risveglio: ritorno dei controlli e nessuna schermata ambient bloccata.
+- [ ] Ripetere ingresso/uscita AOD e background con riproduzione dal telefono e autonoma; verificare interruzione delle sottoscrizioni e del polling, poi ripresa soltanto con lettore visibile.
+- [ ] Telefono/tablet: Canvas con colori simili alla copertina, copertina monocromatica e chiara/scura; luce distinguibile, contenuta in basso, transizione senza salto di colore. Canvas in caricamento conserva la luce della copertina.
+- [ ] Controllare resa animata e consumi sul Galaxy Watch: i render JVM e i test lifecycle non dimostrano questi risultati.

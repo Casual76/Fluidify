@@ -139,7 +139,7 @@ fun WatchRoot(
         visible = (playerActive || immersiveActive) && (backStack?.destination?.route == null || backStack?.destination?.route == HOME),
         playing = shown.snapshot?.isPlaying == true && shown.snapshot?.buffering != true,
         track = shown.snapshot?.track?.uri.orEmpty())
-    dev.pampa.fluidify.wear.ui.player.WatchAmbientSurface(shown, modifier) {
+    dev.pampa.fluidify.wear.ui.player.WatchAmbientSurface(shown, modifier, app.art) {
     AppScaffold {
         Box(Modifier.fillMaxSize()) {
         SwipeDismissableNavHost(navController = nav, startDestination = HOME) {

@@ -31,7 +31,7 @@ internal val LocalWatchAudioLightPreview = staticCompositionLocalOf<AudioLightFr
 @Composable
 fun WatchLightActivity(app: WearApp, visible: Boolean, playing: Boolean, track: String) {
     val preference by app.audioLightPreferences.enabled.collectAsStateWithLifecycle()
-    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsStateWithLifecycle()
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val mode by app.playback.mode.collectAsStateWithLifecycle()
     val seek by app.playback.visualSeek.collectAsStateWithLifecycle()
     val phone by app.link.phone.collectAsStateWithLifecycle()
@@ -50,6 +50,7 @@ fun WatchLightActivity(app: WearApp, visible: Boolean, playing: Boolean, track: 
 @Composable
 fun AudioReactiveRing(positionMs: () -> Long, durationMs: Long, running: Boolean,
     modifier: Modifier = Modifier, clearTop: Dp = 0.dp, color: Color = MaterialTheme.colorScheme.primary) {
+    if (LocalFluidWearAmbient.current.isAmbient) return
     LocalWatchAudioLightPreview.current?.let { frame ->
         val painter = remember { AudioHaloPainter() }
         Canvas(modifier.fillMaxSize()) {
@@ -67,8 +68,9 @@ fun AudioReactiveRing(positionMs: () -> Long, durationMs: Long, running: Boolean
     DisposableEffect(policy) { onDispose { policy?.close() } }
     val allowed = policy?.allowed?.collectAsStateWithLifecycle()
     val mode = app?.playback?.mode?.collectAsStateWithLifecycle()
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val reduced = LocalFluidMotionPolicy.current.reducedMotion
-    val enabled = preference?.value == true && allowed?.value == true && !reduced
+    val enabled = preference?.value == true && allowed?.value == true && !reduced && lifecycle.isAtLeast(Lifecycle.State.STARTED)
     // This state is read only by drawing and graphicsLayer, never the player composition.
     val tick = remember { mutableLongStateOf(0) }
     val painter = remember { AudioHaloPainter() }
@@ -88,7 +90,7 @@ fun AudioReactiveRing(positionMs: () -> Long, durationMs: Long, running: Boolean
         } while (running || blend > 0f)
     }
     val reacting by remember { derivedStateOf { blend > .02f } }
-    FluidEdgeGlowRing(positionMs, durationMs, running && !reacting, modifier = modifier.graphicsLayer { alpha = 1 - blend }, clearTop = clearTop, color = color)
+    FluidEdgeGlowRing(positionMs, durationMs, running && !reacting && lifecycle.isAtLeast(Lifecycle.State.STARTED), modifier = modifier.graphicsLayer { alpha = 1 - blend }, clearTop = clearTop, color = color)
     Canvas(modifier.fillMaxSize().graphicsLayer { alpha = blend }) {
         if (blend == 0f) return@Canvas
         tick.longValue

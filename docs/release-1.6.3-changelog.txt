@@ -1,0 +1,5 @@
+La copertina resta visibile nell'AOD dell'orologio, piccola e attenuata su fondo nero. Titolo e ora mantengono la posizione; gli effetti musicali si fermano in AOD e in background. Il ritorno ai controlli usa una breve dissolvenza. Sui pannelli low-bit restano soltanto i testi.
+
+Con Canvas o video musicale, la luce del telefono usa una tonalità distinta della copertina, oppure un accento alternativo se la palette contiene colori troppo simili. Il colore segue la transizione del Canvas effettivamente pronto. Conservate l'altezza ridotta degli aloni e la resa interattiva del Watch.
+
+Test automatici, render e build minificate firmate verificati. Resa in movimento, comportamento AOD del Galaxy Watch e consumi reali restano da verificare sui dispositivi fisici.

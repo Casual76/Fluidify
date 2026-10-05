@@ -6,6 +6,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.graphics.drawscope.drawIntoCanvas
 import androidx.compose.ui.graphics.nativeCanvas
 import androidx.compose.ui.graphics.toArgb
@@ -26,7 +27,7 @@ internal fun rememberAudioLight(playing: Boolean, visible: Boolean = true, mini:
     val context = LocalContext.current
     val app = context.applicationContext as? SquareApplication
     val preference = app?.audioLightPreferences?.enabled?.collectAsStateWithLifecycle()
-    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsStateWithLifecycle()
+    val lifecycle by LocalLifecycleOwner.current.lifecycle.currentStateFlow.collectAsState()
     val policy = remember(context) { AudioLightPolicy(context) }
     DisposableEffect(policy) { onDispose { policy.close() } }
     val allowed by policy.allowed.collectAsStateWithLifecycle()
@@ -56,7 +57,8 @@ internal fun rememberAudioLight(playing: Boolean, visible: Boolean = true, mini:
 
 @Composable
 internal fun AudioLightHalo(frame: State<AudioLightFrame?>, color: Color, cover: () -> Rect? = { null },
-    modifier: Modifier = Modifier, mini: Boolean = false, compact: Boolean = false, bottomMix: () -> Float = { 0f }) {
+    modifier: Modifier = Modifier, mini: Boolean = false, compact: Boolean = false, bottomMix: () -> Float = { 0f },
+    contrastColor: Color = color, contrastMix: () -> Float = { 0f }) {
     val painter = remember { AudioHaloPainter() }
     val bounds = remember { android.graphics.RectF() }
     val clip = remember { android.graphics.Path() }
@@ -72,9 +74,25 @@ internal fun AudioLightHalo(frame: State<AudioLightFrame?>, color: Color, cover:
                     clip.reset(); clip.addRoundRect(0f,0f,size.width,size.height,size.height/2,size.height/2,android.graphics.Path.Direction.CW)
                     native.clipPath(clip)
                 }
-                painter.draw(native, size.width, size.height, current, color.toArgb(),
+                painter.draw(native, size.width, size.height, current, lerp(color, contrastColor, contrastMix().coerceIn(0f, 1f)).toArgb(),
                     bounds.takeIf { rect != null }, mini, compact, bottomMix = bottomMix())
                 native.restoreToCount(saved)
         }
     }
+}
+
+/** A different cover swatch for light over Canvas; monochrome palettes get a related accent. */
+internal fun contrastingAudioLightColor(base: Color, palette: List<Color>, fallback: Color): Color {
+    fun hsv(color: Color) = FloatArray(3).also { android.graphics.Color.colorToHSV(color.toArgb(), it) }
+    val primary = hsv(base)
+    fun separation(hue: Float): Float {
+        val distance = kotlin.math.abs(hue - primary[0])
+        return minOf(distance, 360f - distance)
+    }
+    if (primary[1] < .1f) return fallback
+    val candidate = palette.map { it to hsv(it) }.filter { it.second[1] >= .2f }
+        .maxByOrNull { separation(it.second[0]) }
+    if (candidate != null && separation(candidate.second[0]) >= 45f) return candidate.first
+    // No frame readback or colour polling: one stable hue per cover, not a colour chasing the video.
+    return Color(android.graphics.Color.HSVToColor(floatArrayOf((primary[0] + 100f) % 360f, .60f, .95f)))
 }

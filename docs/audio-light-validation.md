@@ -52,3 +52,13 @@ Ridotta la sola estensione verticale della luce telefono: 35% nel lettore comple
 Passati gli 11 render telefono/tablet, Canvas/video e mini player, compreso il controllo di visibilità attraverso il vetro. La resa in movimento e i consumi reali restano da verificare sul dispositivo; le prove automatiche non sostituiscono questa valutazione.
 
 Benchmark host aggiornato: circa 13,20 ms per disegno telefono e 4,31 ms mini player, rispetto a 19,36 / 5,91 ms della 1.6.1; il campo luminoso più basso riduce l'area da disegnare. Restano misure del Canvas software su PC, non prestazioni o batteria Android.
+
+## Copertina AOD e contrasto Canvas 1.6.3
+
+La segnalazione dell'utente riguarda la copertina che scompare in AOD. Ripristinata come immagine locale statica da 52/64 dp, al 22% di opacità su nero; nessun caricamento di rete, luce reattiva o animazione in ambient. Sui pannelli low-bit resta esclusa. Il titolo mantiene la stessa ancora verticale. L'ingresso ambient elimina immediatamente l'albero interattivo, senza aspettare i frame di una Crossfade; soltanto il ritorno interattivo sfuma per 220 ms. Il lifecycle viene osservato anche quando scende sotto STARTED, per fermare analisi e polling.
+
+Sul telefono, Canvas pronto e video usano il colore della palette più distante dal principale; se nessuno differisce almeno di 45 gradi, si ricava un accento stabile a 100 gradi dalla tonalità dominante. Per copertine acromatiche si usa l'accento del tema. Nessuna lettura dei frame video o analisi aggiuntiva. La transizione del colore dura 420 ms, nel disegno dello stesso alone. La luce attorno alla copertina e il mini player conservano i colori precedenti; altezza e intensità restano quelle della 1.6.2.
+
+Test nuovi: tre casi di palette; ingresso AOD con rilascio dell'albero interattivo nei primi frame, posizione del titolo invariata, pixel della copertina presenti e attenuati, ritorno ai controlli, assenza di immagine low-bit. Render AOD a 192/216/240 dp e low-bit, ingresso/ritorno, oltre agli 11 render telefono/tablet e mini player. Le prove automatiche non verificano il comportamento del firmware Samsung o i consumi fisici; questi controlli restano nella checklist.
+
+Cinque suite: 187 test senza errori (7 core, 61 protocollo, 72 Wear, 21 app, 26 engine-wear). Cinque test AOD separati passati nella variante Debug, compresa la transizione di andata/ritorno. Nei render AOD il 11,37% / 11,70% / 14,05% dei pixel interni al disco è diverso dal nero a 240 / 192 / 216 dp; low-bit 2,34%. Sono misure di immagini statiche, non della luminosità del pannello o della batteria.

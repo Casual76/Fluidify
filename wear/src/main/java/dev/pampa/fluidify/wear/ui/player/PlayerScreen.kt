@@ -123,7 +123,7 @@ fun PlayerScreen(
     val volumeVisible by (volume?.visible ?: remember { MutableStateFlow(false) }).collectAsStateWithLifecycle()
     val volumeLevel by (volume?.level ?: remember { MutableStateFlow(0f) }).collectAsStateWithLifecycle()
     val ambient = LocalFluidWearAmbient.current
-    if (ambient.isAmbient) { AmbientNowPlaying(now, modifier); return }
+    if (ambient.isAmbient) { AmbientNowPlaying(now, modifier, art); return }
     val started = dev.pampa.fluidify.wear.ui.common.screenStarted()
     val snapshot = now.snapshot
     val track = snapshot?.track
