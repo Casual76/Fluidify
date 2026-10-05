@@ -426,7 +426,7 @@
     <string name="watch_update">Aggiornamento orologio</string>
     <string name="watch_update_now">Aggiorna l\'orologio</string>
     <string name="watch_auto_update">Aggiorna l\'orologio da solo</string>
-    <string name="watch_auto_update_note">Le nuove versioni passano all\'orologio via Bluetooth quando si collega</string>
+    <string name="watch_auto_update_note">Le nuove versioni si scaricano con il Wi-Fi e passano all\'orologio via Bluetooth quando si collega</string>
     <string name="watch_push_apk">Invia un APK all\'orologio</string>
     <string name="watch_update_idle">Non ancora controllato</string>
     <string name="watch_update_checking">Controllo…</string>
@@ -510,4 +510,16 @@
     <string name="kbps_value">%1$d kbps</string>
     <string name="widget_open_app">Apri Fluidify</string>
     <string name="widget_settings">Impostazioni del widget</string>
+    <string name="update_channel">Canale degli aggiornamenti</string>
+    <string name="update_channel_stable">Stabile</string>
+    <string name="update_channel_beta">Beta</string>
+    <string name="update_channel_note">Beta: le nuove versioni arrivano prima, ma possono essere meno rifinite. L\'orologio segue lo stesso canale. Tornare a Stabile ha effetto dalla prossima versione stabile.</string>
+    <string name="update_whats_new">Novità</string>
+    <string name="watch_whats_new">Novità di %1$s</string>
+    <string name="watch_update_current_checked">Aggiornato (%1$s) · controllato %2$s</string>
+    <string name="watch_update_waiting_playback">Si installerà quando l\'orologio smette di riprodurre</string>
+    <string name="watch_update_auto_off">Gli aggiornamenti automatici sono disattivati sull\'orologio: aggiorna dalla pagina Altro dell\'orologio</string>
+    <string name="watch_update_err_expired">L\'orologio non ha risposto in tempo: riprova</string>
+    <string name="watch_update_err_interrupted">L\'installazione è stata interrotta: riprova</string>
+    <string name="watch_update_installed_notification">Orologio aggiornato a %1$s</string>
 </resources>

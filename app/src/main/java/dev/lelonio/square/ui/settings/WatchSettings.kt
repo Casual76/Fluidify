@@ -1,9 +1,13 @@
 package dev.lelonio.square.ui.settings
 
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
@@ -12,8 +16,14 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.unit.dp
+import com.adamglin.PhosphorIcons
+import com.adamglin.phosphoricons.Regular
+import com.adamglin.phosphoricons.regular.CaretDown
+import com.adamglin.phosphoricons.regular.CaretUp
+import dev.antigravity.fluidengine.foundation.UpdateChannel
 import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import dev.lelonio.square.ui.theme.InkDim
+import dev.lelonio.square.wear.WatchUpdateCoordinator
 import dev.lelonio.square.wear.watchUpdateFailureRes
 import dev.pampa.fluidify.wear.protocol.DownloadRequest
 import dev.pampa.fluidify.wear.protocol.logic.TransferPreference
@@ -92,6 +102,9 @@ internal fun WatchSection() {
     }
     val watch by updates.watch.collectAsStateWithLifecycle()
     val state by updates.state.collectAsStateWithLifecycle()
+    // What the last check or install left behind, from the preferences: the state above is Idle in
+    // every new process, and the page used to say "Not checked yet" about a watch checked an hour ago.
+    val outcome = remember(state) { updates.lastOutcome() }
     var auto by remember { mutableStateOf(updates.autoUpdate) }
     val picker = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
         if (uri != null) updates.pushFile(uri)
@@ -122,12 +135,25 @@ internal fun WatchSection() {
         }
 
         RowDivider()
-        InfoRow(stringResource(R.string.watch_update), describe(state))
-        if (current != null && state !is State.Checking && state !is State.Downloading && state !is State.Sending) {
-            ActionRow(stringResource(R.string.watch_update_now), destructive = false) {
+        InfoRow(stringResource(R.string.watch_update), describe(state, outcome))
+        // What the version being offered, sent or installed brings, when the release says.
+        whatsNew(state, outcome, current?.hello?.versionName)?.let { (version, notes) ->
+            RowDivider()
+            WhatsNewRow(version, notes)
+        }
+        // Not while one is under way: pressed again, it started the same transfer twice. After a
+        // failure it says what it does, which is try again.
+        if (current != null && canStartUpdate(state)) {
+            ActionRow(
+                stringResource(if (state is State.Failed) R.string.retry else R.string.watch_update_now),
+                destructive = false,
+            ) {
                 updates.checkAndPush()
             }
         }
+
+        RowDivider()
+        UpdateChannelRows(showLabel = true)
 
         RowDivider()
         SwitchRow(
@@ -155,21 +181,143 @@ internal fun WatchSection() {
     }
 }
 
+/** Whether pressing "Update the watch" would start something, rather than collide with it. */
+private fun canStartUpdate(state: State): Boolean = when (state) {
+    is State.Checking, is State.Downloading, is State.Offered, is State.Sending,
+    is State.Installing, is State.AwaitingConfirmation, is State.WaitingForPlayback -> false
+    else -> true
+}
+
+/** The version and notes to offer under "What's new", or null when there are none to show. */
+private fun whatsNew(state: State, outcome: WatchUpdateCoordinator.Outcome?, watchVersion: String?): Pair<String, String>? {
+    val found = when (state) {
+        is State.Available -> state.version to state.changelog
+        is State.Offered -> state.version to state.changelog
+        is State.Installed -> state.version to state.changelog
+        // Otherwise the notes of the version the watch runs, if the last install brought them.
+        else -> outcome?.takeIf { it.version == watchVersion }?.let { it.version to it.changelog }
+    }
+    return found?.takeIf { it.second.isNotBlank() }
+}
+
+/** "Up to date (1.7.0)", with when it was last checked once that is more than a minute ago. */
 @Composable
-private fun describe(state: State): String = when (state) {
-    State.Idle -> stringResource(R.string.watch_update_idle)
+private fun upToDate(version: String, atMs: Long): String {
+    val now = System.currentTimeMillis()
+    if (atMs <= 0 || now - atMs < 60_000) return stringResource(R.string.watch_update_current, version)
+    val ago = android.text.format.DateUtils
+        .getRelativeTimeSpanString(minOf(atMs, now), now, android.text.format.DateUtils.MINUTE_IN_MILLIS).toString()
+    return stringResource(R.string.watch_update_current_checked, version, ago)
+}
+
+@Composable
+private fun describe(state: State, outcome: WatchUpdateCoordinator.Outcome?): String = when (state) {
+    State.Idle -> outcome?.let { upToDate(it.version, it.atMs) } ?: stringResource(R.string.watch_update_idle)
     State.Checking -> stringResource(R.string.watch_update_checking)
-    is State.UpToDate -> stringResource(R.string.watch_update_current, state.version)
+    is State.UpToDate -> upToDate(state.version, state.checkedAtMs)
     is State.Available -> stringResource(R.string.watch_update_available, state.version)
     is State.Downloading -> withProgress(stringResource(R.string.watch_update_downloading, state.version), state.progress)
     is State.Offered -> stringResource(R.string.watch_update_offered, state.version)
     is State.Sending -> withProgress(stringResource(R.string.watch_update_sending, state.version), state.progress)
     is State.Installing -> stringResource(R.string.watch_update_installing, state.version)
     is State.AwaitingConfirmation -> stringResource(R.string.watch_update_confirm)
+    is State.WaitingForPlayback -> stringResource(R.string.watch_update_waiting_playback)
+    State.AutoUpdateOff -> stringResource(R.string.watch_update_auto_off)
     is State.Installed -> stringResource(R.string.watch_update_installed, state.version)
     // Never the token itself: watchUpdateFailureRes has a generic line for the ones it does not
     // know, so that an exception message or an internal word is not what the person reads.
     is State.Failed -> stringResource(watchUpdateFailureRes(state.reason))
+}
+
+/**
+ * "What's new in X": the release's notes, folded away until asked for.
+ *
+ * Collapsed because they run to several paragraphs and the page is about state, not reading; the
+ * row says there is something, and the person who wants it taps.
+ */
+@Composable
+private fun WhatsNewRow(version: String, notes: String) {
+    var open by remember(version) { mutableStateOf(false) }
+    Column {
+        Row(
+            Modifier
+                .fillMaxWidth()
+                .clickable { open = !open }
+                .padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                stringResource(R.string.watch_whats_new, version),
+                style = MaterialTheme.typography.bodyLarge,
+                modifier = Modifier.weight(1f),
+            )
+            Icon(
+                if (open) PhosphorIcons.Regular.CaretUp else PhosphorIcons.Regular.CaretDown,
+                contentDescription = null,
+                tint = InkDim,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        if (open) {
+            Text(
+                notes,
+                style = MaterialTheme.typography.bodySmall,
+                color = InkDim,
+                modifier = Modifier.padding(start = 18.dp, end = 18.dp, bottom = 14.dp),
+            )
+        }
+    }
+}
+
+/**
+ * Which release line to follow, Stable or Beta: one setting for the phone and the watch.
+ *
+ * Shown in both places it matters (About, where the phone's own update row is, and the Watch page)
+ * and the same setting in each. Changing it clears the memory of what was last found on the other
+ * line and asks the watch to say hello again, so that it hears the new one and the next check is
+ * made at once rather than within six hours.
+ */
+@Composable
+internal fun UpdateChannelRows(showLabel: Boolean) {
+    val context = LocalContext.current
+    val app = remember(context) { context.applicationContext as SquareApplication }
+    val chosen by app.preferences.updateChannel.collectAsStateWithLifecycle()
+    val scope = rememberCoroutineScope()
+    val choose = { channel: UpdateChannel ->
+        if (channel != chosen) {
+            app.preferences.setUpdateChannel(channel)
+            // The launch prompt's six-hour gate is the phone's own, and the dialog that may be
+            // showing the last line's release is no longer true.
+            app.preferences.setLastUpdateCheck(0L)
+            app.updater.dismiss()
+            scope.launch {
+                val bridge = app.wearBridge
+                bridge.updates.onChannelChanged()
+                bridge.refreshWatchLink()
+            }
+        }
+    }
+    if (showLabel) {
+        Text(
+            stringResource(R.string.update_channel),
+            style = MaterialTheme.typography.bodyLarge,
+            modifier = Modifier.padding(start = 18.dp, end = 18.dp, top = 14.dp),
+        )
+    }
+    ChoiceRow(stringResource(R.string.update_channel_stable), selected = chosen == UpdateChannel.STABLE) {
+        choose(UpdateChannel.STABLE)
+    }
+    RowDivider()
+    ChoiceRow(stringResource(R.string.update_channel_beta), selected = chosen == UpdateChannel.BETA) {
+        choose(UpdateChannel.BETA)
+    }
+    RowDivider()
+    Text(
+        stringResource(R.string.update_channel_note),
+        style = MaterialTheme.typography.bodySmall,
+        color = InkDim,
+        modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+    )
 }
 
 /** [text] with how far along it is, when that is known. */

@@ -7,6 +7,7 @@ import android.os.Build
 import android.provider.Settings
 import dev.antigravity.fluidengine.foundation.AppUpdateInstallState
 import dev.antigravity.fluidengine.foundation.AvailableAppUpdate
+import dev.antigravity.fluidengine.foundation.UpdateChannel
 import dev.antigravity.fluidengine.net.EngineHttp
 import dev.antigravity.fluidengine.update.AndroidAppUpdateInstaller
 import dev.antigravity.fluidengine.update.EngineAppUpdater
@@ -15,6 +16,7 @@ import dev.lelonio.square.BuildConfig
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Updates the app from the Pampa Store's manifest.
@@ -34,7 +36,14 @@ import kotlinx.coroutines.flow.asStateFlow
  * installer additionally refuses an APK whose package or version is not the
  * one the manifest advertised.
  */
-class Updater(context: Context) {
+class Updater(
+    context: Context,
+    /**
+     * The release line to follow, asked each time rather than kept: it is a setting, and it can
+     * change between two checks (see PreferencesStore.updateChannel).
+     */
+    private val channel: () -> UpdateChannel = { UpdateChannel.STABLE },
+) {
 
     private val app = context.applicationContext
 
@@ -54,11 +63,27 @@ class Updater(context: Context) {
     /** The manifest's own offer, kept so [install] has more than a version string. */
     private var resolved: AvailableAppUpdate? = null
 
+    /**
+     * Whether an install is running.
+     *
+     * The launch prompt and the About row are both ways to start one, and both can be on screen at
+     * once: a tap on each started two downloads of the same APK into the same file, and two
+     * sessions with the system installer. One in flight; a second request is ignored, which is
+     * what the person who tapped twice meant.
+     */
+    private val installing = AtomicBoolean(false)
+
     sealed interface State {
         data object Idle : State
         data object Checking : State
         data object UpToDate : State
-        data class Available(val version: String, val url: String, val bytes: Long) : State
+        data class Available(
+            val version: String,
+            val url: String,
+            val bytes: Long,
+            /** The release notes the manifest carries for this version; blank when it has none. */
+            val changelog: String = "",
+        ) : State
         /** 0f..1f, or null while there is nothing to measure against. */
         data class Downloading(val progress: Float?) : State
         /** Handed to the system installer; the dialog is Android's, not ours. */
@@ -68,14 +93,17 @@ class Updater(context: Context) {
 
     /** Asks the manifest what the latest release is. */
     suspend fun check() {
+        // A check in the middle of an install would replace its progress with "checking" and, worse,
+        // swap the resolved offer the install is reading.
+        if (installing.get()) return
         _state.value = State.Checking
-        engine.check(BuildConfig.VERSION_NAME).fold(
+        engine.check(BuildConfig.VERSION_NAME, channel()).fold(
             onSuccess = { update ->
                 resolved = update
                 _state.value = if (update == null) {
                     State.UpToDate
                 } else {
-                    State.Available(update.version, update.downloadUrl, update.sizeBytes)
+                    State.Available(update.version, update.downloadUrl, update.sizeBytes, update.changelog)
                 }
             },
             onFailure = {
@@ -97,6 +125,7 @@ class Updater(context: Context) {
      *   can ask for it and come back here rather than starting over.
      */
     suspend fun checkAndInstall(): State.Available? {
+        if (installing.get()) return null
         check()
         val update = _state.value as? State.Available ?: return null
         if (!canInstall()) {
@@ -115,6 +144,15 @@ class Updater(context: Context) {
      * the rows already know how to show.
      */
     suspend fun install(update: State.Available) {
+        if (!installing.compareAndSet(false, true)) return
+        try {
+            installUnguarded(update)
+        } finally {
+            installing.set(false)
+        }
+    }
+
+    private suspend fun installUnguarded(update: State.Available) {
         if (!canInstall()) {
             _state.value = State.Failed(REASON_PERMISSION)
             return

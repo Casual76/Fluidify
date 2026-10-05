@@ -171,4 +171,18 @@
         <item quantity="many">%1$d indisponibles</item>
         <item quantity="other">%1$d indisponibles</item>
     </plurals>
+    <string name="update_channel">Canal</string>
+    <string name="update_channel_stable">Stable</string>
+    <string name="update_channel_beta">Bêta</string>
+    <string name="update_version">Version %1$s</string>
+    <string name="update_current">À jour (%1$s)</string>
+    <string name="update_waiting_playback">S&#8217;installe à l&#8217;arrêt de la lecture</string>
+    <string name="update_busy">Une autre mise à jour est en cours</string>
+    <string name="check_updates">Rechercher des mises à jour</string>
+    <string name="update_checking">Vérification…</string>
+    <string name="update_coming">Mise à jour %1$s en route</string>
+    <string name="update_check_failed">Le téléphone n&#8217;a pas pu vérifier</string>
+    <string name="whats_new_in">Nouveautés de %1$s</string>
+    <string name="updated_to">Mis à jour vers %1$s</string>
+    <string name="updated_to_tap">Voir les nouveautés</string>
 </resources>

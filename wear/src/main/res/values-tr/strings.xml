@@ -170,4 +170,18 @@
         <item quantity="one">%1$d kullanılamıyor</item>
         <item quantity="other">%1$d kullanılamıyor</item>
     </plurals>
+    <string name="update_channel">Kanal</string>
+    <string name="update_channel_stable">Kararlı</string>
+    <string name="update_channel_beta">Beta</string>
+    <string name="update_version">Sürüm %1$s</string>
+    <string name="update_current">Güncel (%1$s)</string>
+    <string name="update_waiting_playback">Çalma durunca yüklenir</string>
+    <string name="update_busy">Başka bir güncelleme sürüyor</string>
+    <string name="check_updates">Güncellemeleri denetle</string>
+    <string name="update_checking">Denetleniyor…</string>
+    <string name="update_coming">%1$s güncellemesi yolda</string>
+    <string name="update_check_failed">Telefon denetleyemedi</string>
+    <string name="whats_new_in">%1$s sürümündeki yenilikler</string>
+    <string name="updated_to">%1$s sürümüne güncellendi</string>
+    <string name="updated_to_tap">Yeniliklere bak</string>
 </resources>

@@ -5,8 +5,8 @@ package dev.pampa.fluidify.wear.protocol
  *
  * The `1` in most of them is [ProtocolVersion.MAJOR]. Two families deliberately
  * carry no version at all: [HELLO] and the [UPDATE_OFFER] / [UPDATE_STATUS] /
- * [UPDATE_APK] trio. Those are how two sides that disagree about everything else
- * find out that they disagree, and how the newer one fixes it. If they moved
+ * [UPDATE_APK] trio, with the [UPDATE_REQUEST] that asks for it. Those are how two sides that
+ * disagree about everything else find out that they disagree, and how the newer one fixes it. If they moved
  * with the major, a watch two versions behind would stop hearing the very
  * message that offers to bring it up to date.
  *
@@ -29,6 +29,15 @@ object WearPaths {
 
     /** Channel, opened by the watch; the phone streams the APK into it. */
     const val UPDATE_APK = "$PREFIX/update/apk"
+
+    /**
+     * Message, both ways. Watch to phone: "check for an update now", the watch's own "Check for
+     * updates" row, carrying the watch's [Hello] so that a phone that has just been woken knows
+     * which version to compare with. Phone to watch: the [UpdateCheckReply]. Unversioned like the
+     * rest of the family, for the same reason; a phone from before it logs the path as unknown and
+     * never answers, which the watch reads as "phone not reachable" after a few seconds.
+     */
+    const val UPDATE_REQUEST = "$PREFIX/update/request"
 
     // --- Versioned -----------------------------------------------------------------
 

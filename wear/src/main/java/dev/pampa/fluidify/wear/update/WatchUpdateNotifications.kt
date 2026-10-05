@@ -13,7 +13,10 @@ import dev.pampa.fluidify.wear.system.PlayerIntents
 internal object WatchUpdateNotifications {
     fun show(context: Context, status: UpdateStatus, confirmation: PendingIntent? = null, canRetry: Boolean = false) {
         val manager = context.getSystemService(NotificationManager::class.java)
-        if (status.phase == UpdatePhase.INSTALLED || status.phase == UpdatePhase.DECLINE) {
+        if (status.phase == UpdatePhase.INSTALLED || status.phase == UpdatePhase.DECLINE ||
+            // Holding the install back for the music is not progress, and not worth a notification.
+            (status.phase == UpdatePhase.ACCEPT && status.reason == UpdateStatus.REASON_WAITING_PLAYBACK)
+        ) {
             manager.cancel(ID)
             return
         }
@@ -43,6 +46,30 @@ internal object WatchUpdateNotifications {
     }
 
     /**
+     * "Updated to X", the first time the new version runs: quiet, and it opens the More page, where
+     * what is new can be read (see WhatsNew). Not shown for an update nobody could have noticed:
+     * the caller says there are no notes, and the text is then only the title.
+     */
+    fun showUpdated(context: Context, version: String, hasNotes: Boolean) {
+        val manager = context.getSystemService(NotificationManager::class.java)
+        ensureChannel(context, manager)
+        val notification = NotificationCompat.Builder(context, CHANNEL)
+            .setSmallIcon(R.drawable.ic_notification)
+            .setContentTitle(context.getString(R.string.updated_to, version))
+            .setContentIntent(PlayerIntents.openUpdates(context))
+            .setOnlyAlertOnce(true)
+            .setSilent(true)
+            .setAutoCancel(true)
+        if (hasNotes) notification.setContentText(context.getString(R.string.updated_to_tap))
+        runCatching { manager.notify(ID_UPDATED, notification.build()) }
+    }
+
+    /** The notes have been read, or are about to be shown: the notification that pointed at them goes. */
+    fun cancelUpdated(context: Context) {
+        runCatching { context.getSystemService(NotificationManager::class.java).cancel(ID_UPDATED) }
+    }
+
+    /**
      * Made once, and quiet: an update is progress to look at, not a sound and a buzz on the wrist.
      * The channel the app had before this one was made with default importance, which the system
      * does not let an app lower afterwards, so this is a new channel and the old one is removed.
@@ -56,4 +83,5 @@ internal object WatchUpdateNotifications {
     private const val CHANNEL = "watch_update_quiet"
     private const val OLD_CHANNEL = "watch_update"
     private const val ID = 0x5743
+    private const val ID_UPDATED = 0x5745
 }

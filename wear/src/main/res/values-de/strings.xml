@@ -170,4 +170,18 @@
         <item quantity="one">%1$d nicht verfügbar</item>
         <item quantity="other">%1$d nicht verfügbar</item>
     </plurals>
+    <string name="update_channel">Kanal</string>
+    <string name="update_channel_stable">Stabil</string>
+    <string name="update_channel_beta">Beta</string>
+    <string name="update_version">Version %1$s</string>
+    <string name="update_current">Aktuell (%1$s)</string>
+    <string name="update_waiting_playback">Installiert, sobald die Wiedergabe endet</string>
+    <string name="update_busy">Anderes Update läuft</string>
+    <string name="check_updates">Nach Updates suchen</string>
+    <string name="update_checking">Wird geprüft…</string>
+    <string name="update_coming">Update %1$s unterwegs</string>
+    <string name="update_check_failed">Das Telefon konnte nicht prüfen</string>
+    <string name="whats_new_in">Neu in %1$s</string>
+    <string name="updated_to">Auf %1$s aktualisiert</string>
+    <string name="updated_to_tap">Was ist neu</string>
 </resources>

@@ -12,6 +12,7 @@ import dev.pampa.fluidify.wear.protocol.CommandAck
 import dev.pampa.fluidify.wear.protocol.Hello
 import dev.pampa.fluidify.wear.protocol.PlaybackSnapshot
 import dev.pampa.fluidify.wear.protocol.RpcResponse
+import dev.pampa.fluidify.wear.protocol.UpdateCheckReply
 import dev.pampa.fluidify.wear.protocol.UpdateOffer
 import dev.pampa.fluidify.wear.protocol.WearCodec
 import dev.pampa.fluidify.wear.protocol.WearPaths
@@ -85,6 +86,9 @@ class WatchListenerService : WearableListenerService() {
             WearPaths.UPDATE_OFFER -> WearCodec.decodeOrNull(UpdateOffer.serializer(), event.data)?.let { offer ->
                 Work.enqueue(BUDGET_MS) { app.updater.onOffer(event.sourceNodeId, offer) }
             }
+            // The phone's answer to the "Check for updates" row; see WatchUpdater.requestCheck.
+            WearPaths.UPDATE_REQUEST -> WearCodec.decodeOrNull(UpdateCheckReply.serializer(), event.data)
+                ?.let { app.updater.onCheckReply(it) }
             WearPaths.ACK -> WearCodec.decodeOrNull(CommandAck.serializer(), event.data)?.let { app.link.onAck(it) }
             WearPaths.RPC_REPLY -> WearCodec.decodeOrNull(RpcResponse.serializer(), event.data)?.let {
                 app.link.onPhoneHeard()

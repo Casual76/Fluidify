@@ -437,7 +437,7 @@
     <string name="watch_update">Watch update</string>
     <string name="watch_update_now">Update the watch</string>
     <string name="watch_auto_update">Update the watch automatically</string>
-    <string name="watch_auto_update_note">New watch builds are sent over Bluetooth when the watch connects</string>
+    <string name="watch_auto_update_note">New watch builds are downloaded on Wi-Fi, then sent over Bluetooth when the watch connects</string>
     <string name="watch_push_apk">Send an APK to the watch</string>
     <string name="watch_update_idle">Not checked yet</string>
     <string name="watch_update_checking">Checking…</string>
@@ -519,4 +519,16 @@
     <string name="kbps_value">%1$d kbps</string>
     <string name="widget_open_app">Open Fluidify</string>
     <string name="widget_settings">Widget settings</string>
+    <string name="update_channel">Update channel</string>
+    <string name="update_channel_stable">Stable</string>
+    <string name="update_channel_beta">Beta</string>
+    <string name="update_channel_note">Beta: new versions earlier, maybe less polished. The watch follows the same channel. Going back to Stable takes effect from the next stable version.</string>
+    <string name="update_whats_new">What\'s new</string>
+    <string name="watch_whats_new">What\'s new in %1$s</string>
+    <string name="watch_update_current_checked">Up to date (%1$s) · checked %2$s</string>
+    <string name="watch_update_waiting_playback">Will install when the watch stops playing</string>
+    <string name="watch_update_auto_off">Automatic updates are off on the watch: update from the watch\'s More page</string>
+    <string name="watch_update_err_expired">The watch did not answer in time: try again</string>
+    <string name="watch_update_err_interrupted">The installation was interrupted: try again</string>
+    <string name="watch_update_installed_notification">Watch updated to %1$s</string>
 </resources>

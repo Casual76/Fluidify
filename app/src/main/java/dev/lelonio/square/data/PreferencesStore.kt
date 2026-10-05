@@ -1,6 +1,9 @@
 package dev.lelonio.square.data
 
 import android.content.Context
+import dev.antigravity.fluidengine.foundation.UpdateChannel
+import dev.lelonio.square.update.updateChannelOf
+import dev.lelonio.square.update.word
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -180,6 +183,23 @@ class PreferencesStore(context: Context) {
         prefs.edit().putString(KEY_SKIPPED_UPDATE, value).apply()
     }
 
+    private val _updateChannel = MutableStateFlow(updateChannelOf(prefs.getString(KEY_UPDATE_CHANNEL, null)))
+
+    /**
+     * Which release line the app, and through it the watch, follows for updates.
+     *
+     * One setting for both: the phone checks the manifest for itself and for the watch, and tells
+     * the watch which line it is on (see Hello.updateChannel) so that the watch's own checks, when
+     * the phone is away, agree. Stable unless chosen; going back to it from beta never downgrades,
+     * it only means the next version offered is the next stable one.
+     */
+    val updateChannel: StateFlow<UpdateChannel> = _updateChannel.asStateFlow()
+
+    fun setUpdateChannel(value: UpdateChannel) {
+        _updateChannel.value = value
+        prefs.edit().putString(KEY_UPDATE_CHANNEL, value.word).apply()
+    }
+
     private val _showLocalFiles = MutableStateFlow(prefs.getBoolean(KEY_LOCAL_FILES, false))
 
     /**
@@ -232,6 +252,7 @@ class PreferencesStore(context: Context) {
         const val KEY_PANEL_REACH = "panel_reach"
         const val KEY_LAST_UPDATE_CHECK = "last_update_check"
         const val KEY_SKIPPED_UPDATE = "skipped_update"
+        const val KEY_UPDATE_CHANNEL = "update_channel"
         const val KEY_PROFILE_NAME = "profile_name"
         const val KEY_PROFILE_AVATAR = "profile_avatar"
     }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="show_controls">Show controls</string>
+    <string name="hide_controls">Hide controls</string>
+</resources>

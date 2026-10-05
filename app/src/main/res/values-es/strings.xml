@@ -425,7 +425,7 @@
     <string name="watch_update">Actualización del reloj</string>
     <string name="watch_update_now">Actualizar el reloj</string>
     <string name="watch_auto_update">Actualizar el reloj automáticamente</string>
-    <string name="watch_auto_update_note">Las nuevas versiones se envían por Bluetooth cuando el reloj se conecta</string>
+    <string name="watch_auto_update_note">Las nuevas versiones se descargan con Wi-Fi y se envían por Bluetooth cuando el reloj se conecta</string>
     <string name="watch_push_apk">Enviar un APK al reloj</string>
     <string name="watch_update_idle">Aún no comprobado</string>
     <string name="watch_update_checking">Comprobando…</string>
@@ -509,4 +509,16 @@
     <string name="kbps_value">%1$d kbps</string>
     <string name="widget_open_app">Abrir Fluidify</string>
     <string name="widget_settings">Ajustes del widget</string>
+    <string name="update_channel">Canal de actualizaciones</string>
+    <string name="update_channel_stable">Estable</string>
+    <string name="update_channel_beta">Beta</string>
+    <string name="update_channel_note">Beta: versiones nuevas antes, quizá menos pulidas. El reloj sigue el mismo canal. Volver a Estable surte efecto a partir de la próxima versión estable.</string>
+    <string name="update_whats_new">Novedades</string>
+    <string name="watch_whats_new">Novedades de %1$s</string>
+    <string name="watch_update_current_checked">Actualizado (%1$s) · comprobado %2$s</string>
+    <string name="watch_update_waiting_playback">Se instalará cuando el reloj deje de reproducir</string>
+    <string name="watch_update_auto_off">Las actualizaciones automáticas están desactivadas en el reloj: actualiza desde la página Más del reloj</string>
+    <string name="watch_update_err_expired">El reloj no respondió a tiempo: inténtalo de nuevo</string>
+    <string name="watch_update_err_interrupted">La instalación se interrumpió: inténtalo de nuevo</string>
+    <string name="watch_update_installed_notification">Reloj actualizado a %1$s</string>
 </resources>

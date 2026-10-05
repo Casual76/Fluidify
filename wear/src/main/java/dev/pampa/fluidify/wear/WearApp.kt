@@ -46,6 +46,8 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
 
     override fun onCreate() {
         super.onCreate()
+        // The first start of a version that was just installed says so, once (see WhatsNew).
+        runCatching { dev.pampa.fluidify.wear.update.WhatsNew.onStart(this) }
         // Applied whenever the process starts, not only when the app is opened: the listener
         // service wakes it far more often, and a watch app never opened kept Wear's default.
         runCatching { dev.pampa.fluidify.wear.system.Bridging.apply(this, surfacePrefs.phoneNotifications) }
@@ -83,9 +85,18 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
     val art: ArtStore by lazy { ArtStore(this).also { it.onStored = surfaces::onCoverStored } }
     val link: PhoneLink by lazy { PhoneLink(this, scope, state, art) }
 
-    /** Installs builds the phone sends; see [WatchUpdater]. */
+    /**
+     * Installs builds the phone sends; see [WatchUpdater].
+     *
+     * Told whether the watch's own player is playing, so that it never replaces the app under a
+     * song. Asked of the player only if one has been built in this process: a player that was
+     * never made is not playing, and asking would be what makes it.
+     */
     val updater: dev.pampa.fluidify.wear.update.WatchUpdater by lazy {
-        dev.pampa.fluidify.wear.update.WatchUpdater(this)
+        dev.pampa.fluidify.wear.update.WatchUpdater(this, playingLocally = {
+            localControls.takeIf { it.isInitialized() }?.value?.nowPlaying?.value?.snapshot
+                ?.let { it.track != null && (it.isPlaying || it.playWhenReady) } == true
+        })
     }
 
     /** The phone as a player. */
@@ -101,8 +112,13 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
         dev.pampa.fluidify.wear.downloads.WatchDownloads(this)
     }
 
-    /** The watch's own player, behind the same interface as the phone. */
-    val local: dev.pampa.fluidify.wear.standalone.LocalControls by lazy {
+    /**
+     * The watch's own player, behind the same interface as the phone.
+     *
+     * Held as the lazy itself (and [local] reads through it) so that [updater] can ask whether it
+     * exists yet without making it.
+     */
+    private val localControls: Lazy<dev.pampa.fluidify.wear.standalone.LocalControls> = lazy {
         dev.pampa.fluidify.wear.standalone.LocalControls(
             this,
             scope,
@@ -113,6 +129,8 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
             likedLookup = { uri -> library.isLiked(uri) },
         )
     }
+
+    val local: dev.pampa.fluidify.wear.standalone.LocalControls by localControls
 
     /** Whichever of the two is in front. */
     val playback: dev.pampa.fluidify.wear.playback.ActivePlayback by lazy {

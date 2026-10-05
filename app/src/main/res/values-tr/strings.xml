@@ -431,7 +431,7 @@
     <string name="watch_update">Saat güncellemesi</string>
     <string name="watch_update_now">Saati güncelle</string>
     <string name="watch_auto_update">Saati otomatik güncelle</string>
-    <string name="watch_auto_update_note">Yeni sürümler saat bağlandığında Bluetooth ile gönderilir</string>
+    <string name="watch_auto_update_note">Yeni sürümler Wi-Fi üzerinden indirilir, saat bağlandığında Bluetooth ile gönderilir</string>
     <string name="watch_push_apk">Saate APK gönder</string>
     <string name="watch_update_idle">Henüz kontrol edilmedi</string>
     <string name="watch_update_checking">Kontrol ediliyor…</string>
@@ -513,4 +513,16 @@
     <string name="kbps_value">%1$d kbps</string>
     <string name="widget_open_app">Fluidify&#8217;ı aç</string>
     <string name="widget_settings">Widget ayarları</string>
+    <string name="update_channel">Güncelleme kanalı</string>
+    <string name="update_channel_stable">Kararlı</string>
+    <string name="update_channel_beta">Beta</string>
+    <string name="update_channel_note">Beta: yeni sürümler daha erken gelir, ama daha az cilalı olabilir. Saat de aynı kanalı izler. Kararlı\'ya dönmek bir sonraki kararlı sürümden itibaren geçerli olur.</string>
+    <string name="update_whats_new">Yenilikler</string>
+    <string name="watch_whats_new">%1$s sürümündeki yenilikler</string>
+    <string name="watch_update_current_checked">Güncel (%1$s) · denetlendi: %2$s</string>
+    <string name="watch_update_waiting_playback">Saat çalmayı bıraktığında yüklenecek</string>
+    <string name="watch_update_auto_off">Saatte otomatik güncellemeler kapalı: saatin Diğer sayfasından güncelleyin</string>
+    <string name="watch_update_err_expired">Saat zamanında yanıt vermedi: tekrar deneyin</string>
+    <string name="watch_update_err_interrupted">Yükleme yarıda kesildi: tekrar deneyin</string>
+    <string name="watch_update_installed_notification">Saat %1$s sürümüne güncellendi</string>
 </resources>

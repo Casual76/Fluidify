@@ -243,6 +243,8 @@ class PhoneLink(
         // The phone handles updates while it is around; see WatchSelfUpdateWorker.
         context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putLong(dev.pampa.fluidify.wear.update.WatchSelfUpdateWorker.KEY_PHONE_SEEN, System.currentTimeMillis())
+            // And which release line it follows, for that updater's own checks.
+            .putString(dev.pampa.fluidify.wear.update.UpdateChannelPrefs.KEY, dev.pampa.fluidify.wear.protocol.UpdateChannels.parse(hello.updateChannel))
             .apply()
         answerWatch?.cancel()
         _status.value = when (compatibility(ownHello(), hello)) {
@@ -368,6 +370,18 @@ class PhoneLink(
         state.observeClock(ack.sentAtEpochMs)
         onPhoneHeard()
         pending.remove(ack.id)?.complete(ack)
+    }
+
+    /**
+     * Asks the phone to check for an update now, and says whether the request went.
+     *
+     * It carries this watch's hello, so a phone woken for the request knows the version to compare
+     * with. The answer, if there is one, comes back as an [dev.pampa.fluidify.wear.protocol.UpdateCheckReply]
+     * on the same path (see WatchListenerService).
+     */
+    suspend fun requestUpdateCheck(): Boolean {
+        val node = nodeId ?: findPhone()?.id ?: return false
+        return send(node, WearPaths.UPDATE_REQUEST, WearCodec.encode(Hello.serializer(), ownHello(wantsReply = false)))
     }
 
     private suspend fun send(node: String, path: String, bytes: ByteArray): Boolean = runCatching {

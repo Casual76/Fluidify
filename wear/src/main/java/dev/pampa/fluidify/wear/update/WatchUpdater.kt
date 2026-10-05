@@ -10,6 +10,7 @@ import com.google.android.gms.wearable.Wearable
 import dev.antigravity.fluidengine.foundation.compareVersions
 import dev.lelonio.square.update.WatchApkValidation
 import dev.pampa.fluidify.wear.BuildConfig
+import dev.pampa.fluidify.wear.protocol.UpdateCheckReply
 import dev.pampa.fluidify.wear.protocol.UpdateOffer
 import dev.pampa.fluidify.wear.protocol.UpdatePhase
 import dev.pampa.fluidify.wear.protocol.UpdateStatus
@@ -30,13 +31,24 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import java.io.File
 
-/** APK and install state survive screen-off, process death and failed installations. */
-class WatchUpdater(private val context: Context) {
+/**
+ * APK and install state survive screen-off, process death and failed installations.
+ *
+ * [playingLocally] says whether the watch's own player is playing a song, which is when an
+ * install must wait: replacing the app replaces its process, and the music stops with it. It is
+ * asked, never kept, and the default (never) is for callers with no player to ask.
+ */
+class WatchUpdater(
+    private val context: Context,
+    private val playingLocally: () -> Boolean = { false },
+) {
     private val prefs = context.getSharedPreferences("watch_update", Context.MODE_PRIVATE)
     private val messages by lazy { Wearable.getMessageClient(context) }
     private val channels by lazy { Wearable.getChannelClient(context) }
@@ -49,7 +61,88 @@ class WatchUpdater(private val context: Context) {
     val status: StateFlow<UpdateStatus?> = _status.asStateFlow()
     private var progress: Job? = null
     private var expiry: Job? = null
-    init { scheduleExpiry() }
+
+    /** Waits for the watch's own music to stop before installing; see [installOrDefer]. */
+    private var deferred: Job? = null
+
+    /** The release notes of the version now running, and which version that is. */
+    data class News(val version: String, val notes: String)
+
+    private val _news = MutableStateFlow(WhatsNew.pending(context))
+
+    /**
+     * What the update that was just installed brought, until it has been read ([dismissNews]).
+     * Null when there is nothing to show: no update lately, no notes with it, or already read.
+     */
+    val news: StateFlow<News?> = _news.asStateFlow()
+
+    /** The notes have been read: the row goes, and so does the notification that pointed at them. */
+    fun dismissNews() {
+        prefs.edit().remove(WhatsNew.KEY_NEWS_VERSION).remove(WhatsNew.KEY_NEWS).apply()
+        _news.value = null
+        WatchUpdateNotifications.cancelUpdated(context)
+    }
+
+    /** What the "Check for updates" row is doing; see [requestCheck]. */
+    sealed interface Check {
+        data object Idle : Check
+        data object Asking : Check
+        data class UpToDate(val version: String) : Check
+
+        /** The phone found [version] and is fetching it: the offer follows. */
+        data class Coming(val version: String) : Check
+
+        /** The phone answered that it could not tell. */
+        data object Failed : Check
+
+        /** Nothing answered: no phone in reach, or one from before this existed. */
+        data object Unreachable : Check
+    }
+
+    private val _check = MutableStateFlow<Check>(Check.Idle)
+    val check: StateFlow<Check> = _check.asStateFlow()
+
+    init {
+        scheduleExpiry()
+        // A build that was held back for the music, and a process that died meanwhile: the wait
+        // goes on, because nothing else would start it again.
+        _status.value?.let { if (it.isWaitingForPlayback()) waitForSilence() }
+    }
+
+    /**
+     * Asks the phone, through [send], to check for an update now, and waits a few seconds for
+     * its answer.
+     *
+     * [send] is whatever delivers the request (it is the link's, which this class does not
+     * know); false means it did not go. No answer in [CHECK_REPLY_MS] is the same as not going:
+     * a phone from before this message ignores it, and from here that looks like a phone that
+     * is not there. The outcome is shown for a few seconds and then the row goes back to idle.
+     */
+    fun requestCheck(send: suspend () -> Boolean) {
+        if (_check.value == Check.Asking) return
+        _check.value = Check.Asking
+        scope.launch {
+            val sent = send()
+            val answered = sent && withTimeoutOrNull(CHECK_REPLY_MS) { _check.first { it != Check.Asking } } != null
+            if (!answered) _check.value = Check.Unreachable
+            val shown = _check.value
+            delay(if (shown is Check.Coming) COMING_SHOWN_MS else RESULT_SHOWN_MS)
+            _check.compareAndSet(shown, Check.Idle)
+        }
+    }
+
+    /** The phone's answer to [requestCheck]. Ignored when nothing was asked. */
+    fun onCheckReply(reply: UpdateCheckReply) {
+        _check.update { current ->
+            if (current != Check.Asking) {
+                current
+            } else when (reply.result) {
+                UpdateCheckReply.UP_TO_DATE -> Check.UpToDate(reply.versionName.ifBlank { BuildConfig.VERSION_NAME })
+                UpdateCheckReply.UPDATE -> Check.Coming(reply.versionName)
+                else -> Check.Failed
+            }
+        }
+    }
 
     var autoUpdate: Boolean
         get() = prefs.getBoolean(KEY_AUTO, true)
@@ -70,6 +163,10 @@ class WatchUpdater(private val context: Context) {
         if (decline != null) {
             reply(fromNode, UpdateStatus(UpdatePhase.DECLINE, offer.versionName, reason = decline))
             return@withLock
+        }
+        // What the build brings, written down now: it is the next process that will want it.
+        if (offer.changelog.isNotBlank()) {
+            prefs.edit().putString(WhatsNew.KEY_NOTES_VERSION, offer.versionName).putString(WhatsNew.KEY_NOTES, offer.changelog).apply()
         }
         val current = _status.value
         if (current?.phase in listOf(UpdatePhase.RECEIVING, UpdatePhase.INSTALLING, UpdatePhase.AWAITING_CONFIRMATION)) {
@@ -96,7 +193,7 @@ class WatchUpdater(private val context: Context) {
             prefs.getString(KEY_READY_SHA, null).equals(offer.sha256, ignoreCase = true) &&
             WatchApkValidation.reject(context, ready, offer.versionName, offer.sha256) == null) {
             // Tell the phone to wait for installation, not send the same bytes again.
-            installReady()
+            installOrDefer()
             return@withLock
         }
         prefs.edit().putString(KEY_VERSION, offer.versionName).putString(KEY_SHA, offer.sha256)
@@ -155,7 +252,7 @@ class WatchUpdater(private val context: Context) {
             target.delete()
             prefs.edit().putString(KEY_READY_VERSION, version).putString(KEY_READY_SHA, sha).remove(KEY_VERSION).commit()
             expiry?.cancel()
-            installReady()
+            installOrDefer()
         } finally {
             withContext(NonCancellable) { runCatching { channels.close(channel).await() } }
         }
@@ -166,7 +263,7 @@ class WatchUpdater(private val context: Context) {
         WatchApkValidation.reject(context, file, version, sha)?.let { fail(version, it); return@withLock false }
         file.copyTo(ready, overwrite = true)
         prefs.edit().putString(KEY_READY_VERSION, version).putString(KEY_READY_SHA, sha).commit()
-        installReady()
+        installOrDefer()
         _status.value?.phase != UpdatePhase.FAILED
     }
 
@@ -184,6 +281,60 @@ class WatchUpdater(private val context: Context) {
         }
         scope.launch { lock.withLock { installReady() } }
     }
+
+    /**
+     * Installs the build that is ready, unless the watch is playing music by itself.
+     *
+     * Installing replaces the app's process, and a song playing from the watch's own engine goes
+     * with it: an update nobody is waiting for is not worth a song cut in the middle. So while it
+     * plays, the APK is kept (it is on the disk already) and the phone is told, as an
+     * [UpdatePhase.ACCEPT] that says [UpdateStatus.REASON_WAITING_PLAYBACK]: no new phase, which an
+     * older phone could not decode, and one it already reads as "yes". The install then happens
+     * once nothing has played for [QUIET_BEFORE_INSTALL_MS] (see [waitForSilence]).
+     *
+     * What the person asks for by touch (see [confirmOrRetry]) is not held back: they are looking
+     * at it, and they chose now.
+     */
+    private suspend fun installOrDefer() {
+        val version = prefs.getString(KEY_READY_VERSION, null) ?: return
+        if (!playingLocally()) {
+            installReady()
+            return
+        }
+        report(UpdateStatus(UpdatePhase.ACCEPT, version, reason = UpdateStatus.REASON_WAITING_PLAYBACK))
+        waitForSilence()
+    }
+
+    /**
+     * Polls the player until it has been quiet for [QUIET_BEFORE_INSTALL_MS], then installs.
+     *
+     * Polled and not observed: the player may not exist yet when this starts (nothing builds it
+     * until something plays), and it can be built and start playing later. The status is looked at
+     * again at the end, under the lock: a newer offer, a retry by hand or a failure may have
+     * changed it, and then there is nothing left to do.
+     */
+    private fun waitForSilence() {
+        if (deferred?.isActive == true) return
+        deferred = scope.launch {
+            var quietSince = -1L
+            while (isActive) {
+                val now = android.os.SystemClock.elapsedRealtime()
+                if (playingLocally()) {
+                    quietSince = -1L
+                } else {
+                    if (quietSince < 0) quietSince = now
+                    if (now - quietSince >= QUIET_BEFORE_INSTALL_MS) break
+                }
+                delay(PLAYBACK_POLL_MS)
+            }
+            lock.withLock {
+                if (_status.value?.isWaitingForPlayback() == true) installReady()
+            }
+        }
+    }
+
+    private fun UpdateStatus.isWaitingForPlayback(): Boolean =
+        phase == UpdatePhase.ACCEPT && reason == UpdateStatus.REASON_WAITING_PLAYBACK
 
     private suspend fun installReady() {
         val version = prefs.getString(KEY_READY_VERSION, null) ?: return
@@ -253,6 +404,8 @@ class WatchUpdater(private val context: Context) {
     }.getOrNull()?.let { status ->
         when {
             compareVersions(BuildConfig.VERSION_NAME, status.versionName) > 0 -> null
+            // Held back for the music, with the APK still on the disk: still waiting, not interrupted.
+            status.isWaitingForPlayback() && ready.isFile -> status
             status.phase == UpdatePhase.RECEIVING || status.phase == UpdatePhase.ACCEPT ->
                 status.copy(phase = UpdatePhase.FAILED, reason = "transfer-interrupted")
             status.phase == UpdatePhase.INSTALLING && context.packageManager.packageInstaller.getSessionInfo(prefs.getInt(KEY_SESSION, -1))?.isCommitted != true ->
@@ -297,6 +450,19 @@ class WatchUpdater(private val context: Context) {
         private const val KEY_READY_SHA = "ready_sha"
         private const val KEY_SESSION = "session"
         private const val OFFER_TTL_MS = 30 * 60_000L
+
+        /** How long nothing must have played before an install that waited goes ahead. */
+        private const val QUIET_BEFORE_INSTALL_MS = 30_000L
+
+        /** How often the wait looks at the player. */
+        private const val PLAYBACK_POLL_MS = 5_000L
+
+        /** How long the phone is given to answer a "check for updates". */
+        private const val CHECK_REPLY_MS = 10_000L
+
+        /** How long the outcome of a check stays on the row, and "on its way" a little longer. */
+        private const val RESULT_SHOWN_MS = 4_000L
+        private const val COMING_SHOWN_MS = 15_000L
 
         /** A transfer that moves no bytes for this long is dead. */
         private const val STALL_MS = 30_000L

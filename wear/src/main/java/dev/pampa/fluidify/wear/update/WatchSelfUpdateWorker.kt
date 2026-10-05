@@ -45,7 +45,8 @@ class WatchSelfUpdateWorker(context: Context, params: WorkerParameters) : Corout
             source = UpdateSource(manifestUrl = WEAR_MANIFEST_URL, applicationId = applicationContext.packageName),
             installer = installer,
         )
-        val update = updater.check(BuildConfig.VERSION_NAME).getOrElse {
+        // The line the phone follows, as it last said: one setting for both devices.
+        val update = updater.check(BuildConfig.VERSION_NAME, UpdateChannelPrefs.engine(UpdateChannelPrefs.word(applicationContext))).getOrElse {
             Log.i(TAG, "self-update check failed: ${it.message}")
             return Result.retry()
         } ?: return Result.success()

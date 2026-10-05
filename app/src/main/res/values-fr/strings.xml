@@ -425,7 +425,7 @@
     <string name="watch_update">Mise à jour de la montre</string>
     <string name="watch_update_now">Mettre à jour la montre</string>
     <string name="watch_auto_update">Mettre à jour la montre automatiquement</string>
-    <string name="watch_auto_update_note">Les nouvelles versions passent à la montre en Bluetooth quand elle se connecte</string>
+    <string name="watch_auto_update_note">Les nouvelles versions sont téléchargées en Wi-Fi, puis passent à la montre en Bluetooth quand elle se connecte</string>
     <string name="watch_push_apk">Envoyer un APK à la montre</string>
     <string name="watch_update_idle">Pas encore vérifié</string>
     <string name="watch_update_checking">Vérification…</string>
@@ -509,4 +509,16 @@
     <string name="kbps_value">%1$d kbps</string>
     <string name="widget_open_app">Ouvrir Fluidify</string>
     <string name="widget_settings">Réglages du widget</string>
+    <string name="update_channel">Canal de mise à jour</string>
+    <string name="update_channel_stable">Stable</string>
+    <string name="update_channel_beta">Bêta</string>
+    <string name="update_channel_note">Bêta : les nouvelles versions arrivent plus tôt, mais peuvent être moins abouties. La montre suit le même canal. Revenir à Stable ne prend effet qu&#8217;à partir de la prochaine version stable.</string>
+    <string name="update_whats_new">Nouveautés</string>
+    <string name="watch_whats_new">Nouveautés de %1$s</string>
+    <string name="watch_update_current_checked">À jour (%1$s) · vérifié %2$s</string>
+    <string name="watch_update_waiting_playback">S&#8217;installera quand la montre arrêtera la lecture</string>
+    <string name="watch_update_auto_off">Les mises à jour automatiques sont désactivées sur la montre : mettez à jour depuis la page Plus de la montre</string>
+    <string name="watch_update_err_expired">La montre n&#8217;a pas répondu à temps : réessayez</string>
+    <string name="watch_update_err_interrupted">L&#8217;installation a été interrompue : réessayez</string>
+    <string name="watch_update_installed_notification">Montre mise à jour vers %1$s</string>
 </resources>

@@ -7,9 +7,11 @@ import android.content.pm.PackageManager
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
@@ -24,16 +26,19 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.SwitchButton
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.ListSubHeader
+import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.ArrowCircleUp
+import com.adamglin.phosphoricons.regular.ArrowClockwise
 import com.adamglin.phosphoricons.regular.DownloadSimple
 import com.adamglin.phosphoricons.regular.Info
 import com.adamglin.phosphoricons.regular.Repeat
@@ -47,6 +52,7 @@ import dev.pampa.fluidify.wear.BuildConfig
 import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.playback.PlaybackControls
 import dev.pampa.fluidify.wear.protocol.RepeatMode
+import dev.pampa.fluidify.wear.protocol.UpdateChannels
 import dev.pampa.fluidify.wear.protocol.UpdatePhase
 import dev.pampa.fluidify.wear.protocol.UpdateStatus
 import dev.pampa.fluidify.wear.system.Bridging
@@ -57,10 +63,14 @@ import dev.pampa.fluidify.wear.ui.theme.WearDimens
 import dev.pampa.fluidify.wear.ui.common.WatchList
 import dev.pampa.fluidify.wear.ui.debug.GlassMeterPrefs
 import dev.pampa.fluidify.wear.ui.player.deviceIcon
+import dev.pampa.fluidify.wear.update.UpdateChannelPrefs
 import dev.pampa.fluidify.wear.update.WatchUpdater
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlin.math.roundToInt
+
+/** The phases in which an update is being fetched or installed: asking again then would only collide. */
+private val WORKING_PHASES = setOf(UpdatePhase.RECEIVING, UpdatePhase.INSTALLING, UpdatePhase.AWAITING_CONFIRMATION)
 
 /**
  * "Altro": the page to the right of the player.
@@ -94,6 +104,22 @@ fun MoreScreen(
     val snapshot = now.snapshot
     val update by (updater?.status ?: remember { MutableStateFlow<UpdateStatus?>(null) }).collectAsStateWithLifecycle()
     val phone by phoneVersion.collectAsStateWithLifecycle()
+    val app = context.applicationContext as? dev.pampa.fluidify.wear.WearApp
+    // The line the phone follows, from its last hello, or from the one before that if there has not
+    // been one in this run: read-only here, the setting is on the phone.
+    val phoneHello by (app?.link?.phone ?: remember { MutableStateFlow<dev.pampa.fluidify.wear.protocol.Hello?>(null) }).collectAsStateWithLifecycle()
+    val channelWord = remember(phoneHello) {
+        phoneHello?.let { UpdateChannels.parse(it.updateChannel) } ?: UpdateChannelPrefs.word(context)
+    }
+    val check by (updater?.check ?: remember { MutableStateFlow<WatchUpdater.Check>(WatchUpdater.Check.Idle) }).collectAsStateWithLifecycle()
+    val news by (updater?.news ?: remember { MutableStateFlow<WatchUpdater.News?>(null) }).collectAsStateWithLifecycle()
+    // What the update just installed brought is folded away until asked for, and counts as read
+    // once it has been opened and the page is left (or it is closed again).
+    var newsOpen by remember { mutableStateOf(false) }
+    val newsOpenNow by rememberUpdatedState(newsOpen)
+    DisposableEffect(updater) {
+        onDispose { if (newsOpenNow) updater?.dismissNews() }
+    }
     var auto by remember { mutableStateOf(updater?.autoUpdate ?: true) }
     var nowBar by remember { mutableStateOf(surfaces?.nowBar ?: NowBarMode.AUTO) }
     var bridged by remember { mutableStateOf(surfaces?.phoneNotifications ?: true) }
@@ -315,31 +341,105 @@ fun MoreScreen(
             }
         }
         if (update != null || updater != null) item { ListSubHeader { Text(stringResource(R.string.group_updates)) } }
-        update?.let { status ->
+        // What the version that was just installed brought: the first thing, while there is news.
+        news?.let { fresh ->
             item {
                 FluidWearListRow(
-                    title = stringResource(R.string.update),
-                    subtitle = stringResource(
-                        when (status.phase) {
-                            UpdatePhase.ACCEPT, UpdatePhase.RECEIVING -> R.string.update_receiving
-                            UpdatePhase.INSTALLING -> R.string.update_installing
-                            UpdatePhase.AWAITING_CONFIRMATION -> R.string.update_confirm
-                            UpdatePhase.FAILED -> if (updater?.canRetry == true) R.string.update_retry_cached else R.string.update_failed
-                            else -> R.string.update_receiving
-                        },
-                    ).let { text ->
-                        if (status.phase == UpdatePhase.RECEIVING) {
-                            stringResource(R.string.two_parts, text, stringResource(R.string.percent_value, (status.progress * 100).roundToInt()))
-                        } else {
-                            text
-                        }
+                    title = stringResource(R.string.whats_new_in, fresh.version),
+                    onClick = {
+                        newsOpen = !newsOpen
+                        if (!newsOpen) updater?.dismissNews()
                     },
-                    onClick = if (status.phase == UpdatePhase.AWAITING_CONFIRMATION || status.phase == UpdatePhase.FAILED && updater?.canRetry == true) ({ updater?.confirmOrRetry() }) else null,
-                    leading = { Icon(PhosphorIcons.Regular.ArrowCircleUp, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
+                    leading = { Icon(PhosphorIcons.Regular.Info, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
+            }
+            if (newsOpen) {
+                item {
+                    Text(
+                        text = fresh.notes,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 6.dp),
+                    )
+                }
             }
         }
         if (updater != null) {
+            val status = update
+            // Held back for the watch's own music: waiting, which is not receiving.
+            val waiting = status?.phase == UpdatePhase.ACCEPT && status.reason == UpdateStatus.REASON_WAITING_PLAYBACK
+            val working = waiting || status?.phase in WORKING_PHASES
+            item {
+                // "Version 1.7.0", with the line when it is not the usual one: the status of an
+                // update comes over this when nothing is happening.
+                val version = stringResource(R.string.update_version, BuildConfig.VERSION_NAME).let { text ->
+                    if (channelWord == UpdateChannels.BETA) {
+                        stringResource(R.string.two_parts, text, stringResource(R.string.update_channel_beta))
+                    } else {
+                        text
+                    }
+                }
+                FluidWearListRow(
+                    title = stringResource(R.string.update),
+                    subtitle = when {
+                        status == null -> version
+                        waiting -> stringResource(R.string.update_waiting_playback)
+                        else -> when (status.phase) {
+                            UpdatePhase.ACCEPT -> stringResource(R.string.update_receiving)
+                            UpdatePhase.RECEIVING -> stringResource(
+                                R.string.two_parts,
+                                stringResource(R.string.update_receiving),
+                                stringResource(R.string.percent_value, (status.progress * 100).roundToInt()),
+                            )
+                            UpdatePhase.INSTALLING -> stringResource(R.string.update_installing)
+                            UpdatePhase.AWAITING_CONFIRMATION -> stringResource(R.string.update_confirm)
+                            UpdatePhase.FAILED -> stringResource(
+                                if (updater.canRetry) R.string.update_retry_cached else R.string.update_failed,
+                            )
+                            // Done: the version it is now, not "receiving", which it never was again.
+                            UpdatePhase.INSTALLED -> stringResource(R.string.update_current, BuildConfig.VERSION_NAME)
+                            UpdatePhase.DECLINE -> when (status.reason) {
+                                "already-current", "older" -> stringResource(R.string.update_current, BuildConfig.VERSION_NAME)
+                                "busy" -> stringResource(R.string.update_busy)
+                                // The person's own choice, and the switch below says so.
+                                "auto-update-off" -> version
+                                else -> stringResource(R.string.update_failed)
+                            }
+                        }
+                    },
+                    onClick = if (status?.phase == UpdatePhase.AWAITING_CONFIRMATION || status?.phase == UpdatePhase.FAILED && updater.canRetry) ({ updater.confirmOrRetry() }) else null,
+                    leading = { Icon(PhosphorIcons.Regular.ArrowCircleUp, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
+                )
+            }
+            // Asks the phone, and shows what it said: up to date, on its way, or that it is not there.
+            item {
+                FluidWearListRow(
+                    title = stringResource(R.string.check_updates),
+                    subtitle = when (val result = check) {
+                        WatchUpdater.Check.Idle -> null
+                        WatchUpdater.Check.Asking -> stringResource(R.string.update_checking)
+                        is WatchUpdater.Check.UpToDate -> stringResource(R.string.update_current, result.version)
+                        is WatchUpdater.Check.Coming -> stringResource(R.string.update_coming, result.version)
+                        WatchUpdater.Check.Failed -> stringResource(R.string.update_check_failed)
+                        WatchUpdater.Check.Unreachable -> stringResource(R.string.phone_unreachable)
+                    },
+                    // Not while one is being fetched or installed, nor while the last question is out.
+                    onClick = if (working || check == WatchUpdater.Check.Asking) null else ({
+                        updater.requestCheck { app?.link?.requestUpdateCheck() == true }
+                    }),
+                    leading = { Icon(PhosphorIcons.Regular.ArrowClockwise, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
+                )
+            }
+            // Read-only: the line is the phone's setting, which this watch follows.
+            item {
+                FluidWearListRow(
+                    title = stringResource(R.string.update_channel),
+                    subtitle = stringResource(
+                        if (channelWord == UpdateChannels.BETA) R.string.update_channel_beta else R.string.update_channel_stable,
+                    ),
+                    leading = { Icon(PhosphorIcons.Regular.Info, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
+                )
+            }
             item {
                 SwitchButton(
                     checked = auto,

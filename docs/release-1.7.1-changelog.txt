@@ -1,0 +1,7 @@
+Orologio: il lettore e il display sempre acceso.
+
+Il display sempre acceso e' il lettore stesso con le luci abbassate: la copertina resta, scurita per non rovinare lo schermo, orologio e titolo restano al loro posto, controlli e anello spariscono. Si entra e si esce in dissolvenza.
+
+La pagina della copertina sopra il lettore non c'e' piu': trascinando in giu' sul lettore i controlli svaniscono seguendo il dito, con lo sfondo fermo; trascinando in su tornano. Senza controlli la copertina e' il comando: un tocco play/pausa, due tocchi avanti, pressione lunga Mi piace.
+
+Aggiornamenti: canale Stabile o Beta in Impostazioni, valido per telefono e orologio. Le novita' di ogni versione si vedono prima di aggiornare e dopo, anche sull'orologio. L'orologio non si aggiorna mentre suona musica, puo' chiedere al telefono di controllare, e gli aggiornamenti automatici si scaricano solo in Wi-Fi. Stati piu' chiari sul telefono, con Riprova nella notifica.

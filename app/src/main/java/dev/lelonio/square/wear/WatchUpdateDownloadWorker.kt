@@ -14,7 +14,11 @@ class WatchUpdateDownloadWorker(context: Context, parameters: WorkerParameters) 
         val sha = inputData.getString("sha256") ?: return Result.failure()
         val node = inputData.getString("node") ?: return Result.failure()
         if (!sha.matches(WatchUpdateCoordinator.SHA256_HEX)) return Result.failure()
-        val update = AvailableAppUpdate(version, "", "", "watch-download.apk", url, inputData.getLong("bytes", 0), sha)
+        // The notes ride along so that the offer, and the page after the install, can say what is new.
+        val update = AvailableAppUpdate(
+            version, inputData.getString("changelog").orEmpty(), "", "watch-download.apk", url,
+            inputData.getLong("bytes", 0), sha,
+        )
         val done = (applicationContext as SquareApplication).wearBridge.updates.downloadAndOffer(update, node, inputData.getBoolean("user", false))
         return if (done) Result.success() else if (runAttemptCount < 3) Result.retry() else Result.failure()
     }

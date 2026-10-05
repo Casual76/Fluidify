@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="show_controls">नियंत्रण दिखाएँ</string>
+    <string name="hide_controls">नियंत्रण छिपाएँ</string>
+</resources>

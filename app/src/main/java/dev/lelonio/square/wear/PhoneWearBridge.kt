@@ -16,6 +16,7 @@ import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.data.RemoteConnect
 import dev.lelonio.square.playback.PlaybackService
 import dev.lelonio.square.playback.toQueueItem
+import dev.lelonio.square.update.word
 import dev.pampa.fluidify.wear.protocol.AckErrors
 import dev.pampa.fluidify.wear.protocol.Command
 import dev.pampa.fluidify.wear.protocol.CommandAck
@@ -83,7 +84,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
     private val artwork = WearArtworkSender(app, link)
 
     /** Keeps the watch app up to date from here; see [WatchUpdateCoordinator]. */
-    val updates = WatchUpdateCoordinator(app, link, scope)
+    val updates = WatchUpdateCoordinator(app, link, scope, channel = { app.preferences.updateChannel.value })
     private val coalescer = StateCoalescer()
     private val seq = AtomicLong(System.currentTimeMillis())
 
@@ -631,6 +632,8 @@ class PhoneWearBridge(private val app: SquareApplication) {
         sdk = Build.VERSION.SDK_INT,
         wantsReply = wantsReply,
         sentAtEpochMs = System.currentTimeMillis(),
+        // The one setting for both: the watch's own checks, when the phone is away, follow it.
+        updateChannel = app.preferences.updateChannel.value.word,
     )
 
     /** A command from the watch at [nodeId]. Applies it and acknowledges it. */

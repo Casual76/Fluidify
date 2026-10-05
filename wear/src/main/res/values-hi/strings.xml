@@ -170,4 +170,18 @@
         <item quantity="one">%1$d उपलब्ध नहीं</item>
         <item quantity="other">%1$d उपलब्ध नहीं</item>
     </plurals>
+    <string name="update_channel">चैनल</string>
+    <string name="update_channel_stable">स्थिर</string>
+    <string name="update_channel_beta">बीटा</string>
+    <string name="update_version">संस्करण %1$s</string>
+    <string name="update_current">अद्यतित (%1$s)</string>
+    <string name="update_waiting_playback">प्लेबैक रुकने पर इंस्टॉल होगा</string>
+    <string name="update_busy">दूसरा अपडेट चल रहा है</string>
+    <string name="check_updates">अपडेट देखें</string>
+    <string name="update_checking">देखा जा रहा है…</string>
+    <string name="update_coming">अपडेट %1$s आ रहा है</string>
+    <string name="update_check_failed">फ़ोन जाँच नहीं कर सका</string>
+    <string name="whats_new_in">%1$s में नया क्या है</string>
+    <string name="updated_to">%1$s पर अपडेट हुआ</string>
+    <string name="updated_to_tap">नया क्या है देखें</string>
 </resources>

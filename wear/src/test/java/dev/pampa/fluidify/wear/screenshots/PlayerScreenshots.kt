@@ -4,6 +4,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onRoot
 import androidx.compose.ui.test.onNodeWithContentDescription
 import androidx.compose.ui.test.onNodeWithText
+import androidx.compose.ui.test.onAllNodesWithText
+import androidx.compose.ui.test.onFirst
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Density
@@ -16,7 +18,7 @@ import dev.pampa.fluidify.wear.protocol.DeviceInfo
 import dev.pampa.fluidify.wear.protocol.DeviceKind
 import dev.pampa.fluidify.wear.protocol.PlaybackSnapshot
 import dev.pampa.fluidify.wear.ui.more.MoreScreen
-import dev.pampa.fluidify.wear.ui.player.ImmersiveScreen
+import dev.pampa.fluidify.wear.ui.player.rememberPlayerChrome
 import dev.pampa.fluidify.wear.ui.player.PlayerScreen
 import org.junit.Before
 import org.junit.Rule
@@ -110,10 +112,9 @@ class PlayerScreenshots {
         org.junit.Assert.assertEquals(android.graphics.Color.BLACK, bitmap.getPixel(bitmap.width / 2, bitmap.height / 2))
     }
 
-    @Test fun enteringAmbientKeepsTheTitleAnchorAndTheAppUnderneath() {
+    @Test fun enteringAmbientDimsThePlayerInPlaceAndKeepsTheAppUnderneath() {
         val snapshot = sampleSnapshot()
         val controls = FakeControls(snapshot)
-        val now = androidx.compose.runtime.mutableStateOf(controls.nowPlaying.value)
         val ambient = dev.antigravity.fluidengine.wear.ambient.FluidAmbientState.preview(false)
         // Mutate the same observed state, as AmbientLifecycleObserver does on the device.
         val setAmbient = ambient.javaClass.methods.single { it.name.startsWith("setAmbient") }
@@ -122,7 +123,7 @@ class PlayerScreenshots {
         compose.setContent {
             WatchFrame {
                 CompositionLocalProvider(dev.antigravity.fluidengine.wear.ambient.LocalFluidWearAmbient provides ambient) {
-                    dev.pampa.fluidify.wear.ui.player.WatchAmbientSurface(now, art = art) {
+                    dev.pampa.fluidify.wear.ui.player.WatchAmbientSurface(selfDrawn = true, ambientPlayer = {}) {
                         androidx.compose.runtime.DisposableEffect(Unit) { onDispose { disposed++ } }
                         PlayerScreen(controls, art, onQueue = {}, onOutput = {}, onEssentials = {})
                     }
@@ -130,21 +131,17 @@ class PlayerScreenshots {
             }
         }
         compose.mainClock.advanceTimeBy(1_200)
-        val title = snapshot.track!!.title
-        val before = compose.onNodeWithText(title, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        // Twice in the unmerged tree: the glass title and its plain copy for always-on.
+        compose.onAllNodesWithText(snapshot.track!!.title, useUnmergedTree = true).onFirst().assertExists()
         compose.runOnIdle { setAmbient.invoke(ambient, true) }
-        // Wear can suspend animation frames as soon as it enters ambient: the ambient screen must be
-        // there without waiting for any. The app stays composed under it (its lists keep their place,
-        // its effects do not run again on the way back), drawn by nobody; the player page alone has
-        // nothing to show in ambient and leaves, which is what stops its ring and its polling.
+        // On the player, always-on is the player itself with the lights going down: nothing is
+        // swapped in, the screen is never taken out of composition, and the fade runs to its end.
         compose.mainClock.advanceTimeByFrame()
         compose.mainClock.advanceTimeByFrame() // Commit the snapshot and then its recomposition.
         compose.waitForIdle()
-        org.junit.Assert.assertEquals("The app stays composed under the ambient screen", 0, disposed)
-        compose.mainClock.advanceTimeBy(300)
+        org.junit.Assert.assertEquals("The player stays composed in always-on", 0, disposed)
+        compose.mainClock.advanceTimeBy(600)
         compose.waitForIdle()
-        val after = compose.onNodeWithText(title, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
-        org.junit.Assert.assertEquals(before.top, after.top, 2f)
         org.junit.Assert.assertEquals(0, disposed)
         compose.onRoot().captureRoboImage("screenshots/player_aod_same_anchor.png")
         val bitmap = android.graphics.BitmapFactory.decodeFile("screenshots/player_aod_same_anchor.png")
@@ -163,7 +160,12 @@ class PlayerScreenshots {
     }
 
     @Test
-    fun immersive() = capture("immersive") { ImmersiveScreen(FakeControls(sampleSnapshot()), art) }
+    fun immersive() = capture("immersive") {
+        // The controls pulled away: the same cover, the ring, nothing else.
+        val chrome = rememberPlayerChrome()
+        androidx.compose.runtime.LaunchedEffect(Unit) { chrome.hide() }
+        PlayerScreen(FakeControls(sampleSnapshot()), art, onQueue = {}, onOutput = {}, onEssentials = {}, chrome = chrome)
+    }
 
     @Test
     fun more() = capture("more") { MoreScreen(FakeControls(sampleSnapshot()), onOutput = {}) }

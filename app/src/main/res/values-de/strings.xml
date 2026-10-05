@@ -416,7 +416,7 @@
     <string name="watch_update">Uhr-Update</string>
     <string name="watch_update_now">Uhr aktualisieren</string>
     <string name="watch_auto_update">Uhr automatisch aktualisieren</string>
-    <string name="watch_auto_update_note">Neue Versionen gehen per Bluetooth an die Uhr, sobald sie sich verbindet</string>
+    <string name="watch_auto_update_note">Neue Versionen werden im WLAN geladen und per Bluetooth an die Uhr gesendet, sobald sie sich verbindet</string>
     <string name="watch_push_apk">APK an die Uhr senden</string>
     <string name="watch_update_idle">Noch nicht geprüft</string>
     <string name="watch_update_checking">Wird geprüft…</string>
@@ -498,4 +498,16 @@
     <string name="kbps_value">%1$d kbps</string>
     <string name="widget_open_app">Fluidify öffnen</string>
     <string name="widget_settings">Widget-Einstellungen</string>
+    <string name="update_channel">Update-Kanal</string>
+    <string name="update_channel_stable">Stabil</string>
+    <string name="update_channel_beta">Beta</string>
+    <string name="update_channel_note">Beta: neue Versionen früher, dafür vielleicht weniger ausgereift. Die Uhr folgt demselben Kanal. Die Rückkehr zu Stabil gilt ab der nächsten stabilen Version.</string>
+    <string name="update_whats_new">Was ist neu</string>
+    <string name="watch_whats_new">Neu in %1$s</string>
+    <string name="watch_update_current_checked">Aktuell (%1$s) · geprüft %2$s</string>
+    <string name="watch_update_waiting_playback">Wird installiert, sobald die Uhr nicht mehr spielt</string>
+    <string name="watch_update_auto_off">Automatische Updates sind auf der Uhr aus: auf der Seite „Mehr“ der Uhr aktualisieren</string>
+    <string name="watch_update_err_expired">Die Uhr hat nicht rechtzeitig geantwortet: erneut versuchen</string>
+    <string name="watch_update_err_interrupted">Die Installation wurde unterbrochen: erneut versuchen</string>
+    <string name="watch_update_installed_notification">Uhr auf %1$s aktualisiert</string>
 </resources>

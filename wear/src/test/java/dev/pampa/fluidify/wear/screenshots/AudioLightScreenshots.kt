@@ -26,8 +26,9 @@ class AudioLightScreenshots {
         compose.setContent {
             CompositionLocalProvider(LocalWatchAudioLightPreview provides AudioLightFrame(energy=energy,bass=bass)) {
                 WatchFrame {
-                    if(immersive) ImmersiveScreen(FakeControls(sampleSnapshot()),art)
-                    else PlayerScreen(FakeControls(sampleSnapshot()),art,onQueue={},onOutput={},onEssentials={})
+                    val chrome = dev.pampa.fluidify.wear.ui.player.rememberPlayerChrome()
+                    if (immersive) androidx.compose.runtime.LaunchedEffect(Unit) { chrome.hide() }
+                    PlayerScreen(FakeControls(sampleSnapshot()), art, onQueue = {}, onOutput = {}, onEssentials = {}, chrome = chrome)
                 }
             }
         }

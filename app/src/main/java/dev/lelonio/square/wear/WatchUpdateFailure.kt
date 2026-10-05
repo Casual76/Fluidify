@@ -26,9 +26,13 @@ internal fun watchUpdateFailureRes(reason: String): Int = when (reason) {
         R.string.watch_update_err_invalid
     "wrong-signature" -> R.string.watch_update_err_signature
     "send-timeout", "send", "transfer-interrupted", "transfer-timeout" -> R.string.watch_update_err_transfer
-    "install", "install-interrupted", "install-permission", "confirmation-unavailable" ->
+    "install", "install-permission", "confirmation-unavailable" ->
         R.string.watch_update_err_install
     "busy" -> R.string.watch_update_err_busy
     "older" -> R.string.watch_update_err_older
+    // The watch's own words for an offer it never answered and an install the system cut short.
+    // Both used to fall to the generic line, which told the person nothing about what to do.
+    "offer-expired" -> R.string.watch_update_err_expired
+    "install-interrupted" -> R.string.watch_update_err_interrupted
     else -> if (reason.startsWith("receive")) R.string.watch_update_err_transfer else R.string.watch_update_failed
 }

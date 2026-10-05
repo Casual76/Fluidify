@@ -518,6 +518,13 @@ fun SettingsScreen(
             }
         }
 
+        // Beside the update row it governs, and the same setting as on the Watch page.
+        if (open == SettingsPage.About) item("update-channel") {
+            Section(stringResource(R.string.update_channel)) {
+                UpdateChannelRows(showLabel = false)
+            }
+        }
+
         if (open == SettingsPage.About) item("about") {
             Section(stringResource(R.string.about)) {
                 InfoRow(stringResource(R.string.version), "${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_TYPE})")

@@ -431,7 +431,7 @@
     <string name="watch_update">घड़ी अपडेट</string>
     <string name="watch_update_now">घड़ी अपडेट करें</string>
     <string name="watch_auto_update">घड़ी अपने आप अपडेट करें</string>
-    <string name="watch_auto_update_note">नए संस्करण घड़ी के जुड़ने पर ब्लूटूथ से भेजे जाते हैं</string>
+    <string name="watch_auto_update_note">नए संस्करण Wi-Fi पर डाउनलोड होते हैं, फिर घड़ी के जुड़ने पर ब्लूटूथ से भेजे जाते हैं</string>
     <string name="watch_push_apk">घड़ी पर APK भेजें</string>
     <string name="watch_update_idle">अभी जांचा नहीं गया</string>
     <string name="watch_update_checking">जांच हो रही है…</string>
@@ -513,4 +513,16 @@
     <string name="kbps_value">%1$d kbps</string>
     <string name="widget_open_app">Fluidify खोलें</string>
     <string name="widget_settings">विजेट सेटिंग</string>
+    <string name="update_channel">अपडेट चैनल</string>
+    <string name="update_channel_stable">स्थिर</string>
+    <string name="update_channel_beta">बीटा</string>
+    <string name="update_channel_note">बीटा: नए संस्करण पहले मिलते हैं, पर हो सकता है कम निखरे हों। घड़ी भी यही चैनल अपनाती है। स्थिर पर लौटने का असर अगले स्थिर संस्करण से दिखेगा।</string>
+    <string name="update_whats_new">नया क्या है</string>
+    <string name="watch_whats_new">%1$s में नया क्या है</string>
+    <string name="watch_update_current_checked">अद्यतित (%1$s) · जाँचा गया %2$s</string>
+    <string name="watch_update_waiting_playback">घड़ी पर प्लेबैक रुकने पर इंस्टॉल होगा</string>
+    <string name="watch_update_auto_off">घड़ी पर अपने आप अपडेट बंद है: घड़ी के “और” पेज से अपडेट करें</string>
+    <string name="watch_update_err_expired">घड़ी ने समय पर जवाब नहीं दिया: फिर कोशिश करें</string>
+    <string name="watch_update_err_interrupted">इंस्टॉलेशन बीच में रुक गया: फिर कोशिश करें</string>
+    <string name="watch_update_installed_notification">घड़ी %1$s पर अपडेट हो गई</string>
 </resources>

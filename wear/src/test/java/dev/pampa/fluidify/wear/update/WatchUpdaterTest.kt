@@ -6,8 +6,12 @@ import android.content.pm.PackageInstaller
 import android.app.NotificationManager
 import androidx.test.core.app.ApplicationProvider
 import androidx.test.ext.junit.runners.AndroidJUnit4
+import dev.pampa.fluidify.wear.protocol.UpdateCheckReply
 import dev.pampa.fluidify.wear.protocol.UpdatePhase
+import dev.pampa.fluidify.wear.protocol.UpdateStatus
+import dev.pampa.fluidify.wear.protocol.WearCodec
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
@@ -54,6 +58,46 @@ class WatchUpdaterTest {
         WatchUpdater(context).onInstallResult(result(PackageInstaller.STATUS_SUCCESS))
         assertFalse(ready.exists())
         assertFalse(WatchUpdater(context).canRetry)
+    }
+    @Test fun anInstallHeldBackForTheMusicIsStillWaitingAfterTheProcessDies() = runTest {
+        val waiting = UpdateStatus(UpdatePhase.ACCEPT, "9.0.0", reason = UpdateStatus.REASON_WAITING_PLAYBACK)
+        prefs.edit().putString("status", WearCodec.json.encodeToString(UpdateStatus.serializer(), waiting)).commit()
+        // The music is still on, so the new process goes on waiting rather than calling it a failure.
+        val reopened = WatchUpdater(context, playingLocally = { true })
+        assertEquals(waiting, reopened.status.value)
+        assertTrue(ready.exists())
+    }
+    @Test fun aPlainAcceptThatWasInterruptedIsStillAFailure() = runTest {
+        val accepted = UpdateStatus(UpdatePhase.ACCEPT, "9.0.0")
+        prefs.edit().putString("status", WearCodec.json.encodeToString(UpdateStatus.serializer(), accepted)).commit()
+        val reopened = WatchUpdater(context)
+        assertEquals(UpdatePhase.FAILED, reopened.status.value!!.phase)
+        assertEquals("transfer-interrupted", reopened.status.value!!.reason)
+    }
+    @Test fun theCheckRowTakesTheNewsOfAnAnswerOnlyWhenAskedAndIgnoresStrays() = runTest {
+        val updater = WatchUpdater(context)
+        updater.onCheckReply(UpdateCheckReply(UpdateCheckReply.UPDATE, "9.1.0"))
+        assertEquals(WatchUpdater.Check.Idle, updater.check.value)
+    }
+    @Test fun aRequestThatDoesNotGoIsAPhoneNobodyCanReach() = kotlinx.coroutines.runBlocking {
+        val updater = WatchUpdater(context)
+        updater.requestCheck { false }
+        val settled = kotlinx.coroutines.withTimeoutOrNull(2_000) {
+            updater.check.first { it == WatchUpdater.Check.Unreachable }
+        }
+        assertEquals(WatchUpdater.Check.Unreachable, settled)
+    }
+    @Test fun whatTheJustInstalledVersionBroughtIsKeptUntilItIsRead() = runTest {
+        prefs.edit().putString("news_version", dev.pampa.fluidify.wear.BuildConfig.VERSION_NAME).putString("news", "Tutto nuovo").commit()
+        val updater = WatchUpdater(context)
+        assertEquals("Tutto nuovo", updater.news.value!!.notes)
+        updater.dismissNews()
+        assertNull(updater.news.value)
+        assertNull(WatchUpdater(context).news.value)
+    }
+    @Test fun newsForAnotherVersionThanTheRunningOneIsStale() = runTest {
+        prefs.edit().putString("news_version", "0.0.1").putString("news", "Vecchie notizie").commit()
+        assertNull(WatchUpdater(context).news.value)
     }
     @Test fun unrelatedSessionCannotDeleteOrChangeTheUpdate() = runTest {
         val updater = WatchUpdater(context)

@@ -100,6 +100,13 @@ class PhoneWearListenerService : WearableListenerService() {
                 val status = WearCodec.decodeOrNull(UpdateStatus.serializer(), event.data) ?: return
                 bridge.updates.onStatus(event.sourceNodeId, status)
             }
+            // The watch's own "Check for updates": a check and the answer to it, which takes a
+            // round trip to the manifest. Aside, with the callback not waiting on it for long: the
+            // next message is taken at once, and the watch is answered within its own patience.
+            WearPaths.UPDATE_REQUEST -> {
+                val hello = WearCodec.decodeOrNull(Hello.serializer(), event.data) ?: return
+                handleAside { withTimeoutOrNull(UPDATE_REQUEST_BUDGET_MS) { bridge.updates.onUpdateRequest(event.sourceNodeId, hello) } }
+            }
             else -> Log.d(TAG, "ignored ${event.path}")
         }
     }
@@ -135,5 +142,8 @@ class PhoneWearListenerService : WearableListenerService() {
          * system reclaiming a callback it thinks has hung. The watch gives up at 20 s.
          */
         private const val AUTH_BUDGET_MS = 18_000L
+
+        /** The watch waits ten seconds for the answer to its update check; this is a little less. */
+        private const val UPDATE_REQUEST_BUDGET_MS = 9_000L
     }
 }

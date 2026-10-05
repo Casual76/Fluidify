@@ -160,6 +160,11 @@
             android:name=".widget.media.NowPlayingWidgetActions"
             android:exported="false" />
 
+        <!-- Il tasto "Riprova" della notifica di aggiornamento dell'orologio fallito. -->
+        <receiver
+            android:name=".wear.WatchUpdateRetryReceiver"
+            android:exported="false" />
+
         <service
             android:name=".playback.PlaybackService"
             android:exported="true"

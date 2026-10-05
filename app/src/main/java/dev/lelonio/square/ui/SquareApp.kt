@@ -3694,6 +3694,7 @@ private fun UpdatePrompt() {
     UpdateDialog(
         version = available.version,
         size = available.bytes.takeIf { it > 0 }?.let { "%.1f MB".format(it / 1_000_000.0) },
+        changelog = available.changelog,
         onInstall = {
             prefs.setSkippedUpdate(available.version)
             scope.launch {

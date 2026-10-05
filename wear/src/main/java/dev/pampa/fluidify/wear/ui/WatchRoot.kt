@@ -4,6 +4,8 @@ import android.net.Uri
 import android.os.SystemClock
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import kotlin.math.abs
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -58,7 +60,9 @@ import dev.pampa.fluidify.wear.ui.debug.FrameLog
 import dev.pampa.fluidify.wear.ui.debug.GlassMeter
 import dev.pampa.fluidify.wear.ui.more.CellularScreen
 import dev.pampa.fluidify.wear.ui.more.MoreScreen
-import dev.pampa.fluidify.wear.ui.player.ImmersiveScreen
+import dev.pampa.fluidify.wear.ui.player.PlayerChrome
+import dev.pampa.fluidify.wear.ui.player.rememberPlayerChrome
+import dev.pampa.fluidify.wear.ui.player.rememberPlayerChromeDrag
 import dev.pampa.fluidify.wear.ui.player.PlayerScreen
 import dev.pampa.fluidify.wear.ui.player.UnlikeDialog
 import dev.pampa.fluidify.wear.ui.player.WatchAmbientSurface
@@ -103,12 +107,14 @@ fun WatchRoot(
 ) {
     val nav = rememberSwipeDismissableNavController()
     val scope = rememberCoroutineScope()
-    val vertical = rememberPagerState(initialPage = PAGE_MAIN) { 3 }
+    val vertical = rememberPagerState(initialPage = PAGE_MAIN) { 2 }
     val horizontal = rememberPagerState(initialPage = 0) { 2 }
     val phoneVersion = remember {
         app.link.phone.map { it?.versionName }.stateIn(scope, SharingStarted.Eagerly, app.link.phone.value?.versionName)
     }
-    val toPlayer: () -> Unit = { backToPlayer(nav, scope, vertical, horizontal) }
+    // Whether the player's controls are on screen: hidden by pulling down on it, not by a page.
+    val chrome = rememberPlayerChrome()
+    val toPlayer: () -> Unit = { backToPlayer(nav, scope, vertical, horizontal, chrome) }
     val navigator = remember(nav) { Navigator(nav) }
     val go: (String) -> Unit = navigator::go
     val open: (String, String) -> Unit = { uri, title -> go(contextRoute(uri, title)) }
@@ -167,7 +173,7 @@ fun WatchRoot(
         val asked = request ?: return@LaunchedEffect
         // The updates live on the "more" page: the reset names its page, rather than a second
         // scroll started after it, which the reset (running on its own) could overtake.
-        backToPlayer(nav, scope, vertical, horizontal, horizontalPage = if (asked == PlayerIntents.Request.UPDATES) 1 else 0)
+        backToPlayer(nav, scope, vertical, horizontal, chrome, horizontalPage = if (asked == PlayerIntents.Request.UPDATES) 1 else 0)
         if (asked == PlayerIntents.Request.CONFIRM_UNLIKE && app.controls.nowPlaying.value.snapshot?.liked == true) askUnlike()
         onRequestHandled()
     }
@@ -177,8 +183,13 @@ fun WatchRoot(
                 (horizontal.currentPage == 0 || horizontal.isScrollInProgress)
         }
     }
-    val immersiveActive by remember {
-        derivedStateOf { vertical.currentPage == PAGE_IMMERSIVE || vertical.isScrollInProgress }
+    // The pull that hides and shows the player's controls: only on the player, and only while it
+    // is the page at rest. Anywhere else every scroll is the pagers' or a list's.
+    val chromeDrag = rememberPlayerChromeDrag(chrome) {
+        vertical.currentPage == PAGE_MAIN &&
+            abs(vertical.currentPageOffsetFraction) < AT_REST &&
+            horizontal.currentPage == 0 &&
+            abs(horizontal.currentPageOffsetFraction) < AT_REST
     }
     // The Home is composed at launch (the pager keeps its neighbours ready) but asks the phone for
     // nothing until the first time it is swiped towards, and keeps what it has after that.
@@ -192,7 +203,6 @@ fun WatchRoot(
     val scene by remember {
         derivedStateOf {
             val page = when (vertical.targetPage) {
-                PAGE_IMMERSIVE -> "cover"
                 PAGE_MAIN -> if (horizontal.targetPage == 0) "player" else "more"
                 else -> "home"
             }
@@ -208,11 +218,30 @@ fun WatchRoot(
     val onHome = backStack?.destination?.route.let { it == null || it == HOME }
     WatchLightActivity(
         app,
-        visible = (playerActive || immersiveActive) && onHome,
+        visible = playerActive && onHome,
         playing = playing,
         track = trackUri,
     )
-    WatchAmbientSurface(nowState, modifier, app.art) {
+    // On the player, always-on is the player dimming in place; anywhere else, the dimmed player
+    // fades in over the screen.
+    val onPlayer by remember {
+        derivedStateOf { vertical.currentPage == PAGE_MAIN && horizontal.currentPage == 0 }
+    }
+    WatchAmbientSurface(
+        selfDrawn = onHome && onPlayer,
+        modifier = modifier,
+        ambientPlayer = {
+            PlayerScreen(
+                controls = app.controls,
+                art = app.art,
+                status = standaloneStatus(app),
+                active = false,
+                onQueue = {},
+                onOutput = {},
+                onEssentials = {},
+            )
+        },
+    ) {
         AppScaffold {
             Box(Modifier.fillMaxSize()) {
                 CompositionLocalProvider(LocalNotice provides showNotice) {
@@ -223,6 +252,7 @@ fun WatchRoot(
                             // told whether they are on screen, because the pager keeps the neighbours composed
                             // so the Home is ready before the swipe reaches it — and a ring ticking on a page
                             // nobody can see is battery spent on nothing.
+                            Box(Modifier.fillMaxSize().nestedScroll(chromeDrag)) {
                             VerticalPagerScaffold(pagerState = vertical, pageIndicator = null) {
                                 VerticalPager(
                                     state = vertical,
@@ -232,9 +262,6 @@ fun WatchRoot(
                                 ) { page ->
                                     AnimatedPage(pageIndex = page, pagerState = vertical) {
                                         when (page) {
-                                            PAGE_IMMERSIVE -> ScreenScaffold(timeText = {}) { _ ->
-                                                ImmersiveScreen(app.controls, app.art, active = immersiveActive, onUnlike = askUnlike, volume = app.volume)
-                                            }
                                             PAGE_MAIN -> HorizontalPagerScaffold(pagerState = horizontal, pageIndicator = null) {
                                                 HorizontalPager(
                                                     state = horizontal,
@@ -256,6 +283,7 @@ fun WatchRoot(
                                                                     onEssentials = { go(ESSENTIALS) },
                                                                     onUnlike = askUnlike,
                                                                     onAddToPlaylist = addToPlaylist,
+                                                                    chrome = chrome,
                                                                 )
                                                             }
                                                             else -> MoreScreen(
@@ -289,6 +317,7 @@ fun WatchRoot(
                                         }
                                     }
                                 }
+                            }
                             }
                         }
                         composable(ESSENTIALS) {
@@ -463,9 +492,13 @@ private fun backToPlayer(
     scope: CoroutineScope,
     vertical: PagerState,
     horizontal: PagerState,
+    chrome: PlayerChrome,
     horizontalPage: Int = 0,
 ) {
     nav.popBackStack(HOME, inclusive = false)
+    // Sent back to the player by something just done (a playlist started, a song picked): it
+    // comes back with its controls, whatever it was left as.
+    chrome.show()
     scope.launch {
         vertical.scrollToPage(PAGE_MAIN)
         horizontal.scrollToPage(horizontalPage)
@@ -496,6 +529,8 @@ private const val DOUBLE_TAP_MS = 700L
 /** How long a notice stays up. */
 private const val NOTICE_MS = 2_600L
 
-private const val PAGE_IMMERSIVE = 0
-private const val PAGE_MAIN = 1
-private const val PAGE_HOME = 2
+private const val PAGE_MAIN = 0
+private const val PAGE_HOME = 1
+
+/** A pager within this fraction of a page of its page is at rest on it. */
+private const val AT_REST = 0.01f

@@ -21,13 +21,17 @@ import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.ensureActive
 import kotlin.coroutines.coroutineContext
 import dev.antigravity.fluidengine.foundation.AvailableAppUpdate
+import dev.antigravity.fluidengine.foundation.UpdateChannel
 import dev.antigravity.fluidengine.foundation.compareVersions
 import dev.antigravity.fluidengine.net.EngineHttp
 import dev.antigravity.fluidengine.update.AndroidAppUpdateInstaller
 import dev.antigravity.fluidengine.update.EngineAppUpdater
 import dev.antigravity.fluidengine.update.UpdateSource
 import dev.lelonio.square.BuildConfig
+import dev.lelonio.square.update.word
 import dev.pampa.fluidify.wear.protocol.Hello
+import dev.pampa.fluidify.wear.protocol.UpdateChangelog
+import dev.pampa.fluidify.wear.protocol.UpdateCheckReply
 import dev.pampa.fluidify.wear.protocol.UpdateOffer
 import dev.pampa.fluidify.wear.protocol.UpdatePhase
 import dev.pampa.fluidify.wear.protocol.UpdateStatus
@@ -66,19 +70,59 @@ class WatchUpdateCoordinator(
     private val context: Context,
     private val link: WearLink,
     private val scope: CoroutineScope,
+    /**
+     * The release line to check on, asked each time: it is a setting and can change between two
+     * checks (see PreferencesStore.updateChannel). Stable when nothing says otherwise.
+     */
+    private val channel: () -> UpdateChannel = { UpdateChannel.STABLE },
 ) {
     sealed interface State {
         data object Idle : State
         data object Checking : State
-        data class UpToDate(val version: String) : State
-        data class Available(val version: String) : State
+
+        /** [checkedAtMs] is when the manifest said so; 0 when this was learned from the watch. */
+        data class UpToDate(val version: String, val checkedAtMs: Long = 0) : State
+
+        /** [changelog] is the release's notes as the manifest has them, blank when it has none. */
+        data class Available(val version: String, val changelog: String = "") : State
         data class Downloading(val version: String, val progress: Float?) : State
-        data class Offered(val version: String) : State
+        data class Offered(val version: String, val changelog: String = "") : State
         data class Sending(val version: String, val progress: Float? = null) : State
         data class Installing(val version: String) : State
         data class AwaitingConfirmation(val version: String) : State
-        data class Installed(val version: String) : State
+
+        /**
+         * The watch has the build and will install it when its own music stops: it never replaces
+         * the app under a song it is playing (that ends the song). Not a failure and not a wait
+         * for the person: nothing is asked of them.
+         */
+        data class WaitingForPlayback(val version: String) : State
+        data class Installed(val version: String, val changelog: String = "") : State
+
+        /**
+         * The watch declined an automatic push because the person turned automatic updates off on
+         * it (see [REASON_AUTO_OFF]). Not a fault, and nothing to retry: the page says where the
+         * update is done instead, and no notification is made of it.
+         */
+        data object AutoUpdateOff : State
         data class Failed(val reason: String) : State
+    }
+
+    /**
+     * What the last check or install left behind, kept across restarts.
+     *
+     * The state above lives in memory and is [State.Idle] again in every new process, which is
+     * most of the times the page is opened: it said "Not checked yet" about a watch that had been
+     * checked an hour before. This is what it can say instead. [changelog] is the notes of
+     * [version], when they are known, for the "What's new" row.
+     */
+    data class Outcome(val version: String, val atMs: Long, val changelog: String = "")
+
+    /** The answer to a check the watch asked for; see [onUpdateRequest]. */
+    private sealed interface CheckResult {
+        data object UpToDate : CheckResult
+        data class Update(val version: String) : CheckResult
+        data object Failed : CheckResult
     }
 
     /** What the phone knows about the watch, from its last hello. */
@@ -140,13 +184,12 @@ class WatchUpdateCoordinator(
     /** A watch said hello. Checks for a newer build now and then, and pushes it when allowed. */
     fun onWatchHello(nodeId: String, hello: Hello) {
         scope.launch {
-            val name = catchingNonCancel {
-                Wearable.getNodeClient(context).connectedNodes.await().firstOrNull { it.id == nodeId }?.displayName
-            }.getOrNull() ?: _watch.value?.name.orEmpty()
-            _watch.value = WatchInfo(nodeId, name, hello, System.currentTimeMillis())
+            noteWatch(nodeId, hello)
             val cached = withContext(Dispatchers.IO) { ready }
             if (cached != null && compareVersions(hello.versionName, cached.second.versionName) >= 0) {
-                _state.value = State.Installed(hello.versionName)
+                val notes = savedChangelog()
+                rememberOutcome(hello.versionName, notes)
+                _state.value = State.Installed(hello.versionName, notes)
                 clearReady()
                 return@launch
             }
@@ -158,15 +201,50 @@ class WatchUpdateCoordinator(
         }
     }
 
+    /** What is known of the watch: who it is, from its hello, and when that was heard. */
+    private suspend fun noteWatch(nodeId: String, hello: Hello) {
+        val name = catchingNonCancel {
+            Wearable.getNodeClient(context).connectedNodes.await().firstOrNull { it.id == nodeId }?.displayName
+        }.getOrNull() ?: _watch.value?.name.orEmpty()
+        _watch.value = WatchInfo(nodeId, name, hello, System.currentTimeMillis())
+    }
+
+    /**
+     * The release line changed (see PreferencesStore.updateChannel): what was learned on the other
+     * one no longer holds.
+     *
+     * The six-hour gate is cleared so that the next hello or page open checks at once, and so is
+     * the memory of the last outcome and whatever the page was saying about it ("up to date" on
+     * stable is not news about beta). A transfer already under way is left alone: it is not about
+     * the channel, and an APK already on the watch's way is still a newer build.
+     */
+    fun onChannelChanged() {
+        prefs.edit().remove(KEY_CHECKED).remove(KEY_OUTCOME_VERSION).remove(KEY_OUTCOME_AT).remove(KEY_OUTCOME_NOTES).apply()
+        _state.update { current ->
+            when (current) {
+                is State.Idle, is State.UpToDate, is State.Available, is State.Failed, is State.AutoUpdateOff, is State.Installed -> State.Idle
+                else -> current
+            }
+        }
+    }
+
     /** Asks the manifest whether there is a build newer than the watch's. */
     suspend fun check(): AvailableAppUpdate? = lock.withLock {
         val watch = _watch.value ?: return null
         _state.value = State.Checking
-        val result = updater.check(watch.hello.versionName)
+        val result = updater.check(watch.hello.versionName, channel())
         result.fold(
             onSuccess = { update ->
-                _state.value = if (update == null) State.UpToDate(watch.hello.versionName) else State.Available(update.version)
-                if (update == null) prefs.edit().putLong(KEY_CHECKED, System.currentTimeMillis()).apply()
+                val now = System.currentTimeMillis()
+                _state.value = if (update == null) {
+                    State.UpToDate(watch.hello.versionName, now)
+                } else {
+                    State.Available(update.version, update.changelog)
+                }
+                if (update == null) {
+                    prefs.edit().putLong(KEY_CHECKED, now).apply()
+                    rememberOutcome(watch.hello.versionName, notes = null)
+                }
                 update
             },
             onFailure = {
@@ -183,7 +261,7 @@ class WatchUpdateCoordinator(
      * all: the phone's installer streams it in over ADB (see install/WatchInstaller).
      */
     suspend fun latestApk(onProgress: (Float?) -> Unit): Result<File> = lock.withLock {
-        val update = updater.check(NO_VERSION).getOrElse { error ->
+        val update = updater.check(NO_VERSION, channel()).getOrElse { error ->
             // A manifest that is not there at all (a 404 before the first watch release) is the
             // same news as one with nothing in it.
             val missing = error.message.orEmpty().contains("404")
@@ -223,35 +301,121 @@ class WatchUpdateCoordinator(
 
     /** Checks and, if there is something, sends it. The "update the watch" row. */
     fun checkAndPush() {
-        scope.launch {
-            val update = check()
-            if (update != null) { push(update, requestedByUser = true); return@launch }
-            // A cached update is also usable when the manifest cannot be reached.
-            if (_state.value !is State.Failed) return@launch
-            val cached = withContext(Dispatchers.IO) { ready }
-            val node = _watch.value?.nodeId
-            if (cached != null && node != null && compareVersions(cached.second.versionName, _watch.value!!.hello.versionName) > 0) {
-                offer(cached.first, cached.second.versionName, cached.second.sha256, requestedByUser = true, nodeId = node)
-                return@launch
-            }
+        scope.launch { checkAndPushNow() }
+    }
+
+    /**
+     * [checkAndPush], for a caller that has to hold its process open until the check is made (a
+     * broadcast receiver: see WatchUpdateRetryReceiver). The transfer itself goes on in WorkManager.
+     */
+    suspend fun checkAndPushAndWait() {
+        checkAndPushNow()
+    }
+
+    /**
+     * The version being worked on right now, when an update is already on its way to the watch.
+     *
+     * A check asked for in the middle of one (the row pressed twice, a hello, the watch's own
+     * request) would replace its progress with "checking" and could start the same transfer
+     * again; it is told about the one that is running instead.
+     */
+    private fun inFlightVersion(): String? = when (val current = _state.value) {
+        is State.Downloading -> current.version
+        is State.Offered -> current.version
+        is State.Sending -> current.version
+        is State.Installing -> current.version
+        is State.AwaitingConfirmation -> current.version
+        is State.WaitingForPlayback -> current.version
+        else -> null
+    }
+
+    /** [checkAndPush] as a suspend function, saying what it found. */
+    private suspend fun checkAndPushNow(): CheckResult {
+        inFlightVersion()?.let { return CheckResult.Update(it) }
+        // No hello yet, so no version to compare with: not "up to date", just not known.
+        val watch = _watch.value ?: return CheckResult.Failed
+        val update = check()
+        if (update != null) {
+            push(update, requestedByUser = true)
+            return CheckResult.Update(update.version)
         }
+        if (_state.value !is State.Failed) return CheckResult.UpToDate
+        // A cached update is also usable when the manifest cannot be reached.
+        val cached = withContext(Dispatchers.IO) { ready }
+        if (cached != null && compareVersions(cached.second.versionName, watch.hello.versionName) > 0) {
+            offer(
+                cached.first, cached.second.versionName, cached.second.sha256,
+                requestedByUser = true, nodeId = watch.nodeId, changelog = savedChangelog(),
+            )
+            return CheckResult.Update(cached.second.versionName)
+        }
+        return CheckResult.Failed
+    }
+
+    /**
+     * The watch asked, from its own "Check for updates" row, whether there is something for it.
+     *
+     * Does what the phone's row does (a check, and the transfer if there is a build) and answers
+     * with what it found, because "nothing new" would otherwise be silence the watch cannot tell
+     * from a phone that never heard. [hello] is the watch's own, sent with the request: this may
+     * be a phone just woken for the message, which has not heard the watch's hello yet and would
+     * not know which version to compare with.
+     */
+    suspend fun onUpdateRequest(nodeId: String, hello: Hello) {
+        noteWatch(nodeId, hello)
+        val reply = when (val result = checkAndPushNow()) {
+            CheckResult.UpToDate -> UpdateCheckReply(UpdateCheckReply.UP_TO_DATE, hello.versionName)
+            is CheckResult.Update -> UpdateCheckReply(UpdateCheckReply.UPDATE, result.version)
+            CheckResult.Failed -> UpdateCheckReply(UpdateCheckReply.FAILED)
+        }
+        link.send(nodeId, WearPaths.UPDATE_REQUEST, WearCodec.encode(UpdateCheckReply.serializer(), reply))
     }
 
     private fun push(update: AvailableAppUpdate, requestedByUser: Boolean) {
         val watch = _watch.value ?: return
         val work = OneTimeWorkRequestBuilder<WatchUpdateDownloadWorker>()
             // A download needs a network: without the constraint the worker ran at once on a phone
-            // with none, failed, and burned its retries before the connection came back.
-            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            // with none, failed, and burned its retries before the connection came back. And one
+            // nobody asked for waits for an unmetered one: twenty megabytes of someone's mobile
+            // data is not a thing to spend on a push they did not request. The person who pressed
+            // the row, or the watch's own "Check for updates", meant it, on whatever network.
+            .setConstraints(
+                Constraints.Builder()
+                    .setRequiredNetworkType(if (requestedByUser) NetworkType.CONNECTED else NetworkType.UNMETERED)
+                    .build(),
+            )
             .setInputData(workDataOf(
                 "version" to update.version, "url" to update.downloadUrl, "sha256" to update.sha256,
                 "bytes" to update.sizeBytes, "node" to watch.nodeId, "user" to requestedByUser,
+                // WorkManager's whole input is 10 KB: the notes are cut, and the watch gets them
+                // shorter still (see offerChecked).
+                "changelog" to UpdateChangelog.truncate(update.changelog, UpdateChangelog.WORK_MAX_CHARS),
             )).build()
         WorkManager.getInstance(context).enqueueUniqueWork(
             "watch-update-download",
-            enqueuePolicy(KEY_PUSH_JOB, "${update.version}@${watch.nodeId}"),
+            pushPolicy("${update.version}@${watch.nodeId}", requestedByUser),
             work,
         )
+    }
+
+    /**
+     * What to do with a queued download when another is asked for.
+     *
+     * As [enqueuePolicy], with one more case: the same job asked for by the person when it was
+     * queued by the automatic path. That one is waiting for an unmetered network, and what they
+     * pressed was "now": it is replaced by the unconstrained one.
+     */
+    private fun pushPolicy(key: String, requestedByUser: Boolean): ExistingWorkPolicy {
+        val previousKey = prefs.getString(KEY_PUSH_JOB, null)
+        val previousUser = prefs.getBoolean(KEY_PUSH_USER, false)
+        val policy = when {
+            previousKey != null && previousKey != key -> ExistingWorkPolicy.REPLACE
+            requestedByUser && !previousUser -> ExistingWorkPolicy.REPLACE
+            else -> ExistingWorkPolicy.KEEP
+        }
+        prefs.edit().putString(KEY_PUSH_JOB, key)
+            .putBoolean(KEY_PUSH_USER, requestedByUser || (previousKey == key && previousUser)).apply()
+        return policy
     }
 
     /**
@@ -286,7 +450,7 @@ class WatchUpdateCoordinator(
             return false
         }
         // A fresh download is a temporary: once copied beside the offer it is not kept twice.
-        offer(file, update.version, update.sha256, requestedByUser, nodeId, temporary = cached == null)
+        offer(file, update.version, update.sha256, requestedByUser, nodeId, temporary = cached == null, changelog = update.changelog)
         val success = ready != null && _state.value !is State.Failed
         if (success) prefs.edit().putLong(KEY_CHECKED, System.currentTimeMillis()).apply()
         return success
@@ -333,15 +497,23 @@ class WatchUpdateCoordinator(
         requestedByUser: Boolean,
         nodeId: String? = _watch.value?.nodeId,
         temporary: Boolean = false,
+        changelog: String = "",
     ) {
         try {
-            offerChecked(file, version, sha256, requestedByUser, nodeId)
+            offerChecked(file, version, sha256, requestedByUser, nodeId, changelog)
         } finally {
             if (temporary) withContext(NonCancellable + Dispatchers.IO) { file.delete() }
         }
     }
 
-    private suspend fun offerChecked(file: File, version: String, sha256: String, requestedByUser: Boolean, nodeId: String?) {
+    private suspend fun offerChecked(
+        file: File,
+        version: String,
+        sha256: String,
+        requestedByUser: Boolean,
+        nodeId: String?,
+        changelog: String,
+    ) {
         val node = nodeId ?: run {
             _state.value = State.Failed("no-watch")
             return
@@ -363,17 +535,23 @@ class WatchUpdateCoordinator(
             sizeBytes = file.length(),
             sha256 = checksum,
             requestedByUser = requestedByUser,
+            channel = channel().word,
+            // The watch has a small screen and a thin pipe: a few paragraphs at most. The phone
+            // keeps the longer text for its own page, beside the offer.
+            changelog = UpdateChangelog.truncate(changelog, UpdateChangelog.WATCH_MAX_CHARS),
         )
+        val notes = UpdateChangelog.truncate(changelog, UpdateChangelog.WORK_MAX_CHARS)
         // Disk and a synchronous preferences commit: not on the main thread this runs on.
         val saved = withContext(Dispatchers.IO) {
             val target = File(context.filesDir, "watch-ready.apk")
             val kept = if (file.absolutePath != target.absolutePath) file.copyTo(target, overwrite = true) else target
             prefs.edit().putString(KEY_OFFER, WearCodec.json.encodeToString(UpdateOffer.serializer(), offer))
-                .putString(KEY_OFFER_NODE, node).putLong(KEY_OFFER_AT, System.currentTimeMillis()).commit()
+                .putString(KEY_OFFER_NODE, node).putLong(KEY_OFFER_AT, System.currentTimeMillis())
+                .putString(KEY_OFFER_NOTES, notes).commit()
             kept
         }
         ready = saved to offer
-        _state.value = State.Offered(version)
+        _state.value = State.Offered(version, notes)
         if (!link.awaitNearbyWatch(node)) _state.value = State.Failed("watch-not-nearby")
         else if (!link.send(node, WearPaths.UPDATE_OFFER, WearCodec.encode(UpdateOffer.serializer(), offer)))
             _state.value = State.Failed("offer-send-failed")
@@ -383,7 +561,12 @@ class WatchUpdateCoordinator(
     fun onStatus(nodeId: String, status: UpdateStatus) {
         if (nodeId != prefs.getString(KEY_OFFER_NODE, null) || ready?.second?.versionName != status.versionName) return
         when (status.phase) {
-            UpdatePhase.ACCEPT -> {
+            // An accept that says it is waiting for playback is the watch telling the phone it has the
+            // build already and is holding the install back: nothing to send, and sending it again
+            // would be the same bytes over Bluetooth for nothing.
+            UpdatePhase.ACCEPT -> if (status.reason == UpdateStatus.REASON_WAITING_PLAYBACK) {
+                _state.value = State.WaitingForPlayback(status.versionName)
+            } else {
                 val work = OneTimeWorkRequestBuilder<WatchUpdateSendWorker>().setInputData(workDataOf("node" to nodeId)).build()
                 WorkManager.getInstance(context).enqueueUniqueWork(
                     "watch-update-send",
@@ -392,15 +575,25 @@ class WatchUpdateCoordinator(
                 )
             }
             UpdatePhase.DECLINE -> {
-                _state.value = if (status.reason == "already-current") State.UpToDate(status.versionName)
-                    else State.Failed(status.reason ?: "declined")
+                _state.value = when (status.reason) {
+                    "already-current" -> State.UpToDate(status.versionName)
+                    // Not a fault: the person turned automatic updates off on the watch, and an
+                    // automatic push was told so. What to do about it is on the page, not a "failed".
+                    REASON_AUTO_OFF -> State.AutoUpdateOff
+                    else -> State.Failed(status.reason ?: "declined")
+                }
             }
             UpdatePhase.RECEIVING -> if (_state.value !is State.Installing && _state.value !is State.AwaitingConfirmation) {
                 sendingProgress(status.versionName, status.progress)
             }
             UpdatePhase.INSTALLING -> _state.value = State.Installing(status.versionName)
             UpdatePhase.AWAITING_CONFIRMATION -> _state.value = State.AwaitingConfirmation(status.versionName)
-            UpdatePhase.INSTALLED -> { _state.value = State.Installed(status.versionName); clearReady() }
+            UpdatePhase.INSTALLED -> {
+                val notes = savedChangelog()
+                rememberOutcome(status.versionName, notes)
+                _state.value = State.Installed(status.versionName, notes)
+                clearReady()
+            }
             UpdatePhase.FAILED -> _state.value = State.Failed(status.reason ?: "install")
         }
     }
@@ -497,7 +690,8 @@ class WatchUpdateCoordinator(
     internal suspend fun foregroundState(): State {
         val current = state.value
         if (current is State.Sending || current is State.Installing || current is State.AwaitingConfirmation ||
-            current is State.Installed || current is State.Failed || current is State.Offered
+            current is State.Installed || current is State.Failed || current is State.Offered ||
+            current is State.WaitingForPlayback
         ) return current
         val version = withContext(Dispatchers.IO) { ready?.second?.versionName }.orEmpty()
         return State.Sending(version)
@@ -513,7 +707,28 @@ class WatchUpdateCoordinator(
     private fun clearReady() {
         ready?.first?.delete()
         ready = null
-        prefs.edit().remove(KEY_OFFER).remove(KEY_OFFER_AT).remove(KEY_OFFER_NODE).apply()
+        prefs.edit().remove(KEY_OFFER).remove(KEY_OFFER_AT).remove(KEY_OFFER_NODE).remove(KEY_OFFER_NOTES).apply()
+    }
+
+    /** The notes of the offer that is ready, in the longer form the phone keeps; blank if none. */
+    private fun savedChangelog(): String = prefs.getString(KEY_OFFER_NOTES, null).orEmpty()
+
+    /**
+     * Writes down that the watch is at [version] now, for the page to say after a restart.
+     *
+     * [notes] are the release's; null keeps the ones already known for the same version (a later
+     * "up to date" must not forget what the install brought).
+     */
+    private fun rememberOutcome(version: String, notes: String?) {
+        val kept = if (prefs.getString(KEY_OUTCOME_VERSION, null) == version) prefs.getString(KEY_OUTCOME_NOTES, "").orEmpty() else ""
+        prefs.edit().putString(KEY_OUTCOME_VERSION, version).putLong(KEY_OUTCOME_AT, System.currentTimeMillis())
+            .putString(KEY_OUTCOME_NOTES, notes?.takeIf { it.isNotBlank() } ?: kept).apply()
+    }
+
+    /** The last check or install that had a result, or null if there has been none. */
+    fun lastOutcome(): Outcome? {
+        val version = prefs.getString(KEY_OUTCOME_VERSION, null) ?: return null
+        return Outcome(version, prefs.getLong(KEY_OUTCOME_AT, 0), prefs.getString(KEY_OUTCOME_NOTES, "").orEmpty())
     }
 
     /**
@@ -552,6 +767,14 @@ class WatchUpdateCoordinator(
         private const val KEY_OFFER_NODE = "offer_node"
         private const val KEY_OFFER_AT = "offer_at"
         private const val KEY_PUSH_JOB = "push_job"
+        private const val KEY_PUSH_USER = "push_job_user"
+        private const val KEY_OFFER_NOTES = "offer_notes"
+        private const val KEY_OUTCOME_VERSION = "outcome_version"
+        private const val KEY_OUTCOME_AT = "outcome_at"
+        private const val KEY_OUTCOME_NOTES = "outcome_notes"
+
+        /** The watch's word for "automatic updates are off": see [State.AutoUpdateOff]. */
+        const val REASON_AUTO_OFF = "auto-update-off"
         private const val KEY_SEND_JOB = "send_job"
 
         /** The whole of an APK over Bluetooth, from the channel opening to the watch having it. */

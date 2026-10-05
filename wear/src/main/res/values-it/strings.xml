@@ -171,4 +171,18 @@
         <item quantity="other">%1$d non disponibili</item>
         <item quantity="many">%1$d non disponibili</item>
     </plurals>
+    <string name="update_channel">Canale</string>
+    <string name="update_channel_stable">Stabile</string>
+    <string name="update_channel_beta">Beta</string>
+    <string name="update_version">Versione %1$s</string>
+    <string name="update_current">Aggiornato (%1$s)</string>
+    <string name="update_waiting_playback">Si installa quando finisce la riproduzione</string>
+    <string name="update_busy">Un altro aggiornamento è in corso</string>
+    <string name="check_updates">Cerca aggiornamenti</string>
+    <string name="update_checking">Controllo…</string>
+    <string name="update_coming">Aggiornamento %1$s in arrivo</string>
+    <string name="update_check_failed">Il telefono non ha potuto controllare</string>
+    <string name="whats_new_in">Novità di %1$s</string>
+    <string name="updated_to">Aggiornato a %1$s</string>
+    <string name="updated_to_tap">Scopri le novità</string>
 </resources>

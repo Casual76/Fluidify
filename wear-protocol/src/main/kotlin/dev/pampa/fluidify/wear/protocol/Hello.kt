@@ -79,6 +79,14 @@ data class Hello(
     val wantsReply: Boolean = true,
     /** Clock sample carried by an immediate message, never a queued playback DataItem. */
     val sentAtEpochMs: Long = 0,
+    /**
+     * The release line the phone follows for updates, as [UpdateChannels] spells it.
+     *
+     * One setting for the phone and the watch: the phone fills it when it says hello, and the
+     * watch's own self-update (the one that runs when the phone is away) follows the same line.
+     * A word and with a default, so a hello from before this field reads as stable.
+     */
+    val updateChannel: String = UpdateChannels.STABLE,
 )
 
 enum class Compatibility {
