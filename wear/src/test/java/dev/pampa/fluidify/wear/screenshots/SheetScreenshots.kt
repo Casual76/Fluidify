@@ -162,7 +162,7 @@ class SheetScreenshots {
                 ),
             ),
         )
-        capture("home") { HomeScreen(app, onSearch = {}, onLibrary = {}, onOpen = { _, _ -> }) }
+        capture("home") { HomeScreen(app, load = true, onSearch = {}, onLibrary = {}, onOpen = { _, _ -> }) }
     }
 
     @Test

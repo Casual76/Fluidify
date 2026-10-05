@@ -149,7 +149,6 @@
     <string name="error_playlist">Non è stato aggiunto alla playlist</string>
     <string name="error_no_output">Collega le cuffie per ascoltare sull\'orologio</string>
     <string name="error_end_of_queue">La coda è finita</string>
-    <string name="unavailable_tracks">%1$d non disponibili</string>
     <string name="volume_down">Abbassa volume</string>
     <string name="volume_up">Alza volume</string>
     <string name="pin">Fissa</string>
@@ -158,4 +157,17 @@
     <string name="update_retry_cached">Installazione non riuscita. Tocca per riprovare con l’APK salvato.</string>
     <string name="audio_light_title">Effetti luminosi sulla musica</string>
     <string name="audio_light_note">Avanzamento luminoso soffuso quando il lettore è visibile.</string>
+    <string name="errors_channel">Problemi</string>
+    <string name="song_options">Opzioni del brano</string>
+    <string name="not_updated">Non aggiornato</string>
+    <string name="retry">Riprova</string>
+    <string name="headphone_picker_unavailable">Impossibile aprire le impostazioni Bluetooth</string>
+    <string name="two_parts">%1$s · %2$s</string>
+    <string name="percent_value">%1$d%%</string>
+    <string name="quality_kbps">%1$d kbps</string>
+    <string name="update_title">Aggiornamento %1$s</string>
+    <plurals name="unavailable_tracks">
+        <item quantity="one">%1$d non disponibile</item>
+        <item quantity="other">%1$d non disponibili</item>
+    </plurals>
 </resources>

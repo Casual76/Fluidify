@@ -334,7 +334,7 @@
     <string name="this_device">Este dispositivo</string>
     <string name="no_artist_info">Não há nada para mostrar sobre este artista.</string>
     <string name="no_biography">Sem descrição para este artista.</string>
-    <string name="info_panel">Informacoes</string>
+    <string name="info_panel">Informações</string>
     <string name="monthly_listeners">%1$s ouvintes mensais</string>
 
     <!-- Downloads -->
@@ -387,7 +387,7 @@
     <string name="sleep_timer_track_end">Fim da faixa</string>
     <string name="sleep_timer_left">Para daqui a %1$s</string>
     <string name="sleep_timer_track_end_active">Para no fim desta faixa</string>
-    <string name="sleep_timer_note">Continua a contar com o ecra desligado. A musica desvanece antes de parar.</string>
+    <string name="sleep_timer_note">Continua a contar com o ecrã desligado. A música desvanece antes de parar.</string>
     <string name="shortcut_resume">Retomar</string>
     <string name="shortcut_resume_short">Retomar</string>
     <string name="shortcut_search">Procurar</string>
@@ -398,9 +398,9 @@
     <string name="widget_label">A reproduzir</string>
     <string name="widget_nothing_playing">Nada a tocar</string>
     <string name="widget_label_row">A reproduzir</string>
-    <string name="widget_description_row">A capa, o que esta a tocar, e os tres botoes.</string>
-    <string name="widget_add_row">Adicionar a linha ao ecra inicial</string>
-    <string name="widget_add_note">A capa atras, o que esta a tocar, e os tres botoes. Segue o tema da aplicacao.</string>
+    <string name="widget_description_row">A capa, o que está a tocar, e os três botões.</string>
+    <string name="widget_add_row">Adicionar a linha ao ecrã inicial</string>
+    <string name="widget_add_note">A capa atrás, o que está a tocar, e os três botões. Segue o tema da aplicação.</string>
     <string name="widget_nothing_playing_hint">Abre o Fluidify e carrega em play</string>
     <string name="library_offline">A mostrar o que está transferido. O Spotify ainda não respondeu.</string>
     <string name="library_offline_action">Tentar de novo</string>

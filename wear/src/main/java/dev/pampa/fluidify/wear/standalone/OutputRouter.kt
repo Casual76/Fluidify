@@ -35,8 +35,15 @@ class OutputRouter(private val context: Context, private val prefs: StandalonePr
 
     val outputs: StateFlow<List<LocalOutput>> = _outputs.asStateFlow()
 
-    /** What the listener picked in the output list, if anything. */
-    val chosen = MutableStateFlow<LocalOutput?>(null)
+    private val _chosen = MutableStateFlow<LocalOutput?>(null)
+
+    /** What the listener picked in the output list, if anything; set by [choose]. */
+    val chosen: StateFlow<LocalOutput?> = _chosen.asStateFlow()
+
+    /** The listener picked [output] (or, with null, no longer insists on one). */
+    fun choose(output: LocalOutput?) {
+        _chosen.value = output
+    }
 
     /**
      * The picked output while it is still connected; otherwise headphones if any

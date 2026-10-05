@@ -10,8 +10,23 @@ import com.google.android.gms.wearable.Wearable
 import dev.antigravity.fluidengine.foundation.compareVersions
 import dev.lelonio.square.update.WatchApkValidation
 import dev.pampa.fluidify.wear.BuildConfig
-import dev.pampa.fluidify.wear.protocol.*
-import kotlinx.coroutines.*
+import dev.pampa.fluidify.wear.protocol.UpdateOffer
+import dev.pampa.fluidify.wear.protocol.UpdatePhase
+import dev.pampa.fluidify.wear.protocol.UpdateStatus
+import dev.pampa.fluidify.wear.protocol.WearCodec
+import dev.pampa.fluidify.wear.protocol.WearPaths
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancelAndJoin
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -45,7 +60,7 @@ class WatchUpdater(private val context: Context) {
     suspend fun onOffer(fromNode: String, offer: UpdateOffer) = lock.withLock {
         val order = compareVersions(offer.versionName, BuildConfig.VERSION_NAME)
         val decline = when {
-            !offer.sha256.matches(Regex("[a-fA-F0-9]{64}")) -> "missing-checksum"
+            !offer.sha256.isSha256() -> "missing-checksum"
             offer.sizeBytes <= 0 -> "invalid-size"
             offer.requestedByUser && order < 0 -> "older"
             !offer.requestedByUser && order <= 0 -> "already-current"
@@ -97,23 +112,27 @@ class WatchUpdater(private val context: Context) {
         try {
             progress?.cancel()
             progress = scope.launch {
-                var last = -1
+                val throttle = ProgressThrottle()
                 var lastBytes = -1L
                 var lastByteAt = android.os.SystemClock.elapsedRealtime()
                 val startedAt = lastByteAt
                 while (isActive) {
                     val now = android.os.SystemClock.elapsedRealtime()
                     val bytes = target.length()
-                    if (bytes != lastBytes) { lastBytes = bytes; lastByteAt = now }
-                    if (now - lastByteAt > 30_000 || now - startedAt > 15 * 60_000) {
+                    if (bytes != lastBytes) {
+                        lastBytes = bytes
+                        lastByteAt = now
+                    }
+                    if (now - lastByteAt > STALL_MS || now - startedAt > TRANSFER_DEADLINE_MS) {
                         fail(version, "transfer-timeout")
                         runCatching { channels.close(channel).await() }
                         break
                     }
                     val fraction = (bytes.toFloat() / prefs.getLong(KEY_SIZE, 1).coerceAtLeast(1)).coerceIn(0f, 1f)
-                    val percent = (fraction * 100).toInt()
-                    if (percent != last) { report(UpdateStatus(UpdatePhase.RECEIVING, version, fraction)); last = percent }
-                    delay(1_000)
+                    // Each report is a write to the disk, a notification and a message over Bluetooth:
+                    // not one for every percent.
+                    if (throttle.accept((fraction * 100).toInt(), now)) report(UpdateStatus(UpdatePhase.RECEIVING, version, fraction))
+                    delay(PROGRESS_POLL_MS)
                 }
             }
             channels.receiveFile(channel, Uri.fromFile(target), false).await()
@@ -253,7 +272,7 @@ class WatchUpdater(private val context: Context) {
 
     private suspend fun report(status: UpdateStatus) {
         _status.value = status
-        prefs.edit().putString(KEY_STATUS, WearCodec.json.encodeToString(UpdateStatus.serializer(), status)).commit()
+        prefs.edit().putString(KEY_STATUS, WearCodec.json.encodeToString(UpdateStatus.serializer(), status)).apply()
         WatchUpdateNotifications.show(context, status, canRetry = canRetry)
         prefs.getString(KEY_NODE, null)?.let { reply(it, status) }
     }
@@ -262,7 +281,7 @@ class WatchUpdater(private val context: Context) {
         _status.value?.let { status -> scope.launch { reply(node, status) } }
     }
     private suspend fun reply(node: String, status: UpdateStatus) {
-        withTimeoutOrNull(5_000) {
+        withTimeoutOrNull(REPLY_WAIT_MS) {
             runCatching { messages.sendMessage(node, WearPaths.UPDATE_STATUS, WearCodec.encode(UpdateStatus.serializer(), status)).await() }
         }
     }
@@ -278,5 +297,15 @@ class WatchUpdater(private val context: Context) {
         private const val KEY_READY_SHA = "ready_sha"
         private const val KEY_SESSION = "session"
         private const val OFFER_TTL_MS = 30 * 60_000L
+
+        /** A transfer that moves no bytes for this long is dead. */
+        private const val STALL_MS = 30_000L
+
+        /** The longest a transfer may take, however steadily it goes. */
+        private const val TRANSFER_DEADLINE_MS = 15 * 60_000L
+        private const val PROGRESS_POLL_MS = 1_000L
+
+        /** How long the phone is given to take a status message. */
+        private const val REPLY_WAIT_MS = 5_000L
     }
 }

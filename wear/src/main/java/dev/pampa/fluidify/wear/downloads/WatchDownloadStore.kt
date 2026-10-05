@@ -2,6 +2,7 @@ package dev.pampa.fluidify.wear.downloads
 
 import android.content.Context
 import android.os.StatFs
+import android.util.Log
 import dev.pampa.fluidify.wear.protocol.SpotifyIds
 import dev.pampa.fluidify.wear.protocol.WatchDownloadOwner
 import dev.pampa.fluidify.wear.protocol.WearCodec
@@ -15,6 +16,7 @@ import kotlinx.serialization.json.contentOrNull
 import kotlinx.serialization.json.jsonObject
 import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
+import java.io.IOException
 
 /** A playlist or album kept on the watch, and the tracks it had when last read. */
 @Serializable
@@ -39,6 +41,9 @@ data class KeptOwner(
  *
  * Which playlists and albums to keep is the watch's list ([owners]), edited
  * from the wrist or the phone.
+ *
+ * Everything here touches the disk (a list of owners is a file, a track is two), so none of it
+ * belongs on the main thread: the screens go through [WatchDownloads.edits].
  */
 class WatchDownloadStore(context: Context) {
 
@@ -49,7 +54,18 @@ class WatchDownloadStore(context: Context) {
 
     val owners: StateFlow<List<KeptOwner>> = _owners.asStateFlow()
 
+    private val _saveFailed = MutableStateFlow(false)
+
+    /** True while the list of owners could not be written to the disk (full, most likely). */
+    val saveFailed: StateFlow<Boolean> = _saveFailed.asStateFlow()
+
     fun isKept(uri: String): Boolean = _owners.value.any { it.uri == uri }
+
+    /** Whether [uri] is kept and every one of its tracks is on the disk: it can be played without asking anyone. */
+    fun isComplete(uri: String): Boolean {
+        val owner = _owners.value.firstOrNull { it.uri == uri } ?: return false
+        return owner.tracks.isNotEmpty() && owner.tracks.all(::has)
+    }
 
     @Synchronized fun keep(uri: String, title: String, artUrl: String? = null) {
         if (isKept(uri)) return
@@ -61,8 +77,10 @@ class WatchDownloadStore(context: Context) {
         val leaving = _owners.value.firstOrNull { it.uri == uri } ?: return
         val remaining = _owners.value - leaving
         val stillWanted = remaining.flatMap { it.tracks }.toSet()
-        leaving.tracks.filterNot { it in stillWanted }.forEach(::delete)
+        // The list first: the switch that asked is already off, and a stop half way through the
+        // deleting leaves files nobody wants, which is better than a list that wants files gone.
         save(remaining)
+        deleteAll(leaving.tracks.filterNot { it in stillWanted })
     }
 
     /** The owner's tracks as read now; tracks taken out of the playlist go from the disk too. */
@@ -71,8 +89,8 @@ class WatchDownloadStore(context: Context) {
         val removed = owner.tracks.toSet() - tracks.toSet()
         val updated = _owners.value.map { if (it.uri == uri) it.copy(tracks = tracks, title = title ?: it.title) else it }
         val stillWanted = updated.flatMap { it.tracks }.toSet()
-        removed.filterNot { it in stillWanted }.forEach(::delete)
         save(updated)
+        deleteAll(removed.filterNot { it in stillWanted })
     }
 
     /** Every kept track not yet on the disk, in the order the owners were added. */
@@ -81,12 +99,40 @@ class WatchDownloadStore(context: Context) {
 
     fun unavailable(uri: String): Boolean = failures.getInt(uri, 0) >= MAX_FAILURES
     @Synchronized fun recordFailure(uri: String) {
-        failures.edit().putInt(uri, (failures.getInt(uri, 0) + 1).coerceAtMost(MAX_FAILURES)).commit()
+        failures.edit().putInt(uri, (failures.getInt(uri, 0) + 1).coerceAtMost(MAX_FAILURES)).apply()
     }
-    @Synchronized fun clearFailure(uri: String) { failures.edit().remove(uri).commit() }
+    @Synchronized fun clearFailure(uri: String) { clearFailures(listOf(uri)) }
+
+    /** Forgets the failures of [uris] in one edit: one write, not one per track. */
+    @Synchronized private fun clearFailures(uris: Collection<String>) {
+        if (uris.isEmpty()) return
+        val editor = failures.edit()
+        uris.forEach { editor.remove(it) }
+        editor.apply()
+    }
     fun unavailableCount(): Int = _owners.value.flatMap { it.tracks }.distinct().count { !has(it) && unavailable(it) }
 
-    fun has(trackUri: String): Boolean = metaFile(trackUri)?.isFile == true && audioFile(trackUri)?.isFile == true
+    /**
+     * Which tracks are on the disk, as far as this store has looked. The status of the downloads is
+     * worked out again at each step of the queue, and each look was two calls to the file system
+     * for every track of every kept list: a queue of a thousand tracks did millions. A look is now
+     * kept until the store itself changes the track ([adopt], [delete]) or whoever knows the files
+     * moved under it — the engine writes its own downloads — says so ([invalidate]).
+     */
+    private val presence = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
+
+    fun has(trackUri: String): Boolean =
+        presence.getOrPut(trackUri) { metaFile(trackUri)?.isFile == true && audioFile(trackUri)?.isFile == true }
+
+    /** Looks at the disk again for [trackUri] next time: its files may have been written or removed by the engine. */
+    fun invalidate(trackUri: String) {
+        presence.remove(trackUri)
+    }
+
+    /** Looks at the disk again for every track: the start of a pass of the queue. */
+    fun invalidateAll() {
+        presence.clear()
+    }
 
     fun sidecar(trackUri: String): JsonObject? = runCatching {
         val file = metaFile(trackUri)?.takeIf { it.isFile } ?: return null
@@ -115,16 +161,38 @@ class WatchDownloadStore(context: Context) {
         if (!part.renameTo(audio)) return false
         meta.parentFile?.mkdirs()
         val tmp = File(meta.path + ".tmp")
-        tmp.writeText(sidecarJson)
-        return tmp.renameTo(meta).also { if (it) { partIdentityFile(trackUri)?.delete(); clearFailure(trackUri) } }
+        try {
+            tmp.writeText(sidecarJson)
+        } catch (full: IOException) {
+            // No room for even the sidecar: the audio without it is not a download, and is space.
+            Log.w(TAG, "sidecar not written for $trackUri: ${full.message}")
+            tmp.delete()
+            audio.delete()
+            return false
+        }
+        return tmp.renameTo(meta).also {
+            if (it) {
+                partIdentityFile(trackUri)?.delete()
+                clearFailure(trackUri)
+                presence[trackUri] = true
+            }
+        }
     }
 
     @Synchronized fun delete(trackUri: String) {
-        metaFile(trackUri)?.delete()
-        audioFile(trackUri)?.delete()
-        partFile(trackUri)?.delete()
-        partIdentityFile(trackUri)?.delete()
-        clearFailure(trackUri)
+        deleteAll(listOf(trackUri))
+    }
+
+    /** The files of every track in [uris], and what was remembered of their failures, in one go. */
+    private fun deleteAll(uris: Collection<String>) {
+        for (trackUri in uris) {
+            metaFile(trackUri)?.delete()
+            audioFile(trackUri)?.delete()
+            partFile(trackUri)?.delete()
+            partIdentityFile(trackUri)?.delete()
+            presence.remove(trackUri)
+        }
+        clearFailures(uris)
     }
 
     /**
@@ -176,14 +244,28 @@ class WatchDownloadStore(context: Context) {
         WearCodec.json.decodeFromString(ListSerializer(KeptOwner.serializer()), ownersFile.readText())
     }.getOrDefault(emptyList())
 
+    /**
+     * The list in memory at once (the screens follow it), then to the disk through a temporary
+     * file. A disk that refuses the write (full) used to throw out of here, into whatever called —
+     * a switch on the main thread — and is now said by [saveFailed]; the list stays right in
+     * memory, and the next write that fits puts all of it on disk.
+     */
     private fun save(owners: List<KeptOwner>) {
         _owners.value = owners
         val tmp = File(ownersFile.path + ".tmp")
-        tmp.writeText(WearCodec.json.encodeToString(ListSerializer(KeptOwner.serializer()), owners))
-        tmp.renameTo(ownersFile)
+        val written = try {
+            tmp.writeText(WearCodec.json.encodeToString(ListSerializer(KeptOwner.serializer()), owners))
+            tmp.renameTo(ownersFile)
+        } catch (failed: IOException) {
+            Log.w(TAG, "kept list not written: ${failed.message}")
+            tmp.delete()
+            false
+        }
+        _saveFailed.value = !written
     }
 
     companion object {
+        private const val TAG = "WatchDownloadStore"
         const val MAX_FAILURES = 3
         /** "OGG_VORBIS_320" → 320; the formats without a number are the phone's MP3/AAC, which a watch never asks for. */
         fun formatKbps(format: String?): Int? = format?.substringAfterLast('_')?.toIntOrNull()

@@ -1,9 +1,12 @@
 package dev.pampa.fluidify.wear.ui.common
 
 import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -15,6 +18,8 @@ import androidx.wear.compose.foundation.lazy.TransformingLazyColumn
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumnItemScope
 import androidx.wear.compose.foundation.lazy.TransformingLazyColumnScope
 import androidx.wear.compose.foundation.lazy.rememberTransformingLazyColumnState
+import androidx.wear.compose.material3.CircularProgressIndicator
+import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.ScreenScaffold
@@ -22,6 +27,11 @@ import androidx.wear.compose.material3.Text
 import androidx.wear.compose.material3.lazy.TransformationSpec
 import androidx.wear.compose.material3.lazy.rememberTransformationSpec
 import androidx.wear.compose.material3.lazy.transformedHeight
+import com.adamglin.PhosphorIcons
+import com.adamglin.phosphoricons.Regular
+import com.adamglin.phosphoricons.regular.ArrowClockwise
+import dev.antigravity.fluidengine.wear.components.FluidWearListRow
+import dev.pampa.fluidify.wear.ui.theme.WearDimens
 
 /**
  * A watch list screen: a header, rows, the bezel scrolling it, the scroll
@@ -104,5 +114,48 @@ fun WatchListScope.noticeItem(text: String) {
                 textAlign = TextAlign.Center,
             )
         }
+    }
+}
+
+/** A line of quiet text with a spinner beside it: something is on its way, and there is nothing to show yet. */
+fun WatchListScope.loadingItem(text: String) {
+    item {
+        Row(
+            modifier = Modifier.fillMaxWidth().padding(vertical = 12.dp, horizontal = 8.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp, Alignment.CenterHorizontally),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            CircularProgressIndicator(modifier = Modifier.size(WearDimens.PillIcon))
+            Text(
+                text = text,
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                textAlign = TextAlign.Center,
+            )
+        }
+    }
+}
+
+/** Why nothing came, and a way to ask again. */
+fun WatchListScope.failedItem(text: String, retryText: String, onRetry: () -> Unit) {
+    noticeItem(text)
+    item {
+        FluidWearListRow(
+            title = retryText,
+            onClick = onRetry,
+            leading = { Icon(PhosphorIcons.Regular.ArrowClockwise, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
+        )
+    }
+}
+
+/** A hint over a list that shows what the watch kept, because asking the phone again failed. */
+fun WatchListScope.staleItem(text: String, retryText: String, onRetry: () -> Unit) {
+    item {
+        FluidWearListRow(
+            title = text,
+            subtitle = retryText,
+            onClick = onRetry,
+            leading = { Icon(PhosphorIcons.Regular.ArrowClockwise, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
+        )
     }
 }

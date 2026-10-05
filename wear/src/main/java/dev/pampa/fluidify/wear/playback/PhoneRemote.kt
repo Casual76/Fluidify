@@ -267,7 +267,7 @@ class PhoneRemote(
 
     private companion object {
         /** The phone's own waits for a transfer (device listed, queue republished) plus margin. */
-        const val TRANSFER_ACK_MS = 9_000L
+        const val TRANSFER_ACK_MS = 11_000L
 
         /** A write to the account: the phone may first have to wake its engine (7 s at most). */
         const val WRITE_ACK_MS = 10_000L
@@ -309,7 +309,7 @@ class PhoneRemote(
             } finally { inFlight.update { it - 1 } }
             if (ack == null || !ack.ok) {
                 if (placed == null || optimistic.value === placed) optimistic.value = null
-                _errors.tryEmit(ack?.error ?: "unreachable")
+                _errors.tryEmit(ack?.error ?: dev.pampa.fluidify.wear.protocol.AckErrors.UNREACHABLE)
             } else if (placed != null) {
                 delay(GUESS_HOLD_MS)
                 if (optimistic.value === placed) optimistic.value = null

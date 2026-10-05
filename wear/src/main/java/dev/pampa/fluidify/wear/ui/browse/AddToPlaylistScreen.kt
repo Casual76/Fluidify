@@ -13,7 +13,6 @@ import androidx.wear.compose.material3.SuccessConfirmationDialog
 import androidx.wear.compose.material3.confirmationDialogCurvedText
 import androidx.compose.foundation.layout.size
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.unit.dp
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.Playlist
@@ -28,6 +27,7 @@ import dev.pampa.fluidify.wear.protocol.LibrarySection
 import dev.pampa.fluidify.wear.ui.common.Thumb
 import dev.pampa.fluidify.wear.ui.common.WatchList
 import dev.pampa.fluidify.wear.ui.common.noticeItem
+import dev.pampa.fluidify.wear.ui.theme.WearDimens
 import kotlinx.coroutines.launch
 
 /**
@@ -50,16 +50,17 @@ fun AddToPlaylistScreen(
     val scope = rememberCoroutineScope()
     var busy by remember { mutableStateOf<String?>(null) }
     var added by remember { mutableStateOf<String?>(null) }
-    val page = data.value
-    val playlists = page?.shelves.orEmpty().flatMap { it.items }.filter(::canTake)
+    val texts = rememberPhoneDataTexts()
+    val noEditable = stringResource(R.string.no_editable_playlists)
+    val playlists = data.value?.shelves.orEmpty().flatMap { it.items }.filter(::canTake)
 
     WatchList(title = stringResource(R.string.add_to_playlist)) {
         if (trackTitle.isNotEmpty()) noticeItem(trackTitle)
+        val page = phoneDataNotices(data, texts)
         when {
-            page == null && data.failed -> noticeItem(app.getString(R.string.couldnt_load))
-            page == null -> noticeItem(app.getString(R.string.loading))
+            page == null -> Unit
             page.unavailableReason != null -> noticeItem(page.unavailableReason!!)
-            playlists.isEmpty() -> noticeItem(app.getString(R.string.no_editable_playlists))
+            playlists.isEmpty() -> noticeItem(noEditable)
             else -> playlists.forEachIndexed { index, playlist ->
                 item(key = "$index:${playlist.uri}") {
                     FluidWearListRow(
@@ -78,7 +79,7 @@ fun AddToPlaylistScreen(
                         },
                         leading = { Thumb(playlist.artKey, playlist.artUrl, app.art, PhosphorIcons.Regular.Playlist) },
                         trailing = if (busy == playlist.uri) {
-                            { CircularProgressIndicator(modifier = Modifier.size(20.dp)) }
+                            { CircularProgressIndicator(modifier = Modifier.size(WearDimens.PillIcon)) }
                         } else {
                             null
                         },

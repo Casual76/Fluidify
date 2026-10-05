@@ -18,13 +18,6 @@ class SurfacePrefs(context: Context) {
 
     private val prefs = context.getSharedPreferences("surfaces", Context.MODE_PRIVATE)
 
-    /** The icon on the watch face (Wear's ongoing activity) while the phone plays. */
-    var ongoingIcon: Boolean
-        get() = nowBar != NowBarMode.NEVER
-        set(value) {
-            nowBar = if (value) NowBarMode.AUTO else NowBarMode.NEVER
-        }
-
     /**
      * When Fluidify puts its own entry on the watch face for phone playback; see [NowBarPolicy].
      * Watches that had the old on/off switch off keep it off.
@@ -47,23 +40,22 @@ class SurfacePrefs(context: Context) {
         get() = prefs.getBoolean(KEY_BRIDGING, true)
         set(value) = prefs.edit { putBoolean(KEY_BRIDGING, value) }
 
-    /** What the tile and the complication last showed, so an unchanged state asks for nothing. */
-    internal var lastSignature: String?
-        get() = prefs.getString(KEY_SIGNATURE, null)
-        set(value) = prefs.edit { putString(KEY_SIGNATURE, value) }
-
+    /** What the tile and the complication last showed of the phone's playback, so an unchanged state asks for nothing. */
     internal var lastPhoneSignature: String?
-        get() = prefs.getString("phone_signature", null)
-        set(value) = prefs.edit { putString("phone_signature", value) }
+        get() = prefs.getString(KEY_PHONE_SIGNATURE, null)
+        set(value) = prefs.edit { putString(KEY_PHONE_SIGNATURE, value) }
+
+    /** The same, for the watch's own playback. */
     internal var lastWatchSignature: String?
-        get() = prefs.getString("watch_signature", null)
-        set(value) = prefs.edit { putString("watch_signature", value) }
+        get() = prefs.getString(KEY_WATCH_SIGNATURE, null)
+        set(value) = prefs.edit { putString(KEY_WATCH_SIGNATURE, value) }
 
     private companion object {
         const val KEY_ONGOING = "ongoing_icon"
         const val KEY_NOW_BAR = "now_bar"
         const val KEY_MIRROR = "mirror_now_bar"
         const val KEY_BRIDGING = "phone_notifications"
-        const val KEY_SIGNATURE = "surface_signature"
+        const val KEY_PHONE_SIGNATURE = "phone_signature"
+        const val KEY_WATCH_SIGNATURE = "watch_signature"
     }
 }

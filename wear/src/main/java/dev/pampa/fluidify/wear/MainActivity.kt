@@ -13,7 +13,8 @@ import androidx.core.content.edit
 import dev.antigravity.fluidengine.wear.ambient.LocalFluidWearAmbient
 import dev.antigravity.fluidengine.wear.ambient.rememberFluidAmbientState
 import dev.antigravity.fluidengine.wear.theme.FluidWearTheme
-import dev.pampa.fluidify.wear.system.Bridging
+import dev.pampa.fluidify.wear.standalone.HeadphonesPrompt
+import dev.pampa.fluidify.wear.system.FirstRunPrefs
 import dev.pampa.fluidify.wear.system.PlayerIntents
 import dev.pampa.fluidify.wear.ui.WatchRoot
 import dev.pampa.fluidify.wear.ui.theme.FluidifyWearBrand
@@ -47,12 +48,11 @@ class MainActivity : ComponentActivity() {
         // later ones free.
         dev.pampa.fluidify.wear.update.WatchSelfUpdateWorker.schedule(this)
         dev.pampa.fluidify.wear.downloads.NightlySyncWorker.schedule(this)
-        Bridging.apply(this, app.surfacePrefs.phoneNotifications)
         askForNotificationsOnce()
         dev.pampa.fluidify.wear.ui.debug.FrameLog.attach(this)
         // Opened by a tap that asks for something (a fresh start, or recreated after Android let it
         // go): the intent is here, not in onNewIntent. Not on a recreation of the same screen.
-        if (savedInstanceState == null) requests.value = PlayerIntents.requestOf(intent)
+        if (savedInstanceState == null) requests.value = requestFrom(intent)
         setContent {
             val ambient = rememberFluidAmbientState(this)
             CompositionLocalProvider(
@@ -69,12 +69,29 @@ class MainActivity : ComponentActivity() {
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         setIntent(intent)
-        PlayerIntents.requestOf(intent)?.let { requests.value = it }
+        requestFrom(intent)?.let { requests.value = it }
+    }
+
+    /**
+     * What the screen is to show for [intent]. The headphones prompt's button also asks for the
+     * music to move, done here, where the app is in front, rather than from a receiver — and only
+     * when the token it carries is the prompt's own: this activity is open to every app, and an
+     * intent with the right action must not be enough to start playback. Without the token, or
+     * with one already spent, it is just a request for the player.
+     */
+    private fun requestFrom(intent: Intent?): PlayerIntents.Request? {
+        val request = PlayerIntents.requestOf(intent)
+        if (request != PlayerIntents.Request.LISTEN_HERE) return request
+        if (HeadphonesPrompt.claim(this, intent?.getStringExtra(PlayerIntents.EXTRA_LISTEN_TOKEN))) {
+            HeadphonesPrompt.listen(app)
+        }
+        return PlayerIntents.Request.PLAYER
     }
 
     override fun onStart() {
         super.onStart()
-        app.standalone.router.acquire()
+        app.uiVisible = true
+        dev.pampa.fluidify.wear.system.BackgroundErrors.clear(this)
         // Says hello and catches up on what the Data Layer already holds. Nothing
         // is polled while the screen is up: the phone pushes changes.
         app.link.connect()
@@ -82,7 +99,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
-        app.standalone.router.release()
+        app.uiVisible = false
         app.link.unwatchReachability()
         super.onStop()
     }
@@ -95,13 +112,9 @@ class MainActivity : ComponentActivity() {
         val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.POST_NOTIFICATIONS) ==
             PackageManager.PERMISSION_GRANTED
         if (granted) return
-        val prefs = getSharedPreferences("first_run", MODE_PRIVATE)
-        if (prefs.getBoolean(KEY_ASKED_NOTIFICATIONS, false)) return
-        prefs.edit { putBoolean(KEY_ASKED_NOTIFICATIONS, true) }
+        val prefs = getSharedPreferences(FirstRunPrefs.NAME, MODE_PRIVATE)
+        if (prefs.getBoolean(FirstRunPrefs.KEY_ASKED_NOTIFICATIONS, false)) return
+        prefs.edit { putBoolean(FirstRunPrefs.KEY_ASKED_NOTIFICATIONS, true) }
         notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
-    }
-
-    private companion object {
-        const val KEY_ASKED_NOTIFICATIONS = "asked_notifications"
     }
 }

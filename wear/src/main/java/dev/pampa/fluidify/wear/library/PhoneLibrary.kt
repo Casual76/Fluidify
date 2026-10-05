@@ -38,6 +38,16 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
     private val fetchedAt = java.util.concurrent.ConcurrentHashMap<String, Long>()
     private val homeLock = kotlinx.coroutines.sync.Mutex()
 
+    /**
+     * Forgets everything kept, in memory and on disk: the watch is no longer the account these
+     * pages were read for. Blocking, so off the main thread.
+     */
+    fun clear() {
+        memory.clear()
+        fetchedAt.clear()
+        directory.listFiles()?.forEach { it.delete() }
+    }
+
     fun peekHome(): LibraryPage? = memory["home"] as? LibraryPage
     fun peekSection(section: LibrarySection): LibraryPage? = memory["section-$section"] as? LibraryPage
     fun peekContext(uri: String): ContextPage? = memory["context-${hash(uri)}"] as? ContextPage
@@ -45,7 +55,7 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
     fun cachedHome(): LibraryPage? = read("home", LibraryPage.serializer())
     suspend fun home(): Result<LibraryPage> = homeLock.withLock {
         val cached = peekHome()
-        if (cached != null && System.currentTimeMillis() - (fetchedAt["home"] ?: 0) < 120_000L) Result.success(cached)
+        if (cached != null && System.currentTimeMillis() - (fetchedAt["home"] ?: 0) < HOME_FRESH_MS) Result.success(cached)
         else fetch("home", RpcMethod.Home, LibraryPage.serializer())
     }
 
@@ -132,5 +142,8 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
 
     private companion object {
         const val SEARCH_TIMEOUT_MS = 20_000L
+
+        /** A Home read this recently is shown as it is, without asking the phone again. */
+        const val HOME_FRESH_MS = 120_000L
     }
 }

@@ -18,6 +18,7 @@ import java.util.concurrent.TimeUnit
 import dev.lelonio.square.update.WatchApkValidation
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import dev.pampa.fluidify.wear.link.PhoneLink
 
 /**
  * The watch updating itself, for when the phone is not around to do it.
@@ -33,7 +34,7 @@ class WatchSelfUpdateWorker(context: Context, params: WorkerParameters) : Corout
     override suspend fun doWork(): Result {
         val updates = (applicationContext as dev.pampa.fluidify.wear.WearApp).updater
         if (!updates.autoUpdate) return Result.success()
-        val phoneSeenAt = applicationContext.getSharedPreferences("phone_link", Context.MODE_PRIVATE)
+        val phoneSeenAt = applicationContext.getSharedPreferences(PhoneLink.PREFS, Context.MODE_PRIVATE)
             .getLong(KEY_PHONE_SEEN, 0)
         if (System.currentTimeMillis() - phoneSeenAt < PHONE_RECENT_MS) return Result.success()
 
@@ -48,7 +49,7 @@ class WatchSelfUpdateWorker(context: Context, params: WorkerParameters) : Corout
             Log.i(TAG, "self-update check failed: ${it.message}")
             return Result.retry()
         } ?: return Result.success()
-        if (!update.sha256.matches(Regex("[a-fA-F0-9]{64}"))) return Result.failure()
+        if (!update.sha256.isSha256()) return Result.failure()
         val apk = runCatching { installer.download(update) }.getOrElse { return Result.retry() }
         if (withContext(Dispatchers.IO) { WatchApkValidation.reject(applicationContext, apk, update.version, update.sha256) } != null) return Result.failure()
 

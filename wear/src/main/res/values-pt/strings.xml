@@ -149,7 +149,6 @@
     <string name="error_playlist">Não foi possível adicionar à playlist</string>
     <string name="error_no_output">Conecte fones de ouvido para ouvir no relógio</string>
     <string name="error_end_of_queue">É o fim da fila</string>
-    <string name="unavailable_tracks">%1$d indisponíveis</string>
     <string name="volume_down">Baixar volume</string>
     <string name="volume_up">Aumentar volume</string>
     <string name="pin">Fixar</string>
@@ -158,4 +157,18 @@
     <string name="update_retry_cached">A instalação falhou. Toque para tentar com o APK salvo.</string>
     <string name="audio_light_title">Luz que reage à música</string>
     <string name="audio_light_note">Progresso com brilho suave enquanto o leitor está visível.</string>
+    <string name="errors_channel">Problemas</string>
+    <string name="song_options">Opções da música</string>
+    <string name="not_updated">Não atualizado</string>
+    <string name="retry">Tentar de novo</string>
+    <string name="headphone_picker_unavailable">Não foi possível abrir as configurações de Bluetooth</string>
+    <string name="two_parts">%1$s · %2$s</string>
+    <string name="percent_value">%1$d%%</string>
+    <string name="quality_kbps">%1$d kbps</string>
+    <string name="update_title">Atualização %1$s</string>
+    <plurals name="unavailable_tracks">
+        <item quantity="one">%1$d indisponível</item>
+        <item quantity="many">%1$d indisponíveis</item>
+        <item quantity="other">%1$d indisponíveis</item>
+    </plurals>
 </resources>

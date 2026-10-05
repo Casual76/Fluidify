@@ -3,6 +3,7 @@ package dev.pampa.fluidify.wear.downloads
 import android.content.Context
 import android.util.Log
 import com.google.android.gms.wearable.Wearable
+import dev.pampa.fluidify.wear.link.readChannelLine
 import dev.pampa.fluidify.wear.protocol.FileHeader
 import dev.pampa.fluidify.wear.protocol.FileRequest
 import dev.pampa.fluidify.wear.protocol.WearCodec
@@ -20,7 +21,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.DataInputStream
 import java.io.FileOutputStream
-import java.io.InputStream
 
 /**
  * A track from the phone over Bluetooth, resumable.
@@ -83,7 +83,7 @@ class PhoneFileTransfer(private val context: Context, private val store: WatchDo
             val input = DataInputStream(guarded)
             input.use {
                 // Staging may take the phone a while: it is fetching the track first.
-                val headerLine = runInterruptible { readLine(input) }
+                val headerLine = runInterruptible { input.readChannelLine(MAX_HEADER) }
                     ?: return@withContext Result.failure(IllegalStateException("the phone did not answer"))
                 val header = WearCodec.decodeOrNull(FileHeader.serializer(), headerLine.encodeToByteArray())
                     ?: return@withContext Result.failure(IllegalStateException("unreadable answer"))
@@ -100,7 +100,7 @@ class PhoneFileTransfer(private val context: Context, private val store: WatchDo
                 }
                 if (resumeFrom == 0L && part.isFile) part.delete()
                 identity.writeText(actualId)
-                guarded.timeoutAfterProgress(30_000L, deadlineMs = 15 * 60_000L)
+                guarded.timeoutAfterProgress(PROGRESS_WAIT_MS, deadlineMs = DEADLINE_MS)
                 runInterruptible { FileOutputStream(part, resumeFrom > 0).use { out -> input.copyTo(out, BUFFER) } }
                 if (part.length() != header.totalBytes) {
                     return@withContext Result.failure(IllegalStateException("cut off at ${part.length()} of ${header.totalBytes}"))
@@ -119,24 +119,18 @@ class PhoneFileTransfer(private val context: Context, private val store: WatchDo
         }
     }
 
-    /** One line, up to the newline, without buffering past it: the bytes after it are the file. */
-    private fun readLine(input: InputStream): String? {
-        val bytes = java.io.ByteArrayOutputStream()
-        while (true) {
-            val next = input.read()
-            if (next < 0) return null
-            if (next == '\n'.code) return bytes.toString(Charsets.UTF_8.name())
-            bytes.write(next)
-            if (bytes.size() > MAX_HEADER) return null
-        }
-    }
-
     private companion object {
         const val TAG = "PhoneFileTransfer"
         const val BUFFER = 64 * 1024
         const val MAX_HEADER = 64 * 1024
         const val HEADER_WAIT_MS = 20_000L
         const val STAGE_WAIT_MS = 180_000L
+
+        /** A file that stops arriving for this long is cut off. */
+        const val PROGRESS_WAIT_MS = 30_000L
+
+        /** The longest one file may take, however steadily it arrives. */
+        const val DEADLINE_MS = 15 * 60_000L
     }
 }
 

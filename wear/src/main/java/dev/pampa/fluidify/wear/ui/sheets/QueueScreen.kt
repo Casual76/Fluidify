@@ -3,6 +3,7 @@ package dev.pampa.fluidify.wear.ui.sheets
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -15,12 +16,13 @@ import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.MusicNote
 import dev.antigravity.fluidengine.wear.components.FluidWearListRow
 import dev.pampa.fluidify.wear.R
-import androidx.compose.ui.platform.LocalContext
 import dev.pampa.fluidify.wear.link.ArtStore
 import dev.pampa.fluidify.wear.playback.PlaybackControls
 import dev.pampa.fluidify.wear.protocol.QueueWindow
 import dev.pampa.fluidify.wear.ui.common.Thumb
 import dev.pampa.fluidify.wear.ui.common.WatchList
+import dev.pampa.fluidify.wear.ui.common.failedItem
+import dev.pampa.fluidify.wear.ui.common.loadingItem
 import dev.pampa.fluidify.wear.ui.common.noticeItem
 
 /**
@@ -37,18 +39,23 @@ fun QueueScreen(
     load: suspend () -> Result<QueueWindow>,
     onPlayed: () -> Unit,
 ) {
-    val context = LocalContext.current
     var window by remember { mutableStateOf<QueueWindow?>(null) }
     var failed by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
+    var attempt by remember { mutableIntStateOf(0) }
+    LaunchedEffect(attempt) {
+        failed = false
         load().fold(onSuccess = { window = it }, onFailure = { failed = true })
     }
+    val loadingText = stringResource(R.string.loading)
+    val failedText = stringResource(R.string.couldnt_load)
+    val retryText = stringResource(R.string.retry)
+    val emptyText = stringResource(R.string.queue_empty)
     WatchList(title = stringResource(R.string.queue)) {
         val current = window
         when {
-            current == null && failed -> noticeItem(context.getString(R.string.couldnt_load))
-            current == null -> noticeItem(context.getString(R.string.loading))
-            current.items.isEmpty() -> noticeItem(context.getString(R.string.queue_empty))
+            current == null && failed -> failedItem(failedText, retryText) { attempt++ }
+            current == null -> loadingItem(loadingText)
+            current.items.isEmpty() -> noticeItem(emptyText)
             else -> {
                 // What is playing, then what comes after it. The songs already played stay out:
                 // the window carries a few for the phone's sake, and on a watch they are only

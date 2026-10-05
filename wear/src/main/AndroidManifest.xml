@@ -3,6 +3,11 @@
 
     <uses-feature android:name="android.hardware.type.watch" />
 
+    <!--
+      Needed to take the Wi-Fi lock that keeps the radio awake while the watch streams over its own
+      Wi-Fi (NetworkBroker): WifiLock.acquire() is refused without it. Media playback and
+      WorkManager also use it.
+    -->
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <uses-permission android:name="android.permission.VIBRATE" />
     <!-- The icon on the watch face is an ongoing notification underneath. -->
@@ -91,7 +96,11 @@
             </intent-filter>
         </service>
 
-        <!-- Headphones connecting to the watch, and the prompt's own button. -->
+        <!--
+          Headphones connecting to the watch. Exported because the system's Bluetooth broadcast
+          comes from another process; the receiver ignores everything but that one action. The
+          prompt's button opens MainActivity instead, so nothing here starts playback on request.
+        -->
         <receiver
             android:name=".standalone.HeadphonesReceiver"
             android:exported="true">

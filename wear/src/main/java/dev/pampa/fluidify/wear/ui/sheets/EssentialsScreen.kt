@@ -5,7 +5,6 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.Icon
 import com.adamglin.PhosphorIcons
@@ -20,6 +19,7 @@ import dev.antigravity.fluidengine.wear.components.FluidWearListRow
 import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.playback.PlaybackControls
 import dev.pampa.fluidify.wear.ui.common.WatchList
+import dev.pampa.fluidify.wear.ui.theme.WearDimens
 
 /**
  * Spotify's "essentials" for the song on screen: its queue, the sleep timer, a
@@ -42,14 +42,14 @@ fun EssentialsScreen(
             FluidWearListRow(
                 title = stringResource(R.string.queue),
                 onClick = onQueue,
-                leading = { Icon(PhosphorIcons.Regular.Queue, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                leading = { Icon(PhosphorIcons.Regular.Queue, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
             )
         }
         item {
             FluidWearListRow(
                 title = stringResource(R.string.sleep_timer),
                 onClick = onSleep,
-                leading = { Icon(PhosphorIcons.Regular.Timer, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                leading = { Icon(PhosphorIcons.Regular.Timer, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
             )
         }
         if (track?.uri?.startsWith("spotify:track:") == true) {
@@ -57,7 +57,7 @@ fun EssentialsScreen(
                 FluidWearListRow(
                     title = stringResource(R.string.add_to_playlist),
                     onClick = onAddToPlaylist,
-                    leading = { Icon(PhosphorIcons.Regular.ListPlus, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                    leading = { Icon(PhosphorIcons.Regular.ListPlus, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
             }
             item {
@@ -67,7 +67,7 @@ fun EssentialsScreen(
                         controls.startRadio()
                         onRadio()
                     },
-                    leading = { Icon(PhosphorIcons.Regular.Radio, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                    leading = { Icon(PhosphorIcons.Regular.Radio, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
             }
         }
@@ -77,7 +77,7 @@ fun EssentialsScreen(
                     title = stringResource(R.string.go_to_artist),
                     subtitle = track.artist,
                     onClick = { onOpenContext(artist, track.artist) },
-                    leading = { Icon(PhosphorIcons.Regular.User, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                    leading = { Icon(PhosphorIcons.Regular.User, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
             }
         }
@@ -87,7 +87,7 @@ fun EssentialsScreen(
                     title = stringResource(R.string.go_to_album),
                     subtitle = track.album,
                     onClick = { onOpenContext(album, track.album.orEmpty()) },
-                    leading = { Icon(PhosphorIcons.Regular.Disc, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                    leading = { Icon(PhosphorIcons.Regular.Disc, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
             }
         }

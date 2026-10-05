@@ -10,7 +10,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -48,9 +47,8 @@ import kotlin.math.roundToInt
 fun VolumeScreen(controls: PlaybackControls, volume: VolumeControl) {
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
     val level by volume.level.collectAsStateWithLifecycle()
-    val remote = now.snapshot?.device?.volume
-    LaunchedEffect(remote) { if (remote != null) volume.sync(remote) }
     val backdrop = rememberEmptyGlassBackdrop()
+    val percent = stringResource(R.string.volume_percent, (level * 100).roundToInt())
     val track = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.18f)
     val fill = MaterialTheme.colorScheme.primary
 
@@ -68,16 +66,19 @@ fun VolumeScreen(controls: PlaybackControls, volume: VolumeControl) {
         }
         Column(horizontalAlignment = Alignment.CenterHorizontally) {
             Text(stringResource(R.string.volume), style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            Text("${(level * 100).roundToInt()}", style = MaterialTheme.typography.numeralMedium,
-                modifier = Modifier.semantics { liveRegion = LiveRegionMode.Polite; stateDescription = "${(level * 100).roundToInt()}%" })
+            Text((level * 100).roundToInt().toString(), style = MaterialTheme.typography.numeralMedium,
+                modifier = Modifier.semantics {
+                    liveRegion = LiveRegionMode.Polite
+                    stateDescription = percent
+                })
             Text(now.snapshot?.device?.name.orEmpty(), style = MaterialTheme.typography.bodyExtraSmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
                 overflow = TextOverflow.Ellipsis, modifier = Modifier.padding(horizontal = 28.dp))
             Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
                 FluidGlassDisc(onClick = { volume.turn(-2) }, backdrop = backdrop, contentDescription = stringResource(R.string.volume_down), size = FluidWearDimens.MinTouchTarget) {
-                    Icon(PhosphorIcons.Regular.SpeakerSimpleLow, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(PhosphorIcons.Regular.SpeakerSimpleLow, contentDescription = null, modifier = Modifier.size(FluidWearDimens.IconSmall))
                 }
                 FluidGlassDisc(onClick = { volume.turn(2) }, backdrop = backdrop, contentDescription = stringResource(R.string.volume_up), size = FluidWearDimens.MinTouchTarget) {
-                    Icon(PhosphorIcons.Regular.SpeakerSimpleHigh, contentDescription = null, modifier = Modifier.size(18.dp))
+                    Icon(PhosphorIcons.Regular.SpeakerSimpleHigh, contentDescription = null, modifier = Modifier.size(FluidWearDimens.IconSmall))
                 }
             }
         }

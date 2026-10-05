@@ -15,23 +15,31 @@ import kotlinx.coroutines.flow.update
  * of gigabytes is nothing, and which means the covers of what was played today
  * are there instantly when the app opens. [revision] ticks whenever a file
  * arrives, so a screen waiting for a cover that was not there yet redraws.
+ *
+ * Which covers exist is remembered in memory ([CoverDirectory]), so the screens, which ask on
+ * every redraw, never go to the disk to find out.
  */
 class ArtStore(context: Context) {
 
-    private val directory = File(context.filesDir, "art").apply { mkdirs() }
+    private val covers = CoverDirectory(File(context.filesDir, "art"), MAX_FILES)
     private val _revision = MutableStateFlow(0L)
 
     val revision: StateFlow<Long> = _revision.asStateFlow()
 
     init {
         // Old or interrupted writes are checked off the composition thread, once per process.
-        toucher.execute {
+        checker.execute {
             var removed = false
-            directory.listFiles()?.filter { it.extension == "webp" }?.forEach { file ->
+            covers.directory.listFiles()?.filter { it.extension == "webp" }?.forEach { file ->
                 synchronized(this) {
                     val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
                     android.graphics.BitmapFactory.decodeFile(file.absolutePath, bounds)
-                    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) removed = file.delete() || removed
+                    if (bounds.outWidth <= 0 || bounds.outHeight <= 0) {
+                        if (file.delete()) {
+                            covers.forget(file.nameWithoutExtension)
+                            removed = true
+                        }
+                    }
                 }
             }
             if (removed) _revision.update { it + 1 }
@@ -45,32 +53,26 @@ class ArtStore(context: Context) {
     /**
      * The cover for [key], when it has arrived.
      *
-     * Asked from composition, once per row of a list, so it must not write: the last-use stamp
-     * that keeps the store's order is set on a background thread, at most once a minute per file.
+     * Asked from composition, once per row of a list, so it must not touch the disk: it is a lookup
+     * in what [CoverDirectory] remembers.
      */
-    fun fileFor(key: String?): File? {
-        if (key.isNullOrBlank() || !key.isSafeName()) return null
-        val file = File(directory, "$key.webp")
-        if (!file.isFile) return null
-        touchLater(file)
-        return file
-    }
+    fun fileFor(key: String?): File? = covers.fileFor(key)
 
-    private fun touchLater(file: File) {
-        val now = System.currentTimeMillis()
-        if (now - file.lastModified() < TOUCH_EVERY_MS) return
-        toucher.execute { file.setLastModified(now) }
-    }
+    fun has(key: String): Boolean = covers.contains(key)
 
-    fun has(key: String): Boolean = key.isSafeName() && File(directory, "$key.webp").isFile
+    /** Drops every cover, for an account that is gone. Blocking; off the main thread. */
+    @Synchronized fun clear() {
+        covers.clear()
+        _revision.update { it + 1 }
+    }
 
     @Synchronized fun store(key: String, bytes: ByteArray) {
-        if (!key.isSafeName() || bytes.isEmpty()) return
+        if (!CoverDirectory.isSafeName(key) || bytes.isEmpty()) return
         val bounds = android.graphics.BitmapFactory.Options().apply { inJustDecodeBounds = true }
         android.graphics.BitmapFactory.decodeByteArray(bytes, 0, bytes.size, bounds)
         if (bounds.outWidth <= 0 || bounds.outHeight <= 0) return
-        val target = File(directory, "$key.webp")
-        val part = File.createTempFile("$key-", ".part", directory)
+        val target = covers.fileOf(key)
+        val part = File.createTempFile("$key-", ".part", covers.directory)
         try {
             part.writeBytes(bytes)
             if (!part.renameTo(target)) {
@@ -80,26 +82,21 @@ class ArtStore(context: Context) {
         } finally {
             part.delete()
         }
-        trim()
+        covers.added(key)
+        covers.trim()
         _revision.update { it + 1 }
         onStored?.invoke(key)
     }
 
-    private fun trim() {
-        val files = directory.listFiles { file -> file.name.endsWith(".webp") } ?: return
-        if (files.size <= MAX_FILES) return
-        files.sortedBy { it.lastModified() }.take(files.size - MAX_FILES).forEach { it.delete() }
-    }
-
-    private fun String.isSafeName(): Boolean = isNotEmpty() && length <= 128 && all { it.isLetterOrDigit() }
-
     companion object {
         private const val MAX_FILES = 60
-        private const val TOUCH_EVERY_MS = 60_000L
 
-        /** One quiet thread for the last-use stamps; nothing waits for it. */
-        private val toucher = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
-            Thread(runnable, "art-touch").apply { isDaemon = true; priority = Thread.MIN_PRIORITY }
+        /** One quiet thread for the start-up check of what is on the disk; nothing waits for it. */
+        private val checker = java.util.concurrent.Executors.newSingleThreadExecutor { runnable ->
+            Thread(runnable, "art-check").apply {
+                isDaemon = true
+                priority = Thread.MIN_PRIORITY
+            }
         }
     }
 }

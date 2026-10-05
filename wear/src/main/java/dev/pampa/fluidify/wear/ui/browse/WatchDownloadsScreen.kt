@@ -12,7 +12,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.SwitchButton
@@ -28,6 +27,7 @@ import dev.pampa.fluidify.wear.downloads.WatchDownloads
 import dev.pampa.fluidify.wear.protocol.logic.TransferPreference
 import dev.pampa.fluidify.wear.ui.common.WatchList
 import dev.pampa.fluidify.wear.ui.common.noticeItem
+import dev.pampa.fluidify.wear.ui.theme.WearDimens
 
 /**
  * What the watch keeps, and how it keeps it: the playlists and albums with
@@ -38,49 +38,59 @@ import dev.pampa.fluidify.wear.ui.common.noticeItem
 fun WatchDownloadsScreen(downloads: WatchDownloads, onOpen: (String, String) -> Unit) {
     val context = LocalContext.current
     val status by downloads.status.collectAsStateWithLifecycle()
+    val emptyText = stringResource(R.string.watch_downloads_empty)
+    val unavailableText = context.resources.getQuantityString(R.plurals.unavailable_tracks, status.unavailable, status.unavailable)
+    val pausedStorage = stringResource(R.string.paused_storage)
+    val pausedOffline = stringResource(R.string.paused_offline)
+    val waitingText = stringResource(R.string.waiting_tracks, status.waiting)
+    val storageUsed = stringResource(
+        R.string.storage_used_free,
+        Formatter.formatShortFileSize(context, status.bytesUsed),
+        Formatter.formatShortFileSize(context, status.bytesFree),
+    )
+    val storageText = when {
+        status.paused == WatchDownloads.PAUSED_STORAGE -> stringResource(R.string.two_parts, storageUsed, pausedStorage)
+        status.paused == WatchDownloads.PAUSED_OFFLINE -> stringResource(R.string.two_parts, storageUsed, pausedOffline)
+        status.waiting > 0 -> stringResource(R.string.two_parts, storageUsed, waitingText)
+        else -> storageUsed
+    }
     var quality by remember { mutableIntStateOf(downloads.qualityKbps) }
     var bluetoothFirst by remember { mutableStateOf(downloads.preference == TransferPreference.BLUETOOTH_FIRST) }
 
     WatchList(title = stringResource(R.string.downloads)) {
-        if (status.owners.isEmpty()) noticeItem(context.getString(R.string.watch_downloads_empty))
-        if (status.unavailable > 0) noticeItem(context.getString(R.string.unavailable_tracks, status.unavailable))
+        if (status.owners.isEmpty()) noticeItem(emptyText)
+        if (status.unavailable > 0) noticeItem(unavailableText)
         status.owners.forEach { owner ->
             item(key = owner.uri) {
                 FluidWearListRow(
                     title = owner.title.ifBlank { owner.uri },
-                    subtitle = context.getString(R.string.kept_progress, owner.done, owner.tracks),
+                    subtitle = stringResource(R.string.kept_progress, owner.done, owner.tracks),
                     onClick = { onOpen(owner.uri, owner.title) },
-                    leading = { Icon(PhosphorIcons.Regular.Playlist, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                    leading = { Icon(PhosphorIcons.Regular.Playlist, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
             }
         }
         item {
             FluidWearListRow(
                 title = stringResource(R.string.storage),
-                subtitle = stringResource(
-                    R.string.storage_used_free,
-                    Formatter.formatShortFileSize(context, status.bytesUsed),
-                    Formatter.formatShortFileSize(context, status.bytesFree),
-                ) + when (status.paused) {
-                    WatchDownloads.PAUSED_STORAGE -> " · " + stringResource(R.string.paused_storage)
-                    WatchDownloads.PAUSED_OFFLINE -> " · " + stringResource(R.string.paused_offline)
-                    else -> if (status.waiting > 0) " · " + stringResource(R.string.waiting_tracks, status.waiting) else ""
-                },
-                leading = { Icon(PhosphorIcons.Regular.HardDrives, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                subtitle = storageText,
+                leading = { Icon(PhosphorIcons.Regular.HardDrives, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
             )
         }
         item {
             FluidWearListRow(
                 title = stringResource(R.string.download_quality),
-                subtitle = "$quality kbps",
+                subtitle = stringResource(R.string.quality_kbps, quality),
                 onClick = {
-                    // Round the three steps, the phone's own choices.
-                    val steps = listOf(96, 160, 320)
+                    // Round the three steps, the phone's own choices. Only what is fetched from now on
+                    // has the new quality: what is on the watch already is kept as it is, so there is
+                    // nothing to confirm.
+                    val steps = WatchDownloads.QUALITY_STEPS
                     quality = steps[(steps.indexOf(quality) + 1) % steps.size]
                     downloads.qualityKbps = quality
                     downloads.changed(schedule = true)
                 },
-                leading = { Icon(PhosphorIcons.Regular.Gauge, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                leading = { Icon(PhosphorIcons.Regular.Gauge, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
             )
         }
         item {

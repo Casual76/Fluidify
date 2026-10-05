@@ -63,6 +63,30 @@ class WatchDownloadStoreTest {
     }
 
     @Test
+    fun whatTheStoreHasSeenIsRememberedUntilItIsToldTheFilesMoved() {
+        assertFalse(store.has(track))
+        // The engine writes its own downloads, behind the store's back.
+        store.audioFile(track)!!.apply { parentFile!!.mkdirs(); writeBytes(ByteArray(1)) }
+        store.metaFile(track)!!.apply { parentFile!!.mkdirs(); writeText("{}") }
+        assertFalse("remembered, not looked at again", store.has(track))
+        store.invalidate(track)
+        assertTrue(store.has(track))
+        store.delete(track)
+        assertFalse(store.has(track))
+    }
+
+    @Test
+    fun invalidatingEverythingLooksAtEveryTrackAgain() {
+        assertFalse(store.has(track))
+        assertFalse(store.has(other))
+        store.audioFile(other)!!.apply { parentFile!!.mkdirs(); writeBytes(ByteArray(1)) }
+        store.metaFile(other)!!.apply { parentFile!!.mkdirs(); writeText("{}") }
+        store.invalidateAll()
+        assertTrue(store.has(other))
+        assertFalse(store.has(track))
+    }
+
+    @Test
     fun droppingAPlaylistKeepsTracksAnotherOneStillWants() {
         store.keep("spotify:playlist:a", "A")
         store.keep("spotify:album:b", "B")

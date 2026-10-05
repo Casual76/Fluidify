@@ -10,6 +10,7 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import dev.lelonio.square.nativecore.NativeBridge
 import dev.pampa.fluidify.wear.WearApp
+import dev.pampa.fluidify.wear.standalone.PollBackoff
 import dev.pampa.fluidify.wear.standalone.Route
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withTimeoutOrNull
@@ -46,8 +47,10 @@ class NightlySyncWorker(context: Context, params: WorkerParameters) : CoroutineW
             if (route == Route.NONE) return
             if (!standalone.engine.acquire()) return
             try {
+                // The listens go with the session, not with the Connect device: no need for it to be known.
                 withTimeoutOrNull(CONNECT_WAIT_MS) {
-                    while (!NativeBridge.isConnected) delay(POLL_MS)
+                    var looks = 0
+                    while (!NativeBridge.isConnected) delay(PollBackoff.delayMs(looks++))
                 }
                 // The outbox goes the moment the session is up; give the posts a moment to leave.
                 delay(SEND_MS)
@@ -65,7 +68,6 @@ class NightlySyncWorker(context: Context, params: WorkerParameters) : CoroutineW
         private const val WORK = "nightly-sync"
         private const val OUTBOX = "listen-outbox"
         private const val CONNECT_WAIT_MS = 40_000L
-        private const val POLL_MS = 500L
         private const val SEND_MS = 5_000L
 
         /** Once a day, on the charger. KEEP: scheduling again is free. */

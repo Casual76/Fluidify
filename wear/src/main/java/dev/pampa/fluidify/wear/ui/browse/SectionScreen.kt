@@ -1,6 +1,7 @@
 package dev.pampa.fluidify.wear.ui.browse
 
 import androidx.compose.runtime.Composable
+import androidx.compose.ui.res.stringResource
 import dev.antigravity.fluidengine.wear.components.FluidWearListRow
 import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.WearApp
@@ -20,13 +21,14 @@ fun SectionScreen(
     onPlayTrack: (uri: String) -> Unit,
 ) {
     val data = rememberPhoneData(section, { app.library.cachedSection(section) }, { app.library.peekSection(section) }) { app.library.section(section) }
+    val texts = rememberPhoneDataTexts()
+    val nothingHere = stringResource(R.string.nothing_here)
     WatchList(title = title) {
-        val page = data.value
+        val page = phoneDataNotices(data, texts)
         when {
-            page == null && data.failed -> noticeItem(app.getString(R.string.couldnt_load))
-            page == null -> noticeItem(app.getString(R.string.loading))
+            page == null -> Unit
             page.unavailableReason != null -> noticeItem(page.unavailableReason!!)
-            page.shelves.all { it.items.isEmpty() } -> noticeItem(app.getString(R.string.nothing_here))
+            page.shelves.all { it.items.isEmpty() } -> noticeItem(nothingHere)
             // All the shelves in one list: the same uri can be on two of them.
             else -> page.shelves.flatMap { it.items }.forEachIndexed { index, entry ->
                 item(key = "$index:${entry.uri}") {

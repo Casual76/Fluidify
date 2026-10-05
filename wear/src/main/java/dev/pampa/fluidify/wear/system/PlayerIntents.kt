@@ -23,23 +23,26 @@ object PlayerIntents {
     const val ACTION_REMOTE_MEDIA_ACTIVITY = "com.google.wear.services.media.action.REMOTE_MEDIA_ACTIVITY"
     const val ACTION_CONFIRM_UNLIKE = "dev.pampa.fluidify.wear.CONFIRM_UNLIKE"
 
+    /** The headphones prompt's button; see [listenHere]. */
+    const val ACTION_LISTEN_HERE = "dev.pampa.fluidify.wear.LISTEN_HERE"
+    const val EXTRA_LISTEN_TOKEN = "listen_token"
+
     /** The same request as an extra, for launchers that can set extras but not an action. */
     const val EXTRA_SHOW_PLAYER = "show_player"
     const val EXTRA_CONFIRM_UNLIKE = "confirm_unlike"
 
     /** What an intent asks the app to show. */
-    enum class Request { PLAYER, CONFIRM_UNLIKE, UPDATES }
+    enum class Request { PLAYER, CONFIRM_UNLIKE, UPDATES, LISTEN_HERE }
 
     fun requestOf(intent: Intent?): Request? = when {
         intent == null -> null
         intent.action == ACTION_UPDATES -> Request.UPDATES
+        intent.action == ACTION_LISTEN_HERE -> Request.LISTEN_HERE
         intent.action == ACTION_CONFIRM_UNLIKE || intent.getBooleanExtra(EXTRA_CONFIRM_UNLIKE, false) -> Request.CONFIRM_UNLIKE
         intent.action == ACTION_SHOW_PLAYER || intent.action == ACTION_MEDIA_CONTROLS || intent.action == ACTION_REMOTE_MEDIA_ACTIVITY ||
             intent.getBooleanExtra(EXTRA_SHOW_PLAYER, false) -> Request.PLAYER
         else -> null
     }
-
-    fun wantsPlayer(intent: Intent?): Boolean = requestOf(intent) != null
 
     fun showPlayer(context: Context): Intent =
         Intent(context, MainActivity::class.java)
@@ -68,6 +71,22 @@ object PlayerIntents {
     fun openUpdates(context: Context): PendingIntent = PendingIntent.getActivity(context, 3,
         showPlayer(context).setAction(ACTION_UPDATES), PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT)
 
+    /**
+     * The player, and the music moved to the headphones that just connected. Carries a [token] that
+     * the activity must find valid before it moves anything: see HeadphonesPrompt.claim.
+     */
+    fun listenHere(context: Context, token: String): PendingIntent =
+        PendingIntent.getActivity(
+            context,
+            REQUEST_LISTEN_HERE,
+            Intent(context, MainActivity::class.java)
+                .setAction(ACTION_LISTEN_HERE)
+                .putExtra(EXTRA_LISTEN_TOKEN, token)
+                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_ACTIVITY_SINGLE_TOP),
+            PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+        )
+
     private const val REQUEST_OPEN_PLAYER = 1
     private const val REQUEST_CONFIRM_UNLIKE = 2
+    private const val REQUEST_LISTEN_HERE = 4
 }

@@ -46,7 +46,7 @@ class OngoingPlayback(private val context: Context) {
         val remaining = (track.durationMs - snapshot.positionMs).coerceAtLeast(0)
         val timeout = if (playing) (remaining / snapshot.speed.coerceAtLeast(0.1f)).toLong() + PAUSE_GRACE_MS else PAUSE_GRACE_MS
         // Repeat-one and backward seeks have the same title/state but a later expiry.
-        if (signature == shown && nowMs + timeout < expiresAtMs + 30_000L && nowMs < expiresAtMs - 30_000L) return
+        if (signature == shown && nowMs + timeout < expiresAtMs + EXPIRY_SLACK_MS && nowMs < expiresAtMs - EXPIRY_SLACK_MS) return
 
         ensureChannel()
         val open = PlayerIntents.openPlayer(context)
@@ -96,6 +96,9 @@ class OngoingPlayback(private val context: Context) {
         const val CHANNEL = "now_playing"
         const val NOTIFICATION_ID = 7
         const val PAUSE_GRACE_MS = 10 * 60_000L
+
+        /** How far the notification's expiry may drift before it is posted again (repeat-one, seeks back). */
+        const val EXPIRY_SLACK_MS = 30_000L
 
         /** The silent "playing" channel, shared with the mirror experiment's notification. */
         fun ensureChannel(context: Context) {

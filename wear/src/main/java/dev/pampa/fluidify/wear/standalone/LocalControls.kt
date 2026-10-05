@@ -3,13 +3,16 @@ package dev.pampa.fluidify.wear.standalone
 import android.content.ComponentName
 import android.content.Context
 import android.media.AudioManager
+import android.net.ConnectivityManager
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.util.Log
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
+import com.google.common.util.concurrent.ListenableFuture
 import com.google.common.util.concurrent.MoreExecutors
 import dev.lelonio.square.data.Catalog
 import dev.lelonio.square.nativecore.NativeBridge
@@ -20,6 +23,7 @@ import dev.lelonio.square.ui.EXTRA_CONTEXT_URI
 import dev.pampa.fluidify.wear.link.ArtStore
 import dev.pampa.fluidify.wear.link.LinkStatus
 import dev.pampa.fluidify.wear.link.ReceivedSnapshot
+import dev.pampa.fluidify.wear.playback.ActivePlayback
 import dev.pampa.fluidify.wear.playback.NowPlaying
 import dev.pampa.fluidify.wear.playback.PlaybackControls
 import dev.pampa.fluidify.wear.protocol.ContextInfo
@@ -61,6 +65,11 @@ class LocalControls(
     private val art: ArtStore,
     /** A kept playlist's tracks from the watch's own disk, for when there is no session to read it. */
     private val offlineTracks: (String) -> List<dev.lelonio.square.data.CatalogTrack> = { emptyList() },
+    /**
+     * Whether every track of a kept playlist is on the watch's disk. Such a playlist is read from
+     * the disk first (see [loadTracks]); it reads files, so it is asked off the main thread.
+     */
+    private val fullyKept: (String) -> Boolean = { false },
     /** Where the last thing played here is remembered; see [resumeLast]. */
     private val prefs: StandalonePrefs? = null,
     /** Whether a song is in Liked Songs, asked of the phone; null when it cannot say. */
@@ -78,6 +87,15 @@ class LocalControls(
 
     private var controller: MediaController? = null
     private var connecting = false
+
+    /** The controller being built, so a disconnect can cancel it; see [connect]. */
+    private var building: ListenableFuture<MediaController>? = null
+
+    /**
+     * Bumped each time the controller is let go. A controller that finishes building under an older
+     * number was asked for before the disconnect, and nobody wants it any more.
+     */
+    private var generation = 0
     private var seq = 0L
     private var sleepJob: Job? = null
     private var sleepInfo: SleepInfo? = null
@@ -114,20 +132,29 @@ class LocalControls(
 
     private var resume: ResumePoint? = null
 
-    /**
-     * Paused long enough that the engine, the Wi-Fi and the Connect device go (see [rest]), with the
-     * song still on screen and play still meaning "from here".
-     */
-    val isResting: Boolean get() = controller == null && !connecting && resume != null
-
     private val idle = Runnable { rest() }
 
     /** "At the end of this song": what the sleep timer waits for on the watch's own player. */
     private var sleepAtTrackEnd = false
 
-    /** System volume changes (the side buttons, the system's own slider) shown on the player. */
+    private val audio: AudioManager by lazy { context.getSystemService(AudioManager::class.java) }
+
+    /** The music volume last published, in the system's steps: a change of anything else is not news. */
+    private var publishedVolumeSteps = -1
+
+    /**
+     * System volume changes (the side buttons, the system's own slider) shown on the player.
+     *
+     * Watches the system settings, whose volume keys are named per output device
+     * (`volume_music_speaker`, `volume_music_bt_a2dp`, …), so no single address covers them; every
+     * other setting that changes is let through unread, and a volume change that did not move the
+     * music stream (another stream's) publishes nothing.
+     */
     private val volumeObserver = object : android.database.ContentObserver(Handler(Looper.getMainLooper())) {
-        override fun onChange(selfChange: Boolean) {
+        override fun onChange(selfChange: Boolean, uri: android.net.Uri?) {
+            if (uri != null && uri.lastPathSegment?.startsWith(MUSIC_VOLUME_SETTING) != true) return
+            val steps = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+            if (steps == publishedVolumeSteps) return
             controller?.let(::publish)
         }
     }
@@ -150,12 +177,27 @@ class LocalControls(
         }
         if (controller != null || connecting) return
         connecting = true
+        val asked = generation
         val token = SessionToken(context, ComponentName(context, WatchPlaybackService::class.java))
         val future = MediaController.Builder(context, token).buildAsync()
+        building = future
         future.addListener({
-            val built = runCatching { future.get() }.getOrNull()
+            if (asked != generation) {
+                // disconnect() or stop() ran while this one was still being built. Assigned now, it
+                // would be bound to the service for good, with nothing left that knows to let it go
+                // (and a stop() would find the service bound again a moment after it stopped it).
+                runCatching { future.get() }.getOrNull()?.release()
+                return@addListener
+            }
+            building = null
+            val built = runCatching { future.get() }
+                .onFailure { Log.w(TAG, "the watch's player did not bind: ${it.message}") }
+                .getOrNull()
             if (built == null) {
                 connecting = false
+                // What was asked of the player (play, next, a like) goes with it: say so, rather than
+                // leaving a button that did nothing.
+                if (pending.isNotEmpty()) _errors.tryEmit(ActivePlayback.ENGINE_FAILED)
                 pending.clear()
                 return@addListener
             }
@@ -242,6 +284,11 @@ class LocalControls(
         controller?.removeListener(listener)
         controller?.release()
         controller = null
+        // A controller still being built is cancelled, or released the moment it is ready; the
+        // listener in [connect] also checks the generation, for the one that finishes first.
+        generation++
+        building?.let { runCatching { MediaController.releaseFuture(it) } }
+        building = null
         connecting = false
         pending.clear()
     }
@@ -301,11 +348,13 @@ class LocalControls(
      * or a playlist needs the account, and a rested watch has let its engine go.
      */
     private suspend fun engineReady(): Boolean {
-        fun connected() = runCatching { NativeBridge.isConnected }.getOrDefault(false)
+        // Asked of the engine off the main thread, and less and less often while it starts.
+        suspend fun connected() = withContext(Dispatchers.IO) { runCatching { NativeBridge.isConnected }.getOrDefault(false) }
         if (connected()) return true
         if (controller == null) withController { }
         return withTimeoutOrNull(ENGINE_WAKE_MS) {
-            while (!connected()) delay(ENGINE_POLL_MS)
+            var looks = 0
+            while (!connected()) delay(PollBackoff.delayMs(looks++))
             true
         } ?: false
     }
@@ -348,15 +397,33 @@ class LocalControls(
     }
 
     /**
-     * A playlist's tracks: through the session when there is one, from the watch's own downloads
-     * otherwise, which is how a run with no phone and no Wi-Fi still plays the playlist. Null when
-     * neither has it.
+     * A playlist's tracks: from the watch's own downloads when the playlist is kept whole or there
+     * is no network at all, through the session otherwise, and from the downloads as the last
+     * resort. Null when none has it. That is how a run with no phone and no Wi-Fi still plays the
+     * playlist.
+     *
+     * The disk comes first for a playlist that is all there: the online call costs a round trip
+     * (and, with the phone away, its whole timeout) to learn what the disk already knows, and the
+     * nightly sync keeps the kept list current. The sidecars are read off the main thread.
      */
-    private suspend fun loadTracks(contextUri: String): List<dev.lelonio.square.data.CatalogTrack>? =
-        runCatching {
+    private suspend fun loadTracks(contextUri: String): List<dev.lelonio.square.data.CatalogTrack>? {
+        val preferDisk = withContext(Dispatchers.IO) { fullyKept(contextUri) } || !hasNetwork()
+        if (preferDisk) {
+            val kept = withContext(Dispatchers.IO) { offlineTracks(contextUri) }
+            if (kept.isNotEmpty()) return kept
+        }
+        val online = runCatching {
             val uris = if (contextUri.startsWith("spotify:track:")) listOf(contextUri) else Catalog.contextTrackUris(contextUri)
             Catalog.tracks(uris)
-        }.getOrNull()?.takeIf { it.isNotEmpty() } ?: offlineTracks(contextUri).takeIf { it.isNotEmpty() }
+        }.getOrNull()?.takeIf { it.isNotEmpty() }
+        if (online != null) return online
+        if (preferDisk) return null
+        return withContext(Dispatchers.IO) { offlineTracks(contextUri) }.takeIf { it.isNotEmpty() }
+    }
+
+    /** Whether the system has any network to offer; a watch with none does not wait for the online call. */
+    private fun hasNetwork(): Boolean =
+        runCatching { context.getSystemService(ConnectivityManager::class.java).activeNetwork != null }.getOrDefault(true)
 
     /** Plays again what the watch last played on its own, from the top; nothing when it never did. */
     fun resumeLast() {
@@ -397,7 +464,6 @@ class LocalControls(
     override fun transfer(deviceId: String) = Unit
 
     override fun setVolume(level: Float, deviceId: String?) {
-        val audio = context.getSystemService(AudioManager::class.java)
         val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
         audio.setStreamVolume(AudioManager.STREAM_MUSIC, (level.coerceIn(0f, 1f) * max).toInt(), 0)
         controller?.let(::publish)
@@ -448,9 +514,9 @@ class LocalControls(
         val artUrl = item?.mediaMetadata?.artworkUri?.toString()
         val key = artKeyOf(artUrl)
         if (key != null && artUrl != null && !art.has(key)) fetchArt(key, artUrl)
-        val audio = context.getSystemService(AudioManager::class.java)
-        val volume = audio.getStreamVolume(AudioManager.STREAM_MUSIC).toFloat() /
-            audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
+        val volumeSteps = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
+        publishedVolumeSteps = volumeSteps
+        val volume = volumeSteps.toFloat() / audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC).coerceAtLeast(1)
         val extras = item?.mediaMetadata?.extras
         val uri = item?.mediaId
         if (uri != null && uri.startsWith("spotify:track:") && likedOverride?.first != uri && likedAsked != uri) askLiked(uri)
@@ -483,7 +549,7 @@ class LocalControls(
                 else -> RepeatMode.OFF
             },
             liked = likedOverride?.takeIf { it.first == uri }?.second,
-            hasPrevious = player.hasPreviousMediaItem() || player.currentPosition > 3_000,
+            hasPrevious = player.hasPreviousMediaItem() || player.currentPosition > RESTART_AFTER_MS,
             hasNext = player.hasNextMediaItem(),
             context = extras?.getString(EXTRA_CONTEXT_URI)?.let { ContextInfo(it, extras.getString(EXTRA_CONTEXT_LABEL).orEmpty()) },
             device = DeviceInfo(
@@ -513,17 +579,58 @@ class LocalControls(
         }
     }
 
-    /** The cover for the player, into the same store the phone's covers go to. */
+    /** A cover that could not be had: how many times in a row, and when it may be tried again. */
+    private class ArtFailure(val key: String, val attempts: Int, val retryAtMs: Long)
+
+    private var artFailure: ArtFailure? = null
+
+    /** The covers being fetched now, so a run of publishes starts one fetch per cover. */
+    private val artInFlight = HashSet<String>()
+
+    /**
+     * The cover for the player, into the same store the phone's covers go to.
+     *
+     * Every publish asks for a cover the store does not have, and a fetch used to end with a publish:
+     * offline, or with a cover the server refused or the store rejected, that was a loop with no
+     * pause. A failure is now remembered for the song's cover, and the next try waits twice as long
+     * as the last (see [ArtRetry]); another song's cover starts afresh.
+     * Only the main thread touches this state: the download alone runs elsewhere.
+     */
     private fun fetchArt(key: String, url: String) {
-        scope.launch(Dispatchers.IO) {
-            runCatching {
-                val connection = URL(url).openConnection() as HttpURLConnection
-                connection.connectTimeout = 8_000
-                connection.readTimeout = 8_000
-                connection.inputStream.use { art.store(key, it.readBytes()) }
-                connection.disconnect()
-            }.onFailure { Log.i(TAG, "cover not fetched: ${it.message}") }
-            withContext(Dispatchers.Main) { controller?.let(::publish) }
+        val failure = artFailure?.takeIf { it.key == key }
+        if (failure != null && SystemClock.elapsedRealtime() < failure.retryAtMs) return
+        if (!artInFlight.add(key)) return
+        scope.launch {
+            try {
+                val stored = withContext(Dispatchers.IO) { download(key, url) }
+                if (stored) {
+                    artFailure = null
+                    controller?.let(::publish)
+                } else {
+                    val attempts = (failure?.attempts ?: 0) + 1
+                    artFailure = ArtFailure(key, attempts, SystemClock.elapsedRealtime() + ArtRetry.waitMs(attempts))
+                }
+            } finally {
+                artInFlight.remove(key)
+            }
+        }
+    }
+
+    /** Whether the cover is in the store when this is done; blocking, so off the main thread. */
+    private fun download(key: String, url: String): Boolean {
+        var connection: HttpURLConnection? = null
+        return try {
+            connection = URL(url).openConnection() as HttpURLConnection
+            connection.connectTimeout = 8_000
+            connection.readTimeout = 8_000
+            connection.inputStream.use { art.store(key, it.readBytes()) }
+            // The store takes no bytes it cannot read as an image, and says nothing: ask it.
+            art.has(key)
+        } catch (failed: Exception) {
+            Log.i(TAG, "cover not fetched: ${failed.message}")
+            false
+        } finally {
+            connection?.disconnect()
         }
     }
 
@@ -546,6 +653,11 @@ class LocalControls(
 
         /** How long a write waits for a resting engine to come back. */
         private const val ENGINE_WAKE_MS = 15_000L
-        private const val ENGINE_POLL_MS = 250L
+
+        /** Past this far into a song, "previous" starts it again rather than going back. */
+        private const val RESTART_AFTER_MS = 3_000L
+
+        /** The prefix of the system's per-device music volume settings. */
+        private const val MUSIC_VOLUME_SETTING = "volume_music"
     }
 }

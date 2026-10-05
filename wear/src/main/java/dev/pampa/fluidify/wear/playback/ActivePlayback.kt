@@ -126,7 +126,7 @@ class ActivePlayback(
             _errors.tryEmit(NO_OUTPUT)
             return
         }
-        parts.router.chosen.value = output
+        parts.router.choose(output)
         // Already the watch: picking headphones or the speaker in the output list only moves the
         // sound, which the service follows by itself. A request from the phone still moves its music.
         if (_mode.value == PlaybackMode.WATCH && !fromPhone) return
@@ -309,8 +309,6 @@ class ActivePlayback(
 
         /** Closer than this to the end of the phone's song, starting it here begins from the top. */
         private const val RESUME_END_MARGIN_MS = 5_000L
-
-        /** A phone snapshot younger than this is news, not the last word of a phone that went away. */
 
         private val PHONE_AWAY = setOf(
             dev.pampa.fluidify.wear.link.LinkStatus.UNREACHABLE,

@@ -20,6 +20,7 @@ import androidx.wear.tiles.timeline
 import androidx.wear.tiles.timelineEntry
 import dev.pampa.fluidify.wear.MainActivity
 import dev.pampa.fluidify.wear.WearApp
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -73,6 +74,11 @@ class PlayerTileService : Material3TileService(allowDynamicTheme = false, defaul
         private val context: Context,
         private val scope: ProtoLayoutScope,
         private val model: PlayerTileModel,
+        // A constructor parameter, not a property below the buttons: properties start in the order
+        // they are written, and the buttons ask for their ids as they are built. A mark declared
+        // after them was still 0 then, every layout named its presses "next@0", and the history of
+        // handled presses (see [TileTapHistory]) refused every press after the first.
+        private val ids: TileButtonIds = TileButtonIds(),
     ) : PlayerTileClicks {
         override val open: Clickable = scope.clickable(
             PlayerIntents.openPlayer(context),
@@ -105,9 +111,7 @@ class PlayerTileService : Material3TileService(allowDynamicTheme = false, defaul
         }
         override val resume: Clickable = action(TileActions.TOGGLE)
 
-        private val layout = System.nanoTime()
-
-        private fun action(name: String): Clickable = clickable(action = loadAction(), id = TileActions.id(name, layout))
+        private fun action(name: String): Clickable = clickable(action = loadAction(), id = ids.of(name))
     }
 
     companion object {
@@ -116,11 +120,29 @@ class PlayerTileService : Material3TileService(allowDynamicTheme = false, defaul
         private const val ANSWER_BUDGET_MS = 6_000L
         private const val SETTLE_MS = 150L
 
-        /** The last press acted on, by its layout-unique id. */
-
         fun requestUpdate(context: Context) {
             runCatching { TileService.getUpdater(context).requestUpdate(PlayerTileService::class.java) }
         }
+    }
+}
+
+/**
+ * The ids of one layout's buttons: [TileActions.id] with a mark that no other layout has, so a press
+ * seen in one layout can never be taken for a press in another.
+ */
+internal class TileButtonIds(private val layout: Long = nextMark()) {
+
+    /** The id of the button that does [name] in this layout. */
+    fun of(name: String): String = TileActions.id(name, layout)
+
+    private companion object {
+        private val last = AtomicLong()
+
+        /**
+         * The clock, but never the same number twice: two layouts built within the clock's tick would
+         * otherwise share ids, and the second one's presses would be refused as the first one's.
+         */
+        fun nextMark(): Long = last.updateAndGet { previous -> maxOf(System.nanoTime(), previous + 1) }
     }
 }
 

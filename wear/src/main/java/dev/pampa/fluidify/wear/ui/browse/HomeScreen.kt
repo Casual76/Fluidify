@@ -11,7 +11,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.customActions
 import androidx.compose.ui.semantics.CustomAccessibilityAction
@@ -43,7 +42,8 @@ import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.WearApp
 import dev.pampa.fluidify.wear.ui.common.Thumb
 import dev.pampa.fluidify.wear.ui.common.WatchList
-import dev.pampa.fluidify.wear.ui.common.noticeItem
+import dev.pampa.fluidify.wear.ui.common.LocalNotice
+import dev.pampa.fluidify.wear.ui.theme.WearDimens
 
 /**
  * Home, as Spotify's watch app lays it out: the house on top, two pills (Search,
@@ -54,16 +54,20 @@ import dev.pampa.fluidify.wear.ui.common.noticeItem
 @Composable
 fun HomeScreen(
     app: WearApp,
+    /** Whether to ask the phone for the lists: false until the page has been swiped towards once. */
+    load: Boolean,
     onSearch: () -> Unit,
     onLibrary: () -> Unit,
     onOpen: (uri: String, title: String) -> Unit,
 ) {
     var refresh by remember { mutableIntStateOf(0) }
-    val home = rememberPhoneData("home#$refresh", app.library::cachedHome, app.library::peekHome) { app.library.home() }
+    val home = rememberPhoneData("home#$refresh", app.library::cachedHome, app.library::peekHome, enabled = load) { app.library.home() }
+    val texts = rememberPhoneDataTexts()
     val scope = rememberCoroutineScope()
     val haptics = LocalFluidHaptics.current
+    val notice = LocalNotice.current
     var pendingPins by remember { mutableStateOf(emptySet<String>()) }
-    var pinError by remember { mutableStateOf<String?>(null) }
+    val pinFailed = stringResource(R.string.pin_failed)
     val pinLabel = stringResource(R.string.pin)
     val unpinLabel = stringResource(R.string.unpin)
     fun pin(entry: LibraryItem) {
@@ -76,16 +80,14 @@ fun HomeScreen(
                     haptics.play(FluidHapticEvent.Threshold)
                     refresh++
                 } else {
-                    pinError = app.getString(R.string.pin_failed)
-                    haptics.play(FluidHapticEvent.Reject)
+                    notice.show(pinFailed, failure = true)
                 }
             } finally { pendingPins = pendingPins - entry.uri }
         }
     }
-    LaunchedEffect(pinError) { if (pinError != null) { kotlinx.coroutines.delay(2_600); pinError = null } }
     WatchList(title = null) {
         item {
-            ListHeader { Icon(PhosphorIcons.Regular.House, contentDescription = stringResource(R.string.home), modifier = Modifier.size(22.dp)) }
+            ListHeader { Icon(PhosphorIcons.Regular.House, contentDescription = stringResource(R.string.home), modifier = Modifier.size(WearDimens.ListIcon)) }
         }
         item {
             Row(
@@ -93,17 +95,16 @@ fun HomeScreen(
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
                 FluidWearPill(onClick = onSearch, modifier = Modifier.weight(1f)) {
-                    Icon(PhosphorIcons.Regular.MagnifyingGlass, contentDescription = stringResource(R.string.search), modifier = Modifier.size(20.dp))
+                    Icon(PhosphorIcons.Regular.MagnifyingGlass, contentDescription = stringResource(R.string.search), modifier = Modifier.size(WearDimens.PillIcon))
                 }
                 FluidWearPill(onClick = onLibrary, modifier = Modifier.weight(1f)) {
-                    Icon(PhosphorIcons.Regular.Books, contentDescription = stringResource(R.string.library), modifier = Modifier.size(20.dp))
+                    Icon(PhosphorIcons.Regular.Books, contentDescription = stringResource(R.string.library), modifier = Modifier.size(WearDimens.PillIcon))
                 }
             }
         }
-        val page = home.value
+        val page = phoneDataNotices(home, texts)
         when {
-            page == null && home.failed -> noticeItem(app.getString(R.string.couldnt_load))
-            page == null -> noticeItem(app.getString(R.string.loading))
+            page == null -> Unit
             else -> page.shelves.forEachIndexed { shelfIndex, shelf ->
                 if (shelf.title.isNotEmpty()) item { ListSubHeader { Text(shelf.title, maxLines = 2, overflow = TextOverflow.Ellipsis) } }
                 shelf.items.forEachIndexed { index, entry ->
@@ -142,5 +143,4 @@ fun HomeScreen(
             }
         }
     }
-    dev.antigravity.fluidengine.wear.components.FluidWearToast(message = pinError)
 }

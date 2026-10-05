@@ -16,7 +16,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Icon
 import androidx.wear.compose.material3.ListHeader
 import androidx.wear.compose.material3.Text
@@ -31,7 +30,10 @@ import dev.pampa.fluidify.wear.protocol.LibraryKind
 import dev.pampa.fluidify.wear.protocol.LibraryPage
 import dev.pampa.fluidify.wear.ui.common.Thumb
 import dev.pampa.fluidify.wear.ui.common.WatchList
+import dev.pampa.fluidify.wear.ui.common.failedItem
+import dev.pampa.fluidify.wear.ui.common.loadingItem
 import dev.pampa.fluidify.wear.ui.common.noticeItem
+import dev.pampa.fluidify.wear.ui.theme.WearDimens
 import kotlinx.coroutines.launch
 
 /**
@@ -50,6 +52,10 @@ fun SearchScreen(
     var failed by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
     val label = stringResource(R.string.search)
+    val loadingText = stringResource(R.string.loading)
+    val failedText = stringResource(R.string.couldnt_load)
+    val retryText = stringResource(R.string.retry)
+    val noResults = stringResource(R.string.no_results)
 
     fun run(text: String) {
         query = text
@@ -82,14 +88,14 @@ fun SearchScreen(
             FluidWearListRow(
                 title = query.ifEmpty { label },
                 onClick = ask,
-                leading = { Icon(PhosphorIcons.Regular.MagnifyingGlass, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                leading = { Icon(PhosphorIcons.Regular.MagnifyingGlass, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
             )
         }
         val page = results
         when {
-            busy -> noticeItem(app.getString(R.string.loading))
-            failed -> noticeItem(app.getString(R.string.couldnt_load))
-            page != null && page.shelves.all { it.items.isEmpty() } -> noticeItem(app.getString(R.string.no_results))
+            busy -> loadingItem(loadingText)
+            failed -> failedItem(failedText, retryText) { run(query) }
+            page != null && page.shelves.all { it.items.isEmpty() } -> noticeItem(noResults)
             page != null -> page.shelves.forEachIndexed { shelfIndex, shelf ->
                 if (shelf.title.isNotEmpty()) item { ListHeader { Text(shelf.title) } }
                 shelf.items.forEachIndexed { index, entry ->

@@ -4,6 +4,7 @@ import android.media.AudioAttributes
 import android.media.AudioDeviceInfo
 import android.media.AudioFormat
 import android.media.AudioTrack
+import android.os.SystemClock
 import android.util.Log
 import dev.lelonio.square.nativecore.NativeAudioSink
 import java.nio.ByteBuffer
@@ -48,6 +49,16 @@ class WearAudioOutput : NativeAudioSink {
             synchronized(this) { track?.preferredDevice = value }
         }
 
+    /**
+     * Writes in a row that moved no sound, and whether the failure of the track was already said:
+     * see [write]. Only the engine's audio thread touches them.
+     */
+    private var stalledWrites = 0
+    private var deadTrackLogged = false
+
+    /** Until when no new AudioTrack is attempted after one that would not initialise. */
+    @Volatile private var noBuildBefore = 0L
+
     private val fades = Executors.newSingleThreadExecutor { Thread(it, "wear-fade") }
     private val fadeGeneration = AtomicLong()
 
@@ -77,8 +88,14 @@ class WearAudioOutput : NativeAudioSink {
 
     override fun write(data: ByteBuffer, sizeInBytes: Int, sampleRate: Int, channels: Int) {
         if (discarding || released) return
-        val output = synchronized(this) { ensureTrack(sampleRate, channels) } ?: return
-        val head = output.playbackHeadPosition.toLong() and 0xffffffffL
+        val output = synchronized(this) { ensureTrack(sampleRate, channels) }
+        if (output == null) {
+            // No track to give the sound to: the write must still take as long as the sound does,
+            // or the decoder runs at the speed of the CPU, through the whole song, into nothing.
+            pace(sizeInBytes, sampleRate, channels)
+            return
+        }
+        val head = runCatching { output.playbackHeadPosition.toLong() and 0xffffffffL }.getOrDefault(0L)
         if (lightTrack !== output || lightFramesWritten < head || lightFramesWritten - head > sampleRate * 2L) {
             lightTrack = output; lightFramesWritten = head
         }
@@ -87,13 +104,57 @@ class WearAudioOutput : NativeAudioSink {
         var written = 0
         while (written < sizeInBytes) {
             val result = output.write(data, sizeInBytes - written, AudioTrack.WRITE_BLOCKING)
-            if (result <= 0) return
+            if (result <= 0) {
+                stalled(output, result)
+                // The rest of this packet is lost; the time it would have taken is not.
+                pace(sizeInBytes - written, sampleRate, channels)
+                return
+            }
             lightFramesWritten += result / (channels * 2)
             written += result
         }
+        stalledWrites = 0
+        deadTrackLogged = false
     }
 
-    /** Fades out, drops what is buffered, then runs [action]: the player is loading another track. */
+    /**
+     * A write that took no sound. A negative result is the track telling it is no good any more
+     * (ERROR_DEAD_OBJECT after the audio route changed, the server restarting): it is released
+     * here, and the next write builds another through [ensureTrack]. Before, the function just
+     * returned, and the dead track stayed for the rest of the session — silence, with the engine
+     * playing on. A zero is given a few tries, then the same.
+     */
+    private fun stalled(output: AudioTrack, result: Int) {
+        stalledWrites++
+        if (result >= 0 && stalledWrites < MAX_STALLED_WRITES) return
+        if (!deadTrackLogged) {
+            Log.w(TAG, "AudioTrack write failed ($result, $stalledWrites in a row): rebuilding the track")
+            deadTrackLogged = true
+        }
+        synchronized(this) {
+            if (track !== output) return
+            runCatching { output.pause() }
+            runCatching { output.release() }
+            track = null
+            configuredRate = 0
+            configuredChannels = 0
+        }
+        stalledWrites = 0
+    }
+
+    /** Takes as long as [sizeInBytes] of sound lasts, so a write that cannot play still keeps time. */
+    private fun pace(sizeInBytes: Int, sampleRate: Int, channels: Int) {
+        val frames = sizeInBytes / (channels.coerceAtLeast(1) * 2)
+        val ms = (frames * 1000L / sampleRate.coerceAtLeast(1)).coerceIn(0L, MAX_PACE_MS)
+        if (ms <= 0L) return
+        try {
+            Thread.sleep(ms)
+        } catch (interrupted: InterruptedException) {
+            Thread.currentThread().interrupt()
+        }
+    }
+
+    /** The track the audio light is counting frames of, and how many have been written to it. */
     private var lightTrack: AudioTrack? = null
     private var lightFramesWritten = 0L
 
@@ -166,6 +227,8 @@ class WearAudioOutput : NativeAudioSink {
         if (released) return null
         val existing = track
         if (existing != null && configuredRate == sampleRate && configuredChannels == channels) return existing
+        // A format the device would not take a moment ago is not asked again for every packet.
+        if (existing == null && SystemClock.elapsedRealtime() < noBuildBefore) return null
         existing?.run {
             runCatching { pause() }
             release()
@@ -175,6 +238,7 @@ class WearAudioOutput : NativeAudioSink {
         if (minBuffer <= 0) {
             Log.e(TAG, "unsupported output format: $sampleRate Hz, $channels ch")
             track = null
+            noBuildBefore = SystemClock.elapsedRealtime() + REBUILD_BACKOFF_MS
             return null
         }
         val created = AudioTrack.Builder()
@@ -195,11 +259,15 @@ class WearAudioOutput : NativeAudioSink {
             // deeper buffer is what lets it.
             .setBufferSizeInBytes(minBuffer * BUFFER_MULTIPLIER)
             .setTransferMode(AudioTrack.MODE_STREAM)
+            // Music, not a call: latency is worth nothing here, and the deep buffer path lets the
+            // CPU sleep between wake-ups, which on a watch is the battery.
+            .setPerformanceMode(AudioTrack.PERFORMANCE_MODE_POWER_SAVING)
             .build()
         if (created.state != AudioTrack.STATE_INITIALIZED) {
             Log.e(TAG, "AudioTrack failed to initialise")
             created.release()
             track = null
+            noBuildBefore = SystemClock.elapsedRealtime() + REBUILD_BACKOFF_MS
             return null
         }
         preferredDevice?.let { created.preferredDevice = it }
@@ -220,5 +288,12 @@ class WearAudioOutput : NativeAudioSink {
         const val SKIP_FADE_MS = 140L
         const val STEP_MS = 10L
         const val BUFFER_MULTIPLIER = 6
+
+        /** Writes in a row that moved nothing (not an error, just nothing) before the track is rebuilt. */
+        const val MAX_STALLED_WRITES = 3
+
+        /** The longest a write that cannot play waits: a packet is a few tens of milliseconds. */
+        const val MAX_PACE_MS = 250L
+        const val REBUILD_BACKOFF_MS = 500L
     }
 }

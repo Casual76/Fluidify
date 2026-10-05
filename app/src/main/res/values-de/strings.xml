@@ -335,7 +335,7 @@
     <string name="no_artist_info">Zu diesem Interpreten gibt es nichts zu zeigen.</string>
     <string name="no_biography">Keine Beschreibung für diesen Interpreten.</string>
     <string name="info_panel">Info</string>
-    <string name="monthly_listeners">%1$s monatliche Hoerer</string>
+    <string name="monthly_listeners">%1$s monatliche Hörer</string>
 
     <!-- Downloads -->
     <string name="download">Herunterladen</string>
@@ -387,7 +387,7 @@
     <string name="sleep_timer_track_end">Ende des Titels</string>
     <string name="sleep_timer_left">Stoppt in %1$s</string>
     <string name="sleep_timer_track_end_active">Stoppt am Ende dieses Titels</string>
-    <string name="sleep_timer_note">Zaehlt bei ausgeschaltetem Bildschirm weiter. Die Musik blendet vorher aus.</string>
+    <string name="sleep_timer_note">Zählt bei ausgeschaltetem Bildschirm weiter. Die Musik blendet vorher aus.</string>
     <string name="shortcut_resume">Fortsetzen</string>
     <string name="shortcut_resume_short">Fortsetzen</string>
     <string name="shortcut_search">Suchen</string>
@@ -396,12 +396,12 @@
     <string name="shortcut_library_short">Bibliothek</string>
     <string name="reorder">Neu ordnen</string>
     <string name="widget_label">Wird gespielt</string>
-    <string name="widget_nothing_playing">Nichts laeuft</string>
+    <string name="widget_nothing_playing">Nichts läuft</string>
     <string name="widget_label_row">Wird gespielt</string>
-    <string name="widget_description_row">Das Cover, was laeuft, und die drei Tasten.</string>
-    <string name="widget_add_row">Die Zeile zum Startbildschirm hinzufuegen</string>
-    <string name="widget_add_note">Das Cover dahinter, was laeuft, und die drei Tasten. Folgt dem Thema der App.</string>
-    <string name="widget_nothing_playing_hint">Fluidify oeffnen und Play druecken</string>
+    <string name="widget_description_row">Das Cover, was läuft, und die drei Tasten.</string>
+    <string name="widget_add_row">Die Zeile zum Startbildschirm hinzufügen</string>
+    <string name="widget_add_note">Das Cover dahinter, was läuft, und die drei Tasten. Folgt dem Thema der App.</string>
+    <string name="widget_nothing_playing_hint">Fluidify öffnen und Play drücken</string>
     <string name="library_offline">Angezeigt wird, was heruntergeladen ist. Spotify hat noch nicht geantwortet.</string>
     <string name="library_offline_action">Erneut versuchen</string>
     <string name="library_needs_app">Gefolgte Künstler und gespeicherte Alben brauchen deine eigene verbundene Spotify-Anwendung.</string>

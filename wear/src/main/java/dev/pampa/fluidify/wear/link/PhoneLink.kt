@@ -12,6 +12,7 @@ import com.google.android.gms.wearable.DataMapItem
 import com.google.android.gms.wearable.Node
 import com.google.android.gms.wearable.Wearable
 import dev.pampa.fluidify.wear.BuildConfig
+import dev.pampa.fluidify.wear.protocol.AckErrors
 import dev.pampa.fluidify.wear.protocol.Command
 import dev.pampa.fluidify.wear.protocol.CommandAck
 import dev.pampa.fluidify.wear.protocol.CommandEnvelope
@@ -116,9 +117,35 @@ class PhoneLink(
     private val authPending = ConcurrentHashMap<Long, CompletableDeferred<dev.pampa.fluidify.wear.protocol.AuthGrant>>()
 
     @Volatile private var nodeId: String? = null
-    val knownPhoneNode: String? get() = nodeId
-    suspend fun audioLightPhone(): String? = findPhone()?.id
+
+    /**
+     * Whether [node] is still the phone as far as the link knows: what it has heard and what its
+     * last sends said, with no lookup. For a loop that only has to notice the phone leaving, which
+     * a failed send or a capability change tells it.
+     */
+    fun stillPhone(node: String): Boolean =
+        nodeId == node && _status.value != LinkStatus.UNREACHABLE && _status.value != LinkStatus.NOT_FOUND
+
     private var answerWatch: Job? = null
+
+    /**
+     * The node last seen nearby, and when: a message goes to a node only if the phone is directly
+     * reachable (see [send]), and asking Play Services for the list of connected nodes before every
+     * message was an IPC round trip in front of each one — a skip, a seek, each volume step. The
+     * answer is trusted for [NEARBY_TRUST_MS], and forgotten at once when a send fails or the
+     * capability changes.
+     */
+    @Volatile private var nearbyNode: String? = null
+    @Volatile private var nearbyAt = 0L
+
+    private fun trustNearby(node: String) {
+        nearbyNode = node
+        nearbyAt = android.os.SystemClock.elapsedRealtime()
+    }
+
+    private fun forgetNearby() {
+        nearbyNode = null
+    }
 
     /**
      * Finds the phone, introduces this watch and catches up on what the Data
@@ -150,6 +177,8 @@ class PhoneLink(
     }
 
     private val capabilityListener = CapabilityClient.OnCapabilityChangedListener {
+        // The phone came or went: what was known of who is nearby is not to be trusted.
+        forgetNearby()
         scope.launch {
             val reachable = findPhone() != null
             when {
@@ -169,7 +198,10 @@ class PhoneLink(
         runCatching { capabilities.removeListener(capabilityListener, WearPaths.CAPABILITY_PHONE) }
     }
 
-    /** The phone's node when it is in reach, for a channel of one's own (the download transfers). */
+    /**
+     * The phone's node when it is in reach: for a channel of one's own (the download transfers, the
+     * thumbnails) and for what follows the phone's presence (the audio light).
+     */
     suspend fun reachablePhone(): String? = findPhone()?.id
 
     private suspend fun findPhone(reachableOnly: Boolean = true): Node? = withTimeoutOrNull(3_000) {
@@ -181,7 +213,10 @@ class PhoneLink(
                 val advertised = capabilityNodes(true).map { it.id }.toSet()
                 direct.firstOrNull { it.id in advertised }
             }
-            found?.also { nodeId = it.id }
+            found?.also {
+                nodeId = it.id
+                trustNearby(it.id)
+            }
         } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
         catch (error: Exception) { Log.i(TAG, "phone lookup failed: ${error.javaClass.simpleName}"); null }
     }
@@ -206,7 +241,7 @@ class PhoneLink(
         nodeId = fromNode
         _phone.value = hello
         // The phone handles updates while it is around; see WatchSelfUpdateWorker.
-        context.getSharedPreferences("phone_link", Context.MODE_PRIVATE).edit()
+        context.getSharedPreferences(PREFS, Context.MODE_PRIVATE).edit()
             .putLong(dev.pampa.fluidify.wear.update.WatchSelfUpdateWorker.KEY_PHONE_SEEN, System.currentTimeMillis())
             .apply()
         answerWatch?.cancel()
@@ -237,14 +272,19 @@ class PhoneLink(
         val id = ids.incrementAndGet()
         val waiter = CompletableDeferred<CommandAck>()
         pending[id] = waiter
-        val bytes = WearCodec.encode(CommandEnvelope.serializer(), CommandEnvelope(id, command))
-        if (!send(node, WearPaths.COMMAND, bytes)) {
+        // Whatever ends this call (an answer, a timeout, the caller being cancelled) takes the
+        // waiter out: one left behind was kept for good, and an answer arriving late completed it.
+        try {
+            val bytes = WearCodec.encode(CommandEnvelope.serializer(), CommandEnvelope(id, command))
+            if (!send(node, WearPaths.COMMAND, bytes)) {
+                nodeId = null
+                _status.value = LinkStatus.UNREACHABLE
+                return null
+            }
+            return withTimeoutOrNull(timeoutMs) { waiter.await() }
+        } finally {
             pending.remove(id)
-            nodeId = null
-            _status.value = LinkStatus.UNREACHABLE
-            return null
         }
-        return withTimeoutOrNull(timeoutMs) { waiter.await() }.also { pending.remove(id) }
     }
 
     /**
@@ -253,18 +293,21 @@ class PhoneLink(
      * A failure says why: unreachable, no answer in time, or the phone's own error.
      */
     suspend fun <T> request(method: RpcMethod, serializer: KSerializer<T>, timeoutMs: Long = RPC_TIMEOUT_MS): Result<T> {
-        val node = nodeId ?: findPhone()?.id ?: return Result.failure(RpcFailure("unreachable"))
+        val node = nodeId ?: findPhone()?.id ?: return Result.failure(RpcFailure(AckErrors.UNREACHABLE))
         val id = ids.incrementAndGet()
         val waiter = CompletableDeferred<RpcResponse>()
         rpcPending[id] = waiter
-        if (!send(node, WearPaths.RPC, WearCodec.encode(RpcRequest.serializer(), RpcRequest(id, method)))) {
+        val response = try {
+            if (!send(node, WearPaths.RPC, WearCodec.encode(RpcRequest.serializer(), RpcRequest(id, method)))) {
+                nodeId = null
+                _status.value = LinkStatus.UNREACHABLE
+                return Result.failure(RpcFailure(AckErrors.UNREACHABLE))
+            }
+            withTimeoutOrNull(timeoutMs) { waiter.await() }
+        } finally {
+            // Also when the screen that asked has gone (the request cancelled): see [send].
             rpcPending.remove(id)
-            nodeId = null
-            _status.value = LinkStatus.UNREACHABLE
-            return Result.failure(RpcFailure("unreachable"))
         }
-        val response = withTimeoutOrNull(timeoutMs) { waiter.await() }
-        rpcPending.remove(id)
         if (response == null) return Result.failure(RpcFailure("timeout"))
         if (!response.ok) return Result.failure(RpcFailure(response.error ?: "error"))
         val payload = response.payload ?: return Result.failure(RpcFailure("empty"))
@@ -285,12 +328,15 @@ class PhoneLink(
         val waiter = CompletableDeferred<dev.pampa.fluidify.wear.protocol.AuthGrant>()
         authPending[id] = waiter
         val request = dev.pampa.fluidify.wear.protocol.AuthRequest(id, reason)
-        if (!send(node, WearPaths.AUTH_REQUEST, WearCodec.encode(dev.pampa.fluidify.wear.protocol.AuthRequest.serializer(), request))) {
+        try {
+            if (!send(node, WearPaths.AUTH_REQUEST, WearCodec.encode(dev.pampa.fluidify.wear.protocol.AuthRequest.serializer(), request))) {
+                nodeId = null
+                return null
+            }
+            return withTimeoutOrNull(timeoutMs) { waiter.await() }
+        } finally {
             authPending.remove(id)
-            nodeId = null
-            return null
         }
-        return withTimeoutOrNull(timeoutMs) { waiter.await() }.also { authPending.remove(id) }
     }
 
     fun onAuthGrant(grant: dev.pampa.fluidify.wear.protocol.AuthGrant) {
@@ -325,10 +371,23 @@ class PhoneLink(
     }
 
     private suspend fun send(node: String, path: String, bytes: ByteArray): Boolean = runCatching {
-        if (connectedNodes().none { it.id == node && it.isNearby }) return false
+        if (!isNearby(node)) return false
         messages.sendMessage(node, path, bytes).await()
         true
-    }.onFailure { Log.i(TAG, "send $path failed: ${it.message}") }.getOrDefault(false)
+    }.onFailure {
+        // A node that did not take the message is looked at again before the next one.
+        forgetNearby()
+        Log.i(TAG, "send $path failed: ${it.message}")
+    }.getOrDefault(false)
+
+    /** Whether [node] is directly connected: from what was seen lately, or from Play Services. */
+    private suspend fun isNearby(node: String): Boolean {
+        val trusted = nearbyNode == node && android.os.SystemClock.elapsedRealtime() - nearbyAt < NEARBY_TRUST_MS
+        if (trusted) return true
+        val nearby = connectedNodes().any { it.id == node && it.isNearby }
+        if (nearby) trustNearby(node) else forgetNearby()
+        return nearby
+    }
 
     /**
      * Reads what the Data Layer already holds: the last state the phone wrote
@@ -384,6 +443,9 @@ class PhoneLink(
 
     companion object {
         private const val TAG = "PhoneLink"
+
+        /** The preferences that remember when the phone was last heard; see WatchSelfUpdateWorker. */
+        const val PREFS = "phone_link"
         const val ASSET_KEY = "img"
         private const val ACK_TIMEOUT_MS = 3_000L
         private const val RPC_TIMEOUT_MS = 12_000L
@@ -391,6 +453,9 @@ class PhoneLink(
         /** The phone may have to refresh its own session first, over its own network. */
         private const val AUTH_TIMEOUT_MS = 20_000L
         private const val HELLO_ANSWER_MS = 10_000L
+
+        /** How long "this node is nearby" is believed without asking Play Services again. */
+        private const val NEARBY_TRUST_MS = 30_000L
 
         /** What this watch build can do. Grows with each milestone. */
         val WATCH_FEATURES: Set<String> = setOf(

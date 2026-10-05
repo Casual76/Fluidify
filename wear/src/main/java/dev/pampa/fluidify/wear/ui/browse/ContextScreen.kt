@@ -9,6 +9,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -31,6 +32,8 @@ import dev.pampa.fluidify.wear.WearApp
 import dev.pampa.fluidify.wear.ui.common.Thumb
 import dev.pampa.fluidify.wear.ui.common.WatchList
 import dev.pampa.fluidify.wear.ui.common.noticeItem
+import dev.pampa.fluidify.wear.ui.theme.WearDimens
+import kotlinx.coroutines.launch
 
 /** A playlist, album, artist or Liked Songs: the cover, Play and Shuffle, then the tracks. */
 @Composable
@@ -41,6 +44,8 @@ fun ContextScreen(
     onPlaying: () -> Unit,
 ) {
     val data = rememberPhoneData(uri, { app.library.cachedContext(uri) }, { app.library.peekContext(uri) }) { app.library.context(uri) }
+    val texts = rememberPhoneDataTexts()
+    val nothingHere = stringResource(R.string.nothing_here)
     val page = data.value
     WatchList(title = page?.title?.ifEmpty { null } ?: title) {
         page?.unavailableReason?.let { noticeItem(it); return@WatchList }
@@ -65,14 +70,14 @@ fun ContextScreen(
                         onPlaying()
                     },
                     modifier = Modifier.weight(1f),
-                ) { Icon(PhosphorIcons.Fill.Play, contentDescription = stringResource(R.string.play), modifier = Modifier.size(20.dp)) }
+                ) { Icon(PhosphorIcons.Fill.Play, contentDescription = stringResource(R.string.play), modifier = Modifier.size(WearDimens.PillIcon)) }
                 FluidWearPill(
                     onClick = {
                         app.controls.playContext(uri, shuffle = true, label = page?.title ?: title)
                         onPlaying()
                     },
                     modifier = Modifier.weight(1f),
-                ) { Icon(PhosphorIcons.Regular.Shuffle, contentDescription = stringResource(R.string.shuffle), modifier = Modifier.size(20.dp)) }
+                ) { Icon(PhosphorIcons.Regular.Shuffle, contentDescription = stringResource(R.string.shuffle), modifier = Modifier.size(WearDimens.PillIcon)) }
             }
         }
         // Keeping it on the watch, for listening without the phone. Playlists, albums and
@@ -82,11 +87,17 @@ fun ContextScreen(
                 val owners by app.downloads.store.owners.collectAsStateWithLifecycle()
                 val status by app.downloads.status.collectAsStateWithLifecycle()
                 val kept = owners.any { it.uri == uri }
+                val scope = rememberCoroutineScope()
                 val progress = status.owners.firstOrNull { it.uri == uri }
                 androidx.wear.compose.material3.SwitchButton(
                     checked = kept,
                     onCheckedChange = { keep ->
-                        if (keep) app.downloads.keep(uri, page?.title ?: title, page?.artUrl) else app.downloads.drop(uri)
+                        // Files are written and deleted: never on the main thread, one edit after the other.
+                        val name = page?.title ?: title
+                        val artUrl = page?.artUrl
+                        scope.launch(app.downloads.edits) {
+                            if (keep) app.downloads.keep(uri, name, artUrl) else app.downloads.drop(uri)
+                        }
                     },
                     label = { androidx.wear.compose.material3.Text(stringResource(R.string.keep_on_watch)) },
                     secondaryLabel = progress?.takeIf { kept && it.tracks > 0 }?.let { owner ->
@@ -96,19 +107,19 @@ fun ContextScreen(
                 )
             }
         }
+        val loaded = phoneDataNotices(data, texts)
         when {
-            page == null && data.failed -> noticeItem(app.getString(R.string.couldnt_load))
-            page == null -> noticeItem(app.getString(R.string.loading))
-            page.tracks.isEmpty() -> noticeItem(app.getString(R.string.nothing_here))
+            loaded == null -> Unit
+            loaded.tracks.isEmpty() -> noticeItem(nothingHere)
             // By position as well as by uri: Spotify lets a playlist hold the same song twice, and a
             // key used twice takes the list down.
-            else -> page.tracks.forEachIndexed { index, track ->
+            else -> loaded.tracks.forEachIndexed { index, track ->
                 item(key = "$index:${track.uri}") {
                     FluidWearListRow(
                         title = track.title,
                         subtitle = track.subtitle.ifEmpty { null },
                         onClick = {
-                            app.controls.playContext(uri, startTrackUri = track.uri, label = page.title)
+                            app.controls.playContext(uri, startTrackUri = track.uri, label = loaded.title)
                             onPlaying()
                         },
                         leading = { Thumb(track.artKey, track.artUrl, app.art, PhosphorIcons.Regular.MusicNote) },

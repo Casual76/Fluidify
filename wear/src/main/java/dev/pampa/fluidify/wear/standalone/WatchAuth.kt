@@ -90,6 +90,20 @@ class WatchAuth(
         }
     }
 
+    /**
+     * Whether [account] makes the watch forget what it has: the phone signed out while the watch
+     * holds something of an account, or another account signed in. [onAccount] then deletes the
+     * credential, which must not happen under a running engine: the caller stops playback first
+     * (see ActivePlayback.signedOut) and only then calls [signOut].
+     */
+    fun forgets(account: AccountState): Boolean {
+        val known = prefs.username
+        return when {
+            !account.signedIn -> hasCredential || known != null || credentialsDir.exists()
+            else -> known != null && account.username != null && account.username != known
+        }
+    }
+
     /** Forgets the credential. Downloads stay; they play again only for the same account. */
     fun signOut() {
         credentialsDir.deleteRecursively()

@@ -110,10 +110,10 @@ class PlayerScreenshots {
         org.junit.Assert.assertEquals(android.graphics.Color.BLACK, bitmap.getPixel(bitmap.width / 2, bitmap.height / 2))
     }
 
-    @Test fun enteringAmbientKeepsTheTitleAnchorAndDisposesTheInteractivePlayer() {
+    @Test fun enteringAmbientKeepsTheTitleAnchorAndTheAppUnderneath() {
         val snapshot = sampleSnapshot()
         val controls = FakeControls(snapshot)
-        val now = controls.nowPlaying.value
+        val now = androidx.compose.runtime.mutableStateOf(controls.nowPlaying.value)
         val ambient = dev.antigravity.fluidengine.wear.ambient.FluidAmbientState.preview(false)
         // Mutate the same observed state, as AmbientLifecycleObserver does on the device.
         val setAmbient = ambient.javaClass.methods.single { it.name.startsWith("setAmbient") }
@@ -133,17 +133,19 @@ class PlayerScreenshots {
         val title = snapshot.track!!.title
         val before = compose.onNodeWithText(title, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         compose.runOnIdle { setAmbient.invoke(ambient, true) }
-        // Wear can suspend animation frames as soon as it enters ambient. No transition may
-        // keep the interactive player (and its polling jobs) alive waiting for later frames.
+        // Wear can suspend animation frames as soon as it enters ambient: the ambient screen must be
+        // there without waiting for any. The app stays composed under it (its lists keep their place,
+        // its effects do not run again on the way back), drawn by nobody; the player page alone has
+        // nothing to show in ambient and leaves, which is what stops its ring and its polling.
         compose.mainClock.advanceTimeByFrame()
         compose.mainClock.advanceTimeByFrame() // Commit the snapshot and then its recomposition.
         compose.waitForIdle()
-        org.junit.Assert.assertEquals("Dispose without waiting for animation frames", 1, disposed)
+        org.junit.Assert.assertEquals("The app stays composed under the ambient screen", 0, disposed)
         compose.mainClock.advanceTimeBy(300)
         compose.waitForIdle()
         val after = compose.onNodeWithText(title, useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
         org.junit.Assert.assertEquals(before.top, after.top, 2f)
-        org.junit.Assert.assertEquals(1, disposed)
+        org.junit.Assert.assertEquals(0, disposed)
         compose.onRoot().captureRoboImage("screenshots/player_aod_same_anchor.png")
         val bitmap = android.graphics.BitmapFactory.decodeFile("screenshots/player_aod_same_anchor.png")
         val center = bitmap.getPixel(bitmap.width / 2, bitmap.height / 2)

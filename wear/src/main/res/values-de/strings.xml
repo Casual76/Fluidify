@@ -149,7 +149,6 @@
     <string name="error_playlist">Nicht zur Playlist hinzugefügt</string>
     <string name="error_no_output">Verbinde Kopfhörer, um auf der Uhr zu hören</string>
     <string name="error_end_of_queue">Das war das Ende der Warteschlange</string>
-    <string name="unavailable_tracks">%1$d nicht verfügbar</string>
     <string name="volume_down">Lautstärke verringern</string>
     <string name="volume_up">Lautstärke erhöhen</string>
     <string name="pin">Anheften</string>
@@ -158,4 +157,17 @@
     <string name="update_retry_cached">Installation fehlgeschlagen. Tippe zum erneuten Versuch mit der gespeicherten APK.</string>
     <string name="audio_light_title">Lichteffekte zur Musik</string>
     <string name="audio_light_note">Sanft leuchtender Fortschritt, während der Player sichtbar ist.</string>
+    <string name="errors_channel">Probleme</string>
+    <string name="song_options">Titeloptionen</string>
+    <string name="not_updated">Nicht aktualisiert</string>
+    <string name="retry">Erneut versuchen</string>
+    <string name="headphone_picker_unavailable">Bluetooth-Einstellungen konnten nicht geöffnet werden</string>
+    <string name="two_parts">%1$s · %2$s</string>
+    <string name="percent_value">%1$d%%</string>
+    <string name="quality_kbps">%1$d kbps</string>
+    <string name="update_title">Update %1$s</string>
+    <plurals name="unavailable_tracks">
+        <item quantity="one">%1$d nicht verfügbar</item>
+        <item quantity="other">%1$d nicht verfügbar</item>
+    </plurals>
 </resources>

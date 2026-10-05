@@ -24,7 +24,6 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.wear.compose.material3.Icon
@@ -51,7 +50,10 @@ import dev.pampa.fluidify.wear.protocol.RepeatMode
 import dev.pampa.fluidify.wear.protocol.UpdatePhase
 import dev.pampa.fluidify.wear.protocol.UpdateStatus
 import dev.pampa.fluidify.wear.system.Bridging
+import dev.pampa.fluidify.wear.system.FirstRunPrefs
 import dev.pampa.fluidify.wear.system.SurfacePrefs
+import dev.pampa.fluidify.wear.ui.common.LocalNotice
+import dev.pampa.fluidify.wear.ui.theme.WearDimens
 import dev.pampa.fluidify.wear.ui.common.WatchList
 import dev.pampa.fluidify.wear.ui.debug.GlassMeterPrefs
 import dev.pampa.fluidify.wear.ui.player.deviceIcon
@@ -86,6 +88,8 @@ fun MoreScreen(
     onDownloads: (() -> Unit)? = null,
 ) {
     val context = LocalContext.current
+    val notice = LocalNotice.current
+    val developerUnlocked = stringResource(R.string.developer_unlocked)
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
     val snapshot = now.snapshot
     val update by (updater?.status ?: remember { MutableStateFlow<UpdateStatus?>(null) }).collectAsStateWithLifecycle()
@@ -135,28 +139,21 @@ fun MoreScreen(
         .collectAsStateWithLifecycle()
 
     WatchList(title = stringResource(R.string.more), modifier = modifier) {
-        item {
-            val prefs = (context.applicationContext as? dev.pampa.fluidify.wear.WearApp)?.audioLightPreferences
-            val enabled by (prefs?.enabled ?: remember { MutableStateFlow(true) }).collectAsStateWithLifecycle()
-            SwitchButton(checked = enabled, onCheckedChange = { prefs?.setEnabled(it) },
-                label = { Text(stringResource(R.string.audio_light_title)) },
-                secondaryLabel = { Text(stringResource(R.string.audio_light_note)) })
-        }
         item { ListSubHeader { Text(stringResource(R.string.group_playback)) } }
         item {
             FluidWearListRow(
                 title = stringResource(R.string.audio_output),
                 subtitle = snapshot?.device?.name,
                 onClick = onOutput,
-                leading = { Icon(deviceIcon(snapshot?.device?.kind), contentDescription = null, modifier = Modifier.size(22.dp)) },
+                leading = { Icon(deviceIcon(snapshot?.device?.kind), contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
             )
         }
         item {
             FluidWearListRow(
                 title = stringResource(R.string.volume),
-                subtitle = snapshot?.device?.volume?.let { "${(it * 100).roundToInt()}%" },
+                subtitle = snapshot?.device?.volume?.let { stringResource(R.string.volume_percent, (it * 100).roundToInt()) },
                 onClick = onVolume,
-                leading = { Icon(PhosphorIcons.Regular.SpeakerSimpleHigh, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                leading = { Icon(PhosphorIcons.Regular.SpeakerSimpleHigh, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
             )
         }
         item {
@@ -164,7 +161,7 @@ fun MoreScreen(
                 title = stringResource(R.string.sleep_timer),
                 subtitle = if (snapshot?.sleep != null) stringResource(R.string.on) else stringResource(R.string.off),
                 onClick = onSleep,
-                leading = { Icon(PhosphorIcons.Regular.Timer, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                leading = { Icon(PhosphorIcons.Regular.Timer, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
             )
         }
         item {
@@ -173,7 +170,7 @@ fun MoreScreen(
                 title = stringResource(R.string.shuffle),
                 subtitle = stringResource(if (shuffle) R.string.on else R.string.off),
                 onClick = { controls.setShuffle(!shuffle) },
-                leading = { Icon(PhosphorIcons.Regular.Shuffle, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                leading = { Icon(PhosphorIcons.Regular.Shuffle, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
             )
         }
         item {
@@ -200,9 +197,21 @@ fun MoreScreen(
                     Icon(
                         if (repeat == RepeatMode.ONE) PhosphorIcons.Regular.RepeatOnce else PhosphorIcons.Regular.Repeat,
                         contentDescription = null,
-                        modifier = Modifier.size(22.dp),
+                        modifier = Modifier.size(WearDimens.ListIcon),
                     )
                 },
+            )
+        }
+        // The light is the player's own: it belongs with what the player does, not with the watch.
+        item {
+            val prefs = (context.applicationContext as? dev.pampa.fluidify.wear.WearApp)?.audioLightPreferences
+            val enabled by (prefs?.enabled ?: remember { MutableStateFlow(true) }).collectAsStateWithLifecycle()
+            SwitchButton(
+                checked = enabled,
+                onCheckedChange = { prefs?.setEnabled(it) },
+                label = { Text(stringResource(R.string.audio_light_title)) },
+                secondaryLabel = { Text(stringResource(R.string.audio_light_note)) },
+                modifier = Modifier.fillMaxWidth(),
             )
         }
         item { ListSubHeader { Text(stringResource(R.string.group_watch)) } }
@@ -226,14 +235,15 @@ fun MoreScreen(
                         surfaces.nowBar = next
                         if (next != NowBarMode.NEVER && !notificationsAllowed) {
                             val activity = context as? Activity
-                            val asked = context.getSharedPreferences("first_run", android.content.Context.MODE_PRIVATE).getBoolean("asked_notifications", false)
+                            val asked = context.getSharedPreferences(FirstRunPrefs.NAME, android.content.Context.MODE_PRIVATE)
+                                .getBoolean(FirstRunPrefs.KEY_ASKED_NOTIFICATIONS, false)
                             if (asked && activity != null && !activity.shouldShowRequestPermissionRationale(Manifest.permission.POST_NOTIFICATIONS)) {
                                 context.startActivity(Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS, Uri.parse("package:${context.packageName}")))
                             } else askNotifications.launch(Manifest.permission.POST_NOTIFICATIONS)
                         }
                         onSurfacesChanged()
                     },
-                    leading = { Icon(PhosphorIcons.Regular.Watch, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                    leading = { Icon(PhosphorIcons.Regular.Watch, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
             }
         }
@@ -243,7 +253,7 @@ fun MoreScreen(
                     title = stringResource(R.string.downloads),
                     subtitle = stringResource(R.string.on_this_watch),
                     onClick = onDownloads,
-                    leading = { Icon(PhosphorIcons.Regular.DownloadSimple, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                    leading = { Icon(PhosphorIcons.Regular.DownloadSimple, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
             }
         }
@@ -300,7 +310,7 @@ fun MoreScreen(
                         dev.pampa.fluidify.wear.standalone.AuthState.NOT_YET -> stringResource(R.string.watch_account_none)
                         dev.pampa.fluidify.wear.standalone.AuthState.SIGNED_OUT -> stringResource(R.string.engine_signed_out)
                     },
-                    leading = { Icon(PhosphorIcons.Regular.UserCircle, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                    leading = { Icon(PhosphorIcons.Regular.UserCircle, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
             }
         }
@@ -317,9 +327,15 @@ fun MoreScreen(
                             UpdatePhase.FAILED -> if (updater?.canRetry == true) R.string.update_retry_cached else R.string.update_failed
                             else -> R.string.update_receiving
                         },
-                    ) + if (status.phase == UpdatePhase.RECEIVING) " · ${(status.progress * 100).toInt()}%" else "",
+                    ).let { text ->
+                        if (status.phase == UpdatePhase.RECEIVING) {
+                            stringResource(R.string.two_parts, text, stringResource(R.string.percent_value, (status.progress * 100).roundToInt()))
+                        } else {
+                            text
+                        }
+                    },
                     onClick = if (status.phase == UpdatePhase.AWAITING_CONFIRMATION || status.phase == UpdatePhase.FAILED && updater?.canRetry == true) ({ updater?.confirmOrRetry() }) else null,
-                    leading = { Icon(PhosphorIcons.Regular.ArrowCircleUp, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                    leading = { Icon(PhosphorIcons.Regular.ArrowCircleUp, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
             }
         }
@@ -343,11 +359,11 @@ fun MoreScreen(
                 onClick = glassMeter?.takeIf { GlassMeterPrefs.available }?.let { prefs ->
                     {
                         if (prefs.tapVersion()) {
-                            android.widget.Toast.makeText(context, R.string.developer_unlocked, android.widget.Toast.LENGTH_SHORT).show()
+                            notice.show(developerUnlocked, failure = false)
                         }
                     }
                 },
-                leading = { Icon(PhosphorIcons.Regular.Info, contentDescription = null, modifier = Modifier.size(22.dp)) },
+                leading = { Icon(PhosphorIcons.Regular.Info, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
             )
         }
         if (glassMeter != null && developer) {

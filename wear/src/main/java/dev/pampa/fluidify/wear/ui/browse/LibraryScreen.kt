@@ -4,7 +4,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.unit.dp
 import androidx.wear.compose.material3.Icon
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
@@ -18,6 +17,7 @@ import dev.antigravity.fluidengine.wear.components.FluidWearListRow
 import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.protocol.LibrarySection
 import dev.pampa.fluidify.wear.ui.common.WatchList
+import dev.pampa.fluidify.wear.ui.theme.WearDimens
 
 /** "La tua libreria": the sections, one row each, like Spotify's. */
 @Composable
@@ -30,7 +30,7 @@ fun LibraryScreen(onSection: (LibrarySection, String) -> Unit, onWatchDownloads:
                     title = stringResource(R.string.downloads),
                     subtitle = stringResource(R.string.on_this_watch),
                     onClick = onWatchDownloads,
-                    leading = { Icon(PhosphorIcons.Regular.Download, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                    leading = { Icon(PhosphorIcons.Regular.Download, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
             }
         }
@@ -47,7 +47,7 @@ fun LibraryScreen(onSection: (LibrarySection, String) -> Unit, onWatchDownloads:
                 FluidWearListRow(
                     title = title,
                     onClick = { onSection(section, title) },
-                    leading = { Icon(icon, contentDescription = null, modifier = Modifier.size(24.dp)) },
+                    leading = { Icon(icon, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
             }
         }

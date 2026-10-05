@@ -28,12 +28,19 @@ object CoverImages {
         return Bitmap.createScaledBitmap(decoded, sizePx, sizePx, true).also { if (it !== decoded) decoded.recycle() }
     }
 
-    /** The cover compressed again, for a tile's inline image. */
+    /**
+     * The cover compressed again, for a tile's inline image. Kept for the last cover asked for:
+     * the tile asks on every layout, and decoding a cover to compress it again each time was the
+     * most expensive part of a press.
+     */
     fun compressed(art: ArtStore, key: String?, sizePx: Int): ByteArray? {
-        val bitmap = bitmap(art, key, sizePx) ?: return null
-        return ByteArrayOutputStream().use { out ->
-            bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, QUALITY, out)
-            out.toByteArray()
+        if (key == null) return null
+        return lastCompressed.getOrCompute(key to sizePx) {
+            val bitmap = bitmap(art, key, sizePx) ?: return@getOrCompute null
+            ByteArrayOutputStream().use { out ->
+                bitmap.compress(Bitmap.CompressFormat.WEBP_LOSSY, QUALITY, out)
+                out.toByteArray()
+            }
         }
     }
 
@@ -41,8 +48,14 @@ object CoverImages {
      * The cover as a backdrop: small, blurred and darkened, for a tile to stretch behind its
      * buttons. Blurred here, once per cover, because a tile renderer cannot blur anything; at
      * [BACKDROP_PX] a few box-blur passes cost nothing and the renderer's upscaling finishes the job.
+     * Kept for the last cover asked for, so "once per cover" is true.
      */
     fun backdrop(art: ArtStore, key: String?): ByteArray? {
+        if (key == null) return null
+        return lastBackdrop.getOrCompute(key) { blurred(art, key) }
+    }
+
+    private fun blurred(art: ArtStore, key: String): ByteArray? {
         val small = bitmap(art, key, BACKDROP_PX) ?: return null
         val pixels = IntArray(BACKDROP_PX * BACKDROP_PX)
         small.getPixels(pixels, 0, BACKDROP_PX, 0, 0, BACKDROP_PX, BACKDROP_PX)
@@ -90,6 +103,9 @@ object CoverImages {
         val b = (color and 0xFF) * DARKEN / 100
         return (0xFF shl 24) or (r shl 16) or (g shl 8) or b
     }
+
+    private val lastCompressed = LastValue<Pair<String, Int>, ByteArray>()
+    private val lastBackdrop = LastValue<String, ByteArray>()
 
     private const val QUALITY = 85
     private const val BACKDROP_PX = 48

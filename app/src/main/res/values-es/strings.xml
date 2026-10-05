@@ -334,7 +334,7 @@
     <string name="this_device">Este dispositivo</string>
     <string name="no_artist_info">No hay nada que mostrar sobre este artista.</string>
     <string name="no_biography">Sin descripción para este artista.</string>
-    <string name="info_panel">Informacion</string>
+    <string name="info_panel">Información</string>
     <string name="monthly_listeners">%1$s oyentes mensuales</string>
 
     <!-- Downloads -->
@@ -384,10 +384,10 @@
     <string name="theme_note">El claro lleva la portada hacia el papel, el oscuro la lleva hacia la sombra. Es la misma página, leída en dos sentidos.</string>
     <string name="sleep_timer">Temporizador</string>
     <string name="sleep_timer_minutes">%1$d min</string>
-    <string name="sleep_timer_track_end">Fin de la cancion</string>
+    <string name="sleep_timer_track_end">Fin de la canción</string>
     <string name="sleep_timer_left">Se para en %1$s</string>
-    <string name="sleep_timer_track_end_active">Se para al final de esta cancion</string>
-    <string name="sleep_timer_note">Sigue contando con la pantalla apagada. La musica se desvanece antes de parar.</string>
+    <string name="sleep_timer_track_end_active">Se para al final de esta canción</string>
+    <string name="sleep_timer_note">Sigue contando con la pantalla apagada. La música se desvanece antes de parar.</string>
     <string name="shortcut_resume">Reanudar</string>
     <string name="shortcut_resume_short">Reanudar</string>
     <string name="shortcut_search">Buscar</string>
@@ -399,8 +399,8 @@
     <string name="widget_nothing_playing">No suena nada</string>
     <string name="widget_label_row">Reproduciendo</string>
     <string name="widget_description_row">La portada, lo que suena, y los tres botones.</string>
-    <string name="widget_add_row">Anadir la fila a la pantalla de inicio</string>
-    <string name="widget_add_note">La portada detras, lo que suena, y los tres botones. Sigue el tema de la aplicacion.</string>
+    <string name="widget_add_row">Añadir la fila a la pantalla de inicio</string>
+    <string name="widget_add_note">La portada detrás, lo que suena, y los tres botones. Sigue el tema de la aplicación.</string>
     <string name="widget_nothing_playing_hint">Abre Fluidify y pulsa play</string>
     <string name="library_offline">Se muestra lo descargado. Spotify aún no ha respondido.</string>
     <string name="library_offline_action">Reintentar</string>

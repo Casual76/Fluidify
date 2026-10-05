@@ -149,7 +149,6 @@
     <string name="error_playlist">Çalma listesine eklenemedi</string>
     <string name="error_no_output">Saatte dinlemek için kulaklık bağla</string>
     <string name="error_end_of_queue">Sıranın sonuna gelindi</string>
-    <string name="unavailable_tracks">%1$d kullanılamıyor</string>
     <string name="volume_down">Sesi azalt</string>
     <string name="volume_up">Sesi artır</string>
     <string name="pin">Sabitle</string>
@@ -158,4 +157,17 @@
     <string name="update_retry_cached">Yükleme başarısız. Kayıtlı APK ile yeniden denemek için dokunun.</string>
     <string name="audio_light_title">Müziğe tepki veren ışık</string>
     <string name="audio_light_note">Oynatıcı görünürken yumuşak ışıklı ilerleme.</string>
+    <string name="errors_channel">Sorunlar</string>
+    <string name="song_options">Parça seçenekleri</string>
+    <string name="not_updated">Güncellenmedi</string>
+    <string name="retry">Yeniden dene</string>
+    <string name="headphone_picker_unavailable">Bluetooth ayarları açılamadı</string>
+    <string name="two_parts">%1$s · %2$s</string>
+    <string name="percent_value">%1$d%%</string>
+    <string name="quality_kbps">%1$d kbps</string>
+    <string name="update_title">Güncelleme %1$s</string>
+    <plurals name="unavailable_tracks">
+        <item quantity="one">%1$d kullanılamıyor</item>
+        <item quantity="other">%1$d kullanılamıyor</item>
+    </plurals>
 </resources>

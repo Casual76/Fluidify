@@ -88,7 +88,8 @@ class WatchEngine(
      * True when the engine is up.
      */
     suspend fun acquire(player: LibrespotPlayer? = null, output: WearAudioOutput? = null): Boolean = lock.withLock {
-        if (output != null) NativeBridge.setAudioOutput(output)
+        // Callers are on the main thread, and the first touch of NativeBridge loads the library.
+        if (output != null) withContext(Dispatchers.IO) { NativeBridge.setAudioOutput(output) }
         if (player != null) events.player = player
         val up = started || start()
         if (up) {
@@ -119,26 +120,39 @@ class WatchEngine(
     /** Whether a start would be the first sign-in: the network, the phone's token and the handshake. */
     val firstSignIn: Boolean get() = !auth.hasCredential
 
-    /** Gives a lease back; the last one stops the engine. */
+    /**
+     * Gives a lease back; the last one stops the engine.
+     *
+     * Not cancellable, whoever calls it: the lock can be held for most of a minute by an [acquire]
+     * that is starting the engine, and a caller cancelled while it waited (a download worker the
+     * system stopped) used to leave without giving its lease back — the count never reached zero
+     * again, and the engine, the Wi-Fi and the Connect device stayed up with nothing using them.
+     */
     suspend fun release(player: LibrespotPlayer? = null) {
-        lock.withLock {
-            if (player != null && events.player === player) events.player = null
-            leases = (leases - 1).coerceAtLeast(0)
-            if (leases == 0) stop()
+        withContext(kotlinx.coroutines.NonCancellable) {
+            lock.withLock {
+                if (player != null && events.player === player) events.player = null
+                leases = (leases - 1).coerceAtLeast(0)
+                if (leases == 0) stop()
+            }
         }
     }
 
     private suspend fun start(): Boolean {
         if (started) return true
         _status.value = EngineStatus.STARTING
-        if (!contextReady) {
-            NativeBridge.initContext(context)
-            contextReady = true
+        // The native calls are off the main thread: the first of them loads the library, and the
+        // callers (the playback service's scope) are on it.
+        withContext(Dispatchers.IO) {
+            if (!contextReady) {
+                NativeBridge.initContext(context)
+                contextReady = true
+            }
+            // Before the engine: the first track it is asked for may be one already here.
+            downloadRoot?.let { root -> runCatching { NativeBridge.setDownloadRoot(root.absolutePath) } }
+            // A watch in the account's device list, not another phone.
+            runCatching { NativeBridge.setDeviceType(DEVICE_TYPE) }
         }
-        // Before the engine: the first track it is asked for may be one already here.
-        downloadRoot?.let { root -> runCatching { NativeBridge.setDownloadRoot(root.absolutePath) } }
-        // A watch in the account's device list, not another phone.
-        runCatching { NativeBridge.setDeviceType(DEVICE_TYPE) }
 
         // A watch that has signed in before starts at once, network or not: its downloads
         // play offline, and the engine connects by itself once Wi-Fi comes up. Only a
@@ -202,17 +216,29 @@ class WatchEngine(
      *
      * [EngineStatus.RUNNING] comes earlier than that: a watch that has signed in before is handed
      * its player at once and connects in the background, and a transfer to it in that gap is the
-     * 404 the tests found. False when it does not happen within [timeoutMs].
+     * 404 the tests found. Neither is the session being up enough ([NativeBridge.isConnected], what
+     * this used to wait for): the account lists the device only once it has answered the device's
+     * first state update, which can take seconds more. [NativeBridge.isEstablished] is that answer.
+     *
+     * Asked off the main thread, and less often the longer it takes. False when it does not
+     * happen within [timeoutMs].
      */
-    suspend fun awaitConnected(timeoutMs: Long): Boolean = withTimeoutOrNull(timeoutMs) {
-        while (!runCatching { NativeBridge.isConnected }.getOrDefault(false)) kotlinx.coroutines.delay(CONNECTED_POLL_MS)
-        true
-    } ?: false
+    suspend fun awaitConnected(timeoutMs: Long): Boolean = withContext(Dispatchers.IO) {
+        withTimeoutOrNull(timeoutMs) {
+            var pause = CONNECTED_POLL_MS
+            while (!runCatching { NativeBridge.isEstablished }.getOrDefault(false)) {
+                kotlinx.coroutines.delay(pause)
+                pause = (pause * 2).coerceAtMost(CONNECTED_POLL_MAX_MS)
+            }
+            true
+        } ?: false
+    }
 
     /** Takes the Connect device off the account and lets the network go. */
-    private fun stop() {
+    private suspend fun stop() {
         if (!started) return
-        runCatching { NativeBridge.shutdown() }
+        // Blocks until the engine is down: never on the main thread.
+        withContext(Dispatchers.IO) { runCatching { NativeBridge.shutdown() } }
         started = false
         network.release()
         _status.value = EngineStatus.OFF
@@ -241,8 +267,7 @@ class WatchEngine(
 
     /** What the network can carry: the full step on Wi-Fi, the lowest over the phone. */
     private fun bitrateFor(route: Route): Int = when (route) {
-        Route.WIFI -> BitrateSteps.MEDIUM
-        Route.CELLULAR -> BitrateSteps.MEDIUM
+        Route.WIFI, Route.CELLULAR -> BitrateSteps.MEDIUM
         Route.PROXY, Route.NONE -> BitrateSteps.LOW
     }
 
@@ -255,5 +280,6 @@ class WatchEngine(
         /** The phrase the native side puts in a refusal for an account without Premium. */
         const val PREMIUM_REQUIRED = "premium"
         const val CONNECTED_POLL_MS = 250L
+        const val CONNECTED_POLL_MAX_MS = 1_000L
     }
 }

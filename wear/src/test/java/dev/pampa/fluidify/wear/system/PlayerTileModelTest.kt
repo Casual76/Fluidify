@@ -2,6 +2,7 @@ package dev.pampa.fluidify.wear.system
 
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -64,6 +65,30 @@ class PlayerTileModelTest {
         assertEquals(null, TileActions.nameOf("unlike@3"))
         assertEquals(null, TileActions.nameOf("open"))
         assertEquals(null, TileActions.nameOf(null))
+    }
+
+    @Test
+    fun everyLayoutNamesItsButtonsAfresh() {
+        // The first layout of a process is the one that went wrong: its mark was still 0 when the
+        // buttons were named, so every layout after it said "next@0", and the history of handled
+        // presses refused all of them.
+        val first = TileButtonIds()
+        val second = TileButtonIds()
+        for (name in TileActions.ALL) {
+            assertNotEquals("$name@0", first.of(name))
+            assertNotEquals(first.of(name), second.of(name))
+            assertEquals(name, TileActions.nameOf(first.of(name)))
+        }
+        assertEquals(first.of(TileActions.NEXT), first.of(TileActions.NEXT))
+    }
+
+    @Test
+    fun aRepeatedPressIsRefusedAndAPressInANewLayoutIsNot() {
+        val taps = TileTapHistory()
+        val pressed = TileButtonIds().of(TileActions.NEXT)
+        assertTrue(taps.claim(pressed))
+        assertFalse(taps.claim(pressed))
+        assertTrue(taps.claim(TileButtonIds().of(TileActions.NEXT)))
     }
 
     @Test

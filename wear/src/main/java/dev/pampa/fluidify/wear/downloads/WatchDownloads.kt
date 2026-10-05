@@ -1,6 +1,7 @@
 package dev.pampa.fluidify.wear.downloads
 
 import android.content.Context
+import android.os.SystemClock
 import android.util.Log
 import androidx.core.content.edit
 import androidx.work.BackoffPolicy
@@ -19,12 +20,17 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.asCoroutineDispatcher
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.tasks.await
+import java.util.concurrent.Executors
 import java.util.concurrent.TimeUnit
 
 /**
@@ -39,6 +45,14 @@ class WatchDownloads(private val context: Context) {
     val store = WatchDownloadStore(context)
     private val prefs = context.getSharedPreferences("watch_downloads", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+
+    /**
+     * Where a screen runs [keep] and [drop]: off the main thread (they write and delete files), and
+     * one at a time in the order they were asked, so a switch flipped twice ends where it was left.
+     */
+    val edits: CoroutineDispatcher = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "download-edits").apply { isDaemon = true }
+    }.asCoroutineDispatcher()
     @Volatile private var measuredAt = 0L
     @Volatile private var usedBytes = 0L
     @Volatile private var freeBytes = 0L
@@ -96,13 +110,46 @@ class WatchDownloads(private val context: Context) {
         if (schedule) schedule()
     }
 
-    /** Tells the phone what the watch has. Not urgent: a screen of progress, not a command. */
-    suspend fun publish() {
+    private var lastPublishAt = 0L
+    private var trailingPublish: Job? = null
+
+    /**
+     * Tells the phone what the watch has. Not urgent: a screen of progress, not a command.
+     *
+     * Each one is a write to the Data Layer, and the queue asks at every track: unless it is
+     * [final], at most one goes out every [PUBLISH_EVERY_MS], and the newest state is sent once
+     * that time has passed, so the phone never ends up showing an old one. The last state of a
+     * pass, and what the phone asked for, are final.
+     */
+    suspend fun publish(final: Boolean = false) {
+        if (!final) {
+            val wait = synchronized(this) { lastPublishAt + PUBLISH_EVERY_MS - SystemClock.elapsedRealtime() }
+            if (wait > 0) {
+                scheduleTrailingPublish(wait)
+                return
+            }
+        }
+        // What was waiting to go is going now, with something newer.
+        synchronized(this) { trailingPublish?.cancel() }
+        send()
+    }
+
+    private suspend fun send() {
+        synchronized(this) { lastPublishAt = SystemClock.elapsedRealtime() }
         withContext(Dispatchers.IO) { measureStorage() }
         val bytes = WearCodec.encode(WatchDownloadsStatus.serializer(), _status.value)
         runCatching {
             Wearable.getDataClient(context).putDataItem(PutDataRequest.create(WearPaths.DOWNLOAD_STATUS).setData(bytes)).await()
         }.onFailure { Log.i(TAG, "status not published: ${it.message}") }
+    }
+
+    /** One publish after [waitMs], whatever the number of asks in between. */
+    @Synchronized private fun scheduleTrailingPublish(waitMs: Long) {
+        if (trailingPublish?.isActive == true) return
+        trailingPublish = scope.launch {
+            delay(waitMs)
+            send()
+        }
     }
 
     private fun snapshot(active: String? = null, paused: String? = null) = WatchDownloadsStatus(
@@ -111,7 +158,8 @@ class WatchDownloads(private val context: Context) {
         bytesFree = freeBytes,
         waiting = store.pending().size,
         active = active,
-        paused = paused,
+        // A kept list the disk would not take says "storage", like a disk that is nearly full.
+        paused = paused ?: PAUSED_STORAGE.takeIf { store.saveFailed.value },
         qualityKbps = qualityKbps,
         preference = preference,
         updatedAtEpochMs = System.currentTimeMillis(),
@@ -130,10 +178,15 @@ class WatchDownloads(private val context: Context) {
     companion object {
         private const val TAG = "WatchDownloads"
         const val WORK = "watch-downloads"
+        /** The least time between two statuses sent to the phone while a queue works. */
+        private const val PUBLISH_EVERY_MS = 1_000L
         private const val KEY_QUALITY = "quality_kbps"
         private const val KEY_PREFERENCE = "preference"
         const val DEFAULT_KBPS = 160
-        val ALLOWED_KBPS = setOf(96, 160, 320)
+
+        /** The qualities a download can have, lowest first: the phone's own three choices. */
+        val QUALITY_STEPS = listOf(96, 160, 320)
+        val ALLOWED_KBPS = QUALITY_STEPS.toSet()
 
         /** Below this much free space the queue waits: the watch needs room for everything else. */
         const val RESERVE_BYTES = 1L shl 30

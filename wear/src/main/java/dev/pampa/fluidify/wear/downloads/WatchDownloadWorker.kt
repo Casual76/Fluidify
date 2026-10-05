@@ -42,16 +42,19 @@ class WatchDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
         val started = System.currentTimeMillis()
         val phone = app.link.reachablePhone()
 
+        // A fresh look at the disk: the engine writes its own downloads, and what the store
+        // remembered of the last pass may be old.
+        store.invalidateAll()
         if (phone != null) refreshTrackLists(store)
         var pending = store.pending()
         if (pending.isEmpty()) {
             downloads.changed(schedule = false)
-            downloads.publish()
+            downloads.publish(final = true)
             return Result.success()
         }
         if (store.bytesFree() < WatchDownloads.RESERVE_BYTES) {
             downloads.changed(schedule = false, paused = WatchDownloads.PAUSED_STORAGE)
-            downloads.publish()
+            downloads.publish(final = true)
             return Result.success()
         }
 
@@ -97,6 +100,8 @@ class WatchDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
                         }
                     }
                     (outcome.exceptionOrNull() as? CancellationException)?.let { throw it }
+                    // The engine may have just written the files itself.
+                    store.invalidate(track)
                     if (outcome.isSuccess && store.has(track)) {
                         done = true
                         break
@@ -117,7 +122,7 @@ class WatchDownloadWorker(context: Context, params: WorkerParameters) : Coroutin
 
         pending = store.pending()
         downloads.changed(schedule = false, paused = if (pending.isNotEmpty() && phone == null && route != Route.WIFI) WatchDownloads.PAUSED_OFFLINE else null)
-        downloads.publish()
+        downloads.publish(final = true)
         return if (pending.isEmpty()) Result.success() else Result.retry()
     }
 

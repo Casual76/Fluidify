@@ -149,7 +149,6 @@
     <string name="error_playlist">प्लेलिस्ट में नहीं जोड़ा जा सका</string>
     <string name="error_no_output">घड़ी पर सुनने के लिए हेडफ़ोन कनेक्ट करें</string>
     <string name="error_end_of_queue">कतार यहीं खत्म होती है</string>
-    <string name="unavailable_tracks">%1$d उपलब्ध नहीं</string>
     <string name="volume_down">आवाज़ कम करें</string>
     <string name="volume_up">आवाज़ बढ़ाएँ</string>
     <string name="pin">पिन करें</string>
@@ -158,4 +157,17 @@
     <string name="update_retry_cached">इंस्टॉलेशन विफल। सहेजे गए APK से फिर कोशिश करने के लिए टैप करें।</string>
     <string name="audio_light_title">संगीत के साथ प्रकाश प्रभाव</string>
     <string name="audio_light_note">प्लेयर दिखाई देने पर प्रगति के चारों ओर हल्की चमक।</string>
+    <string name="errors_channel">समस्याएँ</string>
+    <string name="song_options">गाने के विकल्प</string>
+    <string name="not_updated">अपडेट नहीं हुआ</string>
+    <string name="retry">फिर कोशिश करें</string>
+    <string name="headphone_picker_unavailable">ब्लूटूथ सेटिंग नहीं खुल सकी</string>
+    <string name="two_parts">%1$s · %2$s</string>
+    <string name="percent_value">%1$d%%</string>
+    <string name="quality_kbps">%1$d kbps</string>
+    <string name="update_title">अपडेट %1$s</string>
+    <plurals name="unavailable_tracks">
+        <item quantity="one">%1$d उपलब्ध नहीं</item>
+        <item quantity="other">%1$d उपलब्ध नहीं</item>
+    </plurals>
 </resources>

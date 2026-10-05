@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.serialization.Serializable
 import java.io.File
+import kotlin.math.abs
 
 /** A snapshot from the phone and the moment it arrived, on this watch's clock. */
 @Serializable
@@ -43,10 +44,21 @@ class WatchState(private val file: File) {
     private val offset = dev.pampa.fluidify.wear.protocol.logic.ClockOffset()
     @Volatile private var clockOffsetMs: Long? = null
 
+    /**
+     * Learns the phone's clock from a message. The estimate is kept exactly, but the state is only
+     * re-emitted when it moved by [CLOCK_STEP_MS] or more from the one the screens hold: every hello
+     * and ack lands here, and a few milliseconds of drift in the estimate are no news worth a
+     * recomposition of everything that shows what is playing (the position is extrapolated from
+     * this offset, and 50 ms of it is below what a progress ring can show).
+     */
     @Synchronized fun observeClock(sentAtRemoteMs: Long, receivedAtMs: Long = System.currentTimeMillis()) {
         if (sentAtRemoteMs <= 0) return
-        clockOffsetMs = offset.observe(sentAtRemoteMs, receivedAtMs)
-        _current.update { it?.copy(clockOffsetMs = clockOffsetMs) }
+        val estimate = offset.observe(sentAtRemoteMs, receivedAtMs)
+        clockOffsetMs = estimate
+        _current.update { held ->
+            val shown = held?.clockOffsetMs
+            if (held == null || (shown != null && abs(estimate - shown) < CLOCK_STEP_MS)) held else held.copy(clockOffsetMs = estimate)
+        }
     }
 
     /**
@@ -78,5 +90,8 @@ class WatchState(private val file: File) {
 
     private companion object {
         const val RESTART_GRACE_MS = 60_000L
+
+        /** The least change of the clock estimate worth telling the screens about. */
+        const val CLOCK_STEP_MS = 50L
     }
 }

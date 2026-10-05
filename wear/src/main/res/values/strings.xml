@@ -150,7 +150,6 @@
     <string name="error_playlist">Couldn\'t add it to the playlist</string>
     <string name="error_no_output">Connect headphones to listen on the watch</string>
     <string name="error_end_of_queue">That\'s the end of the queue</string>
-    <string name="unavailable_tracks">%1$d unavailable</string>
     <string name="volume_down">Lower volume</string>
     <string name="volume_up">Raise volume</string>
     <string name="pin">Pin</string>
@@ -159,4 +158,17 @@
     <string name="update_retry_cached">Installation failed. Tap to retry using the saved APK.</string>
     <string name="audio_light_title">Music-reactive light</string>
     <string name="audio_light_note">Soft progress glow while the player is visible.</string>
+    <string name="errors_channel">Problems</string>
+    <string name="song_options">Song options</string>
+    <string name="not_updated">Not updated</string>
+    <string name="retry">Retry</string>
+    <string name="headphone_picker_unavailable">Couldn\'t open Bluetooth settings</string>
+    <string name="two_parts">%1$s · %2$s</string>
+    <string name="percent_value">%1$d%%</string>
+    <string name="quality_kbps">%1$d kbps</string>
+    <string name="update_title">Update %1$s</string>
+    <plurals name="unavailable_tracks">
+        <item quantity="one">%1$d unavailable</item>
+        <item quantity="other">%1$d unavailable</item>
+    </plurals>
 </resources>

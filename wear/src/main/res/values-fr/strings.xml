@@ -149,7 +149,6 @@
     <string name="error_playlist">Impossible de l\'ajouter à la playlist</string>
     <string name="error_no_output">Connectez un casque pour écouter sur la montre</string>
     <string name="error_end_of_queue">C\'est la fin de la file d\'attente</string>
-    <string name="unavailable_tracks">%1$d indisponibles</string>
     <string name="volume_down">Baisser le volume</string>
     <string name="volume_up">Augmenter le volume</string>
     <string name="pin">Épingler</string>
@@ -158,4 +157,18 @@
     <string name="update_retry_cached">Échec de l’installation. Touchez pour réessayer avec l’APK enregistré.</string>
     <string name="audio_light_title">Lumière réactive à la musique</string>
     <string name="audio_light_note">Progression doucement lumineuse lorsque le lecteur est visible.</string>
+    <string name="errors_channel">Problèmes</string>
+    <string name="song_options">Options du titre</string>
+    <string name="not_updated">Pas à jour</string>
+    <string name="retry">Réessayer</string>
+    <string name="headphone_picker_unavailable">Impossible d\'ouvrir les réglages Bluetooth</string>
+    <string name="two_parts">%1$s · %2$s</string>
+    <string name="percent_value">%1$d%%</string>
+    <string name="quality_kbps">%1$d kbps</string>
+    <string name="update_title">Mise à jour %1$s</string>
+    <plurals name="unavailable_tracks">
+        <item quantity="one">%1$d indisponible</item>
+        <item quantity="many">%1$d indisponibles</item>
+        <item quantity="other">%1$d indisponibles</item>
+    </plurals>
 </resources>
