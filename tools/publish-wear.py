@@ -2,7 +2,7 @@
 """Pubblica la build per Wear OS di Fluidify accanto a quella del telefono.
 
 Da lanciare *dopo* il publisher del Pampa Store, che crea la release
-`stable-fluidify-v<versione>` con l'APK del telefono. Questo script:
+`<canale>-fluidify-v<versione>` con l'APK del telefono. Questo script:
 
   1. controlla l'APK dell'orologio: pacchetto `dev.pampa.fluidify`, versione uguale a
      quella in app/build.gradle.kts e, se gli dai anche l'APK del telefono, **la stessa
@@ -151,7 +151,8 @@ def main():
 
     size = os.path.getsize(args.apk)
     checksum = sha256(args.apk)
-    tag = f"stable-fluidify-v{version}"
+    # The release the phone's publisher made for the same channel: beta-... or stable-...
+    tag = f"{args.channel}-fluidify-v{version}"
     asset = f"fluidify-wear-{version}.apk"
     print(f"{asset}: {size} byte, sha256 {checksum}")
     if args.dry_run:
