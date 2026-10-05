@@ -184,4 +184,5 @@
     <string name="whats_new_in">%1$s में नया क्या है</string>
     <string name="updated_to">%1$s पर अपडेट हुआ</string>
     <string name="updated_to_tap">नया क्या है देखें</string>
+    <string name="update_downloading_wifi">वाई-फ़ाई से डाउनलोड हो रहा है…</string>
 </resources>

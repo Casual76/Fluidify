@@ -522,4 +522,5 @@
     <string name="watch_update_err_expired">L\'orologio non ha risposto in tempo: riprova</string>
     <string name="watch_update_err_interrupted">L\'installazione è stata interrotta: riprova</string>
     <string name="watch_update_installed_notification">Orologio aggiornato a %1$s</string>
+    <string name="watch_update_wifi">L&#8217;orologio scarica la %1$s con il suo Wi-Fi…</string>
 </resources>

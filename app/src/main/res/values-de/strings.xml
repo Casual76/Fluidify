@@ -510,4 +510,5 @@
     <string name="watch_update_err_expired">Die Uhr hat nicht rechtzeitig geantwortet: erneut versuchen</string>
     <string name="watch_update_err_interrupted">Die Installation wurde unterbrochen: erneut versuchen</string>
     <string name="watch_update_installed_notification">Uhr auf %1$s aktualisiert</string>
+    <string name="watch_update_wifi">Die Uhr lädt %1$s über ihr WLAN…</string>
 </resources>

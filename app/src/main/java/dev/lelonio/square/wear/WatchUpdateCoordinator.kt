@@ -87,7 +87,11 @@ class WatchUpdateCoordinator(
         data class Available(val version: String, val changelog: String = "") : State
         data class Downloading(val version: String, val progress: Float?) : State
         data class Offered(val version: String, val changelog: String = "") : State
-        data class Sending(val version: String, val progress: Float? = null) : State
+        /**
+         * The build is on its way to the watch: sent over Bluetooth by this phone, or, when [overWifi],
+         * fetched by the watch itself over its own Wi-Fi (see [UpdateOffer.downloadUrl]).
+         */
+        data class Sending(val version: String, val progress: Float? = null, val overWifi: Boolean = false) : State
         data class Installing(val version: String) : State
         data class AwaitingConfirmation(val version: String) : State
 
@@ -450,7 +454,17 @@ class WatchUpdateCoordinator(
             return false
         }
         // A fresh download is a temporary: once copied beside the offer it is not kept twice.
-        offer(file, update.version, update.sha256, requestedByUser, nodeId, temporary = cached == null, changelog = update.changelog)
+        offer(
+            file,
+            update.version,
+            update.sha256,
+            requestedByUser,
+            nodeId,
+            temporary = cached == null,
+            changelog = update.changelog,
+            // Where the watch can fetch the same file on its own Wi-Fi; this copy stays for Bluetooth.
+            downloadUrl = update.downloadUrl,
+        )
         val success = ready != null && _state.value !is State.Failed
         if (success) prefs.edit().putLong(KEY_CHECKED, System.currentTimeMillis()).apply()
         return success
@@ -498,9 +512,10 @@ class WatchUpdateCoordinator(
         nodeId: String? = _watch.value?.nodeId,
         temporary: Boolean = false,
         changelog: String = "",
+        downloadUrl: String = "",
     ) {
         try {
-            offerChecked(file, version, sha256, requestedByUser, nodeId, changelog)
+            offerChecked(file, version, sha256, requestedByUser, nodeId, changelog, downloadUrl)
         } finally {
             if (temporary) withContext(NonCancellable + Dispatchers.IO) { file.delete() }
         }
@@ -513,6 +528,7 @@ class WatchUpdateCoordinator(
         requestedByUser: Boolean,
         nodeId: String?,
         changelog: String,
+        downloadUrl: String,
     ) {
         val node = nodeId ?: run {
             _state.value = State.Failed("no-watch")
@@ -539,6 +555,7 @@ class WatchUpdateCoordinator(
             // The watch has a small screen and a thin pipe: a few paragraphs at most. The phone
             // keeps the longer text for its own page, beside the offer.
             changelog = UpdateChangelog.truncate(changelog, UpdateChangelog.WATCH_MAX_CHARS),
+            downloadUrl = downloadUrl,
         )
         val notes = UpdateChangelog.truncate(changelog, UpdateChangelog.WORK_MAX_CHARS)
         // Disk and a synchronous preferences commit: not on the main thread this runs on.
@@ -566,6 +583,10 @@ class WatchUpdateCoordinator(
             // would be the same bytes over Bluetooth for nothing.
             UpdatePhase.ACCEPT -> if (status.reason == UpdateStatus.REASON_WAITING_PLAYBACK) {
                 _state.value = State.WaitingForPlayback(status.versionName)
+            } else if (status.reason == UpdateStatus.REASON_WIFI) {
+                // The watch fetches it itself over its Wi-Fi: nothing to send. If that does not
+                // work out it says so with a plain accept, and the branch below sends it.
+                _state.value = State.Sending(status.versionName, progress = null, overWifi = true)
             } else {
                 val work = OneTimeWorkRequestBuilder<WatchUpdateSendWorker>().setInputData(workDataOf("node" to nodeId)).build()
                 WorkManager.getInstance(context).enqueueUniqueWork(
@@ -584,7 +605,11 @@ class WatchUpdateCoordinator(
                 }
             }
             UpdatePhase.RECEIVING -> if (_state.value !is State.Installing && _state.value !is State.AwaitingConfirmation) {
-                sendingProgress(status.versionName, status.progress)
+                if (status.reason == UpdateStatus.REASON_WIFI) {
+                    _state.value = State.Sending(status.versionName, status.progress, overWifi = true)
+                } else {
+                    sendingProgress(status.versionName, status.progress)
+                }
             }
             UpdatePhase.INSTALLING -> _state.value = State.Installing(status.versionName)
             UpdatePhase.AWAITING_CONFIRMATION -> _state.value = State.AwaitingConfirmation(status.versionName)

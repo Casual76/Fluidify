@@ -4,4 +4,6 @@ Il display sempre acceso e' il lettore stesso con le luci abbassate: la copertin
 
 La pagina della copertina sopra il lettore non c'e' piu': trascinando in giu' sul lettore i controlli svaniscono seguendo il dito, con lo sfondo fermo; trascinando in su tornano. Senza controlli la copertina e' il comando: un tocco play/pausa, due tocchi avanti, pressione lunga Mi piace.
 
+Aggiornamenti dell'orologio via Wi-Fi: l'orologio scarica la nuova versione con il proprio Wi-Fi, acceso solo per il download e spento subito dopo, invece di riceverla dal telefono via Bluetooth. Se il Wi-Fi non c'e', si torna al Bluetooth da soli.
+
 Aggiornamenti: canale Stabile o Beta in Impostazioni, valido per telefono e orologio. Le novita' di ogni versione si vedono prima di aggiornare e dopo, anche sull'orologio. L'orologio non si aggiorna mentre suona musica, puo' chiedere al telefono di controllare, e gli aggiornamenti automatici si scaricano solo in Wi-Fi. Stati piu' chiari sul telefono, con Riprova nella notifica.

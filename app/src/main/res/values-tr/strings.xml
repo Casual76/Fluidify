@@ -525,4 +525,5 @@
     <string name="watch_update_err_expired">Saat zamanında yanıt vermedi: tekrar deneyin</string>
     <string name="watch_update_err_interrupted">Yükleme yarıda kesildi: tekrar deneyin</string>
     <string name="watch_update_installed_notification">Saat %1$s sürümüne güncellendi</string>
+    <string name="watch_update_wifi">Saat %1$s sürümünü kendi Wi-Fi&#8217;ı ile indiriyor…</string>
 </resources>

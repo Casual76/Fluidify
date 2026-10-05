@@ -1,5 +1,8 @@
 package dev.pampa.fluidify.wear.update
 
+import android.util.Log
+import dev.pampa.fluidify.wear.standalone.Route
+import dev.pampa.fluidify.wear.standalone.NetworkBroker
 import android.app.PendingIntent
 import android.content.Context
 import android.content.Intent
@@ -48,6 +51,12 @@ import java.io.File
 class WatchUpdater(
     private val context: Context,
     private val playingLocally: () -> Boolean = { false },
+    /**
+     * The watch's own network, for fetching a build over Wi-Fi instead of over Bluetooth (see
+     * [fetchOverWifi]). Asked for only when an offer comes with somewhere to fetch from; null
+     * keeps every transfer on Bluetooth.
+     */
+    private val network: () -> NetworkBroker? = { null },
 ) {
     private val prefs = context.getSharedPreferences("watch_update", Context.MODE_PRIVATE)
     private val messages by lazy { Wearable.getMessageClient(context) }
@@ -64,6 +73,9 @@ class WatchUpdater(
 
     /** Waits for the watch's own music to stop before installing; see [installOrDefer]. */
     private var deferred: Job? = null
+
+    /** A build being fetched over the watch's own Wi-Fi; see [fetchOverWifi]. */
+    private var wifiFetch: Job? = null
 
     /** The release notes of the version now running, and which version that is. */
     data class News(val version: String, val notes: String)
@@ -200,10 +212,81 @@ class WatchUpdater(
             .putLong(KEY_AT, System.currentTimeMillis()).putLong(KEY_SIZE, offer.sizeBytes).commit()
         target.delete()
         scheduleExpiry()
-        report(UpdateStatus(UpdatePhase.ACCEPT, offer.versionName))
+        val broker = offer.downloadUrl.takeIf { it.startsWith("https://") }?.let { network() }
+        if (broker != null) {
+            // The watch fetches it itself; the phone is told so, and sends nothing.
+            report(UpdateStatus(UpdatePhase.ACCEPT, offer.versionName, reason = UpdateStatus.REASON_WIFI))
+            wifiFetch?.cancel()
+            wifiFetch = scope.launch { fetchOverWifi(offer, broker) }
+        } else {
+            report(UpdateStatus(UpdatePhase.ACCEPT, offer.versionName))
+        }
+    }
+
+    /**
+     * Fetches the offered build straight from the release, over the watch's own Wi-Fi.
+     *
+     * Bluetooth moves a 24 MB APK in minutes; Wi-Fi in seconds. The Wi-Fi is asked for exactly
+     * as a music download asks for it ([NetworkBroker.acquire] with Wi-Fi preferred): switched on
+     * if it was off, and let go of the moment the download is over, so the radio is on for the
+     * download and not after. A watch already on its Wi-Fi keeps it, as it was.
+     *
+     * Anything that goes wrong — no Wi-Fi within the wait, a download that fails or arrives the
+     * wrong size — hands over to Bluetooth: a plain [UpdatePhase.ACCEPT], and the phone sends the
+     * build the way it always has. The checksum and the signature are checked here as for a
+     * transfer, and a file that fails them fails the update rather than retrying the same bytes.
+     */
+    private suspend fun fetchOverWifi(offer: UpdateOffer, broker: NetworkBroker) {
+        val version = offer.versionName
+        var fetched = false
+        val route = broker.acquire(timeoutMs = WIFI_WAIT_MS, preferWifi = true)
+        try {
+            if (route == Route.WIFI) {
+                report(UpdateStatus(UpdatePhase.RECEIVING, version, 0f, reason = UpdateStatus.REASON_WIFI))
+                val throttle = ProgressThrottle()
+                fetched = runCatching {
+                    downloadUpdate(offer.downloadUrl, target, offer.sizeBytes) { fraction ->
+                        val percent = (fraction * 100).toInt()
+                        if (throttle.accept(percent, android.os.SystemClock.elapsedRealtime())) {
+                            report(UpdateStatus(UpdatePhase.RECEIVING, version, fraction, reason = UpdateStatus.REASON_WIFI))
+                        }
+                    }
+                }.onFailure { if (it is CancellationException) throw it }
+                    .getOrElse {
+                        Log.i(TAG, "Wi-Fi download failed: ${it.javaClass.simpleName}")
+                        false
+                    }
+            } else {
+                Log.i(TAG, "no Wi-Fi for the update ($route): over Bluetooth")
+            }
+        } finally {
+            withContext(NonCancellable) { broker.release(preferWifi = true) }
+        }
+        lock.withLock {
+            // Another offer, or an expiry, may have come while the bytes were arriving.
+            if (prefs.getString(KEY_VERSION, null) != version) return@withLock
+            if (!fetched) {
+                target.delete()
+                report(UpdateStatus(UpdatePhase.ACCEPT, version))
+                return@withLock
+            }
+            val sha = prefs.getString(KEY_SHA, "").orEmpty()
+            WatchApkValidation.reject(context, target, version, sha)?.let { fail(version, it); return@withLock }
+            target.copyTo(ready, overwrite = true)
+            target.delete()
+            prefs.edit().putString(KEY_READY_VERSION, version).putString(KEY_READY_SHA, sha).remove(KEY_VERSION).commit()
+            expiry?.cancel()
+            installOrDefer()
+        }
     }
 
     suspend fun onChannelOpened(channel: ChannelClient.Channel) = lock.withLock {
+        // Already coming over Wi-Fi: an older phone, which reads that accept as a plain one, sends
+        // anyway, and both would write the same file.
+        if (wifiFetch?.isActive == true) {
+            channels.close(channel).await()
+            return@withLock
+        }
         val version = acceptedVersion(channel.nodeId) ?: run { channels.close(channel).await(); return@withLock }
         report(UpdateStatus(UpdatePhase.RECEIVING, version))
         try {
@@ -439,6 +522,9 @@ class WatchUpdater(
         }
     }
     companion object {
+        /** How long to wait for the watch's Wi-Fi to come up before Bluetooth gets its turn. */
+        private const val WIFI_WAIT_MS = 15_000L
+        private const val TAG = "WatchUpdater"
         private const val KEY_AUTO = "auto"
         private const val KEY_VERSION = "version"
         private const val KEY_SHA = "sha256"

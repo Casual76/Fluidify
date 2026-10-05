@@ -93,10 +93,15 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
      * never made is not playing, and asking would be what makes it.
      */
     val updater: dev.pampa.fluidify.wear.update.WatchUpdater by lazy {
-        dev.pampa.fluidify.wear.update.WatchUpdater(this, playingLocally = {
-            localControls.takeIf { it.isInitialized() }?.value?.nowPlaying?.value?.snapshot
-                ?.let { it.track != null && (it.isPlaying || it.playWhenReady) } == true
-        })
+        dev.pampa.fluidify.wear.update.WatchUpdater(
+            this,
+            playingLocally = {
+                localControls.takeIf { it.isInitialized() }?.value?.nowPlaying?.value?.snapshot
+                    ?.let { it.track != null && (it.isPlaying || it.playWhenReady) } == true
+            },
+            // The same broker the music's downloads use, so the Wi-Fi is asked for one way.
+            network = { standalone.network },
+        )
     }
 
     /** The phone as a player. */

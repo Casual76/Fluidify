@@ -51,7 +51,16 @@ class WatchSelfUpdateWorker(context: Context, params: WorkerParameters) : Corout
             return Result.retry()
         } ?: return Result.success()
         if (!update.sha256.isSha256()) return Result.failure()
-        val apk = runCatching { installer.download(update) }.getOrElse { return Result.retry() }
+        // Over the watch's own Wi-Fi when it can have it, switched on for the download and let go
+        // of after, as the music's downloads do: the same bytes through the phone's Bluetooth
+        // proxy take many times longer.
+        val network = (applicationContext as dev.pampa.fluidify.wear.WearApp).standalone.network
+        network.acquire(preferWifi = true)
+        val apk = try {
+            runCatching { installer.download(update) }.getOrElse { return Result.retry() }
+        } finally {
+            network.release(preferWifi = true)
+        }
         if (withContext(Dispatchers.IO) { WatchApkValidation.reject(applicationContext, apk, update.version, update.sha256) } != null) return Result.failure()
 
         val app = applicationContext as dev.pampa.fluidify.wear.WearApp

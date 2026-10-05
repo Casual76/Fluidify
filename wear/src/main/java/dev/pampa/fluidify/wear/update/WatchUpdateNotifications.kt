@@ -25,7 +25,7 @@ internal object WatchUpdateNotifications {
             UpdatePhase.AWAITING_CONFIRMATION -> R.string.update_confirm
             UpdatePhase.INSTALLING -> R.string.update_installing
             UpdatePhase.FAILED -> if (canRetry) R.string.update_retry_cached else R.string.update_failed
-            else -> R.string.update_receiving
+            else -> if (status.reason == UpdateStatus.REASON_WIFI) R.string.update_downloading_wifi else R.string.update_receiving
         })
         val percent = (status.progress.coerceIn(0f, 1f) * 100).toInt()
         val notification = NotificationCompat.Builder(context, CHANNEL)

@@ -185,4 +185,5 @@
     <string name="whats_new_in">Novidades em %1$s</string>
     <string name="updated_to">Atualizado para %1$s</string>
     <string name="updated_to_tap">Ver novidades</string>
+    <string name="update_downloading_wifi">A transferir por Wi-Fi…</string>
 </resources>

@@ -56,7 +56,8 @@ internal object WatchUpdateNotifications {
             is WatchUpdateCoordinator.State.UpToDate -> R.string.watch_update_current
             is WatchUpdateCoordinator.State.Available -> R.string.watch_update_available
             is WatchUpdateCoordinator.State.Downloading -> R.string.watch_update_downloading
-            is WatchUpdateCoordinator.State.Sending -> R.string.watch_update_sending
+            is WatchUpdateCoordinator.State.Sending ->
+                if (state.overWifi) R.string.watch_update_wifi else R.string.watch_update_sending
             is WatchUpdateCoordinator.State.Offered -> R.string.watch_update_offered
             is WatchUpdateCoordinator.State.Installing -> R.string.watch_update_installing
             is WatchUpdateCoordinator.State.AwaitingConfirmation -> R.string.watch_update_confirm

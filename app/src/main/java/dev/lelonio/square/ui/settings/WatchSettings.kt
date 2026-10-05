@@ -218,7 +218,10 @@ private fun describe(state: State, outcome: WatchUpdateCoordinator.Outcome?): St
     is State.Available -> stringResource(R.string.watch_update_available, state.version)
     is State.Downloading -> withProgress(stringResource(R.string.watch_update_downloading, state.version), state.progress)
     is State.Offered -> stringResource(R.string.watch_update_offered, state.version)
-    is State.Sending -> withProgress(stringResource(R.string.watch_update_sending, state.version), state.progress)
+    is State.Sending -> withProgress(
+        stringResource(if (state.overWifi) R.string.watch_update_wifi else R.string.watch_update_sending, state.version),
+        state.progress,
+    )
     is State.Installing -> stringResource(R.string.watch_update_installing, state.version)
     is State.AwaitingConfirmation -> stringResource(R.string.watch_update_confirm)
     is State.WaitingForPlayback -> stringResource(R.string.watch_update_waiting_playback)

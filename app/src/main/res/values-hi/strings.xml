@@ -525,4 +525,5 @@
     <string name="watch_update_err_expired">घड़ी ने समय पर जवाब नहीं दिया: फिर कोशिश करें</string>
     <string name="watch_update_err_interrupted">इंस्टॉलेशन बीच में रुक गया: फिर कोशिश करें</string>
     <string name="watch_update_installed_notification">घड़ी %1$s पर अपडेट हो गई</string>
+    <string name="watch_update_wifi">घड़ी अपने वाई-फ़ाई से %1$s डाउनलोड कर रही है…</string>
 </resources>

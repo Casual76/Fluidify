@@ -33,6 +33,15 @@ data class UpdateOffer(
      * Blank for a phone from before this field, or for a build without notes.
      */
     val changelog: String = "",
+    /**
+     * Where the APK can be fetched from directly: the release asset the phone itself downloaded.
+     *
+     * A watch that can reach the internet on its own Wi-Fi takes it from here, which is many times
+     * faster than the same bytes over Bluetooth, and says so with [UpdateStatus.REASON_WIFI]; it
+     * still checks [sha256] and the signature exactly as for a transfer. Blank (an older phone, a
+     * file picked by hand) means Bluetooth, as before.
+     */
+    val downloadUrl: String = "",
 )
 
 /**
@@ -140,5 +149,14 @@ data class UpdateStatus(
     companion object {
         /** The watch has the APK (or will have it) and installs it once its own music stops. */
         const val REASON_WAITING_PLAYBACK = "waiting-playback"
+
+        /**
+         * On [UpdatePhase.ACCEPT]: the watch fetches the build itself, over its own Wi-Fi, so the
+         * phone sends nothing. A plain accept follows if that does not work out, and the phone
+         * then sends it over Bluetooth as always. On [UpdatePhase.RECEIVING]: the progress is of
+         * that download. An old phone reads the accept as a plain one and starts sending, which
+         * the watch refuses while it downloads.
+         */
+        const val REASON_WIFI = "wifi"
     }
 }

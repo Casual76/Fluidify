@@ -385,10 +385,14 @@ fun MoreScreen(
                         status == null -> version
                         waiting -> stringResource(R.string.update_waiting_playback)
                         else -> when (status.phase) {
-                            UpdatePhase.ACCEPT -> stringResource(R.string.update_receiving)
+                            UpdatePhase.ACCEPT -> stringResource(
+                                if (status.reason == UpdateStatus.REASON_WIFI) R.string.update_downloading_wifi else R.string.update_receiving,
+                            )
                             UpdatePhase.RECEIVING -> stringResource(
                                 R.string.two_parts,
-                                stringResource(R.string.update_receiving),
+                                stringResource(
+                                    if (status.reason == UpdateStatus.REASON_WIFI) R.string.update_downloading_wifi else R.string.update_receiving,
+                                ),
                                 stringResource(R.string.percent_value, (status.progress * 100).roundToInt()),
                             )
                             UpdatePhase.INSTALLING -> stringResource(R.string.update_installing)

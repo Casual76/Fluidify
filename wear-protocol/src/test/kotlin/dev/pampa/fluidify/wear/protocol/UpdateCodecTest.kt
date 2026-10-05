@@ -37,6 +37,24 @@ class UpdateCodecTest {
     }
 
     @Test
+    fun offerCarriesWhereTheWatchCanFetchItOverWifi() {
+        val url = "https://github.com/Casual76/Fluidify/releases/download/beta-fluidify-v1.7.2/fluidify-wear-1.7.2.apk"
+        val offer = UpdateOffer(versionName = "1.7.2", sizeBytes = 24_000_000, sha256 = "ab", downloadUrl = url)
+        assertEquals(url, WearCodec.decode(UpdateOffer.serializer(), WearCodec.encode(UpdateOffer.serializer(), offer)).downloadUrl)
+        // An older phone sends no address: the watch takes it over Bluetooth, as before.
+        val old = """{"versionName":"1.7.1","sizeBytes":10,"sha256":"ab"}"""
+        assertEquals("", WearCodec.decode(UpdateOffer.serializer(), old.encodeToByteArray()).downloadUrl)
+    }
+
+    @Test
+    fun wifiAcceptIsAnAcceptForAnOlderPhone() {
+        val status = UpdateStatus(UpdatePhase.ACCEPT, "1.7.2", reason = UpdateStatus.REASON_WIFI)
+        val decoded = WearCodec.decode(UpdateStatus.serializer(), WearCodec.encode(UpdateStatus.serializer(), status))
+        assertEquals(UpdatePhase.ACCEPT, decoded.phase)
+        assertEquals("wifi", decoded.reason)
+    }
+
+    @Test
     fun offerFromBeforeChannelAndChangelogStillDecodes() {
         val old = """{"versionName":"1.6.4","sizeBytes":10,"sha256":"ab","requestedByUser":true}"""
         val offer = WearCodec.decode(UpdateOffer.serializer(), old.encodeToByteArray())

@@ -184,4 +184,5 @@
     <string name="whats_new_in">%1$s sürümündeki yenilikler</string>
     <string name="updated_to">%1$s sürümüne güncellendi</string>
     <string name="updated_to_tap">Yeniliklere bak</string>
+    <string name="update_downloading_wifi">Wi-Fi ile indiriliyor…</string>
 </resources>
