@@ -1,0 +1,5 @@
+Correzioni della 1.7.1.
+
+Tornano le copertine dei brani scaricati nel lettore, nella notifica e nel widget.
+
+La pagina Orologio non propone piu' un aggiornamento che l'orologio ha gia': quando l'orologio dice la sua versione, quello che il telefono credeva su un aggiornamento in corso si allinea.

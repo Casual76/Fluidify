@@ -197,12 +197,48 @@ class WatchUpdateCoordinator(
                 clearReady()
                 return@launch
             }
+            if (settleAgainst(hello.versionName)) return@launch
             val due = System.currentTimeMillis() - prefs.getLong(KEY_CHECKED, 0) > CHECK_EVERY_MS
             if (autoUpdate && due) {
                 val update = check()
                 if (update != null) push(update, requestedByUser = false)
             }
         }
+    }
+
+    /**
+     * Lets the version the watch says it runs overrule what this phone last believed about an
+     * update for it.
+     *
+     * The page said "1.7.1 available" (or "waiting for the watch", or "installing") about a watch
+     * already on 1.7.1, for as long as this process lived: those states are only ever left by the
+     * next step of the same update, and a watch updated some other way — or whose "installed" was
+     * lost with the process that the install replaced — never sends that step. A hello is the watch
+     * saying what it is now, which settles it. True when it did.
+     */
+    private fun settleAgainst(watchVersion: String): Boolean {
+        val pending = when (val current = _state.value) {
+            is State.Available -> current.version
+            is State.Downloading -> current.version
+            is State.Offered -> current.version
+            is State.Sending -> current.version
+            is State.Installing -> current.version
+            is State.AwaitingConfirmation -> current.version
+            is State.WaitingForPlayback -> current.version
+            else -> return false
+        }
+        if (compareVersions(watchVersion, pending) < 0) return false
+        val installedNow = compareVersions(watchVersion, pending) == 0 && _state.value !is State.Available
+        if (installedNow) {
+            val notes = savedChangelog()
+            rememberOutcome(watchVersion, notes)
+            _state.value = State.Installed(watchVersion, notes)
+        } else {
+            rememberOutcome(watchVersion, notes = null)
+            _state.value = State.UpToDate(watchVersion, System.currentTimeMillis())
+        }
+        clearReady()
+        return true
     }
 
     /** What is known of the watch: who it is, from its hello, and when that was heard. */

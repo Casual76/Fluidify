@@ -18,8 +18,23 @@ object HttpFetch {
     private const val CONNECT_TIMEOUT_MS = 10_000
     private const val READ_TIMEOUT_MS = 20_000
 
-    /** The body, or `null` when it is larger than [maxBytes]. Throws on a network failure. */
-    fun bytes(url: String, maxBytes: Int): ByteArray? = open(url).useBody { input ->
+    /**
+     * The body, or `null` when it is larger than [maxBytes]. Throws on a network failure.
+     *
+     * A `file://` address is read from the disk. The player's covers are exactly that for every
+     * downloaded track (see DownloadExtras.artworkUri), and `URL.openStream()`, which this
+     * replaced, read them without anyone noticing it was not the network: treated as HTTP, every
+     * downloaded song played with no cover in the player, the notification or the widget.
+     */
+    fun bytes(url: String, maxBytes: Int): ByteArray? {
+        if (url.startsWith("file:")) {
+            val file = File(java.net.URI(url))
+            return if (file.length() > maxBytes) null else file.readBytes()
+        }
+        return fromNetwork(url, maxBytes)
+    }
+
+    private fun fromNetwork(url: String, maxBytes: Int): ByteArray? = open(url).useBody { input ->
         val out = ByteArrayOutputStream()
         val buffer = ByteArray(16 * 1024)
         while (true) {
@@ -31,8 +46,21 @@ object HttpFetch {
         out.toByteArray()
     }
 
-    /** Copies the body into [target]. Throws on a network failure or a body over [maxBytes]. */
-    fun toFile(url: String, target: File, maxBytes: Long) = open(url).useBody { input ->
+    /**
+     * Copies the body into [target]. Throws on a network failure or a body over [maxBytes].
+     * A `file://` address is copied from the disk, as [bytes] reads one.
+     */
+    fun toFile(url: String, target: File, maxBytes: Long) {
+        if (url.startsWith("file:")) {
+            val source = File(java.net.URI(url))
+            if (source.length() > maxBytes) throw IOException("larger than $maxBytes bytes")
+            source.copyTo(target, overwrite = true)
+            return
+        }
+        fromNetwork(url, target, maxBytes)
+    }
+
+    private fun fromNetwork(url: String, target: File, maxBytes: Long) = open(url).useBody { input ->
         target.outputStream().use { out ->
             val buffer = ByteArray(32 * 1024)
             var total = 0L
