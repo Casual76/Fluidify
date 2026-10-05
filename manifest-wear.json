@@ -18,13 +18,13 @@
       "sha256": "02d9187301b0301185b2e1adbf4e2a41e3e36db0838e67c5040587a2e2f00800"
     },
     "beta": {
-      "version": "1.6.4",
+      "version": "1.7.0",
       "releaseDate": "2026-10-05",
-      "changelog": "L'alone musicale sopra Canvas e video usa ora un viola/fucsia stabile, invece di ricavare un colore alternativo dalla copertina che poteva diventare verde. Conservate altezza, intensità e transizione del colore.\n\nLa luce attorno alla copertina e il mini player mantengono i colori della copertina. Nessun cambiamento visivo dell'orologio: questo APK accompagna la stessa versione del telefono.\n\nVerificati render e build minificate firmate; resa animata e consumi reali restano da verificare sui dispositivi fisici.\n",
-      "releaseTag": "stable-fluidify-v1.6.4",
-      "apkAsset": "fluidify-wear-1.6.4.apk",
-      "sizeBytes": 23869892,
-      "sha256": "02d9187301b0301185b2e1adbf4e2a41e3e36db0838e67c5040587a2e2f00800"
+      "changelog": "I tasti della tile rispondono a ogni pressione, Continua sull'orologio aspetta che Spotify conosca l'orologio, la musica non resta muta dopo un cambio di cuffie e il Wi-Fi resta acceso durante lo streaming. Liste con caricamento, non aggiornato e Riprova; l'ambient non fa perdere la posizione; meno lavoro in background. Da provare sul dispositivo.",
+      "releaseTag": "beta-fluidify-v1.7.0",
+      "apkAsset": "fluidify-wear-1.7.0.apk",
+      "sizeBytes": 23973484,
+      "sha256": "d9f4026d5f875b3e2d58018a520c02cc980f7fff5927d91d4cefe691bad933ac"
     }
   }
 }
