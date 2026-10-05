@@ -9,22 +9,22 @@
       "repoName": "Fluidify"
     },
     "stable": {
-      "version": "1.7.2",
+      "version": "1.7.3",
       "releaseDate": "2026-10-05",
-      "changelog": "Display sempre acceso che e' il lettore attenuato; controlli che si nascondono trascinando in giu' sul lettore; tasti della tile che rispondono sempre; aggiornamenti con il Wi-Fi dell'orologio, mai durante la musica, con le novita' dopo l'installazione; canale Stabile/Beta come il telefono.",
-      "releaseTag": "stable-fluidify-v1.7.2",
-      "apkAsset": "fluidify-wear-1.7.2.apk",
-      "sizeBytes": 24001775,
-      "sha256": "8de1930cdd99cc4d84eeca3ca6e01ba434bacf62fa48316119d74a4bfd079043"
+      "changelog": "Accompagna Fluidify 1.7.3 (correzione delle copertine sul telefono).",
+      "releaseTag": "stable-fluidify-v1.7.3",
+      "apkAsset": "fluidify-wear-1.7.3.apk",
+      "sizeBytes": 24001790,
+      "sha256": "3bceffc20d40dbcdd4c5ad15542114294fa05aa80d24985edf677398c3406e47"
     },
     "beta": {
-      "version": "1.7.2",
+      "version": "1.7.3",
       "releaseDate": "2026-10-05",
-      "changelog": "Display sempre acceso che e' il lettore attenuato; controlli che si nascondono trascinando in giu' sul lettore; tasti della tile che rispondono sempre; aggiornamenti con il Wi-Fi dell'orologio, mai durante la musica, con le novita' dopo l'installazione; canale Stabile/Beta come il telefono.",
-      "releaseTag": "stable-fluidify-v1.7.2",
-      "apkAsset": "fluidify-wear-1.7.2.apk",
-      "sizeBytes": 24001775,
-      "sha256": "8de1930cdd99cc4d84eeca3ca6e01ba434bacf62fa48316119d74a4bfd079043"
+      "changelog": "Accompagna Fluidify 1.7.3 (correzione delle copertine sul telefono).",
+      "releaseTag": "stable-fluidify-v1.7.3",
+      "apkAsset": "fluidify-wear-1.7.3.apk",
+      "sizeBytes": 24001790,
+      "sha256": "3bceffc20d40dbcdd4c5ad15542114294fa05aa80d24985edf677398c3406e47"
     }
   }
 }
