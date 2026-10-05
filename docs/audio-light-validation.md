@@ -44,3 +44,11 @@ Sul telefono il colore della copertina viene trasformato in luce conservandone l
 Aggiornati e controllati i 17 render, inclusi tema chiaro/scuro, Canvas, mini player compatto e Watch 192/216/240 dp. Il controllo di visibilità del mini player richiede ora una differenza superiore a 20 nel canale rosso tra segnale presente e assente, rispetto alla soglia di 5 della 1.6.0. La resa animata e i consumi sui dispositivi fisici restano da verificare; i render statici non dimostrano questi risultati.
 
 Il benchmark host aggiornato misura circa 19,36 ms CPU per disegno telefono, 5,91 ms mini player e 1,02 ms anello Watch. Il primo prototipo Watch che disegnava l'intero disco misurava 4,47 ms: confinare la stessa luce alla geometria utile elimina gran parte di quel lavoro. L'analisi resta circa 0,25 ms FFT / 0,016 ms leggera. Dati JBR/Robolectric con Canvas software, non GPU Android né misure di consumo sul Watch; il disegno più ampio richiede comunque la verifica fisica.
+
+## Correzione visiva 1.6.2
+
+Ridotta la sola estensione verticale della luce telefono: 35% nel lettore completo, anche durante la transizione da copertina a luce inferiore, e 30% nel mini player normale/compatto. Intensità, colori, tempi della risposta musicale e dimensioni orizzontali conservati. Il disegno dell'anello Watch non cambia.
+
+Passati gli 11 render telefono/tablet, Canvas/video e mini player, compreso il controllo di visibilità attraverso il vetro. La resa in movimento e i consumi reali restano da verificare sul dispositivo; le prove automatiche non sostituiscono questa valutazione.
+
+Benchmark host aggiornato: circa 13,20 ms per disegno telefono e 4,31 ms mini player, rispetto a 19,36 / 5,91 ms della 1.6.1; il campo luminoso più basso riduce l'area da disegnare. Restano misure del Canvas software su PC, non prestazioni o batteria Android.

@@ -96,6 +96,8 @@ class AudioHaloPainter {
                 radiusX += (width * (.23f + .04f * bass) - radiusX) * bottomMix
                 radiusY += (height * (.18f + .24f * v + .12f * bass) - radiusY) * bottomMix
             }
+            // Keep the emitted light strong, but close to the cover or the bottom of the pill.
+            radiusY *= if (mini) .70f else .65f
             val haloPaint = haloPaints[i]
             haloPaint.colorFilter = filter
             haloPaint.alpha = ((if (mini) (if (compact) .80f else 1.05f) else .90f) * sqrt(v.coerceAtLeast(0f)) * 255)

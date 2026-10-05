@@ -1,0 +1,5 @@
+Luce musicale più raccolta sul telefono: ridotta del 35% l'estensione verticale nel lettore completo, sia attorno alla copertina sia nella luce inferiore con Canvas e video. Nel mini player l'estensione verticale scende del 30%.
+
+Conservate intensità, colori e risposta alla musica della 1.6.1. La resa dell'orologio resta quella precedente.
+
+Render e build minificate firmate verificati; resa in movimento e consumi reali restano da provare sui dispositivi fisici.
