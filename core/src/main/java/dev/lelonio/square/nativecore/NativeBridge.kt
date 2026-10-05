@@ -95,11 +95,8 @@ object NativeBridge {
         /** What language Spotify should answer in, as a bare tag: `it`, `en`. */
         language: String,
         /**
-         * Which file to ask for: 96, 160 or 320 kbps.
-         *
-         * Fixed for the life of the engine. The player reads it when a track
-         * loads but owns its configuration until it is dropped, so changing the
-         * setting means starting a new engine.
+         * Which file to ask for: 96, 160 or 320 kbps. The starting value:
+         * [setBitrate] and [setQuality] change it in place later.
          */
         bitrateKbps: Int,
         /**

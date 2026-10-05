@@ -140,8 +140,15 @@ fun FloatingMiniPlayer(
     }
 
     val offsetX = remember { Animatable(0f) }
-    val audioLight = rememberAudioLight(state.isPlaying && !state.isBuffering, visible = interactive && reactiveVisible, mini = true)
+    val audioLight = rememberAudioLight(state.isPlaying && !state.isBuffering, visible = { interactive && reactiveVisible }, mini = true)
     val lightPalette by dev.lelonio.square.ui.theme.rememberArtworkPalette(state.artworkUrl)
+    // Crossed over rather than cut at a track change, like the player's aura; the theme's accent
+    // stands in only until the first palette arrives.
+    val lightTint = androidx.compose.animation.animateColorAsState(
+        targetValue = lightPalette.firstOrNull() ?: MaterialTheme.colorScheme.primary,
+        animationSpec = androidx.compose.animation.core.tween(LIGHT_TINT_MS),
+        label = "lightTint",
+    )
     val lightBackdrop = rememberLayerBackdrop()
     val combinedLight = if (lightGlassConfig != null) rememberCombinedBackdrop(
         dev.lelonio.square.ui.glass.LocalAppBackdrop.current, lightBackdrop) else null
@@ -200,10 +207,31 @@ fun FloatingMiniPlayer(
             },
     ) {
         if (lightGlassConfig != null && combinedLight != null) {
-            AudioLightHalo(audioLight, lightPalette.firstOrNull() ?: MaterialTheme.colorScheme.primary, mini = true, compact = inline,
-                modifier = Modifier.matchParentSize().layerBackdrop(lightBackdrop))
-            Box(Modifier.matchParentSize().drawWithContent { audioLight.value; drawContent() }.liquidGlass(config = lightGlassConfig,
-                shape = RoundedCornerShape(percent = 50), highlightAlpha = 0.3f, ownBackdrop = combinedLight))
+            val lightClock = rememberAudioLightClock(audioLight, mini = true)
+            AudioLightHalo(
+                audioLight,
+                color = { lightTint.value },
+                mini = true,
+                compact = inline,
+                modifier = Modifier.matchParentSize().layerBackdrop(lightBackdrop),
+                clock = lightClock,
+            )
+            // The glass is told to redraw on the halo's clock: it samples the halo's own layer,
+            // and nothing else would tell it that layer has changed.
+            Box(
+                Modifier
+                    .matchParentSize()
+                    .drawWithContent {
+                        lightClock.value
+                        drawContent()
+                    }
+                    .liquidGlass(
+                        config = lightGlassConfig,
+                        shape = RoundedCornerShape(percent = 50),
+                        highlightAlpha = 0.3f,
+                        ownBackdrop = combinedLight,
+                    ),
+            )
         }
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -361,3 +389,6 @@ fun progressOf(positionMs: Long, durationMs: Long): Float =
  * the two read as one slab.
  */
 val MiniPlayerHeight = 56.dp
+
+/** How long the pill's light takes to change colour with the record. */
+private const val LIGHT_TINT_MS = 700

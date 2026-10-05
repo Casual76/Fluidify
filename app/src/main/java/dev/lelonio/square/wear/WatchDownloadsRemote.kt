@@ -9,10 +9,12 @@ import dev.pampa.fluidify.wear.protocol.WatchDownloadOwner
 import dev.pampa.fluidify.wear.protocol.WatchDownloads
 import dev.pampa.fluidify.wear.protocol.WearCodec
 import dev.pampa.fluidify.wear.protocol.WearPaths
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 
 /**
@@ -30,6 +32,18 @@ class WatchDownloadsRemote(private val app: SquareApplication, private val link:
     /** The watch's last word; null until a watch with downloads has spoken. */
     val status: StateFlow<WatchDownloads?> = _status.asStateFlow()
 
+    private val _waiting = MutableStateFlow(0)
+
+    /**
+     * How many requests are waiting for the watch to come back.
+     *
+     * A request made out of reach is kept and goes with the next hello, which is the right thing
+     * and was also invisible: the list changed on screen as if the watch had been told. This is
+     * what lets the Watch page say it has not been. Zero until [refresh] has read the preferences,
+     * so that building this (with the bridge, in every process) does not touch the disk.
+     */
+    val waiting: StateFlow<Int> = _waiting.asStateFlow()
+
     fun keeps(uri: String): Boolean = _status.value?.owners?.any { it.uri == uri } == true
 
     fun onStatus(bytes: ByteArray) {
@@ -38,6 +52,7 @@ class WatchDownloadsRemote(private val app: SquareApplication, private val link:
 
     /** Reads what the Data Layer already holds, for a phone that was away when it changed. */
     suspend fun refresh() {
+        _waiting.value = withContext(Dispatchers.IO) { pending().size }
         // No watch with the companion: nothing to read, and no Data Layer call made.
         if (!link.hasWatch()) return
         catchingNonCancel {
@@ -81,6 +96,7 @@ class WatchDownloadsRemote(private val app: SquareApplication, private val link:
     }.getOrNull().orEmpty()
 
     private fun savePending(requests: List<DownloadRequest>) {
+        _waiting.value = requests.size
         prefs.edit { putString(KEY_PENDING, WearCodec.json.encodeToString(ListSerializer(DownloadRequest.serializer()), requests)) }
     }
 

@@ -17,6 +17,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.rotate
 import kotlin.math.cos
@@ -93,9 +94,20 @@ fun CoverAura(
     // Read here rather than in the draw pass: the accent is the theme's to
     // give, and a draw lambda has no composition to ask.
     val glow = androidx.compose.material3.MaterialTheme.colorScheme.primary
+
+    // Hands over to the music's light and takes back from it by fading, not cutting. The music
+    // light goes on and off with every pause and play, and the aura used to reappear at full
+    // strength in a single frame each time. Read in composition, which is fine here: the caller
+    // derives it, so it changes only when the light does.
+    val presence = androidx.compose.animation.core.animateFloatAsState(
+        targetValue = if (suppress()) 0f else 1f,
+        animationSpec = tween(HANDOVER_MS),
+        label = "auraPresence",
+    )
     Canvas(
         modifier
             .fillMaxSize()
+            .graphicsLayer { alpha = presence.value }
             // Blurred as one picture rather than drawn soft.
             //
             // Soft shapes and a blurred hard shape are not the same thing: a
@@ -105,7 +117,7 @@ fun CoverAura(
             // and the whole thing is put out of focus afterwards.
             .blur(BLUR),
     ) {
-        if (suppress()) return@Canvas
+        if (presence.value == 0f) return@Canvas
         // Only a playing track reads the clock, which is also what stops the
         // light: with nothing read there is nothing to invalidate, and the
         // whole thing simply stops being redrawn where it stands.
@@ -232,6 +244,9 @@ private val BLUR = 20.dp
 
 /** A full turn of the slowest element. Minutes, not seconds. */
 private const val CYCLE_MS = 60_000
+
+/** How long the aura takes to give way to the music light, and to come back. */
+private const val HANDOVER_MS = 320
 
 /**
  * Whole turns per cycle, and whole numbers on purpose.

@@ -42,12 +42,10 @@
     <string name="previous">Précédent</string>
     <string name="next">Suivant</string>
     <string name="repeat">Répéter</string>
-    <string name="reset">Réinitialiser</string>
     <string name="off">Off</string>
     <string name="queue">File d\'attente</string>
     <string name="lyrics">Paroles</string>
     <string name="watch_video">Regarder la vidéo</string>
-    <string name="effects">Effets</string>
     <string name="cover">Pochette</string>
     <string name="devices">Appareils</string>
     <string name="settings">Réglages</string>
@@ -79,18 +77,27 @@
     <string name="new_from_your_artists">Nouveautés de vos artistes</string>
     <string name="all_time_favourites">Vos incontournables</string>
     <string name="cannot_connect">Impossible de joindre Spotify.</string>
-    <string name="rootlist_unavailable">playlists indisponibles</string>
 
     <string name="recently_opened">Ouvertes récemment</string>
     <string name="spotify_order">Ordre de Spotify</string>
     <string name="change_layout">Changer la disposition</string>
     <string name="sort_descending">Décroissant</string>
-    <string name="layout_grid">Grille</string>
-    <string name="layout_list">Liste</string>
-    <string name="playlist_count">%1$d playlists</string>
-    <string name="item_count">%1$d éléments</string>
-    <string name="artist_count">%1$d artistes</string>
-    <string name="album_count">%1$d albums</string>
+    <plurals name="playlist_count">
+        <item quantity="one">%1$d playlist</item>
+        <item quantity="other">%1$d playlists</item>
+    </plurals>
+    <plurals name="item_count">
+        <item quantity="one">%1$d élément</item>
+        <item quantity="other">%1$d éléments</item>
+    </plurals>
+    <plurals name="artist_count">
+        <item quantity="one">%1$d artiste</item>
+        <item quantity="other">%1$d artistes</item>
+    </plurals>
+    <plurals name="album_count">
+        <item quantity="one">%1$d album</item>
+        <item quantity="other">%1$d albums</item>
+    </plurals>
 
     <string name="playlist_order">Ordre de la playlist</string>
     <string name="recently_added">Ajoutés récemment</string>
@@ -99,7 +106,10 @@
     <string name="no_tracks">Aucun titre</string>
     <string name="no_results_for">Aucun résultat pour « %1$s »</string>
     <string name="more_tracks_coming">D\'autres titres arrivent</string>
-    <string name="track_count_and_length"> · %1$d titres · %2$s</string>
+    <plurals name="track_count_and_length">
+        <item quantity="one">" · %1$d titre · %2$s"</item>
+        <item quantity="other">" · %1$d titres · %2$s"</item>
+    </plurals>
     <string name="hours_minutes">%1$d h %2$d min</string>
     <string name="minutes_only">%1$d min</string>
     <string name="artist_needs_app">Ouvrir un artiste demande votre propre application Spotify : configurez-la dans Rechercher.</string>
@@ -124,14 +134,8 @@
     <string name="no_devices">Aucun appareil disponible</string>
     <string name="queue_empty">La file est vide</string>
     <string name="no_lyrics">Pas de paroles pour ce titre</string>
-    <string name="speed">Vitesse</string>
-    <string name="pitch">Hauteur</string>
-    <string name="reverb">Réverbération</string>
-    <string name="save_preset">Enregistrer le préréglage</string>
-    <string name="delete_preset">Supprimer %1$s</string>
     <string name="shuffle_play">Lecture aléatoire</string>
     <string name="unnamed">Sans nom</string>
-    <string name="preset_original">Original</string>
 
     <string name="search_placeholder">Titres, artistes, albums, playlists</string>
     <string name="search_prompt">Cherchez quelque chose à écouter</string>
@@ -230,7 +234,6 @@
     <string name="browser_return">Vous pouvez revenir à l\'app.</string>
     <string name="language">Langue</string>
     <string name="system_language">Langue du téléphone</string>
-    <string name="presets">PRÉRÉGLAGES</string>
     <string name="check_for_updates">Rechercher des mises à jour</string>
     <string name="update_checking">Vérification…</string>
     <string name="update_none">À jour</string>
@@ -242,7 +245,6 @@
     <string name="quality">Qualité audio</string>
     <string name="backend_spotify">Spotify</string>
     <string name="trending_now">Tendances</string>
-    <string name="popular_playlists">Playlists populaires</string>
     <string name="quality_auto">Automatique</string>
     <string name="quality_high">Haute</string>
     <string name="quality_medium">Moyenne</string>
@@ -261,7 +263,10 @@
     <string name="update_install">Installer</string>
     <string name="crossfade">Fondu enchaîné</string>
     <string name="crossfade_off">Désactivé</string>
-    <string name="crossfade_seconds">%1$d secondes</string>
+    <plurals name="crossfade_seconds">
+        <item quantity="one">%1$d seconde</item>
+        <item quantity="other">%1$d secondes</item>
+    </plurals>
     <string name="crossfade_note">Un morceau se fond dans le suivant. Seulement quand il se termine seul, pas quand vous passez au suivant.</string>
     <string name="page_playback">Lecture</string>
     <string name="page_app">Application</string>
@@ -338,9 +343,11 @@
     <string name="downloaded">Téléchargé</string>
     <string name="downloading">Téléchargement</string>
     <string name="downloads">Téléchargements</string>
-    <string name="download_count">%1$d téléchargés</string>
+    <plurals name="download_count">
+        <item quantity="one">%1$d téléchargé</item>
+        <item quantity="other">%1$d téléchargés</item>
+    </plurals>
     <string name="download_progress_count">%1$d sur %2$d</string>
-    <string name="download_partial">%1$d sur %2$d disponibles</string>
     <string name="download_waiting_wifi">En attente du Wi‑Fi</string>
     <string name="download_waiting_network">En attente d\'une connexion</string>
     <string name="download_waiting_engine">En attente de Spotify</string>
@@ -354,13 +361,18 @@
     <string name="download_storage_used">%1$s occupés par les téléchargements</string>
     <string name="remove_all_downloads">Retirer tous les téléchargements</string>
     <string name="remove_all_downloads_confirm">Tout ce qui est téléchargé sera supprimé. Vos playlists ne sont pas touchées.</string>
-    <string name="download_artist_confirm">Télécharger %1$d titres de %2$s ? Cela représente environ %3$s.</string>
-    <string name="download_failed_count">%1$d n\'ont pas pu être téléchargés</string>
+    <plurals name="download_artist_confirm">
+        <item quantity="one">Télécharger %1$d titre de %2$s ? Cela représente environ %3$s.</item>
+        <item quantity="other">Télécharger %1$d titres de %2$s ? Cela représente environ %3$s.</item>
+    </plurals>
+    <plurals name="download_failed_count">
+        <item quantity="one">%1$d n\'a pas pu être téléchargé</item>
+        <item quantity="other">%1$d n\'ont pas pu être téléchargés</item>
+    </plurals>
     <string name="download_retry_failed">Réessayer</string>
     <string name="downloaded_tracks">Titres téléchargés</string>
     <string name="offline_mode">Mode hors connexion</string>
     <string name="offline_mode_note">Ne lire que ce qui est téléchargé, sans rien demander à Spotify.</string>
-    <string name="offline_unavailable">Indisponible hors connexion</string>
     <string name="offline_banner_no_network">Hors connexion — aucune connexion</string>
     <string name="offline_banner_slow">Hors connexion — le réseau est moins bon que vos téléchargements</string>
     <string name="offline_banner_manual">Hors connexion — vous l\'avez activé</string>
@@ -386,14 +398,8 @@
     <string name="widget_label">Lecture en cours</string>
     <string name="widget_nothing_playing">Rien en lecture</string>
     <string name="widget_label_row">Lecture en cours</string>
-    <string name="widget_label_square">Lecture en cours, carre</string>
-    <string name="widget_label_tall">Lecture en cours, haut</string>
     <string name="widget_description_row">La pochette, ce qui joue, et les trois boutons.</string>
-    <string name="widget_description_square">La pochette, le titre, et les trois boutons.</string>
-    <string name="widget_description_tall">Une grande pochette, ce qui joue, et les trois boutons.</string>
     <string name="widget_add_row">Ajouter la ligne a l&#8217;ecran d&#8217;accueil</string>
-    <string name="widget_add_square">Ajouter le carre</string>
-    <string name="widget_add_tall">Ajouter le haut</string>
     <string name="widget_add_note">La pochette derriere, ce qui joue, et les trois boutons. Il suit le theme de l&#8217;application.</string>
     <string name="widget_nothing_playing_hint">Ouvre Fluidify et appuie sur lecture</string>
     <string name="library_offline">Vous voyez ce qui est téléchargé. Spotify n’a pas encore répondu.</string>
@@ -422,12 +428,15 @@
     <string name="watch_update_installing">Installation de %1$s sur la montre…</string>
     <string name="watch_update_confirm">Confirmez sur la montre</string>
     <string name="watch_update_installed">%1$s installée</string>
-    <string name="watch_update_failed">Échec : %1$s</string>
+    <string name="watch_update_failed">La mise à jour n\'a pas abouti : réessayez</string>
     <string name="watch_sending">Envoi de musique à la montre</string>
     <string name="watch_sending_channel">Envoi à la montre</string>
     <string name="watch_downloads">Sur la montre</string>
     <string name="watch_downloads_none">Rien pour l\'instant : choisissez « Télécharger sur la montre » sur une playlist</string>
-    <string name="watch_downloads_summary">%1$d sur %2$d titres · %3$s utilisés, %4$s libres</string>
+    <plurals name="watch_downloads_summary">
+        <item quantity="one">%1$d sur %2$d titre · %3$s utilisés, %4$s libres</item>
+        <item quantity="other">%1$d sur %2$d titres · %3$s utilisés, %4$s libres</item>
+    </plurals>
     <string name="watch_downloads_paused">En pause</string>
     <string name="watch_downloads_paused_storage">La montre est presque pleine</string>
     <string name="watch_downloads_paused_offline">En attente du téléphone ou du Wi-Fi</string>
@@ -463,6 +472,28 @@
     <string name="watch_made_for_you">Conçu pour vous</string>
     <string name="watch_update_connection_missing">Montre non connectée en Bluetooth. Rapprochez-la et réessayez.</string>
     <string name="watch_update_offer_failed">Fluidify sur la montre ne répond pas. Ouvrez cette application et réessayez.</string>
+    <string name="watch_looking">Recherche de votre montre…</string>
+    <string name="watch_none_hint">Gardez la montre à proximité, avec le Bluetooth activé et Fluidify installé.</string>
+    <string name="watch_downloads_reading">Lecture de ce que la montre garde…</string>
+    <string name="watch_downloads_unreported">La montre ne s\'est pas encore manifestée</string>
+    <string name="watch_update_progress">%1$s · %2$d %%</string>
+    <string name="watch_install_network">Impossible de joindre la montre : le téléphone et la montre sont-ils sur le même Wi-Fi ?</string>
+    <string name="watch_install_timeout">La montre n\'a pas répondu à temps : réessayez</string>
+    <string name="watch_update_err_network">Le serveur de mises à jour est injoignable : le téléphone est-il en ligne ?</string>
+    <string name="watch_update_err_corrupt">La mise à jour est arrivée endommagée : réessayez</string>
+    <string name="watch_update_err_invalid">Ce fichier n\'est pas une mise à jour valide de l\'application Fluidify pour la montre</string>
+    <string name="watch_update_err_signature">La mise à jour n\'est pas signée avec la même clé que Fluidify</string>
+    <string name="watch_update_err_transfer">Le transfert vers la montre a été interrompu : gardez-la à proximité et réessayez</string>
+    <string name="watch_update_err_install">La montre n\'a pas pu installer la mise à jour : ouvrez Fluidify sur la montre et réessayez</string>
+    <string name="watch_update_err_busy">La montre est occupée par une autre mise à jour : réessayez dans un instant</string>
+    <string name="watch_update_err_older">La montre a déjà une version plus récente</string>
+    <plurals name="watch_downloads_waiting">
+        <item quantity="one">%1$d modification attend la montre et sera envoyée dès qu\'elle sera de nouveau à portée</item>
+        <item quantity="other">%1$d modifications attendent la montre et seront envoyées dès qu\'elle sera de nouveau à portée</item>
+    </plurals>
     <string name="audio_light_title">Lumière réactive à la musique</string>
     <string name="audio_light_note">La lumière du lecteur et du mini-lecteur suit la musique.</string>
+    <string name="audio_light_section">Lumière du lecteur</string>
+    <string name="unknown">Inconnu</string>
+    <string name="kbps_value">%1$d kbps</string>
 </resources>

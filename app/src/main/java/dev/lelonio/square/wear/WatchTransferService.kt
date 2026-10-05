@@ -3,6 +3,7 @@ package dev.lelonio.square.wear
 import android.app.Notification
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.app.PendingIntent
 import android.app.Service
 import android.content.Context
 import android.content.Intent
@@ -13,9 +14,16 @@ import android.util.Log
 import androidx.core.app.NotificationCompat
 import androidx.core.app.ServiceCompat
 import dev.lelonio.square.R
+import dev.lelonio.square.ui.MainActivity
+import dev.lelonio.square.ui.settings.WatchPageRequest
 
 /**
- * Keeps the phone awake while it sends tracks to the watch.
+ * Keeps the process from being killed while the phone sends tracks to the watch.
+ *
+ * It is a foreground service and nothing more: its notification is what tells Android that the
+ * app is doing work somebody is waiting for, so that a long playlist is not cut off when the app
+ * leaves the screen. It holds no wake lock and does not keep the CPU or the screen on; what keeps
+ * the transfer alive is being in the foreground.
  *
  * A transfer is started by the watch, so the phone is usually in the background
  * when it begins, and Android may refuse a foreground service started from
@@ -23,6 +31,12 @@ import dev.lelonio.square.R
  * transfer cut short resumes from where it stopped on the watch's next attempt.
  * Where Android does allow it (the app is open, or exempt), this is what keeps
  * a long playlist going with the screen off.
+ *
+ * The notification opens the Watch page of the settings, where the watch's downloads are. It has
+ * no determinate progress and no Cancel on purpose: the service is only told that a transfer has
+ * started and that the last one has ended ([WatchFileServer] counts them), and knows nothing of
+ * how far along any is, and the transfers belong to the watch, which asks for each track and
+ * would only ask again, so there is nothing here to cancel that would stay cancelled.
  */
 class WatchTransferService : Service() {
 
@@ -69,6 +83,16 @@ class WatchTransferService : Service() {
             .setProgress(0, 0, true)
             .setOngoing(true)
             .setSilent(true)
+            // The same request the update notification makes: the settings, opened on the Watch
+            // page (see MainActivity), where what the watch keeps is listed.
+            .setContentIntent(
+                PendingIntent.getActivity(
+                    this,
+                    NOTIFICATION_ID,
+                    Intent(this, MainActivity::class.java).setAction(WatchPageRequest.ACTION),
+                    PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT,
+                ),
+            )
             .build()
 
     private fun createChannel() {

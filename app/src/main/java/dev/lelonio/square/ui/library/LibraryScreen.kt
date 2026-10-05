@@ -17,6 +17,7 @@ import dev.antigravity.fluidengine.ui.fluid.rememberFluidEdgeOverscroll
 import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
+import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -50,6 +51,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.grid.GridItemSpan
@@ -121,11 +123,11 @@ private enum class Order(val key: String, @StringRes val label: Int) {
  * albums". The sort is a menu now; the chips answer the question a library is
  * actually asked, which is what am I looking at.
  */
-private enum class Filter(@StringRes val label: Int, @StringRes val count: Int) {
-    ALL(R.string.library_all, R.string.item_count),
-    PLAYLISTS(R.string.playlists, R.string.playlist_count),
-    ARTISTS(R.string.artists, R.string.artist_count),
-    ALBUMS(R.string.albums, R.string.album_count),
+private enum class Filter(@StringRes val label: Int, @PluralsRes val count: Int) {
+    ALL(R.string.library_all, R.plurals.item_count),
+    PLAYLISTS(R.string.playlists, R.plurals.playlist_count),
+    ARTISTS(R.string.artists, R.plurals.artist_count),
+    ALBUMS(R.string.albums, R.plurals.album_count),
 
     /**
      * What can be played with no connection.
@@ -134,7 +136,7 @@ private enum class Filter(@StringRes val label: Int, @StringRes val count: Int) 
      * the other chips ask — what am I looking at — and because a downloaded
      * playlist is still a playlist: it sorts, pins and opens like the rest.
      */
-    DOWNLOADS(R.string.downloads, R.string.download_count),
+    DOWNLOADS(R.string.downloads, R.plurals.download_count),
 }
 
 /**
@@ -687,7 +689,7 @@ private fun Header(
                 // same number labelled "playlists" under the albums chip is a
                 // line that contradicts the screen it sits on.
                 Text(
-                    stringResource(filter.count, count),
+                    pluralStringResource(filter.count, count, count),
                     style = MaterialTheme.typography.bodySmall,
                     color = InkDim,
                 )

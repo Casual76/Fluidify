@@ -34,6 +34,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -293,7 +294,8 @@ private fun HistoryTitle(onClear: () -> Unit) {
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
-            stringResource(R.string.search_history).uppercase(),
+            // The reader's locale, not Locale.ROOT's: a Turkish "i" capitalises to "İ".
+            stringResource(R.string.search_history).uppercase(LocalConfiguration.current.locales[0]),
             style = MaterialTheme.typography.labelLarge,
             color = InkDim,
             modifier = Modifier.weight(1f),
@@ -312,7 +314,7 @@ private fun HistoryTitle(onClear: () -> Unit) {
 @Composable
 private fun SectionTitle(text: String) {
     Text(
-        text.uppercase(),
+        text.uppercase(LocalConfiguration.current.locales[0]),
         style = MaterialTheme.typography.labelLarge,
         color = InkDim,
         modifier = Modifier.padding(start = 24.dp, end = 24.dp, top = 22.dp, bottom = 6.dp),

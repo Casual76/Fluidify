@@ -47,12 +47,10 @@
     <string name="previous">Önceki</string>
     <string name="next">Sonraki</string>
     <string name="repeat">Tekrarla</string>
-    <string name="reset">Sıfırla</string>
     <string name="off">Kapalı</string>
     <string name="queue">Sıra</string>
     <string name="lyrics">Şarkı sözleri</string>
     <string name="watch_video">Videoyu izle</string>
-    <string name="effects">Efektler</string>
     <string name="cover">Kapak</string>
     <string name="devices">Cihazlar</string>
     <string name="settings">Ayarlar</string>
@@ -85,19 +83,28 @@
     <string name="new_from_your_artists">Sanatçılarından yeni çıkanlar</string>
     <string name="all_time_favourites">Her zaman favorilerin</string>
     <string name="cannot_connect">Spotify\'a ulaşılamadı.</string>
-    <string name="rootlist_unavailable">çalma listeleri alınamadı</string>
 
     <!-- Library -->
     <string name="recently_opened">Son açılanlar</string>
     <string name="spotify_order">Spotify\'ın sırası</string>
     <string name="change_layout">Görünümü değiştir</string>
     <string name="sort_descending">Azalan</string>
-    <string name="layout_grid">Izgara</string>
-    <string name="layout_list">Liste</string>
-    <string name="playlist_count">%1$d çalma listesi</string>
-    <string name="item_count">%1$d öğe</string>
-    <string name="artist_count">%1$d sanatçı</string>
-    <string name="album_count">%1$d albüm</string>
+    <plurals name="playlist_count">
+        <item quantity="one">%1$d çalma listesi</item>
+        <item quantity="other">%1$d çalma listesi</item>
+    </plurals>
+    <plurals name="item_count">
+        <item quantity="one">%1$d öğe</item>
+        <item quantity="other">%1$d öğe</item>
+    </plurals>
+    <plurals name="artist_count">
+        <item quantity="one">%1$d sanatçı</item>
+        <item quantity="other">%1$d sanatçı</item>
+    </plurals>
+    <plurals name="album_count">
+        <item quantity="one">%1$d albüm</item>
+        <item quantity="other">%1$d albüm</item>
+    </plurals>
 
     <!-- Playlist, album, artist -->
     <string name="playlist_order">Çalma listesi sırası</string>
@@ -107,7 +114,10 @@
     <string name="no_tracks">Şarkı yok</string>
     <string name="no_results_for">“%1$s” için sonuç yok</string>
     <string name="more_tracks_coming">Diğer şarkılar yükleniyor</string>
-    <string name="track_count_and_length"> · %1$d şarkı · %2$s</string>
+    <plurals name="track_count_and_length">
+        <item quantity="one">" · %1$d şarkı · %2$s"</item>
+        <item quantity="other">" · %1$d şarkı · %2$s"</item>
+    </plurals>
     <string name="hours_minutes">%1$d sa %2$d dk</string>
     <string name="minutes_only">%1$d dk</string>
     <string name="artist_needs_app">Bir sanatçıyı açmak için kendi Spotify uygulaman gerekir; Ara bölümünden ayarla.</string>
@@ -134,14 +144,8 @@
     <string name="no_devices">Kullanılabilir cihaz yok</string>
     <string name="queue_empty">Sıra boş</string>
     <string name="no_lyrics">Bu şarkının sözleri yok</string>
-    <string name="speed">Hız</string>
-    <string name="pitch">Perde</string>
-    <string name="reverb">Yankı</string>
-    <string name="save_preset">Ön ayarı kaydet</string>
-    <string name="delete_preset">%1$s ön ayarını sil</string>
     <string name="shuffle_play">Karıştır</string>
     <string name="unnamed">Adsız</string>
-    <string name="preset_original">Orijinal</string>
 
     <!-- Search -->
     <string name="search_placeholder">Şarkı, sanatçı, albüm, çalma listesi</string>
@@ -245,7 +249,6 @@
     <string name="browser_return">Uygulamaya dönebilirsin.</string>
     <string name="language">Dil</string>
     <string name="system_language">Telefonun dili</string>
-    <string name="presets">ÖN AYARLAR</string>
     <string name="check_for_updates">Güncellemeleri denetle</string>
     <string name="update_checking">Denetleniyor…</string>
     <string name="update_none">Güncel</string>
@@ -257,7 +260,6 @@
     <string name="quality">Ses kalitesi</string>
     <string name="backend_spotify">Spotify</string>
     <string name="trending_now">Şu anda trend</string>
-    <string name="popular_playlists">Popüler çalma listeleri</string>
     <string name="quality_auto">Otomatik</string>
     <string name="quality_high">Yüksek</string>
     <string name="quality_medium">Orta</string>
@@ -276,7 +278,10 @@
     <string name="update_install">Yükle</string>
     <string name="crossfade">Çapraz geçiş</string>
     <string name="crossfade_off">Kapalı</string>
-    <string name="crossfade_seconds">%1$d saniye</string>
+    <plurals name="crossfade_seconds">
+        <item quantity="one">%1$d saniye</item>
+        <item quantity="other">%1$d saniye</item>
+    </plurals>
     <string name="crossfade_note">Bir parça diğerine karışarak geçer. Yalnızca parça kendiliğinden biterken, sen atladığında değil.</string>
     <string name="page_playback">Çalma</string>
     <string name="page_app">Uygulama</string>
@@ -353,9 +358,11 @@
     <string name="downloaded">İndirildi</string>
     <string name="downloading">İndiriliyor</string>
     <string name="downloads">İndirilenler</string>
-    <string name="download_count">%1$d indirildi</string>
+    <plurals name="download_count">
+        <item quantity="one">%1$d indirildi</item>
+        <item quantity="other">%1$d indirildi</item>
+    </plurals>
     <string name="download_progress_count">%2$d içinden %1$d</string>
-    <string name="download_partial">%2$d içinden %1$d mevcut</string>
     <string name="download_waiting_wifi">Wi‑Fi bekleniyor</string>
     <string name="download_waiting_network">Bağlantı bekleniyor</string>
     <string name="download_waiting_engine">Spotify bekleniyor</string>
@@ -369,13 +376,18 @@
     <string name="download_storage_used">İndirmeler %1$s kullanıyor</string>
     <string name="remove_all_downloads">Tüm indirmeleri kaldır</string>
     <string name="remove_all_downloads_confirm">İndirilen her şey silinecek. Çalma listelerine dokunulmaz.</string>
-    <string name="download_artist_confirm">%2$s sanatçısından %1$d parça indirilsin mi? Yaklaşık %3$s.</string>
-    <string name="download_failed_count">%1$d tanesi indirilemedi</string>
+    <plurals name="download_artist_confirm">
+        <item quantity="one">%2$s sanatçısından %1$d parça indirilsin mi? Yaklaşık %3$s.</item>
+        <item quantity="other">%2$s sanatçısından %1$d parça indirilsin mi? Yaklaşık %3$s.</item>
+    </plurals>
+    <plurals name="download_failed_count">
+        <item quantity="one">%1$d tanesi indirilemedi</item>
+        <item quantity="other">%1$d tanesi indirilemedi</item>
+    </plurals>
     <string name="download_retry_failed">Yeniden dene</string>
     <string name="downloaded_tracks">İndirilen şarkılar</string>
     <string name="offline_mode">Çevrimdışı mod</string>
     <string name="offline_mode_note">Yalnızca indirilenleri çal, Spotify\'dan hiçbir şey isteme.</string>
-    <string name="offline_unavailable">Çevrimdışı kullanılamıyor</string>
     <string name="offline_banner_no_network">Çevrimdışı — bağlantı yok</string>
     <string name="offline_banner_slow">Çevrimdışı — bağlantı indirmelerinden kötü</string>
     <string name="offline_banner_manual">Çevrimdışı — sen açtın</string>
@@ -401,14 +413,8 @@
     <string name="widget_label">Calaniyor</string>
     <string name="widget_nothing_playing">Hicbir sey calmiyor</string>
     <string name="widget_label_row">Calaniyor</string>
-    <string name="widget_label_square">Calaniyor, kare</string>
-    <string name="widget_label_tall">Calaniyor, uzun</string>
     <string name="widget_description_row">Kapak, calan parca ve uc dugme.</string>
-    <string name="widget_description_square">Kapak, baslik ve uc dugme.</string>
-    <string name="widget_description_tall">Buyuk bir kapak, calan parca ve uc dugme.</string>
     <string name="widget_add_row">Satiri ana ekrana ekle</string>
-    <string name="widget_add_square">Kareyi ekle</string>
-    <string name="widget_add_tall">Uzun olani ekle</string>
     <string name="widget_add_note">Arkada kapak, calan parca ve uc dugme. Uygulamanin temasini izler.</string>
     <string name="widget_nothing_playing_hint">Fluidify&#8217;i ac ve oynata bas</string>
     <string name="library_offline">İndirilenler gösteriliyor. Spotify henüz yanıt vermedi.</string>
@@ -437,12 +443,15 @@
     <string name="watch_update_installing">%1$s saate yükleniyor…</string>
     <string name="watch_update_confirm">Saatte onayla</string>
     <string name="watch_update_installed">%1$s yüklendi</string>
-    <string name="watch_update_failed">Başarısız: %1$s</string>
+    <string name="watch_update_failed">Güncelleme tamamlanamadı: tekrar deneyin</string>
     <string name="watch_sending">Saate müzik gönderiliyor</string>
     <string name="watch_sending_channel">Saate gönderim</string>
     <string name="watch_downloads">Saatte</string>
     <string name="watch_downloads_none">Henüz yok: bir çalma listesinde \"Saate indir\"i seç</string>
-    <string name="watch_downloads_summary">%1$d / %2$d şarkı · %3$s kullanıldı, %4$s boş</string>
+    <plurals name="watch_downloads_summary">
+        <item quantity="one">%1$d / %2$d şarkı · %3$s kullanıldı, %4$s boş</item>
+        <item quantity="other">%1$d / %2$d şarkı · %3$s kullanıldı, %4$s boş</item>
+    </plurals>
     <string name="watch_downloads_paused">Duraklatıldı</string>
     <string name="watch_downloads_paused_storage">Saat neredeyse dolu</string>
     <string name="watch_downloads_paused_offline">Telefon ya da Wi-Fi bekleniyor</string>
@@ -478,6 +487,28 @@
     <string name="watch_made_for_you">Senin için hazırlandı</string>
     <string name="watch_update_connection_missing">Saat Bluetooth ile bağlı değil. Yaklaştırın ve tekrar deneyin.</string>
     <string name="watch_update_offer_failed">Saatteki Fluidify yanıt vermiyor. Uygulamayı açın ve tekrar deneyin.</string>
+    <string name="watch_looking">Saatiniz aranıyor…</string>
+    <string name="watch_none_hint">Saati yakında tutun; Bluetooth açık ve Fluidify yüklü olsun.</string>
+    <string name="watch_downloads_reading">Saatteki içerik okunuyor…</string>
+    <string name="watch_downloads_unreported">Saat henüz bilgi vermedi</string>
+    <string name="watch_update_progress">%1$s · %%%2$d</string>
+    <string name="watch_install_network">Saate ulaşılamadı: Telefon ve saat aynı Wi-Fi ağında mı?</string>
+    <string name="watch_install_timeout">Saat zamanında yanıt vermedi: tekrar deneyin</string>
+    <string name="watch_update_err_network">Güncelleme sunucusuna ulaşılamadı: Telefon çevrimiçi mi?</string>
+    <string name="watch_update_err_corrupt">Güncelleme hasarlı geldi: tekrar deneyin</string>
+    <string name="watch_update_err_invalid">Bu dosya, Fluidify saat uygulaması için geçerli bir güncelleme değil</string>
+    <string name="watch_update_err_signature">Güncelleme, Fluidify ile aynı anahtarla imzalanmamış</string>
+    <string name="watch_update_err_transfer">Saate aktarım kesildi: yakında tutun ve tekrar deneyin</string>
+    <string name="watch_update_err_install">Saat güncellemeyi yükleyemedi: Saatte Fluidify\'ı açın ve tekrar deneyin</string>
+    <string name="watch_update_err_busy">Saat başka bir güncellemeyle meşgul: biraz sonra tekrar deneyin</string>
+    <string name="watch_update_err_older">Saatte zaten daha yeni bir sürüm var</string>
+    <plurals name="watch_downloads_waiting">
+        <item quantity="one">%1$d değişiklik saati bekliyor ve saat yeniden erişime girer girmez gönderilecek</item>
+        <item quantity="other">%1$d değişiklik saati bekliyor ve saat yeniden erişime girer girmez gönderilecek</item>
+    </plurals>
     <string name="audio_light_title">Müziğe tepki veren ışık</string>
     <string name="audio_light_note">Oynatıcı ve mini oynatıcıdaki ışık müziği takip eder.</string>
+    <string name="audio_light_section">Oynatıcı ışığı</string>
+    <string name="unknown">Bilinmiyor</string>
+    <string name="kbps_value">%1$d kbps</string>
 </resources>

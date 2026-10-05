@@ -82,9 +82,17 @@ object LocalPlayerFactory {
                 .build()
                 return object : androidx.media3.exoplayer.audio.ForwardingAudioSink(sink) {
                     override fun handleBuffer(buffer: java.nio.ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
-                        val audible = sink.getCurrentPositionUs(false)
-                        light.queuedMs = if (audible == androidx.media3.exoplayer.audio.AudioSink.CURRENT_POSITION_NOT_SET) 0
-                            else ((presentationTimeUs - audible) / (1000 * sink.playbackParameters.speed)).toLong().coerceIn(0, 1500)
+                        // How long this buffer will wait before it is heard, for the light to show
+                        // it at that moment. Only asked with the light on: it is a call into the
+                        // sink for every buffer of every song.
+                        if (AudioReactive.isEnabled) {
+                            val audible = sink.getCurrentPositionUs(false)
+                            light.queuedMs = if (audible == androidx.media3.exoplayer.audio.AudioSink.CURRENT_POSITION_NOT_SET) {
+                                0
+                            } else {
+                                ((presentationTimeUs - audible) / (1000 * sink.playbackParameters.speed)).toLong().coerceIn(0, 1500)
+                            }
+                        }
                         return super.handleBuffer(buffer, presentationTimeUs, encodedAccessUnitCount)
                     }
                 }

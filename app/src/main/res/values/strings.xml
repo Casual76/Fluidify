@@ -53,12 +53,10 @@
     <string name="previous">Previous</string>
     <string name="next">Next</string>
     <string name="repeat">Repeat</string>
-    <string name="reset">Reset</string>
     <string name="off">Off</string>
     <string name="queue">Queue</string>
     <string name="lyrics">Lyrics</string>
     <string name="watch_video">Watch the video</string>
-    <string name="effects">Effects</string>
     <string name="cover">Cover</string>
     <string name="devices">Devices</string>
     <string name="settings">Settings</string>
@@ -91,19 +89,28 @@
     <string name="new_from_your_artists">New from your artists</string>
     <string name="all_time_favourites">Your all-time favourites</string>
     <string name="cannot_connect">Could not reach Spotify.</string>
-    <string name="rootlist_unavailable">playlists unavailable</string>
 
     <!-- Library -->
     <string name="recently_opened">Recently opened</string>
     <string name="spotify_order">Spotify\'s order</string>
     <string name="change_layout">Change layout</string>
     <string name="sort_descending">Descending</string>
-    <string name="layout_grid">Grid</string>
-    <string name="layout_list">List</string>
-    <string name="playlist_count">%1$d playlists</string>
-    <string name="item_count">%1$d items</string>
-    <string name="artist_count">%1$d artists</string>
-    <string name="album_count">%1$d albums</string>
+    <plurals name="playlist_count">
+        <item quantity="one">%1$d playlist</item>
+        <item quantity="other">%1$d playlists</item>
+    </plurals>
+    <plurals name="item_count">
+        <item quantity="one">%1$d item</item>
+        <item quantity="other">%1$d items</item>
+    </plurals>
+    <plurals name="artist_count">
+        <item quantity="one">%1$d artist</item>
+        <item quantity="other">%1$d artists</item>
+    </plurals>
+    <plurals name="album_count">
+        <item quantity="one">%1$d album</item>
+        <item quantity="other">%1$d albums</item>
+    </plurals>
 
     <!-- Playlist, album, artist -->
     <string name="playlist_order">Playlist order</string>
@@ -113,7 +120,10 @@
     <string name="no_tracks">No songs</string>
     <string name="no_results_for">No results for “%1$s”</string>
     <string name="more_tracks_coming">More songs on the way</string>
-    <string name="track_count_and_length"> · %1$d songs · %2$s</string>
+    <plurals name="track_count_and_length">
+        <item quantity="one">" · %1$d song · %2$s"</item>
+        <item quantity="other">" · %1$d songs · %2$s"</item>
+    </plurals>
     <string name="hours_minutes">%1$dh %2$dmin</string>
     <string name="minutes_only">%1$dmin</string>
     <string name="artist_needs_app">Opening an artist needs your own Spotify application; set it up in Search.</string>
@@ -140,14 +150,8 @@
     <string name="no_devices">No devices available</string>
     <string name="queue_empty">The queue is empty</string>
     <string name="no_lyrics">No lyrics for this song</string>
-    <string name="speed">Speed</string>
-    <string name="pitch">Pitch</string>
-    <string name="reverb">Reverb</string>
-    <string name="save_preset">Save preset</string>
-    <string name="delete_preset">Delete %1$s</string>
     <string name="shuffle_play">Shuffle</string>
     <string name="unnamed">Unnamed</string>
-    <string name="preset_original">Original</string>
 
     <!-- Search -->
     <string name="search_placeholder">Songs, artists, albums, playlists</string>
@@ -251,7 +255,6 @@
     <string name="browser_return">You can go back to the app.</string>
     <string name="language">Language</string>
     <string name="system_language">Phone language</string>
-    <string name="presets">PRESETS</string>
     <string name="check_for_updates">Check for updates</string>
     <string name="update_checking">Checking…</string>
     <string name="update_none">Up to date</string>
@@ -263,7 +266,6 @@
     <string name="quality">Audio quality</string>
     <string name="backend_spotify">Spotify</string>
     <string name="trending_now">Trending now</string>
-    <string name="popular_playlists">Popular playlists</string>
     <string name="quality_auto">Automatic</string>
     <string name="quality_high">High</string>
     <string name="quality_medium">Medium</string>
@@ -282,7 +284,10 @@
     <string name="update_install">Install</string>
     <string name="crossfade">Crossfade</string>
     <string name="crossfade_off">Off</string>
-    <string name="crossfade_seconds">%1$d seconds</string>
+    <plurals name="crossfade_seconds">
+        <item quantity="one">%1$d second</item>
+        <item quantity="other">%1$d seconds</item>
+    </plurals>
     <string name="crossfade_note">One track dissolves into the next. Only where a track ends on its own, not when you skip.</string>
     <string name="page_playback">Playback</string>
     <string name="page_app">App</string>
@@ -359,9 +364,11 @@
     <string name="downloaded">Downloaded</string>
     <string name="downloading">Downloading</string>
     <string name="downloads">Downloads</string>
-    <string name="download_count">%1$d downloaded</string>
+    <plurals name="download_count">
+        <item quantity="one">%1$d downloaded</item>
+        <item quantity="other">%1$d downloaded</item>
+    </plurals>
     <string name="download_progress_count">%1$d of %2$d</string>
-    <string name="download_partial">%1$d of %2$d available</string>
     <string name="download_waiting_wifi">Waiting for Wi‑Fi</string>
     <string name="download_waiting_network">Waiting for a connection</string>
     <string name="download_waiting_engine">Waiting for Spotify</string>
@@ -375,13 +382,18 @@
     <string name="download_storage_used">%1$s used by downloads</string>
     <string name="remove_all_downloads">Remove all downloads</string>
     <string name="remove_all_downloads_confirm">Everything downloaded will be deleted. Your playlists are not touched.</string>
-    <string name="download_artist_confirm">Download %1$d tracks by %2$s? That is about %3$s.</string>
-    <string name="download_failed_count">%1$d could not be downloaded</string>
+    <plurals name="download_artist_confirm">
+        <item quantity="one">Download %1$d track by %2$s? That is about %3$s.</item>
+        <item quantity="other">Download %1$d tracks by %2$s? That is about %3$s.</item>
+    </plurals>
+    <plurals name="download_failed_count">
+        <item quantity="one">%1$d could not be downloaded</item>
+        <item quantity="other">%1$d could not be downloaded</item>
+    </plurals>
     <string name="download_retry_failed">Try again</string>
     <string name="downloaded_tracks">Downloaded songs</string>
     <string name="offline_mode">Offline mode</string>
     <string name="offline_mode_note">Play only what is downloaded, and ask Spotify for nothing.</string>
-    <string name="offline_unavailable">Not available offline</string>
     <string name="offline_banner_no_network">Offline — no connection</string>
     <string name="offline_banner_slow">Offline — the connection is worse than your downloads</string>
     <string name="offline_banner_manual">Offline — you turned this on</string>
@@ -407,14 +419,8 @@
     <string name="widget_label">Now playing</string>
     <string name="widget_nothing_playing">Nothing playing</string>
     <string name="widget_label_row">Now playing</string>
-    <string name="widget_label_square">Now playing, square</string>
-    <string name="widget_label_tall">Now playing, tall</string>
     <string name="widget_description_row">The cover, what is playing, and the three buttons.</string>
-    <string name="widget_description_square">The cover, the title, and the three buttons.</string>
-    <string name="widget_description_tall">A big cover, what is playing, and the three buttons.</string>
     <string name="widget_add_row">Add the row to the home screen</string>
-    <string name="widget_add_square">Add the square</string>
-    <string name="widget_add_tall">Add the tall one</string>
     <string name="widget_add_note">The cover behind, what is playing, and the three buttons. It follows the app&#8217;s theme.</string>
     <string name="widget_nothing_playing_hint">Open Fluidify and press play</string>
     <string name="library_offline">Showing what is downloaded. Spotify has not answered yet.</string>
@@ -443,12 +449,15 @@
     <string name="watch_update_installing">Installing %1$s on the watch…</string>
     <string name="watch_update_confirm">Confirm on the watch</string>
     <string name="watch_update_installed">Installed %1$s</string>
-    <string name="watch_update_failed">Failed: %1$s</string>
+    <string name="watch_update_failed">The update did not go through: try again</string>
     <string name="watch_sending">Sending music to the watch</string>
     <string name="watch_sending_channel">Sending to the watch</string>
     <string name="watch_downloads">On the watch</string>
     <string name="watch_downloads_none">Nothing yet: choose \"Download to watch\" on a playlist</string>
-    <string name="watch_downloads_summary">%1$d of %2$d tracks · %3$s used, %4$s free</string>
+    <plurals name="watch_downloads_summary">
+        <item quantity="one">%1$d of %2$d track · %3$s used, %4$s free</item>
+        <item quantity="other">%1$d of %2$d tracks · %3$s used, %4$s free</item>
+    </plurals>
     <string name="watch_downloads_paused">Paused</string>
     <string name="watch_downloads_paused_storage">The watch is almost full</string>
     <string name="watch_downloads_paused_offline">Waiting for the phone or Wi-Fi</string>
@@ -484,6 +493,28 @@
     <string name="watch_made_for_you">Made for you</string>
     <string name="watch_update_connection_missing">Watch not connected over Bluetooth. Bring it closer and retry.</string>
     <string name="watch_update_offer_failed">Could not contact Fluidify on the watch. Open it and retry.</string>
+    <string name="watch_looking">Looking for your watch…</string>
+    <string name="watch_none_hint">Keep the watch close, with Bluetooth on and Fluidify installed on it.</string>
+    <string name="watch_downloads_reading">Reading what the watch keeps…</string>
+    <string name="watch_downloads_unreported">The watch has not reported yet</string>
+    <string name="watch_update_progress">%1$s · %2$d%%</string>
+    <string name="watch_install_network">Could not reach the watch: are the phone and the watch on the same Wi-Fi?</string>
+    <string name="watch_install_timeout">The watch did not answer in time: try again</string>
+    <string name="watch_update_err_network">Could not reach the update server: is the phone online?</string>
+    <string name="watch_update_err_corrupt">The update arrived damaged: try again</string>
+    <string name="watch_update_err_invalid">That file is not a valid update for the Fluidify watch app</string>
+    <string name="watch_update_err_signature">The update is not signed with the same key as Fluidify</string>
+    <string name="watch_update_err_transfer">The transfer to the watch was interrupted: keep it close and try again</string>
+    <string name="watch_update_err_install">The watch could not install the update: open Fluidify on the watch and try again</string>
+    <string name="watch_update_err_busy">The watch is busy with another update: try again in a moment</string>
+    <string name="watch_update_err_older">The watch already has a newer version</string>
+    <plurals name="watch_downloads_waiting">
+        <item quantity="one">%1$d change is waiting for the watch and goes as soon as it is back in reach</item>
+        <item quantity="other">%1$d changes are waiting for the watch and go as soon as it is back in reach</item>
+    </plurals>
     <string name="audio_light_title">Music-reactive light</string>
     <string name="audio_light_note">Light in the player and mini player follows the music.</string>
+    <string name="audio_light_section">Player light</string>
+    <string name="unknown">Unknown</string>
+    <string name="kbps_value">%1$d kbps</string>
 </resources>

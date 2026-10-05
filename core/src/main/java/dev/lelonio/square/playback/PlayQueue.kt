@@ -10,8 +10,10 @@ import dev.lelonio.square.ui.EXTRA_PLAY_NEXT
 /**
  * The queue the engine plays through.
  *
- * librespot loads one track at a time and has no notion of a playlist, so the
- * queue lives here and [LibrespotPlayer] advances it on `end_of_track`.
+ * The engine is handed the whole list and advances it itself, but this copy is
+ * the one the app owns: it carries tracks the account never sent (added to the
+ * queue here, played offline), its own shuffle order, and what the screen shows.
+ * [LibrespotPlayer] keeps the two in step.
  *
  * Shuffle is implemented by reordering the list itself rather than keeping a
  * separate play order. `SimpleBasePlayer`'s timeline does not implement shuffle

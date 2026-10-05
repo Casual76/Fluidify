@@ -175,13 +175,6 @@ android {
         }
     }
 
-    lint {
-        // Runs on demand (`./gradlew lint`) rather than inside every release
-        // build. It is 50 seconds of a build whose output is a local test
-        // install, and it has never been the thing that caught a problem here.
-        checkReleaseBuilds = false
-    }
-
     compileOptions {
         // Required by the vendored :innertube module, which reads java.time.
         isCoreLibraryDesugaringEnabled = true
@@ -250,8 +243,6 @@ dependencies {
     implementation(platform(libs.compose.bom))
     implementation(libs.compose.ui)
     implementation(libs.compose.material3)
-    implementation(libs.compose.icons.extended)
-    implementation(libs.compose.ui.tooling.preview)
     debugImplementation(libs.compose.ui.tooling)
 
     implementation(libs.media3.common)
@@ -272,8 +263,6 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.androidx.palette)
     implementation(libs.androidx.navigation.compose)
-    implementation(libs.backdrop)
-    implementation(libs.kyant.shapes)
     implementation(libs.phosphor)
 
     // The engine: librespot, its bridge and the player, shared with the watch.

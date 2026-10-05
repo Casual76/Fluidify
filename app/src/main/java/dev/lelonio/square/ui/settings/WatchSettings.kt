@@ -1,7 +1,20 @@
 package dev.lelonio.square.ui.settings
 
+import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.Text
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.unit.dp
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
+import dev.lelonio.square.ui.theme.InkDim
+import dev.lelonio.square.wear.watchUpdateFailureRes
 import dev.pampa.fluidify.wear.protocol.DownloadRequest
 import dev.pampa.fluidify.wear.protocol.logic.TransferPreference
 import kotlinx.coroutines.launch
@@ -14,6 +27,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.lelonio.square.BuildConfig
@@ -33,6 +47,14 @@ import kotlinx.coroutines.flow.asStateFlow
  * the route is reached), and a flag set before then is still there when it is.
  */
 internal object WatchPageRequest {
+    /**
+     * The intent action that asks the main activity to open the settings on the Watch page.
+     *
+     * Named once, here, for the two notifications that send it (the update's and the transfer's)
+     * and the activity that reads it, so that the spelling cannot drift between them.
+     */
+    const val ACTION = "dev.pampa.fluidify.WATCH_UPDATES"
+
     private val _pending = MutableStateFlow(false)
     val pending: StateFlow<Boolean> = _pending.asStateFlow()
 
@@ -58,7 +80,16 @@ internal fun WatchSection() {
     val context = LocalContext.current
     val app = remember(context) { context.applicationContext as SquareApplication }
     val updates = app.wearBridge.updates
-    LaunchedEffect(app) { app.wearBridge.refreshWatchLink() }
+    // The look for the watch takes a few seconds (it waits for a hello, up to six). Until it has
+    // finished, "no watch" is a claim the page cannot yet make: it said so for the whole wait and
+    // then changed its mind when the hello arrived. [attempt] is the Retry row.
+    var looking by remember { mutableStateOf(true) }
+    var attempt by remember { mutableIntStateOf(0) }
+    LaunchedEffect(app, attempt) {
+        looking = true
+        app.wearBridge.refreshWatchLink()
+        looking = false
+    }
     val watch by updates.watch.collectAsStateWithLifecycle()
     val state by updates.state.collectAsStateWithLifecycle()
     var auto by remember { mutableStateOf(updates.autoUpdate) }
@@ -68,15 +99,26 @@ internal fun WatchSection() {
 
     Section(stringResource(R.string.page_watch)) {
         val current = watch
-        if (current == null) {
-            InfoRow(stringResource(R.string.watch_status), stringResource(R.string.watch_none))
-        } else {
+        if (current != null) {
             InfoRow(
                 stringResource(R.string.watch_status),
                 current.name.ifBlank { stringResource(R.string.page_watch) },
             )
             RowDivider()
             InfoRow(stringResource(R.string.watch_version), current.hello.versionName)
+        } else if (looking) {
+            ProgressRow(stringResource(R.string.watch_looking))
+        } else {
+            // Nothing answered. Said, with the way to ask again, rather than left as a status
+            // that looks final: the watch may simply have been out of Bluetooth range.
+            InfoRow(stringResource(R.string.watch_status), stringResource(R.string.watch_none))
+            Text(
+                stringResource(R.string.watch_none_hint),
+                style = MaterialTheme.typography.bodySmall,
+                color = InkDim,
+                modifier = Modifier.padding(horizontal = 18.dp).padding(bottom = 12.dp),
+            )
+            ActionRow(stringResource(R.string.retry), destructive = false) { attempt++ }
         }
 
         RowDivider()
@@ -98,7 +140,7 @@ internal fun WatchSection() {
             },
         )
 
-        WatchDownloadsRows(app)
+        WatchDownloadsRows(app, watchKnown = current != null)
 
         // Only while no watch has the app yet (or for reinstalling one in development).
         if (current == null || BuildConfig.BUILD_TYPE != "release") WatchInstallRows(app)
@@ -119,20 +161,40 @@ private fun describe(state: State): String = when (state) {
     State.Checking -> stringResource(R.string.watch_update_checking)
     is State.UpToDate -> stringResource(R.string.watch_update_current, state.version)
     is State.Available -> stringResource(R.string.watch_update_available, state.version)
-    is State.Downloading -> stringResource(R.string.watch_update_downloading, state.version) + progressLabel(state.progress)
+    is State.Downloading -> withProgress(stringResource(R.string.watch_update_downloading, state.version), state.progress)
     is State.Offered -> stringResource(R.string.watch_update_offered, state.version)
-    is State.Sending -> stringResource(R.string.watch_update_sending, state.version) + progressLabel(state.progress)
+    is State.Sending -> withProgress(stringResource(R.string.watch_update_sending, state.version), state.progress)
     is State.Installing -> stringResource(R.string.watch_update_installing, state.version)
     is State.AwaitingConfirmation -> stringResource(R.string.watch_update_confirm)
     is State.Installed -> stringResource(R.string.watch_update_installed, state.version)
-    is State.Failed -> when (state.reason) {
-        "watch-not-nearby" -> stringResource(R.string.watch_update_connection_missing)
-        "offer-send-failed" -> stringResource(R.string.watch_update_offer_failed)
-        else -> stringResource(R.string.watch_update_failed, state.reason)
-    }
+    // Never the token itself: watchUpdateFailureRes has a generic line for the ones it does not
+    // know, so that an exception message or an internal word is not what the person reads.
+    is State.Failed -> stringResource(watchUpdateFailureRes(state.reason))
 }
 
-private fun progressLabel(progress: Float?): String = progress?.let { " · ${(it.coerceIn(0f, 1f) * 100).toInt()}%" }.orEmpty()
+/** [text] with how far along it is, when that is known. */
+@Composable
+private fun withProgress(text: String, progress: Float?): String =
+    if (progress == null) {
+        text
+    } else {
+        stringResource(R.string.watch_update_progress, text, (progress.coerceIn(0f, 1f) * 100).toInt())
+    }
+
+/** A line of status with the spinner in front, for something that is being looked for. */
+@Composable
+private fun ProgressRow(label: String) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(12.dp),
+    ) {
+        FluidSpinner(size = 18.dp, color = InkDim)
+        Text(label, style = MaterialTheme.typography.bodyLarge, color = InkDim)
+    }
+}
 
 /**
  * What the watch keeps for offline listening, from the phone: how much, how
@@ -140,12 +202,36 @@ private fun progressLabel(progress: Float?): String = progress?.let { " · ${(it
  * The list itself is edited from each playlist's page ("Scarica sull'orologio").
  */
 @Composable
-private fun WatchDownloadsRows(app: SquareApplication) {
+private fun WatchDownloadsRows(app: SquareApplication, watchKnown: Boolean) {
     val remote = app.wearBridge.watchDownloads
     val status by remote.status.collectAsStateWithLifecycle()
+    val waiting by remote.waiting.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    LaunchedEffect(Unit) { remote.refresh() }
-    val current = status ?: return
+    // Whether the read of what the watch keeps is still going, and the Retry that starts it again.
+    var reading by remember { mutableStateOf(true) }
+    var attempt by remember { mutableIntStateOf(0) }
+    LaunchedEffect(attempt) {
+        reading = true
+        remote.refresh()
+        reading = false
+    }
+    val current = status
+    if (current == null) {
+        // Nothing to draw for a phone with no watch at all. With one, a page that simply stops
+        // after the update rows reads as a page with nothing to say, when the truth is that the
+        // watch has not reported yet (or the read is still on its way).
+        if (watchKnown) {
+            RowDivider()
+            if (reading) {
+                ProgressRow(stringResource(R.string.watch_downloads_reading))
+            } else {
+                InfoRow(stringResource(R.string.watch_downloads), stringResource(R.string.watch_downloads_unreported))
+                ActionRow(stringResource(R.string.retry), destructive = false) { attempt++ }
+            }
+        }
+        WaitingNote(waiting)
+        return
+    }
 
     RowDivider()
     InfoRow(
@@ -153,10 +239,12 @@ private fun WatchDownloadsRows(app: SquareApplication) {
         if (current.owners.isEmpty()) {
             stringResource(R.string.watch_downloads_none)
         } else {
-            stringResource(
-                R.string.watch_downloads_summary,
+            val total = current.owners.sumOf { it.tracks }
+            pluralStringResource(
+                R.plurals.watch_downloads_summary,
+                total,
                 current.owners.sumOf { it.done },
-                current.owners.sumOf { it.tracks },
+                total,
                 android.text.format.Formatter.formatShortFileSize(LocalContext.current, current.bytesUsed),
                 android.text.format.Formatter.formatShortFileSize(LocalContext.current, current.bytesFree),
             )
@@ -164,7 +252,9 @@ private fun WatchDownloadsRows(app: SquareApplication) {
     )
     current.owners.forEach { owner ->
         RowDivider()
-        InfoRow(owner.title.ifBlank { owner.uri }, "${owner.done}/${owner.tracks}")
+        // A blank title is a playlist the watch has not been told the name of: not something to
+        // read out as a spotify: address.
+        InfoRow(owner.title.ifBlank { stringResource(R.string.unknown) }, "${owner.done}/${owner.tracks}")
     }
     current.paused?.let { reason ->
         RowDivider()
@@ -175,9 +265,9 @@ private fun WatchDownloadsRows(app: SquareApplication) {
     }
 
     RowDivider()
-    InfoRow(stringResource(R.string.watch_download_quality), "${current.qualityKbps} kbps")
+    InfoRow(stringResource(R.string.watch_download_quality), stringResource(R.string.kbps_value, current.qualityKbps))
     listOf(96, 160, 320).forEach { kbps ->
-        ChoiceRow("$kbps kbps", selected = current.qualityKbps == kbps) {
+        ChoiceRow(stringResource(R.string.kbps_value, kbps), selected = current.qualityKbps == kbps) {
             scope.launch { remote.request(DownloadRequest(qualityKbps = kbps)) }
         }
     }
@@ -193,6 +283,25 @@ private fun WatchDownloadsRows(app: SquareApplication) {
                 )
             }
         },
+    )
+    WaitingNote(waiting)
+}
+
+/**
+ * What the watch has not heard yet.
+ *
+ * A change made while the watch is out of reach is kept and goes with its next hello (see
+ * WatchDownloadsRemote), and nothing on screen said so: the list showed the change at once, as if
+ * it had been made, and the person had no way to know it was only waiting.
+ */
+@Composable
+private fun WaitingNote(count: Int) {
+    if (count <= 0) return
+    Text(
+        pluralStringResource(R.plurals.watch_downloads_waiting, count, count),
+        style = MaterialTheme.typography.bodySmall,
+        color = InkDim,
+        modifier = Modifier.padding(horizontal = 18.dp, vertical = 12.dp),
     )
 }
 

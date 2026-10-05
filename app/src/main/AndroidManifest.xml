@@ -138,8 +138,11 @@
           NowPlayingWidget. Lo stato glielo scrive il servizio, perche' il launcher
           la disegna in un processo suo e magari ore dopo che il nostro e' morto.
 
-          `exported` vero perche' il launcher gli manda APPWIDGET_UPDATE, e le tre
-          azioni dei tasti arrivano dai PendingIntent della scheda stessa.
+          `exported` vero perche' il launcher gli manda APPWIDGET_UPDATE, e solo
+          quello: i tasti (play/pausa, avanti, indietro) e il ridisegno passano da
+          NowPlayingWidgetActions, che non e' esportato, con PendingIntent espliciti
+          che crea solo questa app. Quando erano azioni di questo ricevitore
+          chiunque sul telefono poteva comandare la musica con un broadcast.
         -->
         <receiver
             android:name=".widget.media.NowPlayingWidget"
@@ -147,15 +150,15 @@
             android:label="@string/widget_label_row">
             <intent-filter>
                 <action android:name="android.appwidget.action.APPWIDGET_UPDATE" />
-                <action android:name="dev.lelonio.square.widget.media.action.TOGGLE_PLAY_PAUSE" />
-                <action android:name="dev.lelonio.square.widget.media.action.NEXT" />
-                <action android:name="dev.lelonio.square.widget.media.action.PREVIOUS" />
-                <action android:name="dev.lelonio.square.widget.media.action.REFRESH" />
             </intent-filter>
             <meta-data
                 android:name="android.appwidget.provider"
                 android:resource="@xml/now_playing_widget" />
         </receiver>
+
+        <receiver
+            android:name=".widget.media.NowPlayingWidgetActions"
+            android:exported="false" />
 
         <service
             android:name=".playback.PlaybackService"

@@ -1,5 +1,3 @@
-@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-
 package dev.lelonio.square.ui
 
 import dev.lelonio.square.playback.toQueueItem
@@ -15,7 +13,6 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
@@ -25,6 +22,9 @@ import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.playback.PlaybackService
 import kotlinx.coroutines.launch
 
+private const val ACTION_LISTEN = "dev.lelonio.square.LISTEN_ONLY"
+private const val ACTION_TOGGLE = "dev.lelonio.square.PIP_TOGGLE"
+
 /**
  * Owns the connection to the playback service; everything visual lives in
  * [SquareApp].
@@ -32,11 +32,12 @@ import kotlinx.coroutines.launch
  * The controller is activity-scoped rather than kept in a ViewModel because it
  * has to be released when the UI goes away — the session keeps playing without
  * it, and holding one from a backgrounded app leaks a binder connection.
+ *
+ * Nothing here needs Media3's unstable API (a controller, a session token and a
+ * queue of items are all stable), so there is no opt-in on the file. There used
+ * to be one, and an `@UnstableApi` that had slipped from this comment onto the
+ * constant below it, which made that constant unstable for no reason.
  */
-@UnstableApi
-private const val ACTION_LISTEN = "dev.lelonio.square.LISTEN_ONLY"
-private const val ACTION_TOGGLE = "dev.lelonio.square.PIP_TOGGLE"
-
 class MainActivity : ComponentActivity() {
 
     private var controller by mutableStateOf<MediaController?>(null)
@@ -82,7 +83,7 @@ class MainActivity : ComponentActivity() {
 
     private fun takeShortcut(intent: android.content.Intent) {
         val route = when (intent.action) {
-            "dev.pampa.fluidify.WATCH_UPDATES" -> {
+            dev.lelonio.square.ui.settings.WatchPageRequest.ACTION -> {
                 // The watch-update notification: the settings, opened on the Watch page where the
                 // update's state is, not left at the list of pages.
                 dev.lelonio.square.ui.settings.WatchPageRequest.request()

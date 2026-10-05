@@ -7,8 +7,6 @@
  * player, so the snapshot is handed to it by the playback service and there is no listener, no
  * permission and no package to resolve.
  */
-@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-
 package dev.lelonio.square.widget.media
 
 import android.app.PendingIntent
@@ -740,7 +738,8 @@ object MediaWidgetUpdater {
     requestCode: Int,
     widgetId: Int = -1,
   ): PendingIntent {
-    val intent = Intent(context, NowPlayingWidget::class.java).setAction(action)
+    // The receiver for the card's own actions, which is not exported: see NowPlayingWidgetActions.
+    val intent = Intent(context, NowPlayingWidgetActions::class.java).setAction(action)
       .setData(android.net.Uri.parse("fluidify://widget/$widgetId/$action"))
       .putExtra(AppWidgetManager.EXTRA_APPWIDGET_ID, widgetId)
     return PendingIntent.getBroadcast(
@@ -768,7 +767,6 @@ object MediaWidgetUpdater {
   private fun configurationPendingIntent(context: Context, widgetId: Int): PendingIntent =
     settingsPendingIntent(context, widgetId)
 
-  @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
   private fun openMediaAppPendingIntent(context: Context, snapshot: MediaPlaybackSnapshot, widgetId: Int): PendingIntent {
     if (widgetId <= 0) {
       val launch = mediaAppLaunchIntent(context, snapshot)

@@ -2489,7 +2489,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         for (record in records) {
             val fetched = runCatching { container.activeBackend.tracksOf(record) }
-                .onFailure { android.util.Log.i(TAG, "cannot read ${'$'}record: ${'$'}{describe(it)}") }
+                .onFailure { android.util.Log.i(TAG, "an album of the artist could not be read: ${it::class.java.simpleName}") }
                 .getOrNull()
                 ?: continue
             fetched.forEach { tracks[it.uri] = it }
@@ -2616,7 +2616,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         for (uri in owners) {
             val known = container.downloads.owners.value[uri].orEmpty()
             val fresh = runCatching { container.activeBackend.tracksOf(uri) }
-                .onFailure { android.util.Log.i(TAG, "cannot sync ${'$'}uri: ${'$'}{describe(it)}") }
+                .onFailure { android.util.Log.i(TAG, "a downloaded playlist could not be synced: ${it::class.java.simpleName}") }
                 .getOrNull()
                 ?: continue
             // An empty answer is far more likely to be a request that half
@@ -2625,7 +2625,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (fresh.isEmpty()) continue
             if (fresh.map { it.uri } == known) continue
 
-            android.util.Log.i(TAG, "playlist ${'$'}uri changed: ${'$'}{known.size} -> ${'$'}{fresh.size}")
+            android.util.Log.i(TAG, "a downloaded playlist changed: ${known.size} -> ${fresh.size} tracks")
             container.downloads.setOwner(uri, fresh, container.downloads.labelOf(uri))
             changed = true
         }
@@ -2659,7 +2659,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             ?.takeIf { it.isNotEmpty() }
             ?: return
         val tracks = runCatching { container.activeBackend.tracksOf(collection) }
-            .onFailure { android.util.Log.i(TAG, "cannot sync liked songs: ${'$'}{describe(it)}") }
+            .onFailure { android.util.Log.i(TAG, "liked songs could not be synced: ${describe(it)}") }
             .getOrNull()
             ?: return
         if (tracks.isEmpty()) return

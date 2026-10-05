@@ -89,7 +89,11 @@ fun FullScreenVideo(
     // Out of the way on their own, the way every video player does it. Only
     // while something is playing: paused, the controls are what the listener
     // is looking for.
-    androidx.compose.runtime.LaunchedEffect(showControls, state.isPlaying, positionMs.value / 4000) {
+    //
+    // The position is only a key in four-second steps, and read through a derived state so that
+    // this screen recomposes at those steps and not on every tick of the clock.
+    val positionStep by remember { androidx.compose.runtime.derivedStateOf { positionMs.value / 4000 } }
+    androidx.compose.runtime.LaunchedEffect(showControls, state.isPlaying, positionStep) {
         if (showControls && state.isPlaying) {
             kotlinx.coroutines.delay(CONTROLS_LINGER_MS)
             showControls = false

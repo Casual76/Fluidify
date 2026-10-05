@@ -90,6 +90,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
@@ -3082,8 +3083,9 @@ fun SquareApp(
                 artistDownload?.let { asked ->
                     dev.lelonio.square.ui.components.ConfirmDialog(
                         title = stringResource(R.string.download),
-                        message = stringResource(
-                            R.string.download_artist_confirm,
+                        message = pluralStringResource(
+                            R.plurals.download_artist_confirm,
+                            asked.tracks.size,
                             asked.tracks.size,
                             asked.name,
                             android.text.format.Formatter.formatShortFileSize(

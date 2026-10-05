@@ -24,7 +24,6 @@ use librespot_core::spclient::RequestOptions;
 use librespot_protocol::connect::{Cluster, ClusterUpdate};
 use librespot_protocol::player::PlayerState;
 use std::sync::Mutex;
-use std::sync::atomic::{AtomicBool, Ordering};
 
 /// The account's playback as Spotify last described it.
 ///
@@ -32,15 +31,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 /// diff, so keeping anything from the previous one would be inventing state.
 static CLUSTER: Mutex<Option<Cluster>> = Mutex::new(None);
 
-/// Whether a watcher is already running, so a reconnection does not stack them.
-static WATCHING: AtomicBool = AtomicBool::new(false);
-
 /// Forgets the last cluster. Called when the engine goes away.
 pub fn clear() {
     if let Ok(mut cluster) = CLUSTER.lock() {
         *cluster = None;
     }
-    WATCHING.store(false, Ordering::SeqCst);
 }
 
 /// Notes that the session being watched is gone, keeping what it last said.
@@ -50,7 +45,6 @@ pub fn clear() {
 /// nothing until the next session's first update arrives — which it does
 /// within a second of connecting.
 pub fn unwatch() {
-    WATCHING.store(false, Ordering::SeqCst);
 }
 
 /// Takes a cluster the device got back from a state update of its own.
@@ -86,7 +80,6 @@ pub fn watch(session: &Session, notify: impl Fn() + Send + 'static) {
         }
     };
 
-    WATCHING.store(true, Ordering::SeqCst);
     // Spawned on whatever runtime is calling, which is the engine's own: this
     // runs inside the block_on that builds a session.
     tokio::spawn(async move {
@@ -123,7 +116,6 @@ pub fn watch(session: &Session, notify: impl Fn() + Send + 'static) {
             notify();
         }
         log::info!("cluster watch ended");
-        WATCHING.store(false, Ordering::SeqCst);
     });
 }
 

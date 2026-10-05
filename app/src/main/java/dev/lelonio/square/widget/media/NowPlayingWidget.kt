@@ -2,6 +2,7 @@ package dev.lelonio.square.widget.media
 
 import android.appwidget.AppWidgetManager
 import android.appwidget.AppWidgetProvider
+import android.content.BroadcastReceiver
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
@@ -61,13 +62,40 @@ class NowPlayingWidget : AppWidgetProvider() {
         super.onDeleted(context, appWidgetIds)
     }
 
+    companion object {
+        /**
+         * The names of the card's own actions: the buttons, and the "redraw" of a tap on its body.
+         *
+         * Handled by [NowPlayingWidgetActions], not by this provider. A widget provider has to be
+         * exported (the launcher sends it `APPWIDGET_UPDATE`), and whatever it answers to, any app
+         * on the phone can send: these actions were once handled here, and so anyone could have
+         * paused, skipped or restarted the music with a broadcast. They travel to a receiver that
+         * is not exported, in PendingIntents only this app makes.
+         */
+        const val ActionTogglePlayPause = "dev.lelonio.square.widget.media.action.TOGGLE_PLAY_PAUSE"
+        const val ActionNext = "dev.lelonio.square.widget.media.action.NEXT"
+        const val ActionPrevious = "dev.lelonio.square.widget.media.action.PREVIOUS"
+        const val ActionRefresh = "dev.lelonio.square.widget.media.action.REFRESH"
+    }
+}
+
+/**
+ * The card's buttons, and the only way in for them.
+ *
+ * Not exported and with no intent filter: the PendingIntents the card carries name this class
+ * explicitly, and a PendingIntent runs with the identity of the app that made it, so the launcher
+ * can fire them and nothing else on the phone can reach this receiver at all. That is the whole of
+ * the difference from handling them in [NowPlayingWidget], which must stay exported to be told
+ * when to update, and which therefore answered a play, a pause and a skip to anybody who asked.
+ */
+class NowPlayingWidgetActions : BroadcastReceiver() {
+
     override fun onReceive(context: Context, intent: Intent) {
-        super.onReceive(context, intent)
         val action = when (intent.action) {
-            ActionTogglePlayPause -> MediaControlAction.TogglePlayPause
-            ActionNext -> MediaControlAction.Next
-            ActionPrevious -> MediaControlAction.Previous
-            ActionRefresh -> {
+            NowPlayingWidget.ActionTogglePlayPause -> MediaControlAction.TogglePlayPause
+            NowPlayingWidget.ActionNext -> MediaControlAction.Next
+            NowPlayingWidget.ActionPrevious -> MediaControlAction.Previous
+            NowPlayingWidget.ActionRefresh -> {
                 NowPlayingWidgetBridge.redraw(context)
                 return
             }
@@ -77,13 +105,6 @@ class NowPlayingWidget : AppWidgetProvider() {
         // before its work is done is a receiver whose process the system is free to kill mid-command.
         val pending = goAsync()
         NowPlayingWidgetBridge.command(context, action) { pending.finish() }
-    }
-
-    companion object {
-        const val ActionTogglePlayPause = "dev.lelonio.square.widget.media.action.TOGGLE_PLAY_PAUSE"
-        const val ActionNext = "dev.lelonio.square.widget.media.action.NEXT"
-        const val ActionPrevious = "dev.lelonio.square.widget.media.action.PREVIOUS"
-        const val ActionRefresh = "dev.lelonio.square.widget.media.action.REFRESH"
     }
 }
 

@@ -207,12 +207,6 @@ object Catalog {
     }
 
     /**
-     * The Canvas clip for a track, or null when there is none.
-     *
-     * Most of the catalogue has no canvas, so a null here is an ordinary answer
-     * and the player falls back to the cover rather than showing an error.
-     */
-    /**
      * An artist as the access point describes them.
      *
      * Deliberately not the GraphQL gateway. That one would add the monthly
@@ -359,21 +353,5 @@ object Catalog {
         runCatching { json.decodeFromString<String?>(NativeBridge.playlistName(uri)) }
             .onFailure { android.util.Log.w("SquareCatalog", "no name for $uri: $it") }
             .getOrNull()
-    }
-
-    /**
-     * Tracks of the account's first playlist.
-     *
-     * A placeholder for a real browse screen, and currently the only listing
-     * that works: `spotify:user:{id}:collection` — Liked Songs — is not a valid
-     * context for the access point's context endpoint and answers 503, so the
-     * collection needs a different call than the one playlists use.
-     *
-     * @param limit how many tracks to resolve. Each is its own access-point
-     *   round trip, so a whole playlist is not something to fetch eagerly.
-     */
-    suspend fun firstPlaylistTracks(limit: Int = 50): List<CatalogTrack> {
-        val first = playlists().firstOrNull() ?: error("nessuna playlist trovata nell'account")
-        return tracks(contextTrackUris(first.uri).take(limit))
     }
 }

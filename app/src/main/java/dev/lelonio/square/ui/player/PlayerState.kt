@@ -1,5 +1,3 @@
-@file:androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
-
 package dev.lelonio.square.ui.player
 
 import androidx.compose.runtime.Composable
@@ -141,8 +139,15 @@ fun rememberRemotePositionMs(remote: dev.lelonio.square.data.RemotePlayback?): S
 /** How long an empty freshly connected player is given before it is believed. */
 private const val EMPTY_PLAYER_GRACE_MS = 4_000L
 
-/** Mirrors the slow-changing part of a [Player] into Compose state. */
+/**
+ * Mirrors the slow-changing part of a [Player] into Compose state.
+ *
+ * The one place in this file that touches Media3's unstable API: the duration the metadata
+ * carries (`MediaMetadata.durationMs`), which is the only way to know a track's length before the
+ * player has loaded it. The opt-in is here and not on the file, where it covered everything else.
+ */
 @Composable
+@androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
 fun rememberPlaybackState(
     player: Player?,
     /**

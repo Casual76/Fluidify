@@ -44,6 +44,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
@@ -939,7 +940,7 @@ private fun DetailHeader(
 
             Text(
                 text = stringResource(kind.label) + if (trackCount > 0) {
-                    stringResource(R.string.track_count_and_length, trackCount, formatTotal(totalMs))
+                    pluralStringResource(R.plurals.track_count_and_length, trackCount, trackCount, formatTotal(totalMs))
                 } else {
                     ""
                 },

@@ -47,12 +47,10 @@
     <string name="previous">पिछला</string>
     <string name="next">अगला</string>
     <string name="repeat">दोहराएँ</string>
-    <string name="reset">रीसेट</string>
     <string name="off">बंद</string>
     <string name="queue">कतार</string>
     <string name="lyrics">बोल</string>
     <string name="watch_video">वीडियो देखें</string>
-    <string name="effects">इफ़ेक्ट</string>
     <string name="cover">कवर</string>
     <string name="devices">डिवाइस</string>
     <string name="settings">सेटिंग</string>
@@ -85,19 +83,28 @@
     <string name="new_from_your_artists">आपके कलाकारों का नया</string>
     <string name="all_time_favourites">हमेशा के पसंदीदा</string>
     <string name="cannot_connect">Spotify तक नहीं पहुँच सके।</string>
-    <string name="rootlist_unavailable">प्लेलिस्ट उपलब्ध नहीं</string>
 
     <!-- Library -->
     <string name="recently_opened">हाल में खोले गए</string>
     <string name="spotify_order">Spotify का क्रम</string>
     <string name="change_layout">लेआउट बदलें</string>
     <string name="sort_descending">अवरोही</string>
-    <string name="layout_grid">ग्रिड</string>
-    <string name="layout_list">सूची</string>
-    <string name="playlist_count">%1$d प्लेलिस्ट</string>
-    <string name="item_count">%1$d आइटम</string>
-    <string name="artist_count">%1$d कलाकार</string>
-    <string name="album_count">%1$d एल्बम</string>
+    <plurals name="playlist_count">
+        <item quantity="one">%1$d प्लेलिस्ट</item>
+        <item quantity="other">%1$d प्लेलिस्ट</item>
+    </plurals>
+    <plurals name="item_count">
+        <item quantity="one">%1$d आइटम</item>
+        <item quantity="other">%1$d आइटम</item>
+    </plurals>
+    <plurals name="artist_count">
+        <item quantity="one">%1$d कलाकार</item>
+        <item quantity="other">%1$d कलाकार</item>
+    </plurals>
+    <plurals name="album_count">
+        <item quantity="one">%1$d एल्बम</item>
+        <item quantity="other">%1$d एल्बम</item>
+    </plurals>
 
     <!-- Playlist, album, artist -->
     <string name="playlist_order">प्लेलिस्ट का क्रम</string>
@@ -107,7 +114,10 @@
     <string name="no_tracks">कोई गाना नहीं</string>
     <string name="no_results_for">“%1$s” के लिए कोई परिणाम नहीं</string>
     <string name="more_tracks_coming">और गाने आ रहे हैं</string>
-    <string name="track_count_and_length"> · %1$d गाने · %2$s</string>
+    <plurals name="track_count_and_length">
+        <item quantity="one">" · %1$d गाना · %2$s"</item>
+        <item quantity="other">" · %1$d गाने · %2$s"</item>
+    </plurals>
     <string name="hours_minutes">%1$d घं %2$d मि</string>
     <string name="minutes_only">%1$d मि</string>
     <string name="artist_needs_app">किसी कलाकार को खोलने के लिए आपका अपना Spotify ऐप्लिकेशन चाहिए; इसे खोज में सेट करें।</string>
@@ -134,14 +144,8 @@
     <string name="no_devices">कोई डिवाइस उपलब्ध नहीं</string>
     <string name="queue_empty">कतार खाली है</string>
     <string name="no_lyrics">इस गाने के बोल नहीं हैं</string>
-    <string name="speed">गति</string>
-    <string name="pitch">पिच</string>
-    <string name="reverb">रीवर्ब</string>
-    <string name="save_preset">प्रीसेट सहेजें</string>
-    <string name="delete_preset">%1$s मिटाएँ</string>
     <string name="shuffle_play">शफ़ल</string>
     <string name="unnamed">बिना नाम</string>
-    <string name="preset_original">मूल</string>
 
     <!-- Search -->
     <string name="search_placeholder">गाने, कलाकार, एल्बम, प्लेलिस्ट</string>
@@ -245,7 +249,6 @@
     <string name="browser_return">आप ऐप पर लौट सकते हैं।</string>
     <string name="language">भाषा</string>
     <string name="system_language">फ़ोन की भाषा</string>
-    <string name="presets">प्रीसेट</string>
     <string name="check_for_updates">अपडेट देखें</string>
     <string name="update_checking">देखा जा रहा है…</string>
     <string name="update_none">अप टू डेट</string>
@@ -257,7 +260,6 @@
     <string name="quality">ऑडियो गुणवत्ता</string>
     <string name="backend_spotify">Spotify</string>
     <string name="trending_now">अभी चर्चा में</string>
-    <string name="popular_playlists">लोकप्रिय प्लेलिस्ट</string>
     <string name="quality_auto">स्वचालित</string>
     <string name="quality_high">उच्च</string>
     <string name="quality_medium">मध्यम</string>
@@ -276,7 +278,10 @@
     <string name="update_install">इंस्टॉल करें</string>
     <string name="crossfade">क्रॉसफ़ेड</string>
     <string name="crossfade_off">बंद</string>
-    <string name="crossfade_seconds">%1$d सेकंड</string>
+    <plurals name="crossfade_seconds">
+        <item quantity="one">%1$d सेकंड</item>
+        <item quantity="other">%1$d सेकंड</item>
+    </plurals>
     <string name="crossfade_note">एक गाना दूसरे में घुलता है। सिर्फ़ तब जब गाना अपने आप खत्म हो, स्किप करने पर नहीं।</string>
     <string name="page_playback">प्लेबैक</string>
     <string name="page_app">ऐप</string>
@@ -353,9 +358,11 @@
     <string name="downloaded">डाउनलोड किया</string>
     <string name="downloading">डाउनलोड हो रहा है</string>
     <string name="downloads">डाउनलोड</string>
-    <string name="download_count">%1$d डाउनलोड</string>
+    <plurals name="download_count">
+        <item quantity="one">%1$d डाउनलोड</item>
+        <item quantity="other">%1$d डाउनलोड</item>
+    </plurals>
     <string name="download_progress_count">%2$d में से %1$d</string>
-    <string name="download_partial">%2$d में से %1$d उपलब्ध</string>
     <string name="download_waiting_wifi">Wi‑Fi का इंतज़ार</string>
     <string name="download_waiting_network">कनेक्शन का इंतज़ार</string>
     <string name="download_waiting_engine">Spotify का इंतज़ार</string>
@@ -369,13 +376,18 @@
     <string name="download_storage_used">डाउनलोड ने %1$s लिया</string>
     <string name="remove_all_downloads">सभी डाउनलोड हटाएँ</string>
     <string name="remove_all_downloads_confirm">डाउनलोड किया सब कुछ मिट जाएगा। आपकी प्लेलिस्ट वैसी ही रहेंगी।</string>
-    <string name="download_artist_confirm">%2$s के %1$d गाने डाउनलोड करें? लगभग %3$s।</string>
-    <string name="download_failed_count">%1$d डाउनलोड नहीं हो सके</string>
+    <plurals name="download_artist_confirm">
+        <item quantity="one">%2$s का %1$d गाना डाउनलोड करें? लगभग %3$s।</item>
+        <item quantity="other">%2$s के %1$d गाने डाउनलोड करें? लगभग %3$s।</item>
+    </plurals>
+    <plurals name="download_failed_count">
+        <item quantity="one">%1$d डाउनलोड नहीं हो सका</item>
+        <item quantity="other">%1$d डाउनलोड नहीं हो सके</item>
+    </plurals>
     <string name="download_retry_failed">फिर कोशिश करें</string>
     <string name="downloaded_tracks">डाउनलोड किए गीत</string>
     <string name="offline_mode">ऑफ़लाइन मोड</string>
     <string name="offline_mode_note">केवल डाउनलोड किया हुआ चलाएँ, Spotify से कुछ न मांगें।</string>
-    <string name="offline_unavailable">ऑफ़लाइन उपलब्ध नहीं</string>
     <string name="offline_banner_no_network">ऑफ़लाइन — कोई कनेक्शन नहीं</string>
     <string name="offline_banner_slow">ऑफ़लाइन — कनेक्शन डाउनलोड से ख़राब है</string>
     <string name="offline_banner_manual">ऑफ़लाइन — आपने चालू किया</string>
@@ -401,14 +413,8 @@
     <string name="widget_label">अभी चल रहा है</string>
     <string name="widget_nothing_playing">कुछ नहीं चल रहा</string>
     <string name="widget_label_row">अभी चल रहा है</string>
-    <string name="widget_label_square">अभी चल रहा है, वर्ग</string>
-    <string name="widget_label_tall">अभी चल रहा है, लंबा</string>
     <string name="widget_description_row">कवर, जो चल रहा है, और तीन बटन।</string>
-    <string name="widget_description_square">कवर, शीर्षक, और तीन बटन।</string>
-    <string name="widget_description_tall">बड़ा कवर, जो चल रहा है, और तीन बटन।</string>
     <string name="widget_add_row">पंक्ति जोड़ें</string>
-    <string name="widget_add_square">वर्ग जोड़ें</string>
-    <string name="widget_add_tall">लंबा जोड़ें</string>
     <string name="widget_add_note">पीछे कवर, जो चल रहा है, और तीन बटन।</string>
     <string name="widget_nothing_playing_hint">Fluidify खोलें और प्ले दबाएं</string>
     <string name="library_offline">जो डाउनलोड है वही दिख रहा है. Spotify ने अभी जवाब नहीं दिया.</string>
@@ -437,12 +443,15 @@
     <string name="watch_update_installing">%1$s घड़ी पर इंस्टॉल हो रहा है…</string>
     <string name="watch_update_confirm">घड़ी पर पुष्टि करें</string>
     <string name="watch_update_installed">%1$s इंस्टॉल हुआ</string>
-    <string name="watch_update_failed">विफल: %1$s</string>
+    <string name="watch_update_failed">अपडेट पूरा नहीं हुआ: फिर कोशिश करें</string>
     <string name="watch_sending">घड़ी पर संगीत भेजा जा रहा है</string>
     <string name="watch_sending_channel">घड़ी पर भेजना</string>
     <string name="watch_downloads">घड़ी पर</string>
     <string name="watch_downloads_none">अभी कुछ नहीं: किसी प्लेलिस्ट पर \"घड़ी पर डाउनलोड करें\" चुनें</string>
-    <string name="watch_downloads_summary">%2$d में से %1$d गाने · %3$s इस्तेमाल, %4$s खाली</string>
+    <plurals name="watch_downloads_summary">
+        <item quantity="one">%2$d में से %1$d गाने · %3$s इस्तेमाल, %4$s खाली</item>
+        <item quantity="other">%2$d में से %1$d गाने · %3$s इस्तेमाल, %4$s खाली</item>
+    </plurals>
     <string name="watch_downloads_paused">रुका हुआ</string>
     <string name="watch_downloads_paused_storage">घड़ी लगभग भर गई है</string>
     <string name="watch_downloads_paused_offline">फ़ोन या Wi-Fi का इंतज़ार</string>
@@ -478,6 +487,28 @@
     <string name="watch_made_for_you">आपके लिए बनाया गया</string>
     <string name="watch_update_connection_missing">घड़ी Bluetooth से जुड़ी नहीं है। पास लाएँ और फिर कोशिश करें।</string>
     <string name="watch_update_offer_failed">घड़ी पर Fluidify जवाब नहीं दे रहा। ऐप खोलें और फिर कोशिश करें।</string>
+    <string name="watch_looking">आपकी घड़ी खोजी जा रही है…</string>
+    <string name="watch_none_hint">घड़ी को पास रखें, Bluetooth चालू रखें और उस पर Fluidify इंस्टॉल रखें।</string>
+    <string name="watch_downloads_reading">घड़ी में सहेजा हुआ पढ़ा जा रहा है…</string>
+    <string name="watch_downloads_unreported">घड़ी ने अभी तक जानकारी नहीं दी</string>
+    <string name="watch_update_progress">%1$s · %2$d%%</string>
+    <string name="watch_install_network">घड़ी तक पहुँच नहीं हो सकी: क्या फ़ोन और घड़ी एक ही Wi-Fi पर हैं?</string>
+    <string name="watch_install_timeout">घड़ी ने समय पर जवाब नहीं दिया: फिर कोशिश करें</string>
+    <string name="watch_update_err_network">अपडेट सर्वर तक पहुँच नहीं हो सकी: क्या फ़ोन ऑनलाइन है?</string>
+    <string name="watch_update_err_corrupt">अपडेट खराब हालत में पहुँचा: फिर कोशिश करें</string>
+    <string name="watch_update_err_invalid">यह फ़ाइल घड़ी के लिए Fluidify ऐप का मान्य अपडेट नहीं है</string>
+    <string name="watch_update_err_signature">अपडेट पर Fluidify वाली कुंजी से हस्ताक्षर नहीं हैं</string>
+    <string name="watch_update_err_transfer">घड़ी तक ट्रांसफ़र रुक गया: उसे पास रखें और फिर कोशिश करें</string>
+    <string name="watch_update_err_install">घड़ी अपडेट इंस्टॉल नहीं कर सकी: घड़ी पर Fluidify खोलें और फिर कोशिश करें</string>
+    <string name="watch_update_err_busy">घड़ी दूसरे अपडेट में व्यस्त है: थोड़ी देर में फिर कोशिश करें</string>
+    <string name="watch_update_err_older">घड़ी पर पहले से नया संस्करण है</string>
+    <plurals name="watch_downloads_waiting">
+        <item quantity="one">%1$d बदलाव घड़ी का इंतज़ार कर रहा है और घड़ी के फिर से पहुँच में आते ही भेज दिया जाएगा</item>
+        <item quantity="other">%1$d बदलाव घड़ी का इंतज़ार कर रहे हैं और घड़ी के फिर से पहुँच में आते ही भेज दिए जाएंगे</item>
+    </plurals>
     <string name="audio_light_title">संगीत के साथ प्रकाश प्रभाव</string>
     <string name="audio_light_note">प्लेयर और मिनी प्लेयर की रोशनी संगीत के साथ बदलती है।</string>
+    <string name="audio_light_section">प्लेयर की रोशनी</string>
+    <string name="unknown">अज्ञात</string>
+    <string name="kbps_value">%1$d kbps</string>
 </resources>

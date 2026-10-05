@@ -27,8 +27,11 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.isSpecified
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -49,6 +52,8 @@ import dev.lelonio.square.ui.glass.GlassEffectConfig
 import dev.lelonio.square.ui.glass.GlassStyle
 import dev.antigravity.fluidengine.ui.fluid.FluidSlider
 import dev.antigravity.fluidengine.ui.fluid.FluidSwitch
+import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
+import dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics
 import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.ui.glass.backdrop.backdrops.layerBackdrop
 import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberLayerBackdrop
@@ -511,10 +516,21 @@ private fun GlassSwitch(
     checked: Boolean,
     onChange: (Boolean) -> Unit,
 ) {
+    val haptics = LocalFluidHaptics.current
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable { onChange(!checked) }
+            // The row is the switch for touch and for TalkBack alike (see SwitchRow in
+            // SettingsScreen), so the haptic the engine's switch would have played on its own
+            // is played here.
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
+                onValueChange = { value ->
+                    haptics.play(if (value) FluidHapticEvent.ToggleOn else FluidHapticEvent.ToggleOff)
+                    onChange(value)
+                },
+            )
             .padding(start = 18.dp, end = 12.dp, top = 12.dp, bottom = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
@@ -535,7 +551,7 @@ private fun GlassSwitch(
         // switch in the app instead of two.
         FluidSwitch(
             checked = checked,
-            onCheckedChange = onChange,
+            onCheckedChange = null,
         )
     }
 }
@@ -550,7 +566,8 @@ private fun GlassSwitch(
 internal fun SettingsSection(title: String, content: @Composable () -> Unit) {
     Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
         Text(
-            title.uppercase(),
+            // The reader's locale rather than Locale.ROOT's: see Section in SettingsScreen.
+            title.uppercase(LocalConfiguration.current.locales[0]),
             style = MaterialTheme.typography.labelLarge,
             color = InkDim,
             modifier = Modifier.padding(start = 6.dp, bottom = 8.dp),

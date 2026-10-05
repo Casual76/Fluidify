@@ -38,3 +38,9 @@ keystore.properties
 
 # Cartella di sessione del compilatore Kotlin, rigenerata a ogni build.
 .kotlin/
+
+# Allegati delle sessioni remote di Codex: immagini locali, mai da versionare.
+.codex-remote-attachments/
+
+# Resoconti di QA locali, con le evidenze dei dispositivi.
+docs/manual-qa-watch-2026-10-03.md

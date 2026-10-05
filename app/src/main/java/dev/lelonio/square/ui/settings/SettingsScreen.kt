@@ -33,6 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
 import androidx.activity.compose.rememberLauncherForActivityResult
@@ -52,8 +53,14 @@ import dev.antigravity.fluidengine.ui.fluid.fluidTitleCollapseOrigin
 import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
 import dev.antigravity.fluidengine.ui.fluid.rememberFluidTitleCollapse
 import dev.antigravity.fluidengine.ui.fluid.rememberFluidTitleSnapFling
+import androidx.compose.foundation.selection.selectable
+import androidx.compose.foundation.selection.toggleable
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
+import androidx.compose.ui.semantics.Role
+import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
+import dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.antigravity.fluidengine.ui.fluid.fluidLicensesSection
 import dev.lelonio.square.update.Updater
@@ -294,7 +301,7 @@ fun SettingsScreen(
                         )
                         Text(
                             if (ready != null) {
-                                stringResource(R.string.playlist_count, ready.playlists.size)
+                                pluralStringResource(R.plurals.playlist_count, ready.playlists.size, ready.playlists.size)
                             } else {
                                 stringResource(R.string.log_in_to_resume)
                             },
@@ -397,14 +404,16 @@ fun SettingsScreen(
             GlassSection(backdrop)
         }
 
-        // Under the app rather than under playback for the same reason: this
-        // adds a shelf to the library, it does not change what anything sounds
-        // like.
+        // The light that follows the music, in the player and the mini player. Under the app
+        // rather than under playback: it is something the screen does, and nothing in the
+        // audio changes. Its section is named for where the light is (the player), because
+        // the row inside is named for what it is, and one string in both places reads as a
+        // heading stuck on a row.
         if (open == SettingsPage.App) item("audio-light") {
             val context = LocalContext.current
             val prefs = (context.applicationContext as dev.lelonio.square.SquareApplication).audioLightPreferences
             val enabled by prefs.enabled.collectAsStateWithLifecycle()
-            Section(stringResource(R.string.audio_light_title)) {
+            Section(stringResource(R.string.audio_light_section)) {
                 SwitchRow(label = stringResource(R.string.audio_light_title), note = stringResource(R.string.audio_light_note),
                     checked = enabled, onCheckedChange = prefs::setEnabled)
             }
@@ -413,6 +422,9 @@ fun SettingsScreen(
             WidgetSection()
         }
 
+        // Under the app rather than under playback for the same reason: this
+        // adds a shelf to the library, it does not change what anything sounds
+        // like.
         if (open == SettingsPage.App) item("local-files") {
             Section(stringResource(R.string.local_files)) {
                 SwitchRow(
@@ -627,22 +639,12 @@ private fun CanvasSection() {
     val enabled by store.canvasEnabled.collectAsStateWithLifecycle()
 
     Section(stringResource(R.string.canvas)) {
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Text(
-                stringResource(R.string.canvas_show),
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.weight(1f),
-            )
-            dev.antigravity.fluidengine.ui.fluid.FluidSwitch(
-                checked = enabled,
-                onCheckedChange = store::setCanvasEnabled,
-            )
-        }
+        SwitchRow(
+            label = stringResource(R.string.canvas_show),
+            note = null,
+            checked = enabled,
+            onCheckedChange = store::setCanvasEnabled,
+        )
         RowDivider()
         Text(
             stringResource(R.string.canvas_note),
@@ -842,7 +844,7 @@ private fun CrossfadeSection() {
                 label = if (seconds == 0) {
                     stringResource(R.string.crossfade_off)
                 } else {
-                    stringResource(R.string.crossfade_seconds, seconds)
+                    pluralStringResource(R.plurals.crossfade_seconds, seconds, seconds)
                 },
                 selected = seconds == chosen,
             ) { store.set(seconds) }
@@ -1006,7 +1008,7 @@ private fun DownloadsSection() {
             RowDivider()
             InfoRow(
                 stringResource(R.string.downloads),
-                stringResource(R.string.download_failed_count, givenUp),
+                pluralStringResource(R.plurals.download_failed_count, givenUp, givenUp),
             )
             ActionRow(stringResource(R.string.download_retry_failed), destructive = false) {
                 scope.launch {
@@ -1043,32 +1045,51 @@ private fun DownloadsSection() {
  *
  * The canvas setting grew its own copy of this inline; three more would have
  * been four.
+ *
+ * The whole row is the switch, as far as touch and TalkBack go: it is the row
+ * that is `toggleable`, with the switch role, so the label is as tappable as
+ * the little pill and a screen reader announces one control called "Wi-Fi
+ * only, on" instead of an unlabelled switch beside a piece of text. The
+ * engine's switch is told to answer nothing itself (`onCheckedChange = null`,
+ * which is what that parameter is for) and so the haptic it would have played
+ * on its own is played here, where the touch now lands.
  */
 @Composable
 internal fun SwitchRow(
     label: String,
-    note: String,
+    note: String?,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
 ) {
+    val haptics = LocalFluidHaptics.current
     Row(
         Modifier
             .fillMaxWidth()
+            .toggleable(
+                value = checked,
+                role = Role.Switch,
+                onValueChange = { value ->
+                    haptics.play(if (value) FluidHapticEvent.ToggleOn else FluidHapticEvent.ToggleOff)
+                    onCheckedChange(value)
+                },
+            )
             .padding(horizontal = 18.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f).padding(end = 12.dp)) {
             Text(label, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                note,
-                style = MaterialTheme.typography.bodySmall,
-                color = InkDim,
-                modifier = Modifier.padding(top = 2.dp),
-            )
+            if (note != null) {
+                Text(
+                    note,
+                    style = MaterialTheme.typography.bodySmall,
+                    color = InkDim,
+                    modifier = Modifier.padding(top = 2.dp),
+                )
+            }
         }
         dev.antigravity.fluidengine.ui.fluid.FluidSwitch(
             checked = checked,
-            onCheckedChange = onCheckedChange,
+            onCheckedChange = null,
         )
     }
 }
@@ -1186,7 +1207,9 @@ internal fun Section(title: String?, content: @Composable () -> Unit) {
     Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
         if (title != null) {
             Text(
-                title.uppercase(),
+                // The reader's locale, not Locale.ROOT's: in Turkish a lowercase "i" capitalises
+                // to a dotted "İ", and the plain uppercase() spells every heading wrongly.
+                title.uppercase(LocalConfiguration.current.locales[0]),
                 style = MaterialTheme.typography.labelLarge,
                 color = InkDim,
                 modifier = Modifier.padding(start = 6.dp, bottom = 8.dp),
@@ -1283,13 +1306,19 @@ internal fun ActionRow(label: String, destructive: Boolean, onClick: () -> Unit)
     )
 }
 
-/** A row of a list where one is picked, with a tick on the one that is. */
+/**
+ * A row of a list where one is picked, with a tick on the one that is.
+ *
+ * The tick is only a picture, so the choice is also said in the row's
+ * semantics (`selectable`, radio-button role): a screen reader announces
+ * "selected" on the one that is, which the icon with no description never did.
+ */
 @Composable
 internal fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .clickable(onClick = onClick)
+            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
             .padding(horizontal = 18.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -394,7 +394,10 @@ fun PlayerScreen(
     // the cover stays until this turns true and the clip fades in over it.
     // Reset per track: the next one starts from nothing again.
     var canvasReady by remember(canvas?.url) { mutableStateOf(false) }
-    val audioLight = rememberAudioLight(state.isPlaying && !state.isBuffering, visible = playerOpen())
+    // `playerOpen` is handed over as it is: it reads the morph's open fraction, and read here it
+    // recomposed this whole screen on every frame of opening and dragging the player.
+    val audioLight = rememberAudioLight(state.isPlaying && !state.isBuffering, visible = playerOpen)
+    val audioLit by remember { derivedStateOf { audioLight.value != null } }
     var lightCoverBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     var lightOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
 
@@ -481,7 +484,12 @@ fun PlayerScreen(
     val lightBottom = animateFloatAsState(
         targetValue = if (canvasReady || videoOn || panel != PlayerPanel.NONE) 1f else 0f,
         animationSpec = tween(420), label = "audioLightOrigin")
-    val lightColor = auraColors.firstOrNull() ?: MaterialTheme.colorScheme.primary
+    // Crossed over at a track change like the aura's own colours, not switched in one frame.
+    val lightColor = androidx.compose.animation.animateColorAsState(
+        targetValue = auraColors.firstOrNull() ?: MaterialTheme.colorScheme.primary,
+        animationSpec = tween(700),
+        label = "audioLightColor",
+    )
     val lightContrast = animateFloatAsState(
         targetValue = if (canvasReady || videoOn) 1f else 0f,
         animationSpec = tween(420), label = "audioLightContrast")
@@ -541,7 +549,7 @@ fun PlayerScreen(
             // from its own frames: drawing the cover's aura over that would
             // paint the song's colours on top of the video's.
             if (canvas == null && !videoOn) {
-                CoverAura(colors = auraColors, playing = state.isPlaying, suppress = { audioLight.value != null })
+                CoverAura(colors = auraColors, playing = state.isPlaying, suppress = { audioLit })
             }
 
 
@@ -599,7 +607,7 @@ fun PlayerScreen(
                 }
             }
 
-            AudioLightHalo(audioLight, color = lightColor,
+            AudioLightHalo(audioLight, color = { lightColor.value },
                 cover = {
                     if (lightCoverBounds == androidx.compose.ui.geometry.Rect.Zero) null
                     else lightCoverBounds.translate(-lightOrigin)

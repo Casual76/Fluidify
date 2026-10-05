@@ -53,14 +53,6 @@ fn device_type() -> DeviceType {
         .and_then(|kind| kind.parse::<DeviceType>().ok())
         .unwrap_or(DeviceType::Smartphone)
 }
-/// Set when the last handshake failed and nothing is being tried right now.
-///
-/// Different from [`CONNECTED`], which is simply whether there is a device,
-/// and from [`RECONNECTING`], which means one is being made. This means the
-/// attempt was made and the network did not answer — and the app goes on
-/// anyway, playing what is already on the phone, until the next attempt or a
-/// network coming back.
-static OFFLINE: AtomicBool = AtomicBool::new(false);
 
 /// Whether the sink may make sound.
 ///
@@ -780,7 +772,6 @@ pub fn start(
     let _ = up.send(false);
     CONNECTED.store(false, Ordering::SeqCst);
     SPIRC_KNOWS.store(false, Ordering::SeqCst);
-    OFFLINE.store(false, Ordering::SeqCst);
     FAILED_ATTEMPTS.store(0, Ordering::SeqCst);
     NEXT_ATTEMPT_MS.store(0, Ordering::SeqCst);
 
@@ -936,7 +927,6 @@ async fn connect_attempt() -> EngineResult<()> {
         }
         Err(e) if e == PREMIUM_REQUIRED => {
             RECONNECTING.store(false, Ordering::SeqCst);
-            OFFLINE.store(true, Ordering::SeqCst);
             emit_app("session", "", SESSION_PREMIUM_REQUIRED);
             Err(e)
         }
@@ -948,7 +938,6 @@ async fn connect_attempt() -> EngineResult<()> {
             let backoff = (FIRST_BACKOFF_MS << (failures - 1).min(5)).min(MAX_BACKOFF_MS);
             NEXT_ATTEMPT_MS.store(uptime_ms() + backoff, Ordering::SeqCst);
             RECONNECTING.store(false, Ordering::SeqCst);
-            OFFLINE.store(true, Ordering::SeqCst);
             log::warn!("{e}; playing what is on the phone, trying again in {backoff} ms");
             emit_app("session", "", SESSION_FAILED);
             if let Ok(handle) = runtime_handle() {
@@ -1212,7 +1201,6 @@ fn install_device(
     // about this one before any of its events can arrive.
     let _ = events_tx.send(Pump::Session(session));
 
-    OFFLINE.store(false, Ordering::SeqCst);
     SPIRC_KNOWS.store(false, Ordering::SeqCst);
     INSTALLED_AT_MS.store(uptime_ms(), Ordering::SeqCst);
     CONNECTED.store(true, Ordering::SeqCst);
@@ -3046,7 +3034,6 @@ pub fn shutdown() {
         CONNECTED.store(false, Ordering::SeqCst);
         SPIRC_KNOWS.store(false, Ordering::SeqCst);
         RECONNECTING.store(false, Ordering::SeqCst);
-        OFFLINE.store(false, Ordering::SeqCst);
         if let Some(up) = SESSION_UP.get() {
             let _ = up.send(false);
         }

@@ -115,6 +115,13 @@ class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost {
     }
     val preferences: PreferencesStore by lazy { PreferencesStore(this) }
     val audioLightPreferences by lazy { dev.lelonio.square.playback.AudioLightPreferences(this) }
+
+    /**
+     * Whether the music light may run at all (screen on, no power saving, animations on). One for
+     * the whole app: each player surface used to build its own, which is a broadcast receiver and a
+     * settings observer apiece — three at once with the morph's copy of the pill.
+     */
+    val audioLightPolicy by lazy { dev.lelonio.square.playback.AudioLightPolicy(this) }
     val audioLightPublisher by lazy { dev.lelonio.square.wear.AudioLightPublisher(this) }
 
     /** For the shared player in :core; see [dev.lelonio.square.playback.CoreHost]. */

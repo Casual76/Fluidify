@@ -3,7 +3,6 @@
 package dev.lelonio.square.playback
 
 import android.content.Intent
-import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import dev.lelonio.square.auth.SpotifyOAuth
@@ -25,20 +24,25 @@ import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-/**
- * Hosts the media session and owns the lifetime of the native engine.
- *
- * The engine lives in the service rather than in an activity or a singleton so
- * that playback survives the UI being destroyed, and so a single `shutdown()`
- * in [onDestroy] is guaranteed to run.
- */
-@UnstableApi
 /** Set on the intent the notification fires: open straight into the player. */
 const val EXTRA_OPEN_PLAYER = "dev.lelonio.square.OPEN_PLAYER"
 
 /** Its action; see the note where the PendingIntent is built. */
 const val ACTION_OPEN_PLAYER = "dev.lelonio.square.action.OPEN_PLAYER"
 
+/**
+ * Hosts the media session and owns the lifetime of the native engine.
+ *
+ * The engine lives in the service rather than in an activity or a singleton so
+ * that playback survives the UI being destroyed, and so a single `shutdown()`
+ * in [onDestroy] is guaranteed to run.
+ *
+ * The file opts in to Media3's unstable API as a whole, because the service is
+ * where the notification provider, the browse tree and the renderers are built
+ * and they are unstable throughout. (An `@UnstableApi` used to sit between this
+ * comment and the constants above it, where it marked the intent extra unstable
+ * instead of doing anything.)
+ */
 class PlaybackService : MediaLibraryService() {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

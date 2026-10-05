@@ -10,6 +10,7 @@ import android.os.SystemClock
 import androidx.core.app.NotificationCompat
 import dev.lelonio.square.R
 import dev.lelonio.square.ui.MainActivity
+import dev.lelonio.square.ui.settings.WatchPageRequest
 import kotlin.math.abs
 
 internal object WatchUpdateNotifications {
@@ -54,11 +55,8 @@ internal object WatchUpdateNotifications {
             is WatchUpdateCoordinator.State.Installing -> R.string.watch_update_installing
             is WatchUpdateCoordinator.State.AwaitingConfirmation -> R.string.watch_update_confirm
             is WatchUpdateCoordinator.State.Installed -> R.string.watch_update_installed
-            is WatchUpdateCoordinator.State.Failed -> when (state.reason) {
-                "watch-not-nearby" -> R.string.watch_update_connection_missing
-                "offer-send-failed" -> R.string.watch_update_offer_failed
-                else -> R.string.watch_update_failed
-            }
+            // The sentence for the reason, shared with the Watch page; never the raw token.
+            is WatchUpdateCoordinator.State.Failed -> watchUpdateFailureRes(state.reason)
         }, when (state) {
             is WatchUpdateCoordinator.State.UpToDate -> state.version
             is WatchUpdateCoordinator.State.Available -> state.version
@@ -67,7 +65,6 @@ internal object WatchUpdateNotifications {
             is WatchUpdateCoordinator.State.Offered -> state.version
             is WatchUpdateCoordinator.State.Installing -> state.version
             is WatchUpdateCoordinator.State.Installed -> state.version
-            is WatchUpdateCoordinator.State.Failed -> state.reason
             else -> ""
         })
         val progress = progressOf(state)
@@ -75,12 +72,14 @@ internal object WatchUpdateNotifications {
             state is WatchUpdateCoordinator.State.Installing || state is WatchUpdateCoordinator.State.Offered
         val notification = NotificationCompat.Builder(context, CHANNEL)
             .setSmallIcon(R.drawable.ic_notification).setContentTitle(context.getString(R.string.watch_update))
-            .setContentText(text + if (progress != null) " · ${(progress * 100).toInt()}%" else "")
+            .setContentText(
+                if (progress != null) context.getString(R.string.watch_update_progress, text, (progress.coerceIn(0f, 1f) * 100).toInt()) else text,
+            )
             .setOnlyAlertOnce(true).setSilent(true).setOngoing(working)
             // The action MainActivity reads as "show the Watch page of the settings", not just the
             // settings: that is where the update's state is, and what the person came to see.
             .setContentIntent(PendingIntent.getActivity(context, ID,
-                Intent(context, MainActivity::class.java).setAction("dev.pampa.fluidify.WATCH_UPDATES"),
+                Intent(context, MainActivity::class.java).setAction(WatchPageRequest.ACTION),
                 PendingIntent.FLAG_IMMUTABLE or PendingIntent.FLAG_UPDATE_CURRENT))
         if (working) notification.setProgress(100, ((progress ?: 0f) * 100).toInt(), progress == null)
         return notification.build()
