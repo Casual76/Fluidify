@@ -15,22 +15,30 @@
       "ref": "master"
     },
     "stable": {
-      "version": "1.6.3",
+      "version": "1.6.4",
       "releaseDate": "2026-10-05",
-      "changelog": "La copertina resta visibile nell'AOD dell'orologio, piccola e attenuata su fondo nero. Titolo e ora mantengono la posizione; gli effetti musicali si fermano in AOD e in background. Il ritorno ai controlli usa una breve dissolvenza. Sui pannelli low-bit restano soltanto i testi.\n\nCon Canvas o video musicale, la luce del telefono usa una tonalità distinta della copertina, oppure un accento alternativo se la palette contiene colori troppo simili. Il colore segue la transizione del Canvas effettivamente pronto. Conservate l'altezza ridotta degli aloni e la resa interattiva del Watch.\n\nTest automatici, render e build minificate firmate verificati. Resa in movimento, comportamento AOD del Galaxy Watch e consumi reali restano da verificare sui dispositivi fisici.",
-      "releaseTag": "stable-fluidify-v1.6.3",
-      "apkAsset": "fluidify-1.6.3.apk",
-      "sizeBytes": 19647028
+      "changelog": "L'alone musicale sopra Canvas e video usa ora un viola/fucsia stabile, invece di ricavare un colore alternativo dalla copertina che poteva diventare verde. Conservate altezza, intensità e transizione del colore.\n\nLa luce attorno alla copertina e il mini player mantengono i colori della copertina. Nessun cambiamento visivo dell'orologio: questo APK accompagna la stessa versione del telefono.\n\nVerificati render e build minificate firmate; resa animata e consumi reali restano da verificare sui dispositivi fisici.",
+      "releaseTag": "stable-fluidify-v1.6.4",
+      "apkAsset": "fluidify-1.6.4.apk",
+      "sizeBytes": 19647030
     },
     "beta": {
-      "version": "1.6.3",
+      "version": "1.6.4",
       "releaseDate": "2026-10-05",
-      "changelog": "La copertina resta visibile nell'AOD dell'orologio, piccola e attenuata su fondo nero. Titolo e ora mantengono la posizione; gli effetti musicali si fermano in AOD e in background. Il ritorno ai controlli usa una breve dissolvenza. Sui pannelli low-bit restano soltanto i testi.\n\nCon Canvas o video musicale, la luce del telefono usa una tonalità distinta della copertina, oppure un accento alternativo se la palette contiene colori troppo simili. Il colore segue la transizione del Canvas effettivamente pronto. Conservate l'altezza ridotta degli aloni e la resa interattiva del Watch.\n\nTest automatici, render e build minificate firmate verificati. Resa in movimento, comportamento AOD del Galaxy Watch e consumi reali restano da verificare sui dispositivi fisici.",
-      "releaseTag": "stable-fluidify-v1.6.3",
-      "apkAsset": "fluidify-1.6.3.apk",
-      "sizeBytes": 19647028
+      "changelog": "L'alone musicale sopra Canvas e video usa ora un viola/fucsia stabile, invece di ricavare un colore alternativo dalla copertina che poteva diventare verde. Conservate altezza, intensità e transizione del colore.\n\nLa luce attorno alla copertina e il mini player mantengono i colori della copertina. Nessun cambiamento visivo dell'orologio: questo APK accompagna la stessa versione del telefono.\n\nVerificati render e build minificate firmate; resa animata e consumi reali restano da verificare sui dispositivi fisici.",
+      "releaseTag": "stable-fluidify-v1.6.4",
+      "apkAsset": "fluidify-1.6.4.apk",
+      "sizeBytes": 19647030
     },
     "history": [
+      {
+        "version": "1.6.3",
+        "releaseDate": "2026-10-05",
+        "changelog": "La copertina resta visibile nell'AOD dell'orologio, piccola e attenuata su fondo nero. Titolo e ora mantengono la posizione; gli effetti musicali si fermano in AOD e in background. Il ritorno ai controlli usa una breve dissolvenza. Sui pannelli low-bit restano soltanto i testi.\n\nCon Canvas o video musicale, la luce del telefono usa una tonalità distinta della copertina, oppure un accento alternativo se la palette contiene colori troppo simili. Il colore segue la transizione del Canvas effettivamente pronto. Conservate l'altezza ridotta degli aloni e la resa interattiva del Watch.\n\nTest automatici, render e build minificate firmate verificati. Resa in movimento, comportamento AOD del Galaxy Watch e consumi reali restano da verificare sui dispositivi fisici.",
+        "releaseTag": "stable-fluidify-v1.6.3",
+        "apkAsset": "fluidify-1.6.3.apk",
+        "sizeBytes": 19647028
+      },
       {
         "version": "1.6.2",
         "releaseDate": "2026-10-05",
