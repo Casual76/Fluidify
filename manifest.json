@@ -15,20 +15,20 @@
       "ref": "master"
     },
     "stable": {
-      "version": "1.6.4",
+      "version": "1.7.2",
       "releaseDate": "2026-10-05",
-      "changelog": "L'alone musicale sopra Canvas e video usa ora un viola/fucsia stabile, invece di ricavare un colore alternativo dalla copertina che poteva diventare verde. Conservate altezza, intensità e transizione del colore.\n\nLa luce attorno alla copertina e il mini player mantengono i colori della copertina. Nessun cambiamento visivo dell'orologio: questo APK accompagna la stessa versione del telefono.\n\nVerificati render e build minificate firmate; resa animata e consumi reali restano da verificare sui dispositivi fisici.",
-      "releaseTag": "stable-fluidify-v1.6.4",
-      "apkAsset": "fluidify-1.6.4.apk",
-      "sizeBytes": 19647030
+      "changelog": "Una revisione di tutta l'app, telefono e orologio.\n\nOrologio: il display sempre acceso e' il lettore con le luci abbassate (copertina scurita, orologio e titolo al loro posto, niente controlli), con entrata e uscita in dissolvenza. Trascinando in giu' sul lettore i controlli spariscono e la copertina diventa il comando (tocco play/pausa, doppio tocco avanti, pressione lunga Mi piace); trascinando in su tornano. I tasti della tile rispondono a ogni pressione, Continua sull'orologio aspetta che Spotify conosca l'orologio, la musica non resta muta dopo un cambio di cuffie, liste con caricamento e Riprova.\n\nAggiornamenti: canale Stabile o Beta in Impostazioni, per telefono e orologio insieme. Le novita' si vedono prima e dopo ogni aggiornamento. L'orologio scarica le nuove versioni con il proprio Wi-Fi (acceso solo per il download) invece che via Bluetooth, non si aggiorna mentre suona musica e puo' chiedere al telefono di controllare.\n\nTelefono: la luce musicale costa molto meno e passa dall'aura all'alone in dissolvenza; plurali e accenti corretti nelle traduzioni; interruttori leggibili da TalkBack; pagina Orologio piu' chiara; il widget non accetta comandi da altre app.\n\nMotore: niente chiusure improvvise allo spegnimento, la sessione salvata non si perde senza rete, skip e aggiunte in coda mai ripetuti due volte, ascolti offline conservati, trasferimenti verso l'orologio piu' robusti.",
+      "releaseTag": "stable-fluidify-v1.7.2",
+      "apkAsset": "fluidify-1.7.2.apk",
+      "sizeBytes": 19745075
     },
     "beta": {
-      "version": "1.7.1",
+      "version": "1.7.2",
       "releaseDate": "2026-10-05",
-      "changelog": "Orologio: il lettore e il display sempre acceso.\n\nIl display sempre acceso e' il lettore stesso con le luci abbassate: la copertina resta, scurita per non rovinare lo schermo, orologio e titolo restano al loro posto, controlli e anello spariscono. Si entra e si esce in dissolvenza.\n\nLa pagina della copertina sopra il lettore non c'e' piu': trascinando in giu' sul lettore i controlli svaniscono seguendo il dito, con lo sfondo fermo; trascinando in su tornano. Senza controlli la copertina e' il comando: un tocco play/pausa, due tocchi avanti, pressione lunga Mi piace.\n\nAggiornamenti dell'orologio via Wi-Fi: l'orologio scarica la nuova versione con il proprio Wi-Fi, acceso solo per il download e spento subito dopo, invece di riceverla dal telefono via Bluetooth. Se il Wi-Fi non c'e', si torna al Bluetooth da soli.\n\nAggiornamenti: canale Stabile o Beta in Impostazioni, valido per telefono e orologio. Le novita' di ogni versione si vedono prima di aggiornare e dopo, anche sull'orologio. L'orologio non si aggiorna mentre suona musica, puo' chiedere al telefono di controllare, e gli aggiornamenti automatici si scaricano solo in Wi-Fi. Stati piu' chiari sul telefono, con Riprova nella notifica.",
-      "releaseTag": "beta-fluidify-v1.7.1",
-      "apkAsset": "fluidify-1.7.1.apk",
-      "sizeBytes": 19745071
+      "changelog": "Una revisione di tutta l'app, telefono e orologio.\n\nOrologio: il display sempre acceso e' il lettore con le luci abbassate (copertina scurita, orologio e titolo al loro posto, niente controlli), con entrata e uscita in dissolvenza. Trascinando in giu' sul lettore i controlli spariscono e la copertina diventa il comando (tocco play/pausa, doppio tocco avanti, pressione lunga Mi piace); trascinando in su tornano. I tasti della tile rispondono a ogni pressione, Continua sull'orologio aspetta che Spotify conosca l'orologio, la musica non resta muta dopo un cambio di cuffie, liste con caricamento e Riprova.\n\nAggiornamenti: canale Stabile o Beta in Impostazioni, per telefono e orologio insieme. Le novita' si vedono prima e dopo ogni aggiornamento. L'orologio scarica le nuove versioni con il proprio Wi-Fi (acceso solo per il download) invece che via Bluetooth, non si aggiorna mentre suona musica e puo' chiedere al telefono di controllare.\n\nTelefono: la luce musicale costa molto meno e passa dall'aura all'alone in dissolvenza; plurali e accenti corretti nelle traduzioni; interruttori leggibili da TalkBack; pagina Orologio piu' chiara; il widget non accetta comandi da altre app.\n\nMotore: niente chiusure improvvise allo spegnimento, la sessione salvata non si perde senza rete, skip e aggiunte in coda mai ripetuti due volte, ascolti offline conservati, trasferimenti verso l'orologio piu' robusti.",
+      "releaseTag": "stable-fluidify-v1.7.2",
+      "apkAsset": "fluidify-1.7.2.apk",
+      "sizeBytes": 19745075
     },
     "history": [
       {
