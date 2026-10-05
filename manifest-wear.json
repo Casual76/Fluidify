@@ -9,22 +9,22 @@
       "repoName": "Fluidify"
     },
     "stable": {
-      "version": "1.6.2",
+      "version": "1.6.3",
       "releaseDate": "2026-10-05",
-      "changelog": "Luce musicale più raccolta sul telefono: ridotta del 35% l'estensione verticale nel lettore completo, sia attorno alla copertina sia nella luce inferiore con Canvas e video. Nel mini player l'estensione verticale scende del 30%.\n\nConservate intensità, colori e risposta alla musica della 1.6.1. La resa dell'orologio resta quella precedente.\n\nRender e build minificate firmate verificati; resa in movimento e consumi reali restano da provare sui dispositivi fisici.\n",
-      "releaseTag": "stable-fluidify-v1.6.2",
-      "apkAsset": "fluidify-wear-1.6.2.apk",
-      "sizeBytes": 23870003,
-      "sha256": "4d2f7b6e279d3c846fb6318e03f351f7dbeb86f3e6b99e4c374e4cdc344fc8a6"
+      "changelog": "La copertina resta visibile nell'AOD dell'orologio, piccola e attenuata su fondo nero. Titolo e ora mantengono la posizione; gli effetti musicali si fermano in AOD e in background. Il ritorno ai controlli usa una breve dissolvenza. Sui pannelli low-bit restano soltanto i testi.\n\nCon Canvas o video musicale, la luce del telefono usa una tonalità distinta della copertina, oppure un accento alternativo se la palette contiene colori troppo simili. Il colore segue la transizione del Canvas effettivamente pronto. Conservate l'altezza ridotta degli aloni e la resa interattiva del Watch.\n\nTest automatici, render e build minificate firmate verificati. Resa in movimento, comportamento AOD del Galaxy Watch e consumi reali restano da verificare sui dispositivi fisici.\n",
+      "releaseTag": "stable-fluidify-v1.6.3",
+      "apkAsset": "fluidify-wear-1.6.3.apk",
+      "sizeBytes": 23869886,
+      "sha256": "e1fff30cb3af01b59a8699952929d2a8b11e5d00516647832352561c35c2e949"
     },
     "beta": {
-      "version": "1.6.2",
+      "version": "1.6.3",
       "releaseDate": "2026-10-05",
-      "changelog": "Luce musicale più raccolta sul telefono: ridotta del 35% l'estensione verticale nel lettore completo, sia attorno alla copertina sia nella luce inferiore con Canvas e video. Nel mini player l'estensione verticale scende del 30%.\n\nConservate intensità, colori e risposta alla musica della 1.6.1. La resa dell'orologio resta quella precedente.\n\nRender e build minificate firmate verificati; resa in movimento e consumi reali restano da provare sui dispositivi fisici.\n",
-      "releaseTag": "stable-fluidify-v1.6.2",
-      "apkAsset": "fluidify-wear-1.6.2.apk",
-      "sizeBytes": 23870003,
-      "sha256": "4d2f7b6e279d3c846fb6318e03f351f7dbeb86f3e6b99e4c374e4cdc344fc8a6"
+      "changelog": "La copertina resta visibile nell'AOD dell'orologio, piccola e attenuata su fondo nero. Titolo e ora mantengono la posizione; gli effetti musicali si fermano in AOD e in background. Il ritorno ai controlli usa una breve dissolvenza. Sui pannelli low-bit restano soltanto i testi.\n\nCon Canvas o video musicale, la luce del telefono usa una tonalità distinta della copertina, oppure un accento alternativo se la palette contiene colori troppo simili. Il colore segue la transizione del Canvas effettivamente pronto. Conservate l'altezza ridotta degli aloni e la resa interattiva del Watch.\n\nTest automatici, render e build minificate firmate verificati. Resa in movimento, comportamento AOD del Galaxy Watch e consumi reali restano da verificare sui dispositivi fisici.\n",
+      "releaseTag": "stable-fluidify-v1.6.3",
+      "apkAsset": "fluidify-wear-1.6.3.apk",
+      "sizeBytes": 23869886,
+      "sha256": "e1fff30cb3af01b59a8699952929d2a8b11e5d00516647832352561c35c2e949"
     }
   }
 }
