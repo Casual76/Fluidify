@@ -1,0 +1,1 @@
+Tornano le copertine nel lettore, nella notifica e nel widget per i brani scaricati, anche nella coda ripresa dopo l'aggiornamento.

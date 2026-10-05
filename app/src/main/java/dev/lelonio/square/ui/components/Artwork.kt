@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.produceState
 import coil.compose.AsyncImage
@@ -69,7 +70,12 @@ fun Artwork(
         } else if (url == DOWNLOADS_COVER) {
             DownloadsCover()
         } else if (url != null) {
-            val request = remember(url, decodeSize) {
+            // A cover addressed by its file on the phone is asked for again whenever the covers on
+            // the disk change: one that was missing (a download still on its way, a file being
+            // put back under its name) shows up as soon as it is there.
+            val revision by dev.lelonio.square.download.DownloadExtras.artRevision.collectAsState()
+            val fileRevision = if (url.startsWith("file:")) revision else 0
+            val request = remember(url, decodeSize, fileRevision) {
                 ImageRequest.Builder(context)
                     // The copy kept beside a download, when there is one. Not a
                     // fallback but a preference: the URL names the image, so the

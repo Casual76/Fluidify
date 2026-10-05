@@ -113,7 +113,19 @@ object DownloadExtras {
     private val artCache = java.util.concurrent.ConcurrentHashMap<String, Kept>()
 
     /** Called whenever a cover appears or goes, so the answers stay true. */
-    private fun forgetArtAnswers() = artCache.clear()
+    private fun forgetArtAnswers() {
+        artCache.clear()
+        _artRevision.value++
+    }
+
+    private val _artRevision = kotlinx.coroutines.flow.MutableStateFlow(0)
+
+    /**
+     * Moves on whenever the covers on the disk change. A screen showing a cover by its `file://`
+     * address keys its request on this, so a file that appears after the request failed (put
+     * back by [sweep], fetched by a download) is shown without anyone having to leave and return.
+     */
+    val artRevision: kotlinx.coroutines.flow.StateFlow<Int> = _artRevision
 
     /**
      * Fetches and keeps one file. Answers with what is already there.
@@ -221,7 +233,8 @@ object DownloadExtras {
 
         val keepLyrics = trackUris.mapNotNullTo(mutableSetOf()) { fileFor("lyrics", it)?.name }
         val keepCanvas = trackUris.mapNotNullTo(mutableSetOf()) { fileFor("canvas", it)?.name }
-        val keepArt = coverUrls.mapNotNullTo(mutableSetOf()) { fileFor("art", it)?.name }
+        // Both names of every cover: see [artFile], which also puts back the one a 1.7 build took away.
+        val keepArt = coverUrls.flatMapTo(mutableSetOf()) { url -> artFile(url)?.let { artNames(url) }.orEmpty() }
 
         // Read before the Canvas answers are pruned: a video is named after the
         // URL inside the answer that points at it, so the answers are the only
@@ -254,6 +267,7 @@ object DownloadExtras {
     }
 
     private fun fileFor(kind: String, key: String): File? {
+        if (kind == "art") return artFile(key)
         val root = root ?: return null
         // Hashed rather than sanitised: a URI is not a legal file name, and any
         // escaping scheme would have to survive the characters it escapes.
@@ -276,6 +290,41 @@ object DownloadExtras {
             if (legacy.exists()) runCatching { legacy.renameTo(file) }
         }
         return file
+    }
+
+    /**
+     * The file of a cover, under the name covers have always had.
+     *
+     * Covers are the one extra with addresses outside this class: a track's artwork is handed to
+     * the player as the `file://` of this file (see [artworkUri]), and the queue keeps that
+     * address on the disk across restarts. Renaming the file breaks every queue saved before, and
+     * a 1.7 build did exactly that (it moved every name to SHA-1): the songs of a restored queue
+     * came back with no cover in the player, the notification or the widget, while the lists,
+     * which work the name out again each time, showed theirs. So covers keep their old names for
+     * good. A cover that build renamed is linked back under the old name, and keeps the new one
+     * as well, since a queue saved by that build points there; [sweep] keeps both.
+     */
+    private fun artFile(url: String): File? {
+        val root = root ?: return null
+        val dir = File(root, "art")
+        val (original, hashed) = artNames(url).map { File(dir, it) }
+        if (!original.exists() && hashed.exists()) {
+            val linked = runCatching {
+                java.nio.file.Files.createLink(original.toPath(), hashed.toPath())
+                true
+            }.getOrElse { runCatching { hashed.copyTo(original); true }.getOrDefault(false) }
+            // Not the answers' cache: this can run while that cache is computing the answer for
+            // this very cover, and that answer will now be the file. The screens that showed
+            // a broken address are told through the revision.
+            if (linked) _artRevision.value++
+        }
+        return original
+    }
+
+    /** The two names a cover has had: the one it keeps, and the one a 1.7 build gave it. */
+    private fun artNames(url: String): List<String> {
+        val subject = coverKey(url)
+        return listOf("${subject.hashCode().toUInt().toString(16)}.jpg", "${sha1(subject)}.jpg")
     }
 
     private fun sha1(text: String): String =
