@@ -136,6 +136,23 @@ object AckErrors {
     const val NOT_FOUND = "not-found"
     const val EMPTY = "empty"
     const val NOT_IN_QUEUE = "not-in-queue"
+
+    /**
+     * A command (or question) this phone does not know: a newer watch's, whose type was never
+     * registered here, or one whose fields it cannot read. Answered at once with this, from the
+     * envelope's id alone, so the watch says "the phone cannot do that" and does not wait out its
+     * timeout and call the phone unreachable.
+     */
     const val UNSUPPORTED = "unsupported"
+
+    /** A sleep timer asked for with none of its three settings. */
+    const val BAD_TIMER = "bad-timer"
+
+    /**
+     * Something went wrong on the phone that the watch could do nothing about. The cause stays in
+     * the phone's log: an exception's own message has no business crossing to another device
+     * (it can carry a path, a URI or a token).
+     */
+    const val INTERNAL = "internal"
 }
 

@@ -20,6 +20,7 @@
 
 use crate::engine;
 use librespot_core::Session;
+use librespot_core::spclient::RequestOptions;
 use librespot_protocol::connect::{Cluster, ClusterUpdate};
 use librespot_protocol::player::PlayerState;
 use std::sync::Mutex;
@@ -102,7 +103,9 @@ pub fn watch(session: &Session, notify: impl Fn() + Send + 'static) {
             let Some(cluster) = update.cluster.take() else {
                 continue;
             };
-            log::info!(
+            // Debug, not info: device names are the listener's ("Anna's
+            // iPhone"), and this ran on every update the account pushed.
+            log::debug!(
                 "cluster update: active {} of {} devices, own {} [{}]",
                 cluster.active_device_id,
                 cluster.device.len(),
@@ -458,13 +461,21 @@ pub fn command(device_id: &str, body: String) -> engine::EngineResult<()> {
     let from = session.device_id().to_string();
     let endpoint = format!("/connect-state/v1/player/command/from/{from}/to/{device_id}");
 
+    // Once: a skip or an add to the queue that is sent again after a 5xx the
+    // server had in fact acted on is a second skip, a second copy in the queue.
     handle
-        .block_on(async move {
+        .block_on(engine::within(engine::CALL_TIMEOUT, "the command", async move {
             session
                 .spclient()
-                .request(&http::Method::POST, &endpoint, None, Some(body.as_bytes()))
+                .request_with_options(
+                    &http::Method::POST,
+                    &endpoint,
+                    None,
+                    Some(body.as_bytes()),
+                    &RequestOptions::once(),
+                )
                 .await
-        })
+        }))?
         .map(|_| ())
         .map_err(|e| format!("command failed: {e}"))
 }
@@ -483,16 +494,28 @@ fn active_device_id() -> Option<String> {
 /// endpoint didn't contain any data", which the access point turns into a 400), and other
 /// devices become active with nothing to play. Addressed from whichever device is playing; with
 /// none known, from the target itself, which Spotify reads as "from the active device".
+///
+/// When the music is coming out of this device, the transfer is from this device, whatever the
+/// cached cluster says: the cluster's `active_device_id` lags behind every handover (see
+/// [`engine::elsewhere_active`]), and a transfer "from" a device that is not playing is the
+/// 400 the access point answered while the phone was plainly playing.
 pub fn transfer_to(device_id: &str) -> engine::EngineResult<()> {
     if device_id.is_empty() {
         return Err("no device to transfer to".into());
     }
-    let from = active_device_id().unwrap_or_else(|| device_id.to_string());
     let handle = engine::runtime_handle()?;
     let session = engine::with_session(|session| session.clone())?;
+    let own = session.device_id().to_string();
+    let from = if engine::active_here() && own != device_id {
+        own
+    } else {
+        active_device_id().unwrap_or_else(|| device_id.to_string())
+    };
     let to = device_id.to_string();
     handle
-        .block_on(async move { session.spclient().transfer(&from, &to, None).await })
+        .block_on(engine::within(engine::CALL_TIMEOUT, "the transfer", async move {
+            session.spclient().transfer(&from, &to, None).await
+        }))?
         .map(|_| ())
         .map_err(|e| format!("transfer failed: {e}"))
 }
@@ -510,12 +533,12 @@ pub fn set_volume(device_id: &str, volume: u16) -> engine::EngineResult<()> {
     let body = format!("{{\"volume\":{volume}}}");
 
     handle
-        .block_on(async move {
+        .block_on(engine::within(engine::CALL_TIMEOUT, "the volume", async move {
             session
                 .spclient()
                 .request(&http::Method::PUT, &endpoint, None, Some(body.as_bytes()))
                 .await
-        })
+        }))?
         .map(|_| ())
         .map_err(|e| format!("volume failed: {e}"))
 }

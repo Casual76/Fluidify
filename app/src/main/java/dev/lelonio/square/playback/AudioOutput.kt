@@ -571,21 +571,55 @@ class AudioOutput {
     private var lightTrack: AudioTrack? = null
     private var lightFramesWritten = 0L
     private fun writeAll(output: AudioTrack, buffer: ByteBuffer, sizeInBytes: Int) {
-        val head = output.playbackHeadPosition.toLong() and 0xffffffffL
-        if (lightTrack !== output || lightFramesWritten < head || lightFramesWritten - head > output.sampleRate * 2L) {
-            lightTrack = output; lightFramesWritten = head
+        // Only with the music light on: the head position is a call into the
+        // audio server, and this runs for every packet of every song.
+        if (AudioReactive.isEnabled) {
+            val head = output.playbackHeadPosition.toLong() and 0xffffffffL
+            if (lightTrack !== output || lightFramesWritten < head || lightFramesWritten - head > output.sampleRate * 2L) {
+                lightTrack = output
+                lightFramesWritten = head
+            }
+            AudioReactive.capture(
+                buffer,
+                sizeInBytes,
+                output.sampleRate,
+                output.channelCount,
+                queuedMs = ((lightFramesWritten - head) * 1000 / (output.sampleRate * platformSpeed)).toLong(),
+            )
         }
-        AudioReactive.capture(buffer, sizeInBytes, output.sampleRate, output.channelCount,
-            queuedMs = ((lightFramesWritten - head) * 1000 / (output.sampleRate * platformSpeed)).toLong())
         var written = 0
         while (written < sizeInBytes) {
             // WRITE_BLOCKING returns short only on error or when the track is
             // stopped, so a non-positive result must break the loop or this
             // spins.
             val result = output.write(buffer, sizeInBytes - written, AudioTrack.WRITE_BLOCKING)
-            if (result <= 0) return
+            if (result < 0) {
+                dropDeadTrack(output, result)
+                return
+            }
+            if (result == 0) return
             lightFramesWritten += result / (output.channelCount * 2)
             written += result
+        }
+    }
+
+    /**
+     * Lets go of a track the audio server has stopped accepting writes on.
+     *
+     * `ERROR_DEAD_OBJECT` is what a write returns after the audio server restarted or the route
+     * was torn down under the track (a Bluetooth headset dropping mid-song). Kept, that track
+     * answered every later write with the same error: silence for the rest of the session, and a
+     * decoder that ran flat out because nothing blocked it any more. Forgotten, the next packet
+     * builds a new one through [ensureTrack], which also restores the fade, rate and reverb.
+     */
+    private fun dropDeadTrack(output: AudioTrack, error: Int) {
+        synchronized(this) {
+            if (track !== output) return
+            android.util.Log.w(TAG, "AudioTrack write failed ($error); building a new one")
+            runCatching { output.release() }
+            track = null
+            configuredSampleRate = 0
+            configuredChannels = 0
         }
     }
 

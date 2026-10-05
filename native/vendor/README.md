@@ -93,6 +93,20 @@ and returns `premium account required`, which the service turns into a message
 and a return to the login screen. The refusal is unchanged; what changed is that
 it is an error the caller can handle rather than a process exit.
 
+#### 5. `src/spclient.rs` — sending once, and pausing between retries
+
+`RequestOptions::once()` caps one request at a single attempt. The client's
+strategy (`TryTimes(10)` by default) is shared by every request in the session,
+so the only way to send a non-idempotent request once used to be flipping it
+for everybody and back — a window in which concurrent requests lost their
+retries, never restored if the call was cancelled. Skips, adds to the queue and
+playlist changes now go once: a second attempt after a 5xx the server had in
+fact acted on is a second skip or a second copy of the song.
+
+Retries that remain (a 5xx or a timeout) now wait 200 ms per attempt so far
+before going again, instead of re-sending at once into a server that has just
+said it is struggling.
+
 ### Maintenance
 
 Re-apply this patch when bumping `librespot-core`. If the whole file is replaced,
@@ -214,6 +228,21 @@ in: the loader awaits it before anything touches the network, and takes the
 session it answers with, which is the connected one by then. A downloaded
 track never reaches it, because it is found on disk before the network is
 thought about. `None`, the default, is upstream behaviour.
+
+### The patch: a sink that cannot stop is closed, not fatal
+
+`ensure_sink_stopped` called `exit(1)` when the sink refused to stop. On
+Android the only way there is an output already detached — the engine shutting
+down while the player thread is still stopping — and the exit took the whole
+app process with it, which on the watch outlives the engine. It now logs and
+counts the sink as closed.
+
+### The patch: a retried load waits before asking
+
+The backoff between load attempts was a `sleep` in front of a future whose
+request had already been sent, so it only delayed reading the answer.
+`load_track_after` sleeps on the loader thread before anything is asked, and
+does not ask at all if nobody is waiting for the answer any more.
 
 ### Maintenance
 
@@ -404,3 +433,12 @@ its command channel until the account has acknowledged the device, which is a
 round trip over the dealer after the handshake; a command sent before that
 waits in the channel, and the owner could not tell waiting from lost. It asks
 this first and goes around the device while the answer is no.
+
+### The patch: a running order is held to Spotify's limits
+
+`set_queue_tracks` published every track it was given, where librespot keeps
+ten before and eighty after everywhere else; a 271-track queue went out whole
+in every state update. It now keeps those limits whatever it is handed, and the
+engine hands it a window around the current track that it moves as each track
+starts (`engine::slide_queue_window`), so the device never runs out of the
+listener's order and refills from the context's.

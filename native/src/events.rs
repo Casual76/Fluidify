@@ -314,7 +314,15 @@ pub mod pending {
             listen.duration_ms,
             listen.started_at,
         );
-        let _ = std::fs::write(path(dir), line);
+        // Through a temporary file and a rename: this runs once a second, and a
+        // process killed halfway through a plain write left a truncated line
+        // that `flush` then threw away as malformed — the very listen this
+        // file exists to save.
+        let target = path(dir);
+        let temporary = target.with_extension("tmp");
+        if std::fs::write(&temporary, line).is_ok() {
+            let _ = std::fs::rename(&temporary, &target);
+        }
     }
 
     pub fn clear(dir: &str) {
@@ -322,7 +330,25 @@ pub mod pending {
     }
 
     /// Sends whatever the last run was in the middle of, and forgets it.
+    ///
+    /// Only with a session that can carry it: the first session the pump sees
+    /// is the placeholder that has never connected, and a post on it fails with
+    /// "not connected" after the file is already gone. Without one, the listen
+    /// goes into the outbox with everything else heard offline; see
+    /// [`to_outbox`].
     pub fn flush(dir: &str, events: &EventService) {
+        take(dir, |listen| {
+            log::info!("reporting a listen the last run did not finish");
+            events.track_transition(listen);
+        });
+    }
+
+    /// Moves the interrupted listen into the outbox, to go with the next session.
+    pub fn to_outbox(dir: &str) {
+        take(dir, |listen| super::outbox::append(dir, listen));
+    }
+
+    fn take(dir: &str, deliver: impl FnOnce(&Listen)) {
         let Ok(raw) = std::fs::read_to_string(path(dir)) else {
             return;
         };
@@ -339,8 +365,7 @@ pub mod pending {
             return;
         }
 
-        log::info!("reporting a listen the last run did not finish");
-        events.track_transition(&Listen {
+        deliver(&Listen {
             track_hex: parts[0],
             playback_id: parts[1],
             context_uri: parts[2],

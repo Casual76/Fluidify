@@ -127,7 +127,7 @@ pub fn lyrics(track_uri: &str) -> EngineResult<String> {
             Ok(bytes) => Ok(String::from_utf8(bytes.to_vec())
                 .unwrap_or_else(|_| "null".into())),
             Err(e) => {
-                log::info!("no lyrics for {track_uri}: {e}");
+                log::debug!("no lyrics for {track_uri}: {e}");
                 Ok("null".into())
             }
         }
@@ -179,27 +179,49 @@ pub fn context_tracks(uri: &str) -> EngineResult<String> {
             // long playlist is a chain of those: each resolved page names the
             // next one. Following only the first is how a 2000-track playlist
             // used to arrive with a few hundred in it.
+            //
+            // The chain is the server's, so it is not trusted to end: pages
+            // already seen stop it (a cycle of any length, not only a page
+            // naming itself), and so does [`MAX_PAGES`]. A page that cannot be
+            // read is an error rather than an early end, tried once more first:
+            // a list cut short and reported as whole is what a download sync
+            // reads as "these tracks were removed".
             if page.tracks.is_empty() {
+                let mut seen = std::collections::HashSet::new();
                 let mut next = page.page_url.as_ref().filter(|u| !u.is_empty()).cloned();
                 while let Some(page_url) = next {
-                    match resolve_page(&session, &page_url).await {
-                        Ok((mut resolved, following)) => {
-                            uris.append(&mut resolved);
-                            next = following.filter(|u| !u.is_empty() && *u != page_url);
-                        }
-                        Err(e) => {
-                            log::warn!("could not resolve page: {e}");
-                            next = None;
-                        }
+                    if !seen.insert(page_url.clone()) {
+                        log::warn!("context pages loop back on themselves; stopping");
+                        break;
                     }
+                    if seen.len() > MAX_PAGES {
+                        log::warn!("context has more than {MAX_PAGES} pages; stopping");
+                        break;
+                    }
+                    let resolved = match resolve_page(&session, &page_url).await {
+                        Ok(resolved) => resolved,
+                        Err(first) => {
+                            log::warn!("could not resolve page, trying once more: {first}");
+                            resolve_page(&session, &page_url)
+                                .await
+                                .map_err(|e| format!("a page of the context failed: {e}"))?
+                        }
+                    };
+                    let (mut tracks, following) = resolved;
+                    uris.append(&mut tracks);
+                    next = following.filter(|u| !u.is_empty());
                 }
             }
         }
 
-        log::info!("context {uri} yielded {} tracks", uris.len());
+        log::debug!("context {uri} yielded {} tracks", uris.len());
         Ok(Value::from(uris).to_string())
     })
 }
+
+/// How many linked pages one context may chain through. At a hundred tracks a
+/// page that is ten times the largest playlist Spotify allows.
+const MAX_PAGES: usize = 1_000;
 
 /// Fetch a lazy context page: its track URIs, and the page after it if any.
 async fn resolve_page(
@@ -532,7 +554,8 @@ pub fn artist(artist_uri: &str) -> EngineResult<String> {
 /// first and the engine lock released before blocking, so a slow catalogue
 /// request cannot hold up play/pause coming from the notification.
 fn block_on<T>(future: impl std::future::Future<Output = Result<T, String>>) -> EngineResult<T> {
-    crate::engine::runtime_handle()?.block_on(future)
+    let handle = crate::engine::runtime_handle()?;
+    handle.block_on(crate::engine::within(crate::engine::CALL_TIMEOUT, "the catalogue", future))?
 }
 
 /// The Canvas for a track: a short looping video Spotify shows behind the

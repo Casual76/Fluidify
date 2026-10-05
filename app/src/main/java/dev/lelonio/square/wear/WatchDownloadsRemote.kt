@@ -40,7 +40,7 @@ class WatchDownloadsRemote(private val app: SquareApplication, private val link:
     suspend fun refresh() {
         // No watch with the companion: nothing to read, and no Data Layer call made.
         if (!link.hasWatch()) return
-        runCatching {
+        catchingNonCancel {
             val items = Wearable.getDataClient(app).dataItems.await()
             try {
                 items.firstOrNull { it.uri.path == WearPaths.DOWNLOAD_STATUS }?.data?.let(::onStatus)

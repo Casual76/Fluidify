@@ -420,7 +420,7 @@ object RemoteConnect {
      * to give it away.
      */
     fun transferTo(deviceId: String): Boolean {
-        if (deviceId == ownId) {
+        if (isThisPhone(deviceId)) {
             // Coming back here is not a request to the server. A device cannot
             // address a command to itself: it goes out to the access point and
             // comes back refused, which is why choosing Square in the list did
@@ -429,18 +429,38 @@ object RemoteConnect {
                 .onFailure { android.util.Log.w(TAG, "could not take playback back", it) }
                 .isSuccess
         }
-        // Spotify's transfer call first: it carries the state over. The "transfer" player
-        // command it replaces carries none — a librespot device (the watch) refuses it with a
-        // 400, others go active with nothing to play — and stays only as the last resort for a
-        // device the transfer call does not reach.
-        val transferred = runCatching { NativeBridge.transferTo(deviceId) }
-            .onFailure { android.util.Log.w(TAG, "transfer to $deviceId refused: ${it.message}") }
-            .isSuccess
-        if (transferred) return true
+        // Spotify's transfer call: it carries the state over. Tried again once after a pause,
+        // because the one failure seen in practice is a device the account has not finished
+        // listing — a watch whose engine came up a moment ago answers 404 for a few seconds.
+        var failure: Throwable? = null
+        repeat(TRANSFER_ATTEMPTS) { attempt ->
+            if (attempt > 0) Thread.sleep(TRANSFER_RETRY_MS)
+            val outcome = runCatching { NativeBridge.transferTo(deviceId) }
+            if (outcome.isSuccess) return true
+            failure = outcome.exceptionOrNull()
+        }
+        android.util.Log.w(TAG, "transfer refused: ${failure?.message}")
+        // The "transfer" player command, as a last resort for a device the transfer call does not
+        // reach. It carries no state: a librespot device (the watch) refuses it with a 400, which
+        // used to be the error reported, hiding the real one above.
         return send(
             deviceId,
             """{"command":{"endpoint":"transfer","transfer_options":{"restore_paused":"restore"}}}""",
         )
+    }
+
+    /**
+     * Waits until the account has answered a state update newer than [before] (a value of
+     * [NativeBridge.stateAcks] read before the change), or [timeoutMs] has passed.
+     *
+     * For a handover right after the queue was republished: the change is batched and can take
+     * over a second to land on a slow network, and a transfer that overtakes it carries the state
+     * from before. A fixed sleep was a guess that was either too long or not long enough.
+     */
+    suspend fun awaitStatePublished(before: Long, timeoutMs: Long = STATE_WAIT_MS) {
+        kotlinx.coroutines.withTimeoutOrNull(timeoutMs) {
+            while (NativeBridge.stateAcks <= before) kotlinx.coroutines.delay(STATE_POLL_MS)
+        }
     }
 
     private fun command(deviceId: String, endpoint: String) =
@@ -453,6 +473,10 @@ object RemoteConnect {
             .isSuccess
 
     private const val TAG = "RemoteConnect"
+    private const val TRANSFER_ATTEMPTS = 2
+    private const val TRANSFER_RETRY_MS = 1_500L
+    private const val STATE_WAIT_MS = 2_000L
+    private const val STATE_POLL_MS = 40L
 }
 
 /** Playback happening on another of the account's devices. */

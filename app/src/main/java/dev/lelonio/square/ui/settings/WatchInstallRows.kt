@@ -56,19 +56,26 @@ internal fun WatchInstallRows(app: SquareApplication) {
                 else -> Unit
             }
         }
+        // No explicit start here: an observer added to a lifecycle that is already started is
+        // sent ON_START at once, and starting the discovery as well made it start twice.
         owner.lifecycle.addObserver(observer)
-        if (owner.lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED)) installer.startDiscovery()
         onDispose { owner.lifecycle.removeObserver(observer); installer.stopDiscovery() }
     }
     val found by installer.found.collectAsStateWithLifecycle()
     val step by installer.step.collectAsStateWithLifecycle()
-    var address by rememberSaveable { mutableStateOf("") }
-    var connectAddress by rememberSaveable { mutableStateOf("") }
+    // Null until the person types in the field: what the phone heard on the network is shown
+    // meanwhile. A blank string stood for "not typed", so a field emptied on purpose filled itself
+    // again from the discovery and could never be cleared.
+    var address by rememberSaveable { mutableStateOf<String?>(null) }
+    var connectAddress by rememberSaveable { mutableStateOf<String?>(null) }
     var code by rememberSaveable { mutableStateOf("") }
+    // What the last attempt to start found wrong with what was typed.
+    var addressInvalid by rememberSaveable { mutableStateOf(false) }
+    var codeInvalid by rememberSaveable { mutableStateOf(false) }
     var pickedApk by rememberSaveable { mutableStateOf<android.net.Uri?>(null) }
     val pickApk = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()) { uri -> if (uri != null) pickedApk = uri }
-    val shownAddress = address.ifBlank { found.host?.let { host -> found.pairingPort?.let { "$host:$it" } }.orEmpty() }
-    val shownConnect = connectAddress.ifBlank { found.host?.let { host -> found.connectPort?.let { "$host:$it" } }.orEmpty() }
+    val shownAddress = address ?: found.host?.let { host -> found.pairingPort?.let { "$host:$it" } }.orEmpty()
+    val shownConnect = connectAddress ?: found.host?.let { host -> found.connectPort?.let { "$host:$it" } }.orEmpty()
 
     Column(Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 10.dp)) {
         Text(
@@ -78,15 +85,33 @@ internal fun WatchInstallRows(app: SquareApplication) {
         )
         OutlinedTextField(
             value = shownAddress,
-            onValueChange = { address = it },
+            onValueChange = {
+                address = it
+                addressInvalid = false
+            },
             label = { Text(stringResource(R.string.watch_install_address)) },
+            isError = addressInvalid,
+            supportingText = if (addressInvalid) {
+                { Text(stringResource(R.string.watch_install_not_found)) }
+            } else {
+                null
+            },
             singleLine = true,
             modifier = Modifier.fillMaxWidth().padding(top = 10.dp),
         )
         OutlinedTextField(
             value = code,
-            onValueChange = { code = it.filter(Char::isDigit).take(6) },
+            onValueChange = {
+                code = it.filter(Char::isDigit).take(6)
+                codeInvalid = false
+            },
             label = { Text(stringResource(R.string.watch_install_code)) },
+            isError = codeInvalid,
+            supportingText = if (codeInvalid) {
+                { Text(stringResource(R.string.watch_install_wrong_code)) }
+            } else {
+                null
+            },
             singleLine = true,
             keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.NumberPassword),
             modifier = Modifier.fillMaxWidth().padding(top = 6.dp),
@@ -123,9 +148,14 @@ internal fun WatchInstallRows(app: SquareApplication) {
         ActionRow(stringResource(R.string.watch_install_go), destructive = false) {
             val host = shownAddress.substringBeforeLast(':').trim()
             val port = shownAddress.substringAfterLast(':', "").trim().toIntOrNull()
-            if (host.isEmpty() || port == null || code.length != 6) return@ActionRow
-            // The connect port as typed when it was, the one heard on the network otherwise.
-            val typedConnect = connectAddress.substringAfterLast(':', "").trim().toIntOrNull()
+            // Said on the fields rather than silently doing nothing: the press that seemed to be
+            // ignored left the person guessing which of the two was wrong.
+            addressInvalid = host.isEmpty() || port == null
+            codeInvalid = code.length != 6
+            if (addressInvalid || codeInvalid || port == null) return@ActionRow
+            // The connect port as shown: what was typed when something was, what the phone heard
+            // on the network otherwise.
+            val typedConnect = shownConnect.substringAfterLast(':', "").trim().toIntOrNull()
             val apk = pickedApk
             installer.install(host, port, code, typedConnect ?: found.connectPort) { progress ->
                 if (apk != null) app.wearBridge.updates.apkFromUri(apk) else app.wearBridge.updates.latestApk(progress)
@@ -154,6 +184,10 @@ private fun describe(step: WatchInstaller.Step): String = when (step) {
     WatchInstaller.Step.Done -> stringResource(R.string.watch_install_done)
     is WatchInstaller.Step.Failed -> when (step.reason) {
         WatchInstaller.Reason.WRONG_CODE -> stringResource(R.string.watch_install_wrong_code)
+        // No message of their own yet (see the report): the nearest existing ones, which say the
+        // watch could not be reached, until a string for each is added.
+        WatchInstaller.Reason.NETWORK -> stringResource(R.string.watch_install_not_found)
+        WatchInstaller.Reason.TIMEOUT -> stringResource(R.string.watch_install_not_found)
         WatchInstaller.Reason.NOT_FOUND -> stringResource(R.string.watch_install_not_found)
         WatchInstaller.Reason.REFUSED -> stringResource(R.string.watch_install_refused)
         WatchInstaller.Reason.NO_APK -> stringResource(R.string.watch_install_no_apk)

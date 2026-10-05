@@ -58,20 +58,38 @@ class PhoneWearListenerService : WearableListenerService() {
         when (event.path) {
             WearPaths.AUDIO_LIGHT_SUBSCRIBE -> {
                 val request = WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AudioLightSubscription.serializer(), event.data) ?: return
-                handleAside { (application as dev.lelonio.square.SquareApplication).audioLightPublisher.subscribe(event.sourceNodeId, request) }
+                // Not waited for at all: the watch renews this every two seconds, the subscription
+                // check inside takes up to a second and a half on the connected-nodes lookup, and
+                // Play Services hands this service one message at a time, so a Pause or a Skip sent
+                // meanwhile would queue behind a light show's lease. Nothing here is answered.
+                val node = event.sourceNodeId
+                val publisher = (application as dev.lelonio.square.SquareApplication).audioLightPublisher
+                questions.launch { publisher.subscribe(node, request) }
             }
             WearPaths.HELLO -> {
                 val hello = WearCodec.decodeOrNull(Hello.serializer(), event.data) ?: return
                 handle { bridge.onHello(event.sourceNodeId, hello) }
             }
             WearPaths.COMMAND -> {
-                val envelope = WearCodec.decodeOrNull(CommandEnvelope.serializer(), event.data) ?: return
-                handle { bridge.onCommand(event.sourceNodeId, envelope) }
+                val envelope = WearCodec.decodeOrNull(CommandEnvelope.serializer(), event.data)
+                if (envelope != null) {
+                    handle { bridge.onCommand(event.sourceNodeId, envelope) }
+                } else {
+                    // A command from a newer watch, of a kind registered nowhere here: the envelope
+                    // does not decode, but its id is still readable, and "I cannot do that" sent
+                    // back at once beats a watch waiting out its timeout to call the phone unreachable.
+                    WearCodec.peekId(event.data)?.let { id -> handle { bridge.onUnsupportedCommand(event.sourceNodeId, id) } }
+                }
             }
             WearPaths.RPC -> {
-                val request = WearCodec.decodeOrNull(RpcRequest.serializer(), event.data) ?: return
-                // Bounded inside: the answer goes back within the watch's patience, whatever happens.
-                handleAside { bridge.rpc.onRequest(event.sourceNodeId, request) }
+                val request = WearCodec.decodeOrNull(RpcRequest.serializer(), event.data)
+                if (request != null) {
+                    // Bounded inside: the answer goes back within the watch's patience, whatever happens.
+                    handleAside { bridge.rpc.onRequest(event.sourceNodeId, request) }
+                } else {
+                    // The same for a question of a kind this phone does not know.
+                    WearCodec.peekId(event.data)?.let { id -> handleAside { bridge.rpc.onUnsupported(event.sourceNodeId, id) } }
+                }
             }
             WearPaths.AUTH_REQUEST -> {
                 val request = WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AuthRequest.serializer(), event.data) ?: return

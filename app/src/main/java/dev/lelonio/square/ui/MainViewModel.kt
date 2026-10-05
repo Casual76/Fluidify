@@ -620,15 +620,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // whatever carries the handover has something resolvable to carry; see
         // NativeBridge.publishContext.
         if (!dev.lelonio.square.data.RemoteConnect.elsewhereActive.value) {
+            val before = NativeBridge.stateAcks
             val republished = withContext(Dispatchers.IO) {
                 runCatching { NativeBridge.publishContext(positionMs.toInt()) }
                     .onFailure { android.util.Log.w(TAG, "context not republished: $it") }
                     .getOrDefault(false)
             }
-            // Only when something actually changed does Spotify need a moment
-            // to see it. A queue that already carried its playlist goes over at
-            // once, which is nearly every handover.
-            if (republished) delay(TRANSFER_SETTLE_MS)
+            // Only when something actually changed does Spotify need to see it
+            // first, and then exactly until it has answered. A queue that
+            // already carried its playlist goes over at once, which is nearly
+            // every handover.
+            if (republished) dev.lelonio.square.data.RemoteConnect.awaitStatePublished(before)
         }
 
         // Spotify's own transfer, when the account has an application to ask it

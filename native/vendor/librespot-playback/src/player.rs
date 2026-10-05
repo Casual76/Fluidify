@@ -31,7 +31,7 @@ use crate::{
     mixer::VolumeGetter,
 };
 use futures_util::{
-    FutureExt, StreamExt, TryFutureExt, future, future::FusedFuture,
+    StreamExt, TryFutureExt, future, future::FusedFuture,
     stream::futures_unordered::FuturesUnordered,
 };
 use librespot_metadata::{audio::UniqueFields, track::Tracks};
@@ -1856,14 +1856,13 @@ impl Future for PlayerInternal {
                                     play_request_id,
                                     position_ms,
                                 });
-                                let again = self.load_track(track_id.clone(), position_ms);
-                                let loader = Box::pin(
-                                    async move {
-                                        tokio::time::sleep(backoff).await;
-                                        again.await
-                                    }
-                                    .fuse(),
-                                );
+                                // The wait goes *before* the request, inside
+                                // the loader: waiting on the result of a load
+                                // that had already been sent delayed only the
+                                // reading of the answer, and the network was
+                                // asked again the instant the last one failed.
+                                let loader =
+                                    Box::pin(self.load_track_after(track_id.clone(), position_ms, backoff));
                                 self.state = PlayerState::Loading {
                                     track_id,
                                     play_request_id,
@@ -2189,8 +2188,21 @@ impl PlayerInternal {
                         }
                     }
                     Err(e) => {
-                        error!("{e}");
-                        exit(1);
+                        // LOCAL PATCH: a sink that cannot stop has nothing left
+                        // to stop. On Android the only way here is an output
+                        // already detached (`sink::clear_output` while the engine
+                        // shuts down, racing the stop it just asked for), and
+                        // `exit(1)` there killed the whole app process — on the
+                        // watch, one that outlives the engine — mid-song.
+                        warn!("sink did not stop cleanly, treating it as closed: {e}");
+                        self.sink_status = if temporarily {
+                            SinkStatus::TemporarilyClosed
+                        } else {
+                            SinkStatus::Closed
+                        };
+                        if let Some(callback) = &mut self.sink_event_callback {
+                            callback(self.sink_status);
+                        }
                     }
                 }
             }
@@ -3314,14 +3326,7 @@ impl PlayerInternal {
             position_ms,
         });
 
-        let loader = self.load_track(track_id.clone(), position_ms);
-        let loader = Box::pin(
-            async move {
-                tokio::time::sleep(LOAD_RETRY_BACKOFF).await;
-                loader.await
-            }
-            .fuse(),
-        );
+        let loader = Box::pin(self.load_track_after(track_id.clone(), position_ms, LOAD_RETRY_BACKOFF));
         self.state = PlayerState::Loading {
             track_id,
             play_request_id,
@@ -3334,6 +3339,20 @@ impl PlayerInternal {
         &mut self,
         spotify_uri: SpotifyUri,
         position_ms: u32,
+    ) -> impl FusedFuture<Output = Result<PlayerLoadedTrackData, ()>> + Send + 'static {
+        self.load_track_after(spotify_uri, position_ms, Duration::ZERO)
+    }
+
+    /// LOCAL PATCH: [`load_track`], started after `delay`.
+    ///
+    /// The delay runs on the loader's own thread, before anything is asked of
+    /// the network, and a load nobody is waiting for any more (the listener
+    /// moved on during the wait) is not sent at all.
+    fn load_track_after(
+        &mut self,
+        spotify_uri: SpotifyUri,
+        position_ms: u32,
+        delay: Duration,
     ) -> impl FusedFuture<Output = Result<PlayerLoadedTrackData, ()>> + Send + 'static {
         // This method creates a future that returns the loaded stream and associated info.
         // Ideally all work should be done using asynchronous code. However, seek() on the
@@ -3353,9 +3372,14 @@ impl PlayerInternal {
         let handle = tokio::runtime::Handle::current();
 
         let load_handle = thread::spawn(move || {
-            let data = handle.block_on(loader.load_track(spotify_uri, position_ms));
-            if let Some(data) = data {
-                let _ = result_tx.send(data);
+            if !delay.is_zero() {
+                thread::sleep(delay);
+            }
+            if !result_tx.is_closed() {
+                let data = handle.block_on(loader.load_track(spotify_uri, position_ms));
+                if let Some(data) = data {
+                    let _ = result_tx.send(data);
+                }
             }
 
             let mut load_handles = load_handles_clone.lock().expect(LOAD_HANDLES_POISON_MSG);

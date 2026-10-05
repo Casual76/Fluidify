@@ -97,8 +97,12 @@ fn root() -> Option<PathBuf> {
 }
 
 /// `<root>/<kind>/<xx>/<rest>`, with the id split the way librespot splits it.
+///
+/// `None` for anything that is not a hex id. Ids arrive from sidecars written
+/// by another device (see [`fetch_known`]), and one carrying `/` or `..` would
+/// otherwise name a file anywhere under the app's storage.
 fn shard(root: &Path, kind: &str, id: &str, suffix: &str) -> Option<PathBuf> {
-    if id.len() < 3 {
+    if id.len() < 3 || !id.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
     let mut path = root.join(kind).join(&id[0..2]);
@@ -124,7 +128,10 @@ fn track_key(uri: &SpotifyUri) -> EngineResult<String> {
 }
 
 fn hex_to_bytes(hex: &str) -> Option<Vec<u8>> {
-    if hex.len() % 2 != 0 {
+    // Checked as bytes first: slicing `&hex[i..i + 2]` through a multi-byte
+    // character panics, and this runs on librespot's player thread, outside
+    // anything that catches it.
+    if hex.len() % 2 != 0 || !hex.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
     }
     (0..hex.len())
@@ -424,6 +431,21 @@ async fn get_range(
         .map_err(|e| format!("CDN request failed: {e}"))?;
 
     let status = response.status();
+    // Asking from the end of a file that is already whole: the CDN says the
+    // range is past the end, and the size it is past is in `bytes */N`. A
+    // `.part` that had every byte but had not been renamed yet (the process
+    // went between the last write and the rename) failed on this for ever.
+    if status == StatusCode::RANGE_NOT_SATISFIABLE {
+        let total = response
+            .headers()
+            .get(http::header::CONTENT_RANGE)
+            .and_then(|value| value.to_str().ok())
+            .and_then(|range| range.rsplit('/').next())
+            .and_then(|size| size.parse::<usize>().ok());
+        if let Some(total) = total.filter(|total| offset >= *total) {
+            return Ok((bytes::Bytes::new(), total));
+        }
+    }
     if status != StatusCode::PARTIAL_CONTENT {
         return Err(format!("CDN answered {status}, expected partial content"));
     }
@@ -574,7 +596,7 @@ async fn fetch_known(session: Session, mut sidecar: Value, root: PathBuf) -> Res
         object.insert("downloadedAt".to_string(), json!(now_ms()));
     }
     write_sidecar(&meta, &sidecar)?;
-    log::info!("downloaded <{uri_text}> with a key it was given ({done} bytes)");
+    log::debug!("downloaded <{uri_text}> with a key it was given ({done} bytes)");
     engine::emit_app("download_done", &uri_text, done as i64);
     Ok(sidecar.to_string())
 }
@@ -733,6 +755,21 @@ async fn fetch_file(
     if let Some(parent) = part.parent() {
         fs::create_dir_all(parent).map_err(|e| format!("download dir failed: {e}"))?;
     }
+    // Whose bytes the `.part` holds. The same track at another quality is
+    // another file with the same name here, and resuming one from the other
+    // spliced the head of one encoding onto the tail of the other — a file
+    // that decodes into noise halfway through. The watch keeps the same
+    // marker beside its own `.part` for the same reason. A `.part` with no
+    // marker cannot be vouched for and starts again.
+    let identity = part_identity(part);
+    // The same spelling as the sidecar's `fileId`, which is what the watch keeps.
+    let wanted = file_id
+        .to_base16()
+        .map_err(|e| format!("bad file id: {e}"))?;
+    if fs::read_to_string(&identity).ok().as_deref() != Some(wanted.as_str()) {
+        let _ = fs::remove_file(part);
+        fs::write(&identity, &wanted).map_err(|e| format!("could not mark the download: {e}"))?;
+    }
     let mut done = fs::metadata(&part).map(|meta| meta.len()).unwrap_or(0) as usize;
     let mut file = fs::OpenOptions::new()
         .create(true)
@@ -786,7 +823,7 @@ async fn fetch_file(
             if attempt >= CHUNK_ATTEMPTS {
                 return Err(last);
             }
-            log::warn!("download of <{uri_text}> stumbled at {done}: {last}; asking again");
+            log::warn!("a download stumbled at {done}: {last}; asking again");
             // A fresh set of URLs, not a fresh wait: a signed URL that expired
             // while the queue worked through a long playlist is the common
             // failure here, and sleeping does not fix it.
@@ -823,7 +860,22 @@ async fn fetch_file(
     if done < total {
         return Err(format!("the download stopped short: {done} of {total} bytes"));
     }
+    if done > total {
+        // More than the file has: not a download that can be finished, so it
+        // is thrown away rather than tried again from the same wrong place.
+        let _ = fs::remove_file(part);
+        let _ = fs::remove_file(part_identity(part));
+        return Err(format!("the download ran long: {done} of {total} bytes"));
+    }
+    let _ = fs::remove_file(part_identity(part));
     Ok(done)
+}
+
+/// The marker beside a `.part` naming the file it is a piece of; see [`fetch_file`].
+fn part_identity(part: &Path) -> PathBuf {
+    let mut name = part.as_os_str().to_owned();
+    name.push(".id");
+    PathBuf::from(name)
 }
 
 fn now_ms() -> u64 {
@@ -831,4 +883,38 @@ fn now_ms() -> u64 {
         .duration_since(std::time::UNIX_EPOCH)
         .map(|since| since.as_millis() as u64)
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hex_to_bytes_refuses_what_is_not_hex_instead_of_panicking() {
+        assert_eq!(hex_to_bytes("00ff10"), Some(vec![0x00, 0xff, 0x10]));
+        assert_eq!(hex_to_bytes("abc"), None);
+        assert_eq!(hex_to_bytes("zz"), None);
+        // Multi-byte characters used to panic when sliced in the middle.
+        assert_eq!(hex_to_bytes("é1"), None);
+        assert_eq!(hex_to_bytes("ü"), None);
+    }
+
+    #[test]
+    fn shard_only_accepts_hex_ids() {
+        let root = Path::new("root");
+        assert_eq!(
+            audio_path(root, "0123456789abcdef"),
+            Some(root.join("audio").join("01").join("23456789abcdef"))
+        );
+        assert_eq!(audio_path(root, "../../etc"), None);
+        assert_eq!(audio_path(root, "ab/cd"), None);
+        assert_eq!(audio_path(root, "ab"), None);
+        assert_eq!(meta_path(root, "abc..def"), None);
+    }
+
+    #[test]
+    fn part_identity_sits_beside_the_part() {
+        let part = Path::new("root").join("audio").join("01").join("23.part");
+        assert_eq!(part_identity(&part), Path::new("root").join("audio").join("01").join("23.part.id"));
+    }
 }

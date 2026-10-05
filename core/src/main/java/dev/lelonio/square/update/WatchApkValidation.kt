@@ -23,10 +23,25 @@ object WatchApkValidation {
         return digest.digest().joinToString("") { "%02x".format(it) }
     }
 
+    /** What a SHA-256 checksum looks like, written out. */
+    val SHA256_HEX = Regex("[a-fA-F0-9]{64}")
+
+    /**
+     * Why [file] is not the watch APK for [version] with [checksum], or `null` when it is.
+     *
+     * [actualSha256] is the file's hash when the caller has just computed it, so a large APK is
+     * not read through a second time for the same answer.
+     */
     @Suppress("DEPRECATION")
-    fun reject(context: Context, file: File, version: String, checksum: String): String? {
-        if (!checksum.matches(Regex("[a-fA-F0-9]{64}"))) return "missing-checksum"
-        if (!checksum.equals(sha256(file), ignoreCase = true)) return "checksum"
+    fun reject(
+        context: Context,
+        file: File,
+        version: String,
+        checksum: String,
+        actualSha256: String? = null,
+    ): String? {
+        if (!checksum.matches(SHA256_HEX)) return "missing-checksum"
+        if (!checksum.equals(actualSha256 ?: sha256(file), ignoreCase = true)) return "checksum"
         val signatureFlags = if (Build.VERSION.SDK_INT >= 28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
         val info = context.packageManager.getPackageArchiveInfo(file.absolutePath, signatureFlags or PackageManager.GET_META_DATA)
             ?: return "not-an-apk"

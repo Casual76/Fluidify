@@ -190,7 +190,9 @@ pub fn home(
     };
     let app_version = app_version.to_string();
 
-    handle.block_on(async move { query_with(&session, &home, variables, &language, &app_version).await })
+    handle.block_on(crate::engine::within(crate::engine::CALL_TIMEOUT, "pathfinder", async move {
+        query_with(&session, &home, variables, &language, &app_version).await
+    }))?
 }
 
 /// Any persisted query the caller can name, by hash.
@@ -219,7 +221,9 @@ pub fn gateway(
         hash: hash.to_string(),
     };
 
-    handle.block_on(async move { query_with(&session, &query, variables, &language, &app_version).await })
+    handle.block_on(crate::engine::within(crate::engine::CALL_TIMEOUT, "pathfinder", async move {
+        query_with(&session, &query, variables, &language, &app_version).await
+    }))?
 }
 
 /// The account's saved tracks, as the web player's library page reads them.
@@ -249,7 +253,7 @@ pub fn liked_songs(
     let app_version = app_version.to_string();
     let variables = if variables.is_empty() { "{}" } else { variables }.to_string();
 
-    handle.block_on(async move {
+    handle.block_on(crate::engine::within(crate::engine::CALL_TIMEOUT, "pathfinder", async move {
         query_with(&session, &liked, variables, &language, &app_version).await
-    })
+    }))?
 }

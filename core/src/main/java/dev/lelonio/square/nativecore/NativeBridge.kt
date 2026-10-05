@@ -178,13 +178,30 @@ object NativeBridge {
     val isConnected: Boolean get() = nativeIsConnected()
 
     /**
+     * Whether the account has acknowledged this Connect device, so another device can transfer
+     * playback to it or command it.
+     *
+     * Later than [isConnected] by up to the twelve seconds the first state update may take: the
+     * session is up as soon as the handshake lands, the device is only known to the account once
+     * its first state update has been answered. A transfer aimed at a device in between came back
+     * as a 404.
+     */
+    val isEstablished: Boolean get() = nativeIsEstablished()
+
+    /**
+     * How many of this device's state updates the account has answered, ever. Read before a
+     * change to the Connect state and waited on after it; see [RemoteConnect.awaitStatePublished].
+     */
+    val stateAcks: Long get() = nativeStateAcks()
+
+    /**
      * Whether the Connect device is gone and the engine wants rebuilding.
      *
      * Distinct from [isConnected], which asks about the session: a session can
      * be perfectly valid while the Spirc task behind it has died, and that is
      * the state where transport commands stop landing and the player carries on
-     * making sound. Set the first time a command has to go around Spirc to
-     * reach the player, and cleared by the next [start].
+     * making sound. Computed on every read from the engine's own flags, so it
+     * clears itself as soon as a new device has been installed.
      */
     val spircLost: Boolean get() = nativeSpircLost()
 
@@ -658,6 +675,8 @@ object NativeBridge {
     private external fun nativeSetVolume(volume: Int)
     private external fun nativeVolume(): Int
     private external fun nativeIsConnected(): Boolean
+    private external fun nativeIsEstablished(): Boolean
+    private external fun nativeStateAcks(): Long
     private external fun nativeSpircLost(): Boolean
     private external fun nativeSetQuality(bitrateKbps: Int, crossfadeMs: Int)
 

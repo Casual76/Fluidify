@@ -565,9 +565,10 @@ class PlaybackService : MediaLibraryService() {
                 val position = player.currentPosition.coerceAtLeast(0)
                 withContext(Dispatchers.IO) {
                     if (!dev.lelonio.square.data.RemoteConnect.elsewhereActive.value) {
+                        val before = NativeBridge.stateAcks
                         val republished = runCatching { NativeBridge.publishContext(position.toInt()) }
                             .getOrDefault(false)
-                        if (republished) delay(TRANSFER_SETTLE_MS)
+                        if (republished) dev.lelonio.square.data.RemoteConnect.awaitStatePublished(before)
                     }
                     val ok = dev.lelonio.square.data.RemoteConnect.transferTo(request.deviceId)
                     request.done?.complete(ok)
@@ -1886,7 +1887,6 @@ class PlaybackService : MediaLibraryService() {
         private const val SAVE_INTERVAL_MS = 10_000L
 
         /** How long Spotify is given to see a republished context before the handover. */
-        private const val TRANSFER_SETTLE_MS = 600L
 
         /** How many looked-up tracks of another device's queue are remembered. */
         private const val DESCRIBED_QUEUE_MAX = 500

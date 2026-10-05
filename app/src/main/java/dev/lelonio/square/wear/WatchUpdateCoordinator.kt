@@ -5,6 +5,8 @@ import android.content.pm.PackageManager
 import android.os.Build
 import android.net.Uri
 import android.util.Log
+import androidx.work.Constraints
+import androidx.work.NetworkType
 import androidx.work.WorkManager
 import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.ExistingWorkPolicy
@@ -42,6 +44,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import java.io.File
 import java.security.MessageDigest
 
@@ -98,8 +101,31 @@ class WatchUpdateCoordinator(
     private val _watch = MutableStateFlow<WatchInfo?>(null)
     val watch: StateFlow<WatchInfo?> = _watch.asStateFlow()
 
-    /** The APK ready to send, and the offer that describes it. */
-    private var ready: Pair<File, UpdateOffer>? = restoreOffer()
+    private val readyLock = Any()
+    private var readyLoaded = false
+    private var readyValue: Pair<File, UpdateOffer>? = null
+
+    /**
+     * The APK ready to send, and the offer that describes it.
+     *
+     * Restored from the preferences and the disk the first time it is asked for, not when this is
+     * built: the coordinator is made with the bridge, on the main thread, in every process the
+     * phone starts, and a phone with no watch used to read a file and a preference at startup
+     * for an offer nobody would ever ask about. Callers that may be on the main thread load it
+     * first from the IO dispatcher (`withContext(Dispatchers.IO) { ready }`).
+     */
+    private var ready: Pair<File, UpdateOffer>?
+        get() = synchronized(readyLock) {
+            if (!readyLoaded) {
+                readyValue = restoreOffer()
+                readyLoaded = true
+            }
+            readyValue
+        }
+        set(value) = synchronized(readyLock) {
+            readyValue = value
+            readyLoaded = true
+        }
 
     init {
         scope.launch {
@@ -114,11 +140,11 @@ class WatchUpdateCoordinator(
     /** A watch said hello. Checks for a newer build now and then, and pushes it when allowed. */
     fun onWatchHello(nodeId: String, hello: Hello) {
         scope.launch {
-            val name = runCatching {
+            val name = catchingNonCancel {
                 Wearable.getNodeClient(context).connectedNodes.await().firstOrNull { it.id == nodeId }?.displayName
             }.getOrNull() ?: _watch.value?.name.orEmpty()
             _watch.value = WatchInfo(nodeId, name, hello, System.currentTimeMillis())
-            val cached = ready
+            val cached = withContext(Dispatchers.IO) { ready }
             if (cached != null && compareVersions(hello.versionName, cached.second.versionName) >= 0) {
                 _state.value = State.Installed(hello.versionName)
                 clearReady()
@@ -163,11 +189,15 @@ class WatchUpdateCoordinator(
             val missing = error.message.orEmpty().contains("404")
             return@withLock Result.failure(if (missing) dev.lelonio.square.wear.install.NoReleaseException() else error)
         } ?: return@withLock Result.failure(dev.lelonio.square.wear.install.NoReleaseException())
-        if (!update.sha256.matches(Regex("[a-fA-F0-9]{64}"))) return@withLock Result.failure(IllegalStateException("missing-checksum"))
-        val file = runCatching {
+        if (!update.sha256.matches(SHA256_HEX)) return@withLock Result.failure(IllegalStateException("missing-checksum"))
+        val file = catchingNonCancel {
             installer.download(update) { progress -> onProgress(progress.progress.takeIf { it in 0f..1f }) }
         }.getOrElse { return@withLock Result.failure(it) }
-        rejectArchive(file, update.version, update.sha256)?.let { return@withLock Result.failure(IllegalStateException(it)) }
+        // Against the manifest's own checksum: that is the comparison that can catch a bad download.
+        rejectArchive(file, update.version, update.sha256)?.let {
+            file.delete()
+            return@withLock Result.failure(IllegalStateException(it))
+        }
         Result.success(file)
     }
 
@@ -176,14 +206,19 @@ class WatchUpdateCoordinator(
      * for the first install from the phone when the store has nothing to offer yet.
      */
     suspend fun apkFromUri(uri: Uri): Result<File> = withContext(Dispatchers.IO) {
-        runCatching {
-            val target = File(context.cacheDir, "watch-install.apk")
-            context.contentResolver.openInputStream(uri)?.use { input -> target.outputStream().use { input.copyTo(it) } }
-                ?: error("cannot read the file")
+        val target = File(context.cacheDir, "watch-install.apk")
+        catchingNonCancel {
+            // A null stream is a file that could not be opened: said so, not left to be offered
+            // as whatever the previous pick left in the same cache file.
+            val source = context.contentResolver.openInputStream(uri) ?: error("cannot read the file")
+            source.use { input -> target.outputStream().use { input.copyTo(it) } }
             val version = archiveVersion(target) ?: error("not-an-apk")
-            rejectArchive(target, version)?.let { error(it) }
+            // Hashed once. There is no manifest to compare with for a file the person picked, so
+            // the checksum is the file's own, which is what the validation then re-reads against.
+            val hash = sha256Of(target)
+            rejectArchive(target, version, hash, actualSha256 = hash)?.let { error(it) }
             target
-        }
+        }.onFailure { target.delete() }
     }
 
     /** Checks and, if there is something, sends it. The "update the watch" row. */
@@ -193,7 +228,7 @@ class WatchUpdateCoordinator(
             if (update != null) { push(update, requestedByUser = true); return@launch }
             // A cached update is also usable when the manifest cannot be reached.
             if (_state.value !is State.Failed) return@launch
-            val cached = ready ?: restoreOffer()?.also { ready = it }
+            val cached = withContext(Dispatchers.IO) { ready }
             val node = _watch.value?.nodeId
             if (cached != null && node != null && compareVersions(cached.second.versionName, _watch.value!!.hello.versionName) > 0) {
                 offer(cached.first, cached.second.versionName, cached.second.sha256, requestedByUser = true, nodeId = node)
@@ -204,29 +239,54 @@ class WatchUpdateCoordinator(
 
     private fun push(update: AvailableAppUpdate, requestedByUser: Boolean) {
         val watch = _watch.value ?: return
-        val work = OneTimeWorkRequestBuilder<WatchUpdateDownloadWorker>().setInputData(workDataOf(
-            "version" to update.version, "url" to update.downloadUrl, "sha256" to update.sha256,
-            "bytes" to update.sizeBytes, "node" to watch.nodeId, "user" to requestedByUser,
-        )).build()
-        WorkManager.getInstance(context).enqueueUniqueWork("watch-update-download", ExistingWorkPolicy.KEEP, work)
+        val work = OneTimeWorkRequestBuilder<WatchUpdateDownloadWorker>()
+            // A download needs a network: without the constraint the worker ran at once on a phone
+            // with none, failed, and burned its retries before the connection came back.
+            .setConstraints(Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build())
+            .setInputData(workDataOf(
+                "version" to update.version, "url" to update.downloadUrl, "sha256" to update.sha256,
+                "bytes" to update.sizeBytes, "node" to watch.nodeId, "user" to requestedByUser,
+            )).build()
+        WorkManager.getInstance(context).enqueueUniqueWork(
+            "watch-update-download",
+            enqueuePolicy(KEY_PUSH_JOB, "${update.version}@${watch.nodeId}"),
+            work,
+        )
+    }
+
+    /**
+     * What to do with a unique job that is already queued or running when the same one is asked for.
+     *
+     * The same job asked twice (a hello every few minutes) is [ExistingWorkPolicy.KEEP]: the one
+     * running is the one wanted. A different one, for another version or another watch, used to be
+     * silently dropped by KEEP, and the newer build or the second watch waited for nothing:
+     * [ExistingWorkPolicy.REPLACE]. [key] names the job, [slot] where its last name is remembered
+     * (preferences, not memory: the job outlives the process).
+     */
+    private fun enqueuePolicy(slot: String, key: String): ExistingWorkPolicy {
+        val previous = prefs.getString(slot, null)
+        prefs.edit().putString(slot, key).apply()
+        return if (previous != null && previous != key) ExistingWorkPolicy.REPLACE else ExistingWorkPolicy.KEEP
     }
 
     suspend fun downloadAndOffer(update: AvailableAppUpdate, nodeId: String, requestedByUser: Boolean): Boolean {
-        if (!update.sha256.matches(Regex("[a-fA-F0-9]{64}"))) {
+        if (!update.sha256.matches(SHA256_HEX)) {
             _state.value = State.Failed("missing-checksum")
             return false
         }
-        val cached = ready?.takeIf { it.second.versionName == update.version && it.second.sha256.equals(update.sha256, true) && it.first.isFile }
-        val file = cached?.first ?: runCatching {
+        val cached = withContext(Dispatchers.IO) {
+            ready?.takeIf { it.second.versionName == update.version && it.second.sha256.equals(update.sha256, true) && it.first.isFile }
+        }
+        val file = cached?.first ?: catchingNonCancel {
             installer.download(update) { progress ->
                 _state.value = State.Downloading(update.version, progress.progress.takeIf { it in 0f..1f })
             }
         }.getOrElse {
-            if (it is CancellationException) throw it
             _state.value = State.Failed(it.message ?: "download")
             return false
         }
-        offer(file, update.version, update.sha256, requestedByUser, nodeId)
+        // A fresh download is a temporary: once copied beside the offer it is not kept twice.
+        offer(file, update.version, update.sha256, requestedByUser, nodeId, temporary = cached == null)
         val success = ready != null && _state.value !is State.Failed
         if (success) prefs.edit().putLong(KEY_CHECKED, System.currentTimeMillis()).apply()
         return success
@@ -237,31 +297,65 @@ class WatchUpdateCoordinator(
         scope.launch {
             val file = withContext(Dispatchers.IO) {
                 val target = File(context.cacheDir, "watch-pushed.apk")
-                context.contentResolver.openInputStream(uri)?.use { input ->
-                    target.outputStream().use { input.copyTo(it) }
-                }
-                target
+                catchingNonCancel {
+                    // A null stream used to leave the previous pick in the cache file, to be
+                    // offered to the watch as if it were this one.
+                    val source = context.contentResolver.openInputStream(uri) ?: error("cannot read the file")
+                    source.use { input -> target.outputStream().use { input.copyTo(it) } }
+                    target
+                }.onFailure {
+                    Log.w(TAG, "picked APK not read: ${it.javaClass.simpleName}")
+                    target.delete()
+                }.getOrNull()
             }
-            val version = archiveVersion(file) ?: run {
+            if (file == null) {
+                _state.value = State.Failed("cannot-read")
+                return@launch
+            }
+            val version = withContext(Dispatchers.IO) { archiveVersion(file) } ?: run {
+                file.delete()
                 _state.value = State.Failed("not-an-apk")
                 return@launch
             }
-            offer(file, version, sha256 = "", requestedByUser = true)
+            offer(file, version, sha256 = "", requestedByUser = true, temporary = true)
         }
     }
 
-    private suspend fun offer(file: File, version: String, sha256: String, requestedByUser: Boolean, nodeId: String? = _watch.value?.nodeId) {
+    /**
+     * Checks [file] and offers it to the watch. [temporary] says [file] is a scratch copy (a
+     * download, a picked file) that is of no use once the offer has its own copy: it is deleted
+     * however this ends, where it used to sit in the cache for good.
+     */
+    private suspend fun offer(
+        file: File,
+        version: String,
+        sha256: String,
+        requestedByUser: Boolean,
+        nodeId: String? = _watch.value?.nodeId,
+        temporary: Boolean = false,
+    ) {
+        try {
+            offerChecked(file, version, sha256, requestedByUser, nodeId)
+        } finally {
+            if (temporary) withContext(NonCancellable + Dispatchers.IO) { file.delete() }
+        }
+    }
+
+    private suspend fun offerChecked(file: File, version: String, sha256: String, requestedByUser: Boolean, nodeId: String?) {
         val node = nodeId ?: run {
             _state.value = State.Failed("no-watch")
             return
         }
-        withContext(Dispatchers.IO) { rejectArchive(file, version) }?.let { reason ->
-            _state.value = State.Failed(reason)
-            return
-        }
+        // The file is hashed here once, and only once: against the manifest's checksum when there
+        // is one (a download), which is what can catch a corrupt file, and handed to the
+        // validation below so it does not read the APK through again for the same number.
         val checksum = withContext(Dispatchers.IO) { sha256Of(file) }
         if (sha256.isNotBlank() && !sha256.equals(checksum, ignoreCase = true)) {
             _state.value = State.Failed("checksum")
+            return
+        }
+        withContext(Dispatchers.IO) { rejectArchive(file, version, checksum, actualSha256 = checksum) }?.let { reason ->
+            _state.value = State.Failed(reason)
             return
         }
         val offer = UpdateOffer(
@@ -270,13 +364,15 @@ class WatchUpdateCoordinator(
             sha256 = checksum,
             requestedByUser = requestedByUser,
         )
+        // Disk and a synchronous preferences commit: not on the main thread this runs on.
         val saved = withContext(Dispatchers.IO) {
             val target = File(context.filesDir, "watch-ready.apk")
-            if (file.absolutePath != target.absolutePath) file.copyTo(target, overwrite = true) else target
+            val kept = if (file.absolutePath != target.absolutePath) file.copyTo(target, overwrite = true) else target
+            prefs.edit().putString(KEY_OFFER, WearCodec.json.encodeToString(UpdateOffer.serializer(), offer))
+                .putString(KEY_OFFER_NODE, node).putLong(KEY_OFFER_AT, System.currentTimeMillis()).commit()
+            kept
         }
         ready = saved to offer
-        prefs.edit().putString(KEY_OFFER, WearCodec.json.encodeToString(UpdateOffer.serializer(), offer))
-            .putString(KEY_OFFER_NODE, node).putLong(KEY_OFFER_AT, System.currentTimeMillis()).commit()
         _state.value = State.Offered(version)
         if (!link.awaitNearbyWatch(node)) _state.value = State.Failed("watch-not-nearby")
         else if (!link.send(node, WearPaths.UPDATE_OFFER, WearCodec.encode(UpdateOffer.serializer(), offer)))
@@ -289,7 +385,11 @@ class WatchUpdateCoordinator(
         when (status.phase) {
             UpdatePhase.ACCEPT -> {
                 val work = OneTimeWorkRequestBuilder<WatchUpdateSendWorker>().setInputData(workDataOf("node" to nodeId)).build()
-                WorkManager.getInstance(context).enqueueUniqueWork("watch-update-send", ExistingWorkPolicy.KEEP, work)
+                WorkManager.getInstance(context).enqueueUniqueWork(
+                    "watch-update-send",
+                    enqueuePolicy(KEY_SEND_JOB, "${status.versionName}@$nodeId"),
+                    work,
+                )
             }
             UpdatePhase.DECLINE -> {
                 _state.value = if (status.reason == "already-current") State.UpToDate(status.versionName)
@@ -306,7 +406,7 @@ class WatchUpdateCoordinator(
     }
 
     suspend fun sendPrepared(nodeId: String): Boolean = sendLock.withLock {
-        val (file, offer) = ready ?: restoreOffer()?.also { ready = it } ?: return@withLock false
+        val (file, offer) = withContext(Dispatchers.IO) { ready } ?: return@withLock false
         if (!link.awaitNearbyWatch(nodeId)) {
             _state.value = State.Failed("watch-not-nearby")
             return@withLock false
@@ -325,7 +425,10 @@ class WatchUpdateCoordinator(
             }
         }
         try {
-            kotlinx.coroutines.withTimeout(15 * 60_000L) {
+            // withTimeoutOrNull, not withTimeout: its TimeoutCancellationException is a
+            // CancellationException, which the catch below rethrows, so a send that merely took too
+            // long reached the worker as a cancellation and was never reported as a failure.
+            val completed = withTimeoutOrNull(SEND_BUDGET_MS) {
                 val opened = channels.openChannel(nodeId, WearPaths.UPDATE_APK).await()
                 channel = opened
                 channels.registerChannelCallback(opened, callback).await()
@@ -354,8 +457,14 @@ class WatchUpdateCoordinator(
                 }
                 // sendFile's Task only starts a transfer. Wait for actual stream completion before closing the channel.
                 check(finished.await() == ChannelClient.ChannelCallback.CLOSE_REASON_NORMAL) { "transfer-interrupted" }
+                true
             }
-            true
+            if (completed == null) {
+                _state.value = State.Failed("send-timeout")
+                false
+            } else {
+                true
+            }
         } catch (cancelled: CancellationException) {
             _state.value = State.Failed("transfer-interrupted")
             throw cancelled
@@ -364,8 +473,8 @@ class WatchUpdateCoordinator(
             false
         } finally {
             withContext(NonCancellable) { channel?.let {
-                runCatching { channels.unregisterChannelCallback(it, callback).await() }
-                runCatching { channels.close(it).await() }
+                catchingNonCancel { channels.unregisterChannelCallback(it, callback).await() }
+                catchingNonCancel { channels.close(it).await() }
             } }
         }
     }
@@ -375,6 +484,23 @@ class WatchUpdateCoordinator(
             if (current is State.Installing || current is State.AwaitingConfirmation || current is State.Installed || current is State.Failed) current
             else State.Sending(version, maxOf((current as? State.Sending)?.progress ?: 0f, fraction.coerceIn(0f, 1f)))
         }
+    }
+
+    /**
+     * What the foreground notification of a send should say.
+     *
+     * The send worker may be started in a process that has just been born, whose state is still
+     * [State.Idle] (or a stale "up to date"): the notification then read "Failed:". What is being
+     * done is sending the offer that is ready, so that is what it says until the real progress
+     * arrives.
+     */
+    internal suspend fun foregroundState(): State {
+        val current = state.value
+        if (current is State.Sending || current is State.Installing || current is State.AwaitingConfirmation ||
+            current is State.Installed || current is State.Failed || current is State.Offered
+        ) return current
+        val version = withContext(Dispatchers.IO) { ready?.second?.versionName }.orEmpty()
+        return State.Sending(version)
     }
 
     internal fun onSendWorkerFinished() {
@@ -390,9 +516,16 @@ class WatchUpdateCoordinator(
         prefs.edit().remove(KEY_OFFER).remove(KEY_OFFER_AT).remove(KEY_OFFER_NODE).apply()
     }
 
-    /** Why this APK must not be offered, or null. */
-    private fun rejectArchive(file: File, version: String, checksum: String = WatchApkValidation.sha256(file)): String? =
-        WatchApkValidation.reject(context, file, version, checksum)
+    /**
+     * Why this APK must not be offered, or null.
+     *
+     * [checksum] has no default on purpose: it used to be the file's own hash, which made the
+     * check "the file equals itself" and added a second full read of the APK to every call. It is
+     * the checksum the file is expected to have (the manifest's, or the offer's) or one the caller
+     * computed once.
+     */
+    private fun rejectArchive(file: File, version: String, checksum: String, actualSha256: String? = null): String? =
+        WatchApkValidation.reject(context, file, version, checksum, actualSha256)
 
     private fun restoreOffer(): Pair<File, UpdateOffer>? = runCatching {
         if (System.currentTimeMillis() - prefs.getLong(KEY_OFFER_AT, 0) > APK_RETENTION_MS) return null
@@ -418,6 +551,14 @@ class WatchUpdateCoordinator(
         private const val KEY_OFFER = "offer"
         private const val KEY_OFFER_NODE = "offer_node"
         private const val KEY_OFFER_AT = "offer_at"
+        private const val KEY_PUSH_JOB = "push_job"
+        private const val KEY_SEND_JOB = "send_job"
+
+        /** The whole of an APK over Bluetooth, from the channel opening to the watch having it. */
+        private const val SEND_BUDGET_MS = 15 * 60_000L
+
+        /** A SHA-256 as the manifest and the offer spell it. */
+        internal val SHA256_HEX = WatchApkValidation.SHA256_HEX
         private const val APK_RETENTION_MS = 7 * 24 * 60 * 60_000L
         private const val CHECK_EVERY_MS = 6 * 60 * 60_000L
 

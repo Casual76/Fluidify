@@ -10,18 +10,21 @@ import coil.request.SuccessResult
 import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.Wearable
 import dev.lelonio.square.SquareApplication
+import dev.lelonio.square.io.ReadWatchdog
+import dev.pampa.fluidify.wear.protocol.ImageHosts
 import dev.pampa.fluidify.wear.protocol.ThumbHeader
 import dev.pampa.fluidify.wear.protocol.ThumbRequest
 import dev.pampa.fluidify.wear.protocol.ThumbWant
 import dev.pampa.fluidify.wear.protocol.WearCodec
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.withContext
 import java.io.ByteArrayOutputStream
-import java.io.InputStream
-import java.io.OutputStream
 
 /**
  * Small covers for the watch's lists ([ThumbRequest]).
@@ -30,6 +33,9 @@ import java.io.OutputStream
  * cache, and one it has not is fetched on the phone's connection — not through the watch's
  * Bluetooth proxy at 640 px, which is how the watch's Home ended up full of blank tiles. Each
  * answer is one small WebP at the size the watch asked for.
+ *
+ * The address a watch names is fetched only when it is one of Spotify's own image hosts, over
+ * https ([ImageHosts]); the phone is not a way to reach whatever else is on its network.
  */
 class WatchThumbServer(private val app: SquareApplication) {
 
@@ -38,34 +44,46 @@ class WatchThumbServer(private val app: SquareApplication) {
 
     fun serve(channel: ChannelClient.Channel) {
         scope.launch {
+            val wrapUp = ChannelWrapUp(channels, channel)
+            var answered = false
             try {
-                answer(channel)
+                wrapUp.start()
+                answered = answer(channel)
             } catch (error: Exception) {
+                if (error is CancellationException) throw error
                 Log.i(TAG, "thumbnails for the watch stopped: ${error.message}")
             } finally {
-                runCatching { channels.close(channel).await() }
+                // Closed only once the watch has read what was written, not on the heels of the
+                // last byte: see ChannelWrapUp.
+                withContext(NonCancellable) { wrapUp.finish(delivered = answered) }
             }
         }
     }
 
-    private suspend fun answer(channel: ChannelClient.Channel) {
-        val input = channels.getInputStream(channel).await()
-        val line = readLine(input) ?: return
-        val request = WearCodec.decodeOrNull(ThumbRequest.serializer(), line.encodeToByteArray()) ?: return
+    /** True when the covers that could be had were written to the watch in full. */
+    private suspend fun answer(channel: ChannelClient.Channel): Boolean {
+        // A request line that never comes is a watch that went away: the read is cut after a while
+        // rather than holding this thread (and the channel) for as long as the link stays up.
+        val line = ReadWatchdog(channels.getInputStream(channel).await(), REQUEST_WAIT_MS) { channels.close(channel) }
+            .use { WearChannelIo.readLine(it, MAX_LINE) } ?: return false
+        val request = WearCodec.decodeOrNull(ThumbRequest.serializer(), line.encodeToByteArray()) ?: return false
         val size = request.sizePx.coerceIn(MIN_PX, MAX_PX)
         channels.getOutputStream(channel).await().use { out ->
             for (want in request.wants.take(ThumbRequest.MAX_WANTS)) {
                 val bytes = thumbnail(want, size) ?: continue
-                header(out, ThumbHeader(want.key, bytes.size))
+                WearChannelIo.writeLine(out, ThumbHeader.serializer(), ThumbHeader(want.key, bytes.size), flush = false)
                 out.write(bytes)
                 out.flush()
             }
         }
+        return true
     }
 
     private suspend fun thumbnail(want: ThumbWant, size: Int): ByteArray? {
-        val url = want.url ?: imageUrlFor(want.key) ?: return null
-        val result = runCatching {
+        // The watch's address only when it is Spotify's; otherwise the key, which can only ever
+        // stand for an i.scdn.co image, or nothing.
+        val url = want.url?.takeIf(ImageHosts::isAllowed) ?: imageUrlFor(want.key) ?: return null
+        val result = catchingNonCancel {
             app.imageLoader.execute(
                 ImageRequest.Builder(app)
                     .data(url)
@@ -88,28 +106,15 @@ class WatchThumbServer(private val app: SquareApplication) {
     private fun imageUrlFor(key: String): String? =
         key.takeIf { it.length == SPOTIFY_IMAGE_ID && it.all(Char::isLetterOrDigit) }?.let { "https://i.scdn.co/image/$it" }
 
-    private fun header(out: OutputStream, header: ThumbHeader) {
-        out.write(WearCodec.encode(ThumbHeader.serializer(), header))
-        out.write('\n'.code)
-    }
-
-    private fun readLine(input: InputStream): String? {
-        val bytes = ByteArrayOutputStream()
-        while (true) {
-            val next = input.read()
-            if (next < 0) return null
-            if (next == '\n'.code) return bytes.toString(Charsets.UTF_8.name())
-            bytes.write(next)
-            if (bytes.size() > MAX_LINE) return null
-        }
-    }
-
     private companion object {
         const val TAG = "WatchThumbServer"
         const val MIN_PX = 48
         const val MAX_PX = 300
         const val QUALITY = 80
         const val MAX_LINE = 64 * 1024
+
+        /** The watch writes its request the moment it opens the channel. */
+        const val REQUEST_WAIT_MS = 15_000L
         const val SPOTIFY_IMAGE_ID = 40
     }
 }

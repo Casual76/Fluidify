@@ -47,7 +47,7 @@
 //! Underneath that, [`SpClient`] re-sends the identical body up to ten times on
 //! its own (`RequestStrategy::TryTimes(10)`) whenever the access point answers
 //! 500, 503 or 504, and it re-salts the query string each time so nothing
-//! upstream can deduplicate them. Hence [`RequestStrategy::TryTimes(1)`] around
+//! upstream can deduplicate them. Hence [`RequestOptions::once`] on
 //! the write.
 //!
 //! What a rejected change looks like is **unknown** — there is no observation of
@@ -61,7 +61,7 @@
 
 use crate::engine::{with_session, EngineResult};
 use http::Method;
-use librespot_core::spclient::RequestStrategy;
+use librespot_core::spclient::RequestOptions;
 use librespot_core::spotify_uri::SpotifyUri;
 use librespot_protocol::playlist4_external::{
     op::Kind as OpKind, Add, Delta, Item, ListChanges, Op, Rem, SelectedListContent,
@@ -136,7 +136,8 @@ fn apply(playlist_uri: &str, op: Op, expect: &str) -> EngineResult<()> {
     let expect = expect.to_string();
     let adding = op.kind() == OpKind::ADD;
 
-    crate::engine::runtime_handle()?.block_on(async move {
+    let handle = crate::engine::runtime_handle()?;
+    handle.block_on(crate::engine::within(crate::engine::CALL_TIMEOUT, "the playlist change", async move {
         let head = session
             .spclient()
             .get_playlist(&id)
@@ -167,16 +168,19 @@ fn apply(playlist_uri: &str, op: Op, expect: &str) -> EngineResult<()> {
             id.to_base62().map_err(|e| format!("bad playlist id: {e}"))?
         );
 
-        // The client is shared, so this is global for the length of the call.
-        // Worth it: the default re-sends the same append up to ten times on a
+        // Sent once. The default re-sends the same append up to ten times on a
         // 5xx, each with a fresh salt, and every one of those that lands is
         // another copy of the song.
-        session.spclient().set_strategy(RequestStrategy::TryTimes(1));
         let answer = session
             .spclient()
-            .request_with_protobuf(&Method::POST, &endpoint, None, &changes)
+            .request_with_protobuf_and_options(
+                &Method::POST,
+                &endpoint,
+                None,
+                &changes,
+                &RequestOptions::once(),
+            )
             .await;
-        session.spclient().set_strategy(RequestStrategy::default());
 
         let bytes = answer.map_err(|e| format!("playlist change refused: {e}"))?;
         let reply = SelectedListContent::parse_from_bytes(&bytes)
@@ -203,5 +207,5 @@ fn apply(playlist_uri: &str, op: Op, expect: &str) -> EngineResult<()> {
         // change was almost certainly applied — the request did not error — but
         // saying so outright would be a guess.
         Ok(())
-    })
+    }))?
 }

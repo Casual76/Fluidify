@@ -27,8 +27,10 @@ class WatchUpdateSendWorker(context: Context, parameters: WorkerParameters) : Co
     }
     override suspend fun getForegroundInfo(): ForegroundInfo = ForegroundInfo(
         WatchUpdateNotifications.ID,
+        // Not the raw state: in a process just started it is still "idle", and a send in the
+        // foreground must not announce that as a failure. See foregroundState.
         WatchUpdateNotifications.notification(applicationContext,
-            (applicationContext as SquareApplication).wearBridge.updates.state.value),
+            (applicationContext as SquareApplication).wearBridge.updates.foregroundState()),
         if (Build.VERSION.SDK_INT >= 29) ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC else 0,
     )
 }

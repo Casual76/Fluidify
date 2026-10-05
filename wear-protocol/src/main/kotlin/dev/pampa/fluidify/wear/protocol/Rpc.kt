@@ -52,6 +52,43 @@ sealed interface RpcMethod {
     data class Liked(val uris: List<String>) : RpcMethod
 }
 
+/**
+ * What the phone allows a watch's question to ask for.
+ *
+ * The watch is trusted to be a Fluidify, not to be right: a request is a few bytes anyone paired
+ * with the phone could write, and a negative count that reaches `take()` is an exception on the
+ * phone, an enormous one is work and memory the phone spends for nobody. [sanitised] is applied
+ * to every request before it is answered, so the handlers can rely on the numbers.
+ */
+object RpcLimits {
+    /** The most tracks of a context one question may ask for. */
+    const val MAX_CONTEXT_LIMIT = 200
+
+    /** A search of this many characters is already longer than any title. */
+    const val MAX_QUERY_LENGTH = 200
+
+    /** The most queue entries either side of what is playing. */
+    const val MAX_QUEUE_SIDE = 100
+
+    /** The most songs one question about downloads or hearts may name. */
+    const val MAX_URIS = 200
+
+    fun sanitised(method: RpcMethod): RpcMethod = when (method) {
+        is RpcMethod.Queue -> RpcMethod.Queue(
+            before = method.before.coerceIn(0, MAX_QUEUE_SIDE),
+            after = method.after.coerceIn(0, MAX_QUEUE_SIDE),
+        )
+        is RpcMethod.Context -> method.copy(
+            offset = method.offset.coerceAtLeast(0),
+            limit = method.limit.coerceIn(0, MAX_CONTEXT_LIMIT),
+        )
+        is RpcMethod.Search -> method.copy(query = method.query.take(MAX_QUERY_LENGTH))
+        is RpcMethod.Downloads -> method.copy(uris = method.uris.take(MAX_URIS))
+        is RpcMethod.Liked -> method.copy(uris = method.uris.take(MAX_URIS))
+        RpcMethod.Devices, RpcMethod.Home, is RpcMethod.Library -> method
+    }
+}
+
 /** The songs asked about that are in Liked Songs, and those that are not; one the phone could not tell is in neither. */
 @Serializable
 data class LikedAnswer(

@@ -83,9 +83,23 @@ impl AndroidSink {
             .attach_current_thread_permanently()
             .map_err(|e| SinkError::ConnectionRefused(e.to_string()))?;
 
-        env.call_method(&output, method, "()V", &[])
-            .map_err(|e| SinkError::OnWrite(format!("{method} failed: {e}")))?;
+        let result = env.call_method(&output, method, "()V", &[]);
+        clear_pending_exception(&mut env);
+        result.map_err(|e| SinkError::OnWrite(format!("{method} failed: {e}")))?;
         Ok(())
+    }
+}
+
+/// Clears a Java exception left pending by a call into `AudioOutput`.
+///
+/// This thread is attached for good and never returns to Java, so nothing else
+/// would ever clear it — and with an exception pending, every later JNI call on
+/// the thread is undefined behaviour (ART aborts on the next one under CheckJNI).
+/// The error itself has already been turned into a `SinkError` by the caller.
+fn clear_pending_exception(env: &mut jni::JNIEnv) {
+    if env.exception_check().unwrap_or(false) {
+        let _ = env.exception_describe();
+        let _ = env.exception_clear();
     }
 }
 
@@ -173,7 +187,7 @@ impl Sink for AndroidSink {
                 .map_err(|e| SinkError::OnWrite(e.to_string()))?
         };
 
-        env.call_method(
+        let result = env.call_method(
             &output,
             "write",
             "(Ljava/nio/ByteBuffer;III)V",
@@ -183,8 +197,13 @@ impl Sink for AndroidSink {
                 JValue::Int(SAMPLE_RATE as i32),
                 JValue::Int(NUM_CHANNELS as i32),
             ],
-        )
-        .map_err(|e| SinkError::OnWrite(format!("write failed: {e}")))?;
+        );
+        clear_pending_exception(&mut env);
+        // The thread never goes back to Java, so local references are never
+        // freed for us: one buffer per packet, about twenty a second, would fill
+        // the local reference table within minutes of a song.
+        let _ = env.delete_local_ref(buffer);
+        result.map_err(|e| SinkError::OnWrite(format!("write failed: {e}")))?;
 
         Ok(())
     }

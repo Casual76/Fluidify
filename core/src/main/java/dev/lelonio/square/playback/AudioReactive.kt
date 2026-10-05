@@ -83,6 +83,9 @@ object AudioReactive {
     }
     private val users = ConcurrentHashMap<Any, Boolean>()
     @Volatile private var enabled = false
+
+    /** Whether anyone is showing the light, so a sink can skip measuring for it. */
+    val isEnabled: Boolean get() = enabled
     @Volatile private var light = true
     // Monotonic boot time also distinguishes a restarted phone process while
     // the watch keeps its subscription alive; starting again at zero would

@@ -595,6 +595,22 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeTra
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeStateAcks(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jlong {
+    engine::state_acks() as jlong
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeIsEstablished(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jboolean {
+    std::panic::catch_unwind(engine::is_established).unwrap_or(false) as jboolean
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeSpircLost(
     _env: JNIEnv,
     _class: JClass,

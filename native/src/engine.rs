@@ -210,7 +210,7 @@ fn track_started(uri: &str) {
         _ => true,
     };
     if satisfied {
-        log::info!("output open again on {uri}");
+        log::debug!("output open again on {uri}");
         PLAYBACK_ARMED.store(true, Ordering::SeqCst);
     }
 }
@@ -404,8 +404,23 @@ enum Pump {
 /// Kotlin side only ever surfaces them as a message.
 pub type EngineResult<T> = Result<T, String>;
 
+/// Locks the engine, recovering it from a poisoned mutex.
+///
+/// A panic inside a closure that held this lock is caught at the JNI boundary
+/// by `ffi::guard`, and the process lives on — but std marks the mutex poisoned
+/// for good, so every later `start`, `shutdown` and call failed with "engine
+/// mutex poisoned" until the app was killed. The engine behind it is in
+/// whatever state the panic left, which is no worse than a session that has
+/// dropped: `shutdown` and `reconnect` both know how to deal with that.
+fn engine_lock() -> std::sync::MutexGuard<'static, Option<Engine>> {
+    ENGINE.lock().unwrap_or_else(|poisoned| {
+        log::warn!("engine mutex was poisoned by a panic; recovering it");
+        poisoned.into_inner()
+    })
+}
+
 fn with_engine<T>(f: impl FnOnce(&Engine) -> T) -> EngineResult<T> {
-    let guard = ENGINE.lock().map_err(|_| "engine mutex poisoned")?;
+    let guard = engine_lock();
     let engine = guard.as_ref().ok_or("engine not started")?;
     Ok(f(engine))
 }
@@ -509,6 +524,27 @@ pub fn runtime_handle() -> EngineResult<tokio::runtime::Handle> {
     with_engine(|engine| engine.rt.handle().clone())
 }
 
+/// How long a blocking call from Kotlin may wait on the network.
+///
+/// Every JNI entry that does network work blocks its caller in `block_on`, and
+/// neither the HTTP client nor spclient has a timeout of its own: a request to
+/// an access point that stopped answering waited for ever, with a coroutine on
+/// the other side that cancellation cannot reach (it is parked inside native
+/// code). Long enough for a slow network and a retry, short enough that the
+/// caller gets an error it can show.
+pub const CALL_TIMEOUT: Duration = Duration::from_secs(30);
+
+/// Runs `future` for at most `limit`, for use inside a `block_on`.
+pub async fn within<T>(
+    limit: Duration,
+    what: &str,
+    future: impl std::future::Future<Output = T>,
+) -> EngineResult<T> {
+    tokio::time::timeout(limit, future)
+        .await
+        .map_err(|_| format!("{what} took longer than {} s", limit.as_secs()))
+}
+
 /// Publish an application `Context` to `ndk_context` so cpal's AAudio host can
 /// resolve the output device. Must run before any playback starts.
 ///
@@ -600,7 +636,7 @@ pub fn start(
 ) -> EngineResult<()> {
     tune_fetching();
 
-    let mut guard = ENGINE.lock().map_err(|_| "engine mutex poisoned")?;
+    let mut guard = engine_lock();
     if guard.is_some() {
         return Err("engine already started".into());
     }
@@ -873,9 +909,21 @@ fn new_session(recipe: &Recipe) -> EngineResult<Session> {
 /// caller that started this is long gone: it either returned at once or is
 /// blocking on this future with nothing else to do.
 async fn connect_attempt() -> EngineResult<()> {
-    let outcome = tokio::time::timeout(CONNECT_TIMEOUT, build_device())
-        .await
-        .unwrap_or_else(|_| Err("the handshake took too long".to_string()));
+    let outcome = match tokio::time::timeout(CONNECT_TIMEOUT, build_device()).await {
+        Ok(outcome) => outcome,
+        Err(_) => {
+            // Dropping the future does not end the session it was connecting:
+            // its dealer task and the cluster watcher live on the runtime, as
+            // the same device id, next to the one the retry is about to build.
+            if let Some(session) = IN_FLIGHT.lock().ok().and_then(|mut s| s.take()) {
+                session.shutdown();
+            }
+            Err("the handshake took too long".to_string())
+        }
+    };
+    if let Ok(mut in_flight) = IN_FLIGHT.lock() {
+        *in_flight = None;
+    }
 
     match outcome {
         Ok((session, spirc, spirc_task)) => {
@@ -962,6 +1010,9 @@ async fn build_device() -> EngineResult<(Session, Spirc, impl std::future::Futur
         if let Some(cache) = session.cache() {
             cache.save_credentials(&credentials);
         }
+        if let Ok(mut in_flight) = IN_FLIGHT.lock() {
+            *in_flight = Some(session.clone());
+        }
 
         // The account's other devices, watched over the same dealer.
         //
@@ -999,11 +1050,20 @@ async fn build_device() -> EngineResult<(Session, Spirc, impl std::future::Futur
                 // dead end, not a reason to stop: it is thrown away so the token
                 // behind it gets its turn, and so the next launch does not try
                 // it again.
+                //
+                // Only a refusal says that, though. A timeout, a DNS failure or
+                // no network at all is the same error type with a different
+                // kind, and throwing the credential away on one of those
+                // left the next launch with nothing but an access token that
+                // expires within the hour: a sign-in the listener never asked
+                // for, because the train went through a tunnel.
                 if n < last {
                     log::warn!("{failure}, trying the next credential");
-                    let _ = std::fs::remove_dir_all(
-                        std::path::Path::new(&recipe.credentials_dir).join("reusable"),
-                    );
+                    if credential_refused(&e) {
+                        let _ = std::fs::remove_dir_all(
+                            std::path::Path::new(&recipe.credentials_dir).join("reusable"),
+                        );
+                    }
                     continue;
                 }
                 return Err(failure);
@@ -1041,6 +1101,46 @@ async fn build_device() -> EngineResult<(Session, Spirc, impl std::future::Futur
     Err(failure)
 }
 
+/// How many of this device's state updates the account has answered.
+///
+/// Every answer carries the cluster, which is how it is counted. A caller that
+/// has just changed what the device describes — republishing the queue before
+/// a handover — waits for this to move instead of sleeping a guess: the change
+/// is batched for 200 ms and can take over a second to be answered on a slow
+/// network, and a transfer that overtook it carried the old state.
+static STATE_ACKS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+pub fn state_acks() -> u64 {
+    STATE_ACKS.load(Ordering::SeqCst)
+}
+
+/// The session [`build_device`] is connecting, so a timeout can end it.
+static IN_FLIGHT: Mutex<Option<Session>> = Mutex::new(None);
+
+/// When the last device was installed, in [`uptime_ms`].
+///
+/// A device whose task ends within [`SHORT_LIVED_MS`] of being built is not a
+/// connection that dropped, it is one that never really held — an account
+/// that keeps closing the dealer, a network that lets the handshake through
+/// and nothing after. `FAILED_ATTEMPTS` is reset by every successful connect,
+/// so without this the rebuild went round as fast as the handshake allowed.
+static INSTALLED_AT_MS: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+static SHORT_LIVED: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+const SHORT_LIVED_MS: u64 = 30_000;
+
+/// Whether a failed login means the credential itself is no good.
+///
+/// librespot maps the access point's `LoginFailed` to `PermissionDenied`, and a
+/// credential blob it cannot even read to `InvalidArgument`/`Unauthenticated`.
+/// Everything else — unavailable, deadline exceeded, aborted — is the network.
+fn credential_refused(e: &librespot_core::Error) -> bool {
+    use librespot_core::error::ErrorKind;
+    matches!(
+        e.kind,
+        ErrorKind::PermissionDenied | ErrorKind::Unauthenticated | ErrorKind::InvalidArgument
+    )
+}
+
 /// Puts a freshly connected session and device into the engine.
 ///
 /// The player is told about the session first, so the next load streams
@@ -1058,12 +1158,13 @@ fn install_device(
     // elsewhere; this is for the pushes that are missed.
     let listener_tx = with_engine(|engine| engine.events_tx.clone())?;
     spirc.set_cluster_listener(Some(Arc::new(move |cluster| {
+        STATE_ACKS.fetch_add(1, Ordering::SeqCst);
         crate::remote::set_cluster(cluster);
         let _ = listener_tx.send(Pump::Cluster);
     })));
 
     let (handle, events_tx) = {
-        let mut guard = ENGINE.lock().map_err(|_| "engine mutex poisoned")?;
+        let mut guard = engine_lock();
         let engine = guard.as_mut().ok_or("engine not started")?;
         engine.player.set_session(session.clone());
         // The device that was there is gone, whatever it was doing.
@@ -1094,6 +1195,16 @@ fn install_device(
         // adopted it.
         log::info!("connect device stopped");
         device_lost();
+        let lived = uptime_ms().saturating_sub(INSTALLED_AT_MS.load(Ordering::SeqCst));
+        if lived < SHORT_LIVED_MS {
+            let streak = SHORT_LIVED.fetch_add(1, Ordering::SeqCst) + 1;
+            let backoff = (FIRST_BACKOFF_MS << (streak - 1).min(5)).min(MAX_BACKOFF_MS);
+            log::warn!("connect device lasted {lived} ms; waiting {backoff} ms before the next");
+            NEXT_ATTEMPT_MS.store(uptime_ms() + backoff, Ordering::SeqCst);
+            tokio::time::sleep(Duration::from_millis(backoff)).await;
+        } else {
+            SHORT_LIVED.store(0, Ordering::SeqCst);
+        }
         let _ = reconnect(false);
     });
 
@@ -1103,6 +1214,7 @@ fn install_device(
 
     OFFLINE.store(false, Ordering::SeqCst);
     SPIRC_KNOWS.store(false, Ordering::SeqCst);
+    INSTALLED_AT_MS.store(uptime_ms(), Ordering::SeqCst);
     CONNECTED.store(true, Ordering::SeqCst);
     if let Some(up) = SESSION_UP.get() {
         let _ = up.send(true);
@@ -1196,6 +1308,7 @@ fn spawn_event_forwarder(
             {
                 let uri = uri_string(track_id);
                 track_started(&uri);
+                slide_queue_window(&uri);
                 // The Connect device answered the load it was handed.
                 if let Ok(mut expect) = LOAD_EXPECT.lock() {
                     if expect.as_ref().is_some_and(|(_, wanted)| *wanted == uri) {
@@ -1256,7 +1369,7 @@ pub fn set_quality(bitrate_kbps: i32, crossfade_ms: i32) -> EngineResult<()> {
         _ => Bitrate::Bitrate320,
     };
     let crossfade = crossfade_ms.max(0) as u32;
-    let mut guard = ENGINE.lock().map_err(|_| "engine mutex poisoned")?;
+    let mut guard = engine_lock();
     let engine = guard.as_mut().ok_or("engine not started")?;
     engine.recipe.player_config.bitrate = bitrate;
     engine.recipe.player_config.crossfade_duration_ms = crossfade;
@@ -1276,7 +1389,7 @@ pub fn set_bitrate(bitrate_kbps: i32) -> EngineResult<()> {
         160 => Bitrate::Bitrate160,
         _ => Bitrate::Bitrate320,
     };
-    let mut guard = ENGINE.lock().map_err(|_| "engine mutex poisoned")?;
+    let mut guard = engine_lock();
     let engine = guard.as_mut().ok_or("engine not started")?;
     // Kept on the recipe as well, so a session rebuilt for any other reason
     // starts where the listening left it rather than back at the setting.
@@ -1330,7 +1443,8 @@ pub fn reconnect(force: bool) -> EngineResult<()> {
     // session that has lost its connection cannot tell the account anything,
     // and one that is merely believed lost will be replaced by the device
     // built next, which the account sees as the same device coming back.
-    if let Ok(mut guard) = ENGINE.lock() {
+    {
+        let mut guard = engine_lock();
         if let Some(engine) = guard.as_mut() {
             if let Some(old) = engine.spirc.take() {
                 old.set_cluster_listener(None);
@@ -1534,11 +1648,14 @@ impl History {
     fn new(session: Session, state_dir: String) -> Self {
         let session_id = session.session_id();
         let events = EventService::new(session);
-        // Whatever the last run was in the middle of when it went away.
-        events::pending::flush(&state_dir, &events);
-        // And what it heard offline, if this run starts with a connection.
+        // Whatever the last run was in the middle of when it went away, and
+        // what it heard offline — sent if this run starts with a connection,
+        // otherwise kept for the session that brings one.
         if CONNECTED.load(Ordering::SeqCst) {
+            events::pending::flush(&state_dir, &events);
             events::outbox::flush(&state_dir, &events);
+        } else {
+            events::pending::to_outbox(&state_dir);
         }
         History {
             events,
@@ -1811,7 +1928,7 @@ fn emit(listener: &GlobalRef, kind: &str, uri: &str, position_ms: i64) -> Result
     let j_kind = env.new_string(kind).map_err(|e| e.to_string())?;
     let j_uri = env.new_string(uri).map_err(|e| e.to_string())?;
 
-    env.call_method(
+    let result = env.call_method(
         listener,
         "onEvent",
         "(Ljava/lang/String;Ljava/lang/String;J)V",
@@ -1820,17 +1937,25 @@ fn emit(listener: &GlobalRef, kind: &str, uri: &str, position_ms: i64) -> Result
             JValue::Object(&j_uri),
             JValue::Long(position_ms),
         ],
-    )
-    .map_err(|e| e.to_string())?;
+    );
 
-    // A Kotlin listener that throws would otherwise leave the exception pending
-    // and poison every later JNI call on this thread.
-    if env.exception_check().unwrap_or(false) {
+    // A Kotlin listener that throws makes `call_method` fail *and* leaves the
+    // exception pending, so this has to run before the error is returned: a
+    // pending exception poisons every later JNI call on this thread.
+    let threw = env.exception_check().unwrap_or(false);
+    if threw {
         let _ = env.exception_describe();
         let _ = env.exception_clear();
+    }
+    // If the thread was already attached for good, the guard does not detach it
+    // and nothing would ever free these two strings.
+    let _ = env.delete_local_ref(j_kind);
+    let _ = env.delete_local_ref(j_uri);
+
+    if threw {
         return Err("listener threw".into());
     }
-    Ok(())
+    result.map(|_| ()).map_err(|e| e.to_string())
 }
 
 /// The playlist or album the current queue came from, for the listening events.
@@ -1909,7 +2034,7 @@ fn local_load(uris: &[String], index: u32, play: bool, position_ms: u32) -> Engi
         .get(index as usize)
         .ok_or_else(|| "nothing at that index".to_string())?;
     let parsed = SpotifyUri::from_uri(uri).map_err(|e| format!("bad uri {uri}: {e}"))?;
-    log::info!("direct: loading {uri} at {position_ms}ms, play={play}");
+    log::debug!("direct: loading {uri} at {position_ms}ms, play={play}");
     SPIRC_KNOWS.store(false, Ordering::SeqCst);
     with_engine(|e| e.player.load(parsed, play, position_ms))
 }
@@ -2002,6 +2127,7 @@ pub fn load_queue(
     if let Ok(mut stored) = QUEUE.lock() {
         *stored = uris.clone();
     }
+    ORDER_PUSHED.store(false, Ordering::SeqCst);
 
     // A queue that nobody asked to hear does not go out while the account is
     // playing somewhere else.
@@ -2161,15 +2287,15 @@ fn watch_load(sequence: u64, uris: Vec<String>, index: u32, play: bool, position
         if let Ok(mut expect) = LOAD_EXPECT.lock() {
             *expect = None;
         }
-        let uri = uris.get(index as usize).cloned().unwrap_or_default();
         log::warn!(
-            "the connect device did not start {uri} within {LOAD_ACK:?}; \
+            "the connect device did not start the track within {LOAD_ACK:?}; \
              loading it directly and rebuilding the device"
         );
         // Dead to us whatever the account thinks. Its session is invalidated
         // so its task ends, and a late load from it cannot restart the track
         // the player is about to be given.
-        if let Ok(mut guard) = ENGINE.lock() {
+        {
+            let mut guard = engine_lock();
             if let Some(engine) = guard.as_mut() {
                 if let Some(old) = engine.spirc.take() {
                     old.set_cluster_listener(None);
@@ -2241,7 +2367,7 @@ fn adopt_now() -> EngineResult<()> {
     })?;
     sent.map_err(|e| format!("adopt failed: {e}"))?;
     SPIRC_KNOWS.store(true, Ordering::SeqCst);
-    log::info!("the connect device adopted {uri}");
+    log::debug!("the connect device adopted {uri}");
     Ok(())
 }
 
@@ -2347,9 +2473,10 @@ fn watch_skip(before: String, forward: bool) {
             return;
         }
         log::warn!(
-            "the connect device did not move off {before} within {LOAD_ACK:?};              moving the queue directly and rebuilding the device"
+            "the connect device did not move off the track within {LOAD_ACK:?}; moving the queue directly and rebuilding the device"
         );
-        if let Ok(mut guard) = ENGINE.lock() {
+        {
+            let mut guard = engine_lock();
             if let Some(engine) = guard.as_mut() {
                 if let Some(old) = engine.spirc.take() {
                     old.set_cluster_listener(None);
@@ -2418,6 +2545,15 @@ pub fn elsewhere_active() -> bool {
         Ok(false) => crate::remote::elsewhere_active(),
         Err(_) => crate::remote::elsewhere_active(),
     }
+}
+
+/// Whether playback is this device's, by the same evidence [`elsewhere_active`]
+/// weighs: sound coming out of it, or its own Connect device saying it is the
+/// active one. The cluster is not consulted — it is the source that lags.
+pub fn active_here() -> bool {
+    LOCAL_PLAYING.load(Ordering::SeqCst)
+        || with_engine(|engine| engine.spirc.as_ref().is_some_and(Spirc::is_active))
+            .unwrap_or(false)
 }
 
 /// What the Connect state says this device is playing, as JSON.
@@ -2600,7 +2736,7 @@ pub fn publish_context(position_ms: u32) -> EngineResult<bool> {
         if known.is_empty() { current.clone() } else { known }
     };
 
-    log::info!("republishing {current} as {context} before handing over");
+    log::debug!("republishing {current} as {context} before handing over");
     let request = LoadRequest::from_context_uri(
         context,
         LoadRequestOptions {
@@ -2637,7 +2773,7 @@ pub fn resume_here(context_uri: &str, track_uri: &str, position_ms: u32) -> Engi
     } else {
         context_uri.to_string()
     };
-    log::info!("resuming {track_uri} here, from {context} at {position_ms}ms");
+    log::debug!("resuming {track_uri} here, from {context} at {position_ms}ms");
 
     // Anything the previous device was decoding stays out until this track
     // starts; see PLAYBACK_ARMED.
@@ -2697,18 +2833,85 @@ pub fn set_queue_order(uris: Vec<String>, index: u32) -> EngineResult<()> {
         return Err("empty queue".into());
     }
     let at = (index as usize).min(uris.len() - 1);
-    let prev = uris[..at].to_vec();
-    let next = uris[at + 1..].to_vec();
+    let (prev, next) = queue_window(&uris, at);
+    if let Ok(mut windowed) = WINDOW_AT.lock() {
+        *windowed = uris[at].clone();
+    }
 
     if let Ok(mut stored) = QUEUE.lock() {
         *stored = uris;
     }
+    ORDER_PUSHED.store(true, Ordering::SeqCst);
 
     if !is_adopted() {
         return Ok(());
     }
     with_engine(|e| e.spirc()?.set_queue_tracks(prev, next))?
         .map_err(|e| format!("queue order failed: {e}"))
+}
+
+/// How much of the order the account is shown, before and after the track.
+///
+/// Spotify's own limits, the ones librespot keeps everywhere else: the state is
+/// re-sent on every change and read by every client on the account, and a
+/// 271-track queue in it was a state update of hundreds of kilobytes, sent
+/// again for every reorder, every skip and every shuffle.
+const WINDOW_PREV: usize = 10;
+const WINDOW_NEXT: usize = 80;
+
+/// Whether the device's running order is one handed over by [`set_queue_order`].
+///
+/// Then the device only ever holds a window of it, and the window has to move
+/// with the music; see [`slide_queue_window`]. A plain load leaves the order to
+/// librespot, which refills from the context it was given.
+static ORDER_PUSHED: AtomicBool = AtomicBool::new(false);
+
+/// The track the window was last drawn around.
+static WINDOW_AT: Mutex<String> = Mutex::new(String::new());
+
+/// The tracks around `at` that the device is shown.
+fn queue_window(uris: &[String], at: usize) -> (Vec<String>, Vec<String>) {
+    let prev_from = at.saturating_sub(WINDOW_PREV);
+    let next_to = (at + 1 + WINDOW_NEXT).min(uris.len());
+    (uris[prev_from..at].to_vec(), uris[at + 1..next_to].to_vec())
+}
+
+/// Moves the window to the track that has just started.
+///
+/// The device advances on its own at the end of a track, taking the first of
+/// the next tracks it holds; once it has used up the eighty it was given it
+/// would refill from the context, in the context's order rather than the one
+/// the listener is looking at. Redrawing the window as each track starts keeps
+/// the two in step, and costs one state update the track change sends anyway.
+fn slide_queue_window(uri: &str) {
+    if !ORDER_PUSHED.load(Ordering::SeqCst) || !is_adopted() {
+        return;
+    }
+    {
+        let Ok(mut windowed) = WINDOW_AT.lock() else { return };
+        if *windowed == uri {
+            return;
+        }
+        *windowed = uri.to_string();
+    }
+    let window = {
+        let Ok(queue) = QUEUE.lock() else { return };
+        // Only worth redrawing when the order is longer than the window: a
+        // short one is already there in full.
+        if queue.len() <= WINDOW_PREV + 1 + WINDOW_NEXT {
+            return;
+        }
+        let Some(at) = queue.iter().position(|item| item == uri) else {
+            return;
+        };
+        queue_window(&queue, at)
+    };
+    let (prev, next) = window;
+    match with_engine(|e| e.spirc().and_then(|spirc| spirc.set_queue_tracks(prev, next))) {
+        Ok(Ok(())) => {}
+        Ok(Err(e)) => log::debug!("could not move the queue window: {e}"),
+        Err(e) => log::debug!("could not move the queue window: {e}"),
+    }
 }
 
 /// Shuffle and repeat as the account holds them, so a load can put them back.
@@ -2794,22 +2997,47 @@ pub fn spirc_lost() -> bool {
     !CONNECTED.load(Ordering::SeqCst) || session_invalid().unwrap_or(false)
 }
 
+/// Whether the account has acknowledged this device: it is in the device list
+/// and will answer commands addressed to it.
+///
+/// Later than [`is_connected`], by up to the twelve seconds the first state
+/// update may take. Transferring playback to a device that is connected but
+/// not yet established is what came back as a 404 from the access point: the
+/// target did not exist yet as far as the account knew.
+pub fn is_established() -> bool {
+    CONNECTED.load(Ordering::SeqCst)
+        && with_engine(|engine| engine.spirc.as_ref().is_some_and(Spirc::is_established))
+            .unwrap_or(false)
+}
+
 /// Whether there is a session to read the catalogue through.
 pub fn is_connected() -> bool {
     CONNECTED.load(Ordering::SeqCst) && session_invalid().map(|bad| !bad) == Some(true)
 }
 
-/// Whether the current session has been invalidated, or `None` if asking would
-/// have meant waiting.
+/// Whether the current session has been invalidated, or `None` without an
+/// engine.
+///
+/// Never waits. A lock that is busy is answered "not invalid": whoever holds it
+/// is starting, reconnecting or loading, and every one of those either leaves a
+/// healthy session or reports its own failure. Answering "unknown" there made
+/// [`reconnect`] read contention as a dead session and tear down a device that
+/// was fine, and made [`is_connected`] say no to a catalogue read for the
+/// length of somebody else's call.
 fn session_invalid() -> Option<bool> {
-    let guard = ENGINE.try_lock().ok()?;
+    use std::sync::TryLockError;
+    let guard = match ENGINE.try_lock() {
+        Ok(guard) => guard,
+        Err(TryLockError::WouldBlock) => return Some(false),
+        Err(TryLockError::Poisoned(poisoned)) => poisoned.into_inner(),
+    };
     let engine = guard.as_ref()?;
     Some(engine.session.is_invalid())
 }
 
 /// Tear the engine down. Safe to call when it was never started.
 pub fn shutdown() {
-    let taken = ENGINE.lock().ok().and_then(|mut g| g.take());
+    let taken = engine_lock().take();
     if let Some(engine) = taken {
         // Nothing may report against this player from here on, and the pump is
         // about to go with the sender. A device task ending late says nothing.
@@ -2838,5 +3066,77 @@ pub fn shutdown() {
         crate::sink::clear_output();
         // Dropping the runtime from a JNI thread is fine: no tokio context here.
         engine.rt.shutdown_timeout(Duration::from_secs(2));
+        forget_playback();
+    }
+}
+
+/// Forgets what the last player was doing.
+///
+/// These live outside the engine because their readers run on other threads,
+/// which also means they outlive it. A service restarted in the same process
+/// found `LOCAL_PLAYING` still true from a player that no longer existed (its
+/// `Stopped` event never arrived: the forwarder had already seen the
+/// generation change), so [`elsewhere_active`] answered no and [`adopt_now`]
+/// could take up a track from the previous life and activate the device
+/// without anyone asking.
+///
+/// Shuffle and repeat stay: they are the listener's, not the player's.
+fn forget_playback() {
+    LOCAL_PLAYING.store(false, Ordering::SeqCst);
+    PLAYBACK_ARMED.store(true, Ordering::SeqCst);
+    ARM_BY_MS.store(0, Ordering::SeqCst);
+    CURRENT_PLAY_REQUEST_ID.store(0, Ordering::SeqCst);
+    CURRENT_POSITION_MS.store(0, Ordering::SeqCst);
+    CURRENT_DURATION_MS.store(0, Ordering::SeqCst);
+    if let Ok(mut gate) = GATE.lock() {
+        *gate = None;
+    }
+    if let Ok(mut uri) = CURRENT_URI.lock() {
+        uri.clear();
+    }
+    if let Ok(mut expect) = LOAD_EXPECT.lock() {
+        *expect = None;
+    }
+    if let Ok(mut queue) = QUEUE.lock() {
+        queue.clear();
+    }
+    if let Ok(mut context) = CONTEXT_URI.lock() {
+        context.clear();
+    }
+    ORDER_PUSHED.store(false, Ordering::SeqCst);
+    if let Ok(mut windowed) = WINDOW_AT.lock() {
+        windowed.clear();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn uris(n: usize) -> Vec<String> {
+        (0..n).map(|i| format!("spotify:track:{i}")).collect()
+    }
+
+    #[test]
+    fn queue_window_holds_spotify_limits() {
+        let queue = uris(271);
+        let (prev, next) = queue_window(&queue, 150);
+        assert_eq!(prev.len(), WINDOW_PREV);
+        assert_eq!(next.len(), WINDOW_NEXT);
+        assert_eq!(prev.first().unwrap(), "spotify:track:140");
+        assert_eq!(prev.last().unwrap(), "spotify:track:149");
+        assert_eq!(next.first().unwrap(), "spotify:track:151");
+        assert_eq!(next.last().unwrap(), "spotify:track:230");
+    }
+
+    #[test]
+    fn queue_window_at_the_edges() {
+        let queue = uris(5);
+        let (prev, next) = queue_window(&queue, 0);
+        assert!(prev.is_empty());
+        assert_eq!(next.len(), 4);
+        let (prev, next) = queue_window(&queue, 4);
+        assert_eq!(prev.len(), 4);
+        assert!(next.is_empty());
     }
 }

@@ -364,10 +364,10 @@ class LibrespotPlayer(
      */
     private fun onRemote(what: String, command: (String) -> Unit): Boolean {
         val target = remote ?: return false
-        Thread({
+        offThread {
             runCatching { command(target.deviceId) }
                 .onFailure { android.util.Log.w("SquarePlayer", "$what did not reach it", it) }
-        }, "square-remote").start()
+        }
         return true
     }
 
@@ -781,9 +781,10 @@ class LibrespotPlayer(
                 // The copy kept beside a download first — it is the same
                 // picture, it is already here, and offline it is the only one.
                 dev.lelonio.square.download.DownloadExtras.fileOf(wanted, "art")
+                    ?.takeIf { it.length() <= MAX_COVER_BYTES }
                     ?.readBytes()
-                    ?: java.net.URL(wanted).openStream().use { it.readBytes() }
-            }.getOrNull()?.takeIf { it.isNotEmpty() && it.size <= MAX_COVER_BYTES }
+                    ?: dev.lelonio.square.io.HttpFetch.bytes(wanted, MAX_COVER_BYTES)
+            }.getOrNull()?.takeIf { it.isNotEmpty() }
 
             handler.post {
                 if (released || coverLoading != wanted) return@post
@@ -913,6 +914,24 @@ class LibrespotPlayer(
     private val skipGaveUp = Runnable {
         skipPending = false
         skipInFlight = false
+    }
+
+    /** The two later looks at the cluster; see the `cluster` event. */
+    private val clusterSoon = Runnable { dev.lelonio.square.data.RemoteConnect.refresh() }
+    private val clusterLater = Runnable { dev.lelonio.square.data.RemoteConnect.refresh() }
+
+    /**
+     * Where commands to another device, and taking the account's track here, run: off the player's
+     * thread, because each is a network round trip, and one at a time, in order. A thread per
+     * command let a pause overtake the seek before it, and a volume drag started dozens.
+     */
+    private val remoteCommands = java.util.concurrent.Executors.newSingleThreadExecutor { task ->
+        Thread(task, "square-remote").apply { isDaemon = true }
+    }
+
+    /** Runs [block] on [remoteCommands]; dropped once the player has been released. */
+    private fun offThread(block: () -> Unit) {
+        runCatching { remoteCommands.execute(block) }
     }
 
     private val settleSkip = Runnable {
@@ -1080,7 +1099,7 @@ class LibrespotPlayer(
         onPlaybackActive(true)
         invalidateState()
 
-        Thread({
+        offThread {
             runCatching {
                 NativeBridge.resumeHere(
                     account.realContext.orEmpty(),
@@ -1090,7 +1109,7 @@ class LibrespotPlayer(
             }.onFailure {
                 android.util.Log.e("SquarePlayer", "could not take the account's track", it)
             }
-        }, "square-resume").start()
+        }
     }
 
     /**
@@ -1608,6 +1627,10 @@ class LibrespotPlayer(
     override fun handleRelease(): ListenableFuture<*> {
         released = true
         handler.removeCallbacks(settleSkip)
+        handler.removeCallbacks(clusterSoon)
+        handler.removeCallbacks(clusterLater)
+        // What is queued still goes; nothing new is taken, and the thread ends.
+        remoteCommands.shutdown()
         focus.release()
         if (shutdownEngineOnRelease) engine("shutdown") { NativeBridge.shutdown() }
         return Futures.immediateVoidFuture()
@@ -1854,9 +1877,16 @@ class LibrespotPlayer(
                 // is this one. They settle a moment apart, and whichever is
                 // read first leaves the screen describing the wrong device
                 // until something else happens to change it, which can be
-                // never. The second look costs two reads of memory.
-                handler.postDelayed({ dev.lelonio.square.data.RemoteConnect.refresh() }, 700)
-                handler.postDelayed({ dev.lelonio.square.data.RemoteConnect.refresh() }, 2_000)
+                // never.
+                //
+                // Coalesced: an update arrives after every state update this
+                // device sends as well, and each read is four calls into the
+                // engine and a queue's worth of JSON on this thread. Two pending
+                // looks are enough however many updates asked for them.
+                handler.removeCallbacks(clusterSoon)
+                handler.removeCallbacks(clusterLater)
+                handler.postDelayed(clusterSoon, 700)
+                handler.postDelayed(clusterLater, 2_000)
                 return
             }
 

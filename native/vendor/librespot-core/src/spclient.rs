@@ -60,6 +60,7 @@ const NO_METRICS_AND_SALT: RequestOptions = RequestOptions {
     metrics: false,
     salt: false,
     base_url: None,
+    max_tries: None,
 };
 
 #[derive(Debug, Error)]
@@ -94,6 +95,8 @@ pub struct RequestOptions {
     metrics: bool,
     salt: bool,
     base_url: Option<&'static str>,
+    /// LOCAL PATCH: a per-request cap on attempts, over the client's strategy.
+    max_tries: Option<usize>,
 }
 
 impl Default for RequestOptions {
@@ -102,6 +105,23 @@ impl Default for RequestOptions {
             metrics: true,
             salt: true,
             base_url: None,
+            max_tries: None,
+        }
+    }
+}
+
+impl RequestOptions {
+    /// LOCAL PATCH: sent once, for a request that is not safe to repeat.
+    ///
+    /// The client's strategy is shared by every request in the session, so the
+    /// only way to send one thing once used to be flipping it for everybody and
+    /// back — a window in which concurrent requests lost their retries, and
+    /// that was never restored if the call was cancelled. A skip or an append
+    /// that lands twice is a second skip or a second copy of the song.
+    pub fn once() -> Self {
+        Self {
+            max_tries: Some(1),
+            ..Self::default()
         }
     }
 }
@@ -528,7 +548,11 @@ impl SpClient {
 
             // Break before the reconnection logic below, so that the current access point
             // is retained when max_tries == 1. Leave it up to the caller when to flush.
-            if let RequestStrategy::TryTimes(max_tries) = self.lock(|inner| inner.strategy) {
+            if let Some(max_tries) = options.max_tries {
+                if tries >= max_tries {
+                    break;
+                }
+            } else if let RequestStrategy::TryTimes(max_tries) = self.lock(|inner| inner.strategy) {
                 if tries >= max_tries {
                     break;
                 }
@@ -543,6 +567,11 @@ impl SpClient {
                         if tries % 3 == 0 {
                             self.flush_accesspoint().await
                         }
+                        // LOCAL PATCH: a short, growing pause. A 5xx answered
+                        // straight back was re-sent at once, ten times in a row,
+                        // into a server that had just said it was struggling.
+                        let pause = std::time::Duration::from_millis(200 * tries.min(10) as u64);
+                        tokio::time::sleep(pause).await;
                     }
                     _ => break, // if we can't build the request now, then we won't ever
                 }

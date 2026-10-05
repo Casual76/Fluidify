@@ -70,8 +70,9 @@ class WatchAdb(context: Context) : AbsAdbConnectionManager() {
     private fun readKey(): PrivateKey =
         KeyFactory.getInstance("RSA").generatePrivate(PKCS8EncodedKeySpec(keyFile.readBytes()))
 
+    // Closed once read: the stream was left open each time the key was loaded.
     private fun readCert(): Certificate =
-        CertificateFactory.getInstance("X.509").generateCertificate(certFile.inputStream())
+        certFile.inputStream().use { CertificateFactory.getInstance("X.509").generateCertificate(it) }
 
     private companion object {
         const val DEVICE_NAME = "Fluidify"

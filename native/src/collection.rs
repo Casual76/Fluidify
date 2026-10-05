@@ -70,7 +70,8 @@ fn write(track_uri: &str, removed: bool) -> EngineResult<()> {
     let username = session.username().to_string();
     let track_uri = track_uri.to_string();
 
-    crate::engine::runtime_handle()?.block_on(async move {
+    let handle = crate::engine::runtime_handle()?;
+    handle.block_on(crate::engine::within(crate::engine::CALL_TIMEOUT, "the collection", async move {
         let mut item = Vec::new();
         put_string(&mut item, 1, &track_uri);
         // Zero when removing: the server is being told the row is gone, and a
@@ -102,7 +103,7 @@ fn write(track_uri: &str, removed: bool) -> EngineResult<()> {
         // speaks this endpoint takes the status alone — and the real echo comes
         // later over the dealer, carrying the id sent above.
         Ok(())
-    })
+    }))?
 }
 
 fn now_seconds() -> u64 {

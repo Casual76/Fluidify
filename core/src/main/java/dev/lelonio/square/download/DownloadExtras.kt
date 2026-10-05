@@ -4,7 +4,6 @@ import kotlinx.coroutines.Dispatchers
 import org.json.JSONObject
 import kotlinx.coroutines.withContext
 import java.io.File
-import java.net.URL
 
 /**
  * Everything about a downloaded song that is not the song.
@@ -134,9 +133,7 @@ object DownloadExtras {
             // Through a part file, so an interrupted fetch never leaves
             // something half-written where a reader would take it for whole.
             val part = File(file.parentFile, "${file.name}.part")
-            URL(url).openStream().use { input ->
-                part.outputStream().use(input::copyTo)
-            }
+            dev.lelonio.square.io.HttpFetch.toFile(url, part, MAX_EXTRA_BYTES)
             if (!part.renameTo(file)) {
                 part.delete()
                 return@runCatching null
@@ -260,12 +257,32 @@ object DownloadExtras {
         val root = root ?: return null
         // Hashed rather than sanitised: a URI is not a legal file name, and any
         // escaping scheme would have to survive the characters it escapes.
-        val name = (if (kind == "art") coverKey(key) else key).hashCode().toUInt().toString(16)
+        //
+        // SHA-1 rather than `hashCode`: thirty-two bits across every track and
+        // cover ever kept collide sooner than one would think, and a collision
+        // here is another song's lyrics, or `forget` deleting the wrong file.
+        val subject = if (kind == "art") coverKey(key) else key
         val extension = when (kind) {
             "art" -> "jpg"
             "video" -> "mp4"
             else -> "json"
         }
-        return File(File(root, kind), "$name.$extension")
+        val dir = File(root, kind)
+        val file = File(dir, "${sha1(subject)}.$extension")
+        // Files kept under the old 32-bit names move over the first time they
+        // are asked for, so an update does not empty the offline extras.
+        if (!file.exists()) {
+            val legacy = File(dir, "${subject.hashCode().toUInt().toString(16)}.$extension")
+            if (legacy.exists()) runCatching { legacy.renameTo(file) }
+        }
+        return file
     }
+
+    private fun sha1(text: String): String =
+        java.security.MessageDigest.getInstance("SHA-1")
+            .digest(text.toByteArray())
+            .joinToString("") { "%02x".format(it) }
+
+    /** Larger than any cover, lyrics or Canvas clip Spotify serves. */
+    private const val MAX_EXTRA_BYTES = 64L * 1024 * 1024
 }

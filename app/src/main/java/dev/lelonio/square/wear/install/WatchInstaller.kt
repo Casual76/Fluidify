@@ -12,13 +12,20 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.CancellationException
 import java.util.concurrent.atomic.AtomicBoolean
+import java.util.concurrent.atomic.AtomicReference
 import java.io.File
+import java.net.ConnectException
 import java.net.InetAddress
+import java.net.NoRouteToHostException
+import java.net.SocketTimeoutException
+import java.net.UnknownHostException
+import java.util.concurrent.TimeoutException
 
 /**
  * Installs the watch app from the phone, over Wear OS's wireless debugging.
@@ -48,7 +55,12 @@ class WatchInstaller(private val context: Context) {
         data class Failed(val reason: Reason, val detail: String = "") : Step
     }
 
-    enum class Reason { WRONG_CODE, NOT_FOUND, REFUSED, NO_APK, NO_RELEASE, INSTALL_FAILED }
+    /**
+     * Why an install stopped. [WRONG_CODE] is only the pairing code being refused: a watch that
+     * could not be reached at all is [NETWORK], and one that took too long to answer [TIMEOUT],
+     * which asked the person to retype a code that was never at fault.
+     */
+    enum class Reason { WRONG_CODE, NETWORK, TIMEOUT, NOT_FOUND, REFUSED, NO_APK, NO_RELEASE, INSTALL_FAILED }
 
     /** What the watch announced on the network: where to pair and where to connect. */
     data class Found(val host: String? = null, val pairingPort: Int? = null, val connectPort: Int? = null)
@@ -94,8 +106,8 @@ class WatchInstaller(private val context: Context) {
         connectMdns = AdbMdns(context, AdbMdns.SERVICE_TYPE_TLS_CONNECT) { host: InetAddress?, port: Int ->
             if (host != null && port > 0) onConnect(host.hostAddress, port)
         }.also { it.start() }
-        discoverWithNsd(NSD_PAIRING) { host, port -> onPairing(host, port) }
-        discoverWithNsd(NSD_CONNECT) { host, port -> onConnect(host, port) }
+        discoverWithNsd(NSD_PAIRING, onFound = { host, port -> onPairing(host, port) }, onLost = ::onPairingLost)
+        discoverWithNsd(NSD_CONNECT, onFound = { host, port -> onConnect(host, port) }, onLost = ::onConnectLost)
     }
 
     fun stopDiscovery() {
@@ -110,21 +122,49 @@ class WatchInstaller(private val context: Context) {
         multicast = null
     }
 
+    // `update`, not read-then-assign: the two mDNS resolvers and the two NSD listeners report from
+    // their own threads, and "read the value, copy it, write it back" lost whichever came second.
+
     private fun onPairing(host: String?, port: Int) {
         if (host == null || !discovering) return
-        _found.value = _found.value.copy(host = host, pairingPort = port)
+        _found.update { it.copy(host = host, pairingPort = port) }
     }
 
     private fun onConnect(host: String?, port: Int) {
         if (host == null || !discovering) return
-        _found.value = _found.value.copy(host = _found.value.host ?: host, connectPort = port)
+        _found.update { it.copy(host = it.host ?: host, connectPort = port) }
     }
 
-    private fun discoverWithNsd(type: String, onFound: (String?, Int) -> Unit) {
+    /** The watch stopped announcing its pairing service (the pairing screen was closed). */
+    private fun onPairingLost() {
+        _found.update { it.copy(pairingPort = null).withoutHostIfNothingLeft() }
+    }
+
+    private fun onConnectLost() {
+        _found.update { it.copy(connectPort = null).withoutHostIfNothingLeft() }
+    }
+
+    /** An address with no service behind it is no longer something the watch announced. */
+    private fun Found.withoutHostIfNothingLeft(): Found =
+        if (pairingPort == null && connectPort == null) copy(host = null) else this
+
+    private fun discoverWithNsd(type: String, onFound: (String?, Int) -> Unit, onLost: () -> Unit) {
         val manager = nsd ?: return
+        // The name last announced under this type: a service that goes away is forgotten only when
+        // it is that one, so a late "lost" for an earlier announcement cannot wipe a newer one.
+        val announced = AtomicReference<String?>(null)
         val listener = object : NsdManager.DiscoveryListener {
-            override fun onServiceFound(info: NsdServiceInfo) = resolve(manager, info, onFound, attempt = 0)
-            override fun onServiceLost(info: NsdServiceInfo) = Unit
+            override fun onServiceFound(info: NsdServiceInfo) {
+                announced.set(info.serviceName)
+                resolve(manager, info, onFound, attempt = 0)
+            }
+
+            override fun onServiceLost(info: NsdServiceInfo) {
+                if (announced.get() == info.serviceName) {
+                    announced.set(null)
+                    onLost()
+                }
+            }
             override fun onDiscoveryStarted(serviceType: String) = Unit
             override fun onDiscoveryStopped(serviceType: String) = Unit
             override fun onStartDiscoveryFailed(serviceType: String, errorCode: Int) {
@@ -181,13 +221,18 @@ class WatchInstaller(private val context: Context) {
         if (!installing.compareAndSet(false, true)) return
         scope.launch {
             val adb = WatchAdb(context)
+            // The APK this run used, a copy made for it: removed when the run ends, however it ends.
+            var stagedApk: File? = null
             try {
                 _step.value = Step.Pairing
-                val paired = runCatching { adb.pair(host, pairingPort, code.trim()) }.getOrElse { error ->
-                    Log.i(TAG, "pairing failed: ${error.message}")
-                    false
+                val pairing = runCatching { adb.pair(host, pairingPort, code.trim()) }
+                pairing.exceptionOrNull()?.let { error ->
+                    // A watch that could not be reached is not a wrong code: said for what it is.
+                    Log.i(TAG, "pairing failed: ${error.javaClass.simpleName}")
+                    _step.value = Step.Failed(pairingFailure(error))
+                    return@launch
                 }
-                if (!paired) {
+                if (!pairing.getOrDefault(false)) {
                     _step.value = Step.Failed(Reason.WRONG_CODE)
                     return@launch
                 }
@@ -212,6 +257,7 @@ class WatchInstaller(private val context: Context) {
                     _step.value = Step.Failed(reason, error.message.orEmpty())
                     return@launch
                 }
+                stagedApk = file
 
                 _step.value = Step.Installing
                 val result = installApk(adb, file)
@@ -223,8 +269,18 @@ class WatchInstaller(private val context: Context) {
                 _step.value = Step.Finishing
                 // Wear OS has no "install unknown apps" screen: this is what lets the watch
                 // install the updates the phone sends it from now on.
-                exec(adb, "appops set $PACKAGE REQUEST_INSTALL_PACKAGES allow")
-                exec(adb, "am start -n $PACKAGE/$ACTIVITY")
+                val permission = exec(adb, "appops set $PACKAGE REQUEST_INSTALL_PACKAGES allow")
+                if (!permission.ok) {
+                    // Installed, but the watch would refuse every update the phone sends it: not
+                    // "done", and said so, where the answer used to be thrown away.
+                    Log.w(TAG, "appops failed: ${permission.output.take(MAX_DETAIL)}")
+                    _step.value = Step.Failed(Reason.INSTALL_FAILED, "appops: ${permission.output.take(MAX_DETAIL)}")
+                    return@launch
+                }
+                val opened = exec(adb, "am start -n $PACKAGE/$ACTIVITY")
+                // The app is on the watch and allowed to update itself: that it did not open on its
+                // own is worth the log, not a failed installation.
+                if (!opened.ok) Log.w(TAG, "the app was not opened: ${opened.output.take(MAX_DETAIL)}")
                 _step.value = Step.Done
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
@@ -232,6 +288,7 @@ class WatchInstaller(private val context: Context) {
                 _step.value = Step.Failed(Reason.REFUSED, error.message.orEmpty().take(MAX_DETAIL))
             } finally {
                 installing.set(false)
+                runCatching { stagedApk?.delete() }
                 runCatching { adb.disconnect() }
                 runCatching { adb.close() }
             }
@@ -269,11 +326,31 @@ class WatchInstaller(private val context: Context) {
         }
     }
 
-    private suspend fun exec(adb: WatchAdb, command: String): String = withContext(Dispatchers.IO) {
-        runCatching {
-            adb.openStream("exec:$command").use { it.openInputStream().bufferedReader().readText().trim() }
-        }.getOrElse { it.message.orEmpty() }
+    /** What a shell command on the watch printed, and whether that reads as it having worked. */
+    private class ShellResult(val output: String, val ok: Boolean)
+
+    private suspend fun exec(adb: WatchAdb, command: String): ShellResult = withContext(Dispatchers.IO) {
+        try {
+            val output = adb.openStream("exec:$command").use { it.openInputStream().bufferedReader().readText().trim() }
+            // `appops set` prints nothing when it works and `am start` a "Starting: ..." line; both
+            // print an error (not an exit code, which `exec:` does not give back) when they do not.
+            ShellResult(output, ERROR_MARKERS.none { output.contains(it, ignoreCase = true) })
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            ShellResult(error.message.orEmpty(), ok = false)
+        }
     }
+
+    /** Which reason a failure to pair is, looking through the exceptions it was wrapped in. */
+    private fun pairingFailure(error: Throwable): Reason =
+        generateSequence(error) { it.cause }.take(CAUSE_DEPTH).firstNotNullOfOrNull { cause ->
+            when (cause) {
+                is SocketTimeoutException, is TimeoutException -> Reason.TIMEOUT
+                is ConnectException, is NoRouteToHostException, is UnknownHostException -> Reason.NETWORK
+                else -> null
+            }
+        } ?: Reason.WRONG_CODE
 
     private companion object {
         const val TAG = "WatchInstaller"
@@ -288,6 +365,8 @@ class WatchInstaller(private val context: Context) {
         const val NSD_PAIRING = "_adb-tls-pairing._tcp"
         const val NSD_CONNECT = "_adb-tls-connect._tcp"
         const val RESOLVE_ATTEMPTS = 5
+        const val CAUSE_DEPTH = 5
+        val ERROR_MARKERS = listOf("error", "exception", "unknown operation", "permission denied")
         const val RESOLVE_RETRY_MS = 400L
     }
 }

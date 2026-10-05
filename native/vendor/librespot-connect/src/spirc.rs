@@ -1105,11 +1105,14 @@ impl SpircTask {
             track
         };
 
+        // Held to Spotify's limits whatever the caller sends: the owner keeps the
+        // whole order and moves the window as the music moves, and this is the
+        // last line before an oversized state goes to every client.
+        let prev_from = prev.len().saturating_sub(10);
         self.connect_state
-            .set_prev_tracks(prev.iter().map(track_of).collect());
-        self.connect_state.clear_next_tracks();
+            .set_prev_tracks(prev[prev_from..].iter().map(track_of).collect());
         self.connect_state
-            .set_next_tracks(next.iter().map(track_of).collect());
+            .set_next_tracks(next.iter().take(80).map(track_of).collect());
         self.connect_state.update_queue_revision();
     }
 

@@ -20,6 +20,30 @@ import dev.lelonio.square.BuildConfig
 import dev.lelonio.square.R
 import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.wear.WatchUpdateCoordinator.State
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+
+/**
+ * A request, from outside the settings (the watch-update notification), to open them on the Watch
+ * page.
+ *
+ * A flag the settings screen takes and clears, not an argument threaded through the activity and
+ * the navigation: the screen may not exist yet when the notification is tapped (it is composed once
+ * the route is reached), and a flag set before then is still there when it is.
+ */
+internal object WatchPageRequest {
+    private val _pending = MutableStateFlow(false)
+    val pending: StateFlow<Boolean> = _pending.asStateFlow()
+
+    fun request() {
+        _pending.value = true
+    }
+
+    fun consume() {
+        _pending.value = false
+    }
+}
 
 /**
  * The watch, from the phone: which one, which version, and keeping it current.

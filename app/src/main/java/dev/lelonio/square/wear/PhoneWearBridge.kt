@@ -41,6 +41,9 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.first
@@ -48,6 +51,8 @@ import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicLong
@@ -93,6 +98,12 @@ class PhoneWearBridge(private val app: SquareApplication) {
     private var waker: MediaController? = null
     private var wakerRelease: Job? = null
 
+    /**
+     * Held while the waker is made or let go. Two commands arriving together (a double tap on the
+     * wrist) both used to see no waker, and each built a controller, one of which was never released.
+     */
+    private val wakerLock = Mutex()
+
     /** The service's browse tree, for the radio; set by PlaybackService. */
     var browseTree: dev.lelonio.square.playback.MediaBrowseTree? = null
 
@@ -110,6 +121,14 @@ class PhoneWearBridge(private val app: SquareApplication) {
 
     /** The watch's downloads as the phone sees them, and the way to ask for more. */
     val watchDownloads = WatchDownloadsRemote(app, link)
+
+    private val _isPlaying = MutableStateFlow(false)
+
+    /**
+     * Whether the current player is playing, for what only matters while it is (the audio light's
+     * loop sleeps on this rather than spinning through a pause). False with no player.
+     */
+    val isPlaying: StateFlow<Boolean> = _isPlaying.asStateFlow()
 
     /** A watch that can play by itself has said hello. */
     val canHandoff: kotlinx.coroutines.flow.StateFlow<Boolean> = updates.watch
@@ -155,6 +174,13 @@ class PhoneWearBridge(private val app: SquareApplication) {
      * queue as something the device can resolve first; directly otherwise.
      */
     private suspend fun transferTo(deviceId: String): Boolean {
+        // The list here only changes when the account pushes a cluster update, and nothing would
+        // ask for one: a watch that had just appeared stayed missing for the whole wait. One
+        // request is enough to have the account answer with the current list. (The watch now asks
+        // only once the account has acknowledged it, so the wait is normally already over.)
+        if (RemoteConnect.devices.value.none { it.id == deviceId }) {
+            withContext(Dispatchers.IO) { runCatching { NativeBridge.refreshCluster() } }
+        }
         withTimeoutOrNull(DEVICE_LISTED_WAIT_MS) {
             RemoteConnect.devices.first { devices -> devices.any { it.id == deviceId } }
         }
@@ -183,6 +209,8 @@ class PhoneWearBridge(private val app: SquareApplication) {
 
     /** The service redrew its notification: whether it is up is part of what the watch is told. */
     fun onNotificationUpdated() {
+        // Asked of the system afresh: the point of the call is that the answer just changed.
+        lastProbe = null
         val showing = mediaNotificationShowing(player)
         if (showing == lastNotificationShowing) return
         lastNotificationShowing = showing
@@ -208,6 +236,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 Player.EVENT_TIMELINE_CHANGED,
                 Player.EVENT_PLAYBACK_PARAMETERS_CHANGED,
             )
+            _isPlaying.value = player.isPlaying
             if (player.isPlaying && events.contains(Player.EVENT_IS_PLAYING_CHANGED)) playbackStartedAt = System.currentTimeMillis()
             changed(urgent)
             if (player.isPlaying && events.containsAny(Player.EVENT_MEDIA_ITEM_TRANSITION, Player.EVENT_IS_PLAYING_CHANGED)) {
@@ -248,6 +277,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
         lightPlayer?.close()
         lightPlayer = dev.lelonio.square.playback.AudioReactivePlayer(player)
         player.addListener(listener)
+        _isPlaying.value = player.isPlaying
         if (!attached.isCompleted) attached.complete(player)
         startObserving()
         changed(urgent = true)
@@ -258,6 +288,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
         lightPlayer?.close(); lightPlayer = null
         player?.removeListener(listener)
         player = null
+        _isPlaying.value = false
         attached = CompletableDeferred()
         observing?.cancel()
         observing = null
@@ -450,16 +481,10 @@ class PhoneWearBridge(private val app: SquareApplication) {
         // Not "are notifications allowed": a media session's notification is exempt from that
         // permission on Android 13+ and shows (and reaches the watch) without it; asking said "no"
         // and put a second Fluidify on the watch face next to the system's.
-        val manager = app.getSystemService(android.app.NotificationManager::class.java)
-        val posted = runCatching {
-            manager?.activeNotifications?.any { it.notification.extras.containsKey(android.app.Notification.EXTRA_MEDIA_SESSION) } == true
-        }.getOrDefault(false)
-        if (posted) return true
+        val probe = notificationProbe()
+        if (probe.posted) return true
         // The listener blocked the media channel: nothing will be posted, so nothing is coming.
-        val channel = runCatching {
-            manager?.getNotificationChannel(androidx.media3.session.DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID)
-        }.getOrNull()
-        if (channel != null && channel.importance == android.app.NotificationManager.IMPORTANCE_NONE) return false
+        if (probe.channelBlocked) return false
         // About to be: only just after a start, not for as long as a queue is loaded.
         val starting = System.currentTimeMillis() - playbackStartedAt < NOTIFICATION_GRACE_MS
         return starting && current != null && current.mediaItemCount > 0 &&
@@ -468,6 +493,31 @@ class PhoneWearBridge(private val app: SquareApplication) {
 
     /** When the player last started playing; see [mediaNotificationShowing]. */
     private var playbackStartedAt = 0L
+
+    /** What the system said about the media notification, and when it was asked. */
+    private class NotificationProbe(val posted: Boolean, val channelBlocked: Boolean, val askedAtMs: Long)
+
+    private var lastProbe: NotificationProbe? = null
+
+    /**
+     * Whether the media notification is posted and whether its channel is blocked, asked of the
+     * system (two binder calls, on the main thread) at most once per [NOTIFICATION_PROBE_TTL_MS].
+     * A snapshot is built for every publish, and a burst of them (a skip is several events) asked
+     * the notification manager every time. The service's own word that it redrew its notification
+     * ([onNotificationUpdated]) drops the cached answer, so the one that matters is never stale.
+     */
+    private fun notificationProbe(): NotificationProbe {
+        val now = android.os.SystemClock.elapsedRealtime()
+        lastProbe?.takeIf { now - it.askedAtMs < NOTIFICATION_PROBE_TTL_MS }?.let { return it }
+        val manager = app.getSystemService(android.app.NotificationManager::class.java)
+        val posted = runCatching {
+            manager?.activeNotifications?.any { it.notification.extras.containsKey(android.app.Notification.EXTRA_MEDIA_SESSION) } == true
+        }.getOrDefault(false)
+        val channelBlocked = !posted && runCatching {
+            manager?.getNotificationChannel(androidx.media3.session.DefaultMediaNotificationProvider.DEFAULT_CHANNEL_ID)
+        }.getOrNull()?.importance == android.app.NotificationManager.IMPORTANCE_NONE
+        return NotificationProbe(posted, channelBlocked, now).also { lastProbe = it }
+    }
 
     private fun sleepInfo(): SleepInfo? {
         val endsAt = dev.lelonio.square.playback.SleepTimer.endsAt.value
@@ -590,17 +640,34 @@ class PhoneWearBridge(private val app: SquareApplication) {
             when (envelope.command) {
                 Command.Play -> true
                 Command.Pause -> false
-                Command.TogglePlay -> buildSnapshot().let { !(it.isPlaying || it.playWhenReady) }
+                // Read from the player itself: a whole snapshot (a notification lookup, a
+                // device read, a queue peek) was built only to look at two booleans.
+                Command.TogglePlay -> player?.takeIf { it.currentMediaItem != null }
+                    ?.let { current -> !(current.isPlaying || current.playWhenReady) } ?: true
                 else -> null
             }
         }
-        val result = runCatching { withContext(Dispatchers.Main.immediate) { apply(envelope.command) } }
-        val error = result.exceptionOrNull()?.let { it.message ?: it.javaClass.simpleName }
-            ?: result.getOrNull()
+        val result = catchingNonCancel { withContext(Dispatchers.Main.immediate) { apply(envelope.command) } }
+        val failure = result.exceptionOrNull()
+        // The detail stays here, and only its kind: an exception's message can carry a URI or a
+        // token, and it is not the watch's to read. The watch is sent a stable code.
+        if (failure != null) Log.w(TAG, "command ${envelope.command::class.simpleName} failed: ${failure.javaClass.simpleName}")
+        val error = if (failure != null) AckErrors.INTERNAL else result.getOrNull()
         // Player callbacks can arrive after the acknowledgement. Its snapshot must already carry
         // the accepted play/pause state so the wrist does not briefly bounce back to the old one.
         val appliedSeq = if (error == null) withContext(Dispatchers.Main.immediate) { publishNow(force = true, requestedPlaying) } else null
         val ack = CommandAck(id = envelope.id, ok = error == null, error = error, appliedSeq = appliedSeq, sentAtEpochMs = System.currentTimeMillis())
+        link.send(nodeId, WearPaths.ACK, WearCodec.encode(CommandAck.serializer(), ack))
+    }
+
+    /**
+     * A command whose type this phone does not know (a newer watch's) arrived: only its [id] could
+     * be read. Answered with [AckErrors.UNSUPPORTED] so the watch takes the command back at once
+     * and says so, rather than waiting out its timeout and reporting an unreachable phone.
+     */
+    suspend fun onUnsupportedCommand(nodeId: String, id: Long) {
+        link.noteWatchSeen()
+        val ack = CommandAck(id = id, ok = false, error = AckErrors.UNSUPPORTED, sentAtEpochMs = System.currentTimeMillis())
         link.send(nodeId, WearPaths.ACK, WearCodec.encode(CommandAck.serializer(), ack))
     }
 
@@ -611,7 +678,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 // A write to the account, which needs the engine's session: a phone the watch
                 // woke has none until its service is up.
                 if (!engineReady(ENGINE_COMMAND_WAIT_MS)) return AckErrors.LIKE
-                val written = runCatching { app.likedTracks.set(command.uri, command.liked) }
+                val written = catchingNonCancel { app.likedTracks.set(command.uri, command.liked) }
                     .onFailure { Log.w(TAG, "like not written: ${it.message}") }
                 if (written.isFailure) return AckErrors.LIKE
                 if (likedLookup?.first == command.uri) likedLookup = command.uri to command.liked
@@ -620,7 +687,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
             is Command.AddToPlaylist -> {
                 if (!engineReady(ENGINE_COMMAND_WAIT_MS)) return AckErrors.PLAYLIST
                 val written = withContext(Dispatchers.IO) {
-                    runCatching { NativeBridge.addToPlaylist(command.playlistUri, command.trackUri) }
+                    catchingNonCancel { NativeBridge.addToPlaylist(command.playlistUri, command.trackUri) }
                 }.onFailure { Log.w(TAG, "not added to the playlist: ${it.message}") }
                 return if (written.isSuccess) null else AckErrors.PLAYLIST
             }
@@ -650,17 +717,19 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 return null
             }
             is Command.SleepTimer -> {
+                // Read once: a property of a class from another module cannot be smart-cast.
+                val minutes = command.minutes
                 when {
                     command.cancel -> dev.lelonio.square.playback.SleepTimer.cancel()
                     command.atTrackEnd -> dev.lelonio.square.playback.SleepTimer.atEndOfTrack()
-                    command.minutes != null -> dev.lelonio.square.playback.SleepTimer.inMinutes(command.minutes!!)
-                    else -> return "bad-timer"
+                    minutes != null -> dev.lelonio.square.playback.SleepTimer.inMinutes(minutes)
+                    else -> return AckErrors.BAD_TIMER
                 }
                 return null
             }
             else -> Unit
         }
-        val player = ensurePlayer() ?: return "phone-unavailable"
+        val player = ensurePlayer() ?: return AckErrors.PHONE_UNAVAILABLE
         // These read the catalogue through the engine's session, which a phone the watch has just
         // woken does not have yet: waited for, within the watch's patience, then tried anyway.
         if (command is Command.PlayContext || command is Command.AddToQueue || command is Command.StartRadio) {
@@ -686,18 +755,18 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 // jump when it still points at the track the person tapped.
                 val index = command.index.takeIf { it in 0 until player.mediaItemCount && player.getMediaItemAt(it).mediaId == command.uri }
                     ?: (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == command.uri }
-                    ?: return "not-in-queue"
+                    ?: return AckErrors.NOT_IN_QUEUE
                 player.seekTo(index, 0)
                 playWhenLoaded(player)
             }
             is Command.StartRadio -> {
-                val tree = browseTree ?: return "phone-unavailable"
+                val tree = browseTree ?: return AckErrors.PHONE_UNAVAILABLE
                 // Answered once the station is playing or known not to be, not before.
                 if (!tree.startRadioNow(player)) return AckErrors.RADIO
             }
             is Command.PlayContext -> {
                 val tracks = withContext(Dispatchers.IO) { app.spotifyBackend.tracksOf(command.contextUri) }
-                if (tracks.isEmpty()) return "empty"
+                if (tracks.isEmpty()) return AckErrors.EMPTY
                 val start = command.startTrackUri?.let { uri -> tracks.indexOfFirst { it.uri == uri } }?.takeIf { it >= 0 } ?: 0
                 player.setMediaItems(
                     tracks.map { it.toQueueItem(command.contextUri, asContext = true, contextLabel = command.label) },
@@ -711,10 +780,10 @@ class PhoneWearBridge(private val app: SquareApplication) {
             is Command.AddToQueue -> {
                 val track = withContext(Dispatchers.IO) {
                     dev.lelonio.square.data.Catalog.tracks(listOf(command.uri)).firstOrNull()
-                } ?: return "not-found"
+                } ?: return AckErrors.NOT_FOUND
                 player.addMediaItem(track.toQueueItem(playNext = true))
             }
-            else -> return "unsupported"
+            else -> return AckErrors.UNSUPPORTED
         }
         return null
     }
@@ -734,14 +803,6 @@ class PhoneWearBridge(private val app: SquareApplication) {
     }
 
     /**
-     * The service's player, waking the service if it is not running.
-     *
-     * Waking is done by connecting a controller, which binds the service and
-     * runs its onCreate, which calls [attach]. The controller is let go shortly
-     * after: holding the binding would keep the service, and the engine with it,
-     * alive after the listener has stopped, which is not the remote's call to make.
-     */
-    /**
      * Wakes the playback service — and with it the engine, which it starts on creation — the way
      * the watch's commands do: by binding to it, which a process the listener service woke may do,
      * where starting it may be refused. True when the service is up.
@@ -754,7 +815,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
      * and downloading as the old account until a screen next said hello.
      */
     fun signedOut() {
-        scope.launch { runCatching { auth.onSignedOut() }.onFailure { Log.w(TAG, "watch not told of the sign-out: ${it.message}") } }
+        scope.launch { catchingNonCancel { auth.onSignedOut() }.onFailure { Log.w(TAG, "watch not told of the sign-out: ${it.message}") } }
     }
 
     /**
@@ -776,19 +837,35 @@ class PhoneWearBridge(private val app: SquareApplication) {
         } ?: false
     }
 
+    /**
+     * The service's player, waking the service if it is not running.
+     *
+     * Waking is done by connecting a controller, which binds the service and
+     * runs its onCreate, which calls [attach]. The controller is let go shortly
+     * after: holding the binding would keep the service, and the engine with it,
+     * alive after the listener has stopped, which is not the remote's call to make.
+     *
+     * One controller at a time, whoever asks: the check for an existing one and the build of a new
+     * one are a single step under [wakerLock], because building suspends and a second command
+     * arriving meanwhile saw "none" and made another.
+     */
     private suspend fun ensurePlayer(): Player? {
         player?.let { return it }
-        if (waker == null) {
-            val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
-            waker = runCatching { MediaController.Builder(app, token).buildAsync().await() }
-                .onFailure { Log.w(TAG, "cannot wake the playback service", it) }
-                .getOrNull()
-        }
-        wakerRelease?.cancel()
-        wakerRelease = scope.launch {
-            delay(WAKER_HOLD_MS)
-            waker?.release()
-            waker = null
+        wakerLock.withLock {
+            if (waker == null) {
+                val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
+                waker = catchingNonCancel { MediaController.Builder(app, token).buildAsync().await() }
+                    .onFailure { Log.w(TAG, "cannot wake the playback service", it) }
+                    .getOrNull()
+            }
+            wakerRelease?.cancel()
+            wakerRelease = scope.launch {
+                delay(WAKER_HOLD_MS)
+                wakerLock.withLock {
+                    waker?.release()
+                    waker = null
+                }
+            }
         }
         return withTimeoutOrNull(ATTACH_WAIT_MS) { attached.await() }
     }
@@ -796,7 +873,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
     companion object {
         private const val KEY_LOCAL_ONLY = "phone_media_local_only"
         private const val DEVICE_LISTED_WAIT_MS = 3_000L
-        private const val TRANSFER_WAIT_MS = 4_000L
+        private const val TRANSFER_WAIT_MS = 6_000L
         private const val TAG = "PhoneWearBridge"
         const val PHONE_DEVICE_ID = "phone"
         private const val QUEUE_WAIT_MS = 4_000L
@@ -813,6 +890,9 @@ class PhoneWearBridge(private val app: SquareApplication) {
 
         /** How long after a start the notification counts as on its way. */
         private const val NOTIFICATION_GRACE_MS = 3_000L
+
+        /** How long what the system said about the media notification is trusted; see [notificationProbe]. */
+        private const val NOTIFICATION_PROBE_TTL_MS = 1_000L
 
         /** For a playback service just woken to start listening for a transfer. */
         private const val LISTENER_WAIT_MS = 2_000L

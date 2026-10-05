@@ -5,12 +5,15 @@ import androidx.media3.common.C
 import com.google.android.gms.wearable.Wearable
 import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.data.RemoteConnect
+import dev.lelonio.square.io.WriteWatchdog
+import dev.pampa.fluidify.wear.protocol.AckErrors
 import dev.pampa.fluidify.wear.protocol.DeviceInfo
 import dev.pampa.fluidify.wear.protocol.DeviceList
 import dev.pampa.fluidify.wear.protocol.QueueEntry
 import dev.pampa.fluidify.wear.protocol.QueueWindow
 import dev.pampa.fluidify.wear.protocol.RPC_MESSAGE_LIMIT
 import dev.pampa.fluidify.wear.protocol.RpcMethod
+import dev.pampa.fluidify.wear.protocol.RpcLimits
 import dev.pampa.fluidify.wear.protocol.RpcRequest
 import dev.pampa.fluidify.wear.protocol.RpcResponse
 import dev.pampa.fluidify.wear.protocol.WearCodec
@@ -46,39 +49,56 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
      * cancel the reply along with the work and the watch waited its full twelve seconds for nothing.
      */
     suspend fun onRequest(nodeId: String, request: RpcRequest) {
-        val kind = request.method::class.simpleName
+        // What the question asks for, held to what the phone allows: a negative count or an
+        // enormous page from a watch is an exception or a lot of work here, not an answer.
+        val method = RpcLimits.sanitised(request.method)
+        val kind = method::class.simpleName
         // Not a child of this call: much of an answer is blocking native and network work that no
         // timeout can interrupt, and a child would hold the reply until it ended. Raced instead,
         // and left to finish on its own when it loses (a Home built late is still kept for next time).
-        val work = answers.async { answer(request.method) }
+        val work = answers.async { answer(method) }
         val response = try {
-            val payload = withTimeoutOrNull(budgetFor(request.method)) { work.await() }
+            val payload = withTimeoutOrNull(budgetFor(method)) { work.await() }
             if (payload != null || work.isCompleted) {
                 RpcResponse(request.id, ok = true, payload = payload)
             } else {
                 Log.w(TAG, "rpc $kind ran out of time")
-                fallback(request) ?: RpcResponse(request.id, ok = false, error = "timeout")
+                fallback(request.id, method) ?: RpcResponse(request.id, ok = false, error = "timeout")
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             // The method's kind only: a search's words and the listener's playlists stay out of the log.
             Log.w(TAG, "rpc $kind failed: ${error.javaClass.simpleName}")
-            RpcResponse(request.id, ok = false, error = error.message ?: error.javaClass.simpleName)
+            // A code, not the exception's message: that stays on the phone.
+            RpcResponse(request.id, ok = false, error = AckErrors.INTERNAL)
         }
+        reply(nodeId, response)
+    }
+
+    /**
+     * Says "I cannot answer that" to a question [onRequest] was never given because it could not be
+     * read: a newer watch's method this phone has no name for. Only its [id] is known (see
+     * [WearCodec.peekId]), and that is enough for the watch to stop waiting.
+     */
+    suspend fun onUnsupported(nodeId: String, id: Long) {
+        reply(nodeId, RpcResponse(id, ok = false, error = AckErrors.UNSUPPORTED))
+    }
+
+    private suspend fun reply(nodeId: String, response: RpcResponse) {
         withContext(kotlinx.coroutines.NonCancellable) {
             val bytes = WearCodec.encode(RpcResponse.serializer(), response)
             if (bytes.size <= RPC_MESSAGE_LIMIT) {
                 bridge.link.send(nodeId, WearPaths.RPC_REPLY, bytes)
             } else {
-                stream(nodeId, request.id, WearCodec.gzip(bytes))
+                stream(nodeId, response.id, WearCodec.gzip(bytes))
             }
         }
     }
 
     /** What stands in for an answer that did not come in time: the last Home, for the Home. */
-    private fun fallback(request: RpcRequest): RpcResponse? = when (request.method) {
-        RpcMethod.Home -> library.cachedHome()?.let { RpcResponse(request.id, ok = true, payload = encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), it)) }
+    private fun fallback(id: Long, method: RpcMethod): RpcResponse? = when (method) {
+        RpcMethod.Home -> library.cachedHome()?.let { RpcResponse(id, ok = true, payload = encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), it)) }
         else -> null
     }
 
@@ -100,7 +120,7 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
     }
 
     private suspend fun liked(uris: List<String>): dev.pampa.fluidify.wear.protocol.LikedAnswer {
-        val answers = uris.take(MAX_LIKED_QUERY).associateWith { uri -> runCatching { app.likedTracks.isLiked(uri) }.getOrNull() }
+        val answers = uris.take(MAX_LIKED_QUERY).associateWith { uri -> catchingNonCancel { app.likedTracks.isLiked(uri) }.getOrNull() }
         return dev.pampa.fluidify.wear.protocol.LikedAnswer(
             liked = answers.filterValues { it == true }.keys.toList(),
             notLiked = answers.filterValues { it == false }.keys.toList(),
@@ -193,16 +213,32 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
         return DeviceList(devices = listOf(thisPhone.copy(id = PhoneWearBridge.PHONE_DEVICE_ID)) + others, activeId = activeId)
     }
 
+    /**
+     * Sends [gzipped] over a channel of its own, for an answer too big for a message.
+     *
+     * Closed both ways when done (closing the stream only ends one direction, and every large
+     * answer used to leave a channel open until the devices disconnected), but not at once: the
+     * watch reads to the end of the stream and closes its side, and the channel is closed here
+     * only after that, or after a short grace; see [ChannelWrapUp]. Closed on the heels of the
+     * last byte, the tail of a large answer could be lost with the channel.
+     */
     private suspend fun stream(nodeId: String, id: Long, gzipped: ByteArray) {
         val channels = Wearable.getChannelClient(app)
-        var channel: com.google.android.gms.wearable.ChannelClient.Channel? = null
-        runCatching {
-            channel = channels.openChannel(nodeId, WearPaths.rpcStream(id)).await()
-            channels.getOutputStream(channel!!).await().use { it.write(gzipped) }
-        }.onFailure { Log.w(TAG, "rpc stream $id failed: ${it.message}") }
-        // Closed both ways once written: closing the stream only ends one direction, and every
-        // large answer used to leave a channel open until the devices disconnected.
-        channel?.let { runCatching { channels.close(it).await() } }
+        var wrapUp: ChannelWrapUp? = null
+        var delivered = false
+        try {
+            val channel = channels.openChannel(nodeId, WearPaths.rpcStream(id)).await()
+            wrapUp = ChannelWrapUp(channels, channel).also { it.start() }
+            val raw = channels.getOutputStream(channel).await()
+            WriteWatchdog(raw, STREAM_IDLE_MS, STREAM_DEADLINE_MS) { channels.close(channel) }.use { it.write(gzipped) }
+            delivered = true
+        } catch (cancelled: kotlinx.coroutines.CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            Log.w(TAG, "rpc stream $id failed: ${error.message}")
+        } finally {
+            withContext(kotlinx.coroutines.NonCancellable) { wrapUp?.finish(delivered) }
+        }
     }
 
     private fun <T> encode(serializer: KSerializer<T>, value: T): JsonElement =
@@ -214,5 +250,9 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
         const val ANSWER_BUDGET_MS = 10_000L
         const val SEARCH_BUDGET_MS = 18_000L
         const val MAX_LIKED_QUERY = 20
+
+        /** A stream that stops taking bytes for this long is a watch that went away. */
+        const val STREAM_IDLE_MS = 30_000L
+        const val STREAM_DEADLINE_MS = 2 * 60_000L
     }
 }

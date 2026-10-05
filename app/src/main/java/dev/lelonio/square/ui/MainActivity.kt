@@ -82,7 +82,12 @@ class MainActivity : ComponentActivity() {
 
     private fun takeShortcut(intent: android.content.Intent) {
         val route = when (intent.action) {
-            "dev.pampa.fluidify.WATCH_UPDATES" -> Routes.SETTINGS
+            "dev.pampa.fluidify.WATCH_UPDATES" -> {
+                // The watch-update notification: the settings, opened on the Watch page where the
+                // update's state is, not left at the list of pages.
+                dev.lelonio.square.ui.settings.WatchPageRequest.request()
+                Routes.SETTINGS
+            }
             ACTION_SHORTCUT_SEARCH -> Routes.SEARCH
             ACTION_SHORTCUT_LIBRARY -> Routes.LIBRARY
             ACTION_SHORTCUT_RESUME -> {

@@ -36,7 +36,7 @@ class WearLink(
     @Volatile private var installed = false
 
     /** Every node with the watch app installed, reachable now or not. */
-    suspend fun watchNodes(reachableOnly: Boolean = false): Set<Node> = runCatching {
+    suspend fun watchNodes(reachableOnly: Boolean = false): Set<Node> = catchingNonCancel {
         val filter = if (reachableOnly) CapabilityClient.FILTER_REACHABLE else CapabilityClient.FILTER_ALL
         capabilities.getCapability(WearPaths.CAPABILITY_WATCH, filter).await().nodes
     }.onFailure { Log.i(TAG, "no watch capability: ${it.message}") }.getOrDefault(emptySet())
@@ -48,7 +48,7 @@ class WearLink(
     suspend fun hasWatch(): Boolean {
         val now = System.currentTimeMillis()
         if (now - installedCheckedAt < INSTALLED_CACHE_MS) return installed
-        val nodes = runCatching {
+        val nodes = catchingNonCancel {
             capabilities.getCapability(WearPaths.CAPABILITY_WATCH, CapabilityClient.FILTER_ALL).await().nodes
         }.getOrElse {
             // A lookup that failed says nothing about the watch: not remembered as "none" for five
@@ -82,7 +82,7 @@ class WearLink(
         @Suppress("UNREACHABLE_CODE") false
     } ?: false
 
-    suspend fun send(nodeId: String, path: String, bytes: ByteArray): Boolean = runCatching {
+    suspend fun send(nodeId: String, path: String, bytes: ByteArray): Boolean = catchingNonCancel {
         messages.sendMessage(nodeId, path, bytes).await()
         true
     }.onFailure { Log.i(TAG, "message $path to $nodeId failed: ${it.message}") }.getOrDefault(false)
@@ -94,13 +94,13 @@ class WearLink(
         return any
     }
 
-    suspend fun put(request: PutDataRequest): Boolean = runCatching {
+    suspend fun put(request: PutDataRequest): Boolean = catchingNonCancel {
         data.putDataItem(request).await()
         true
     }.onFailure { Log.i(TAG, "data ${request.uri} failed: ${it.message}") }.getOrDefault(false)
 
     suspend fun delete(path: String) {
-        runCatching {
+        catchingNonCancel {
             data.deleteDataItems(android.net.Uri.Builder().scheme("wear").path(path).build()).await()
         }
     }

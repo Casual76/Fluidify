@@ -144,6 +144,16 @@ fun SettingsScreen(
      */
     var open by rememberSaveable { mutableStateOf<SettingsPage?>(null) }
 
+    // The watch-update notification asks for the Watch page (see WatchPageRequest): taken here,
+    // whether the screen was already showing or has only now been reached.
+    val watchPageRequested by WatchPageRequest.pending.collectAsStateWithLifecycle()
+    LaunchedEffect(watchPageRequested) {
+        if (watchPageRequested) {
+            open = SettingsPage.Watch
+            WatchPageRequest.consume()
+        }
+    }
+
     // The back gesture closes the page first and leaves the settings second,
     // which is the order the screen is read in.
     //
