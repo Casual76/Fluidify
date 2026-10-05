@@ -23,14 +23,22 @@
       "sizeBytes": 19647030
     },
     "beta": {
-      "version": "1.7.0",
+      "version": "1.7.1",
       "releaseDate": "2026-10-05",
-      "changelog": "Una revisione di tutta l'app, telefono e orologio, dopo l'arrivo di Wear OS.\n\nOrologio: i tasti della tile funzionano a ogni pressione (prima rispondevano una volta sola), il passaggio \"Continua sull'orologio\" aspetta che Spotify conosca davvero l'orologio, la musica non resta muta dopo un cambio di cuffie, il Wi-Fi resta acceso mentre serve allo streaming. Schermate con caricamento, \"non aggiornato\" e Riprova; l'ambient non fa piu' perdere la posizione nelle liste; meno lavoro in background e meno batteria.\n\nTelefono: la luce musicale costa molto meno (niente ridisegni inutili, si spegne davvero quando non si vede) e passa dall'aura all'alone in dissolvenza. Plurali veri, accenti corretti nelle traduzioni, interruttori e scelte leggibili da TalkBack, pagina Orologio con stati di ricerca ed errore, installazione dell'orologio con avanzamento. Il widget non accetta piu' comandi da altre app.\n\nMotore: niente chiusure improvvise allo spegnimento, la sessione salvata non si perde per una rete assente, skip e aggiunte in coda non vengono mai ripetuti due volte, coda inviata a Spotify in misura giusta, ascolti offline conservati finche' non c'e' rete, trasferimenti verso l'orologio piu' robusti.\n\nVerificati test automatici, render e build release minificate. Passaggio all'orologio, trasferimenti, luce musicale e tile restano da provare sui dispositivi.",
-      "releaseTag": "beta-fluidify-v1.7.0",
-      "apkAsset": "fluidify-1.7.0.apk",
-      "sizeBytes": 19716341
+      "changelog": "Orologio: il lettore e il display sempre acceso.\n\nIl display sempre acceso e' il lettore stesso con le luci abbassate: la copertina resta, scurita per non rovinare lo schermo, orologio e titolo restano al loro posto, controlli e anello spariscono. Si entra e si esce in dissolvenza.\n\nLa pagina della copertina sopra il lettore non c'e' piu': trascinando in giu' sul lettore i controlli svaniscono seguendo il dito, con lo sfondo fermo; trascinando in su tornano. Senza controlli la copertina e' il comando: un tocco play/pausa, due tocchi avanti, pressione lunga Mi piace.\n\nAggiornamenti dell'orologio via Wi-Fi: l'orologio scarica la nuova versione con il proprio Wi-Fi, acceso solo per il download e spento subito dopo, invece di riceverla dal telefono via Bluetooth. Se il Wi-Fi non c'e', si torna al Bluetooth da soli.\n\nAggiornamenti: canale Stabile o Beta in Impostazioni, valido per telefono e orologio. Le novita' di ogni versione si vedono prima di aggiornare e dopo, anche sull'orologio. L'orologio non si aggiorna mentre suona musica, puo' chiedere al telefono di controllare, e gli aggiornamenti automatici si scaricano solo in Wi-Fi. Stati piu' chiari sul telefono, con Riprova nella notifica.",
+      "releaseTag": "beta-fluidify-v1.7.1",
+      "apkAsset": "fluidify-1.7.1.apk",
+      "sizeBytes": 19745071
     },
     "history": [
+      {
+        "version": "1.7.0",
+        "releaseDate": "2026-10-05",
+        "changelog": "Una revisione di tutta l'app, telefono e orologio, dopo l'arrivo di Wear OS.\n\nOrologio: i tasti della tile funzionano a ogni pressione (prima rispondevano una volta sola), il passaggio \"Continua sull'orologio\" aspetta che Spotify conosca davvero l'orologio, la musica non resta muta dopo un cambio di cuffie, il Wi-Fi resta acceso mentre serve allo streaming. Schermate con caricamento, \"non aggiornato\" e Riprova; l'ambient non fa piu' perdere la posizione nelle liste; meno lavoro in background e meno batteria.\n\nTelefono: la luce musicale costa molto meno (niente ridisegni inutili, si spegne davvero quando non si vede) e passa dall'aura all'alone in dissolvenza. Plurali veri, accenti corretti nelle traduzioni, interruttori e scelte leggibili da TalkBack, pagina Orologio con stati di ricerca ed errore, installazione dell'orologio con avanzamento. Il widget non accetta piu' comandi da altre app.\n\nMotore: niente chiusure improvvise allo spegnimento, la sessione salvata non si perde per una rete assente, skip e aggiunte in coda non vengono mai ripetuti due volte, coda inviata a Spotify in misura giusta, ascolti offline conservati finche' non c'e' rete, trasferimenti verso l'orologio piu' robusti.\n\nVerificati test automatici, render e build release minificate. Passaggio all'orologio, trasferimenti, luce musicale e tile restano da provare sui dispositivi.",
+        "releaseTag": "beta-fluidify-v1.7.0",
+        "apkAsset": "fluidify-1.7.0.apk",
+        "sizeBytes": 19716341
+      },
       {
         "version": "1.6.4",
         "releaseDate": "2026-10-05",
