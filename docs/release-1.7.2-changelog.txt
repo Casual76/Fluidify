@@ -1,5 +1,9 @@
-Correzioni della 1.7.1.
+Una revisione di tutta l'app, telefono e orologio.
 
-Tornano le copertine dei brani scaricati nel lettore, nella notifica e nel widget.
+Orologio: il display sempre acceso e' il lettore con le luci abbassate (copertina scurita, orologio e titolo al loro posto, niente controlli), con entrata e uscita in dissolvenza. Trascinando in giu' sul lettore i controlli spariscono e la copertina diventa il comando (tocco play/pausa, doppio tocco avanti, pressione lunga Mi piace); trascinando in su tornano. I tasti della tile rispondono a ogni pressione, Continua sull'orologio aspetta che Spotify conosca l'orologio, la musica non resta muta dopo un cambio di cuffie, liste con caricamento e Riprova.
 
-La pagina Orologio non propone piu' un aggiornamento che l'orologio ha gia': quando l'orologio dice la sua versione, quello che il telefono credeva su un aggiornamento in corso si allinea.
+Aggiornamenti: canale Stabile o Beta in Impostazioni, per telefono e orologio insieme. Le novita' si vedono prima e dopo ogni aggiornamento. L'orologio scarica le nuove versioni con il proprio Wi-Fi (acceso solo per il download) invece che via Bluetooth, non si aggiorna mentre suona musica e puo' chiedere al telefono di controllare.
+
+Telefono: la luce musicale costa molto meno e passa dall'aura all'alone in dissolvenza; plurali e accenti corretti nelle traduzioni; interruttori leggibili da TalkBack; pagina Orologio piu' chiara; il widget non accetta comandi da altre app.
+
+Motore: niente chiusure improvvise allo spegnimento, la sessione salvata non si perde senza rete, skip e aggiunte in coda mai ripetuti due volte, ascolti offline conservati, trasferimenti verso l'orologio piu' robusti.
