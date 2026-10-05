@@ -15,22 +15,30 @@
       "ref": "master"
     },
     "stable": {
-      "version": "1.6.2",
+      "version": "1.6.3",
       "releaseDate": "2026-10-05",
-      "changelog": "Luce musicale più raccolta sul telefono: ridotta del 35% l'estensione verticale nel lettore completo, sia attorno alla copertina sia nella luce inferiore con Canvas e video. Nel mini player l'estensione verticale scende del 30%.\n\nConservate intensità, colori e risposta alla musica della 1.6.1. La resa dell'orologio resta quella precedente.\n\nRender e build minificate firmate verificati; resa in movimento e consumi reali restano da provare sui dispositivi fisici.",
-      "releaseTag": "stable-fluidify-v1.6.2",
-      "apkAsset": "fluidify-1.6.2.apk",
-      "sizeBytes": 19647019
+      "changelog": "La copertina resta visibile nell'AOD dell'orologio, piccola e attenuata su fondo nero. Titolo e ora mantengono la posizione; gli effetti musicali si fermano in AOD e in background. Il ritorno ai controlli usa una breve dissolvenza. Sui pannelli low-bit restano soltanto i testi.\n\nCon Canvas o video musicale, la luce del telefono usa una tonalità distinta della copertina, oppure un accento alternativo se la palette contiene colori troppo simili. Il colore segue la transizione del Canvas effettivamente pronto. Conservate l'altezza ridotta degli aloni e la resa interattiva del Watch.\n\nTest automatici, render e build minificate firmate verificati. Resa in movimento, comportamento AOD del Galaxy Watch e consumi reali restano da verificare sui dispositivi fisici.",
+      "releaseTag": "stable-fluidify-v1.6.3",
+      "apkAsset": "fluidify-1.6.3.apk",
+      "sizeBytes": 19647028
     },
     "beta": {
-      "version": "1.6.2",
+      "version": "1.6.3",
       "releaseDate": "2026-10-05",
-      "changelog": "Luce musicale più raccolta sul telefono: ridotta del 35% l'estensione verticale nel lettore completo, sia attorno alla copertina sia nella luce inferiore con Canvas e video. Nel mini player l'estensione verticale scende del 30%.\n\nConservate intensità, colori e risposta alla musica della 1.6.1. La resa dell'orologio resta quella precedente.\n\nRender e build minificate firmate verificati; resa in movimento e consumi reali restano da provare sui dispositivi fisici.",
-      "releaseTag": "stable-fluidify-v1.6.2",
-      "apkAsset": "fluidify-1.6.2.apk",
-      "sizeBytes": 19647019
+      "changelog": "La copertina resta visibile nell'AOD dell'orologio, piccola e attenuata su fondo nero. Titolo e ora mantengono la posizione; gli effetti musicali si fermano in AOD e in background. Il ritorno ai controlli usa una breve dissolvenza. Sui pannelli low-bit restano soltanto i testi.\n\nCon Canvas o video musicale, la luce del telefono usa una tonalità distinta della copertina, oppure un accento alternativo se la palette contiene colori troppo simili. Il colore segue la transizione del Canvas effettivamente pronto. Conservate l'altezza ridotta degli aloni e la resa interattiva del Watch.\n\nTest automatici, render e build minificate firmate verificati. Resa in movimento, comportamento AOD del Galaxy Watch e consumi reali restano da verificare sui dispositivi fisici.",
+      "releaseTag": "stable-fluidify-v1.6.3",
+      "apkAsset": "fluidify-1.6.3.apk",
+      "sizeBytes": 19647028
     },
     "history": [
+      {
+        "version": "1.6.2",
+        "releaseDate": "2026-10-05",
+        "changelog": "Luce musicale più raccolta sul telefono: ridotta del 35% l'estensione verticale nel lettore completo, sia attorno alla copertina sia nella luce inferiore con Canvas e video. Nel mini player l'estensione verticale scende del 30%.\n\nConservate intensità, colori e risposta alla musica della 1.6.1. La resa dell'orologio resta quella precedente.\n\nRender e build minificate firmate verificati; resa in movimento e consumi reali restano da provare sui dispositivi fisici.",
+        "releaseTag": "stable-fluidify-v1.6.2",
+        "apkAsset": "fluidify-1.6.2.apk",
+        "sizeBytes": 19647019
+      },
       {
         "version": "1.6.1",
         "releaseDate": "2026-10-05",
