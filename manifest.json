@@ -15,22 +15,30 @@
       "ref": "master"
     },
     "stable": {
-      "version": "1.7.3",
-      "releaseDate": "2026-10-05",
-      "changelog": "Tornano le copertine nel lettore, nella notifica e nel widget per i brani scaricati, anche nella coda ripresa dopo l'aggiornamento.",
-      "releaseTag": "stable-fluidify-v1.7.3",
-      "apkAsset": "fluidify-1.7.3.apk",
-      "sizeBytes": 19745074
+      "version": "1.7.4",
+      "releaseDate": "2026-10-13",
+      "changelog": "Il vetro dell'app è aggiornato (Fluid Engine 2.12.1). I pannelli grandi sono più sfocati e piegano di più la luce ai bordi. I pulsanti si possono tenere premuti e trascinare senza che la pagina scorra, e interruttori e cursori non la fanno più scorrere mentre li muovi. Cambiando scheda, la barra in basso non mostra più per un attimo la pagina nitida sotto il vetro, e la scheda che premi resta leggibile. I cursori delle impostazioni del vetro sono nuovi: una pillola bianca che sotto il dito diventa una lente, e la barra in basso premuta non si scurisce più.",
+      "releaseTag": "stable-fluidify-v1.7.4",
+      "apkAsset": "fluidify-1.7.4.apk",
+      "sizeBytes": 19745055
     },
     "beta": {
-      "version": "1.7.3",
-      "releaseDate": "2026-10-05",
-      "changelog": "Tornano le copertine nel lettore, nella notifica e nel widget per i brani scaricati, anche nella coda ripresa dopo l'aggiornamento.",
-      "releaseTag": "stable-fluidify-v1.7.3",
-      "apkAsset": "fluidify-1.7.3.apk",
-      "sizeBytes": 19745074
+      "version": "1.7.4",
+      "releaseDate": "2026-10-13",
+      "changelog": "Il vetro dell'app è aggiornato (Fluid Engine 2.12.1). I pannelli grandi sono più sfocati e piegano di più la luce ai bordi. I pulsanti si possono tenere premuti e trascinare senza che la pagina scorra, e interruttori e cursori non la fanno più scorrere mentre li muovi. Cambiando scheda, la barra in basso non mostra più per un attimo la pagina nitida sotto il vetro, e la scheda che premi resta leggibile. I cursori delle impostazioni del vetro sono nuovi: una pillola bianca che sotto il dito diventa una lente, e la barra in basso premuta non si scurisce più.",
+      "releaseTag": "stable-fluidify-v1.7.4",
+      "apkAsset": "fluidify-1.7.4.apk",
+      "sizeBytes": 19745055
     },
     "history": [
+      {
+        "version": "1.7.3",
+        "releaseDate": "2026-10-05",
+        "changelog": "Tornano le copertine nel lettore, nella notifica e nel widget per i brani scaricati, anche nella coda ripresa dopo l'aggiornamento.",
+        "releaseTag": "stable-fluidify-v1.7.3",
+        "apkAsset": "fluidify-1.7.3.apk",
+        "sizeBytes": 19745074
+      },
       {
         "version": "1.7.2",
         "releaseDate": "2026-10-05",
