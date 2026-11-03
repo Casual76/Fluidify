@@ -512,4 +512,5 @@
     <string name="watch_update_installed_notification">Uhr auf %1$s aktualisiert</string>
     <string name="watch_update_wifi">Die Uhr lädt %1$s über ihr WLAN…</string>
     <string name="onboarding_step_of">Schritt %1$d von %2$d</string>
+    <string name="update_section_title">Updates</string>
 </resources>

@@ -61,7 +61,6 @@ fun OfflineNotice(modifier: Modifier = Modifier, onTurnOff: () -> Unit = {}) {
             leading = {
                 Icon(PhosphorIcons.Regular.CloudSlash, contentDescription = null, modifier = Modifier.size(16.dp))
             },
-            glass = true,
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp),
         )
     }

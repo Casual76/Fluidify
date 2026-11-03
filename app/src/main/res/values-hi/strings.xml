@@ -527,4 +527,5 @@
     <string name="watch_update_installed_notification">घड़ी %1$s पर अपडेट हो गई</string>
     <string name="watch_update_wifi">घड़ी अपने वाई-फ़ाई से %1$s डाउनलोड कर रही है…</string>
     <string name="onboarding_step_of">चरण %1$d / %2$d</string>
+    <string name="update_section_title">अपडेट</string>
 </resources>

@@ -41,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.layout.layout
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
@@ -238,13 +239,16 @@ fun SettingsScreen(
         state = listState,
         flingBehavior = rememberFluidTitleSnapFling(collapse),
         contentPadding = PaddingValues(
+            start = 20.dp,
+            end = 20.dp,
             top = dev.antigravity.fluidengine.ui.fluid.FluidScreenDefaults.topBarHeight(),
             bottom = contentPadding.calculateBottomPadding() + 24.dp,
         ),
         overscrollEffect = null,
     ) {
         item("top") {
-            FluidCollapsingTitle(title, collapse)
+            // The title spans the page; the 20 dp on the list's sides are for the groups.
+            Box(Modifier.bleedHorizontal(20.dp)) { FluidCollapsingTitle(title, collapse) }
         }
 
         if (open == null) item("pages") {
@@ -526,7 +530,6 @@ fun SettingsScreen(
                 onChannelChange = chooseUpdateChannel,
                 onSkip = { update.state.release?.version?.let { prefs.setSkippedUpdate(it) } },
                 strings = updateStrings,
-                glass = true,
                 footnote = updateChannelNote,
             )
         }
@@ -567,6 +570,14 @@ fun SettingsScreen(
         )
     }
     }
+}
+
+/** Lets a child use [by] more on each side than its parent gives: the list pads its groups, not its title. */
+private fun Modifier.bleedHorizontal(by: androidx.compose.ui.unit.Dp): Modifier = layout { measurable, constraints ->
+    val extra = by.roundToPx()
+    val width = constraints.maxWidth + 2 * extra
+    val placeable = measurable.measure(constraints.copy(minWidth = width, maxWidth = width))
+    layout(constraints.maxWidth, placeable.height) { placeable.place(-extra, 0) }
 }
 
 /** The list of pages, under the pages themselves in the settings' own stack. */
@@ -1084,13 +1095,13 @@ private fun Licences() {
 /**
  * A titled group of rows: the engine's section header over the engine's group.
  *
- * Glass, because the page stands on the artwork wash and the engine's group knows how to
- * be a panel on a canvas; the rows inside are the engine's too (`FluidToggleRow`,
- * `FluidChoiceRow`, `FluidListRow`), so a switch can be slid by its thumb.
+ * A plain panel rather than glass (`glass = true`): the groups were a soft grey film before the
+ * engine, and on a light page glass reads fainter than that. The rows inside are the engine's
+ * (`FluidToggleRow`, `FluidChoiceRow`, `FluidListRow`), so a switch can be slid by its thumb.
  */
 @Composable
 internal fun Section(title: String?, content: @Composable ColumnScope.() -> Unit) {
-    Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
+    Column(Modifier.padding(vertical = 10.dp)) {
         if (title != null) {
             FluidSectionHeader(
                 // The reader's locale, not Locale.ROOT's: in Turkish a lowercase "i" capitalises
@@ -1100,7 +1111,7 @@ internal fun Section(title: String?, content: @Composable ColumnScope.() -> Unit
                 modifier = Modifier.padding(bottom = 6.dp),
             )
         }
-        FluidListGroup(glass = true, content = content)
+        FluidListGroup(content = content)
     }
 }
 

@@ -48,7 +48,7 @@ internal fun rememberFluidifyUpdateStrings(): FluidUpdateStrings {
     val stable = stringResource(R.string.update_channel_stable)
     val beta = stringResource(R.string.update_channel_beta)
     val checkNow = stringResource(R.string.check_for_updates)
-    val sectionTitle = stringResource(R.string.update_channel)
+    val sectionTitle = stringResource(R.string.update_section_title)
     val availableText = stringResource(R.string.update_available, "%s")
     return remember(
         italian, whatsNew, install, retry, later, close, checking, upToDate, downloading,

@@ -159,8 +159,19 @@ fun SquareTheme(
         val filmStrong = if (darkTheme) DarkFilmStrong else LightFilmStrong
         // Keyed on all of it: rebuilding a ColorScheme allocates dozens of
         // colours and invalidates every composable that reads MaterialTheme.
-        val scheme = remember(engine, ink, film, filmStrong) {
+        // The grey the app's groups and cards have always been: the ink at seven per cent over the
+        // page. Handed over as an opaque colour, not a translucent one, because the engine reads
+        // surfaceContainerLow for contrast sums (a progress fill against its track) and a see-through
+        // value there would be measured against nothing. The page is the soft wash, which is close
+        // enough to a single tone for that.
+        val groupFill = androidx.compose.ui.graphics.lerp(
+            if (darkTheme) (if (amoled) Color.Black else DarkPageTone) else LightPageTone,
+            ink,
+            0.07f,
+        )
+        val scheme = remember(engine, ink, film, filmStrong, groupFill) {
             engine.copy(
+                surfaceContainerLow = groupFill,
                 onPrimary = if (darkTheme) Color(0xFF0B0D10) else Color.White,
                 primaryContainer = film,
                 onPrimaryContainer = ink,
@@ -658,3 +669,9 @@ fun Modifier.softShadow(
         spotColor = Color.Black.copy(alpha = spot * scale),
     )
 }
+
+/** The page under the groups on the light side: the wash's own lavender, as a single tone. */
+private val LightPageTone = Color(0xFFF2EFF7)
+
+/** And on the dark side, before the artwork darkens it further. */
+private val DarkPageTone = Color(0xFF18161C)
