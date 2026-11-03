@@ -1,8 +1,8 @@
 package dev.lelonio.square.ui.player
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -94,7 +94,7 @@ fun KaraokeDial(
 
     val height by animateDpAsState(
         targetValue = if (open) OPEN_HEIGHT else CLOSED_SIZE,
-        animationSpec = tween(220),
+        animationSpec = FluidMotion.crossFade(220),
         label = "karaokeHeight",
     )
     // Grows under the finger while it is being dragged, and gives a little
@@ -106,17 +106,17 @@ fun KaraokeDial(
             pressed -> 0.94f
             else -> 1f
         },
-        animationSpec = tween(140),
+        animationSpec = FluidMotion.crossFade(140),
         label = "karaokeGrip",
     )
     val lit by animateFloatAsState(
         targetValue = if (pressed || dragging) 0.12f else 0f,
-        animationSpec = tween(140),
+        animationSpec = FluidMotion.crossFade(140),
         label = "karaokePress",
     )
     val fill by animateFloatAsState(
         targetValue = if (open) amount else 0f,
-        animationSpec = tween(160),
+        animationSpec = FluidMotion.crossFade(160),
         label = "karaokeFill",
     )
     // A little longer than the control is tall.

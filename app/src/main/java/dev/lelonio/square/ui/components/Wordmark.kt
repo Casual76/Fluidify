@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.components
 
+import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
 import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.Box
 import androidx.compose.ui.draw.drawBehind
@@ -10,7 +11,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.Composable
 import androidx.compose.material3.LocalTextStyle
 import androidx.compose.material3.Text
@@ -252,7 +252,7 @@ fun AppIcon(size: Dp, modifier: Modifier = Modifier) {
         contentDescription = null,
         modifier = modifier
             .size(size)
-            .clip(RoundedCornerShape(size * 0.26f)),
+            .clip(ContinuousCornerShape(size * 0.26f)),
     )
 }
 

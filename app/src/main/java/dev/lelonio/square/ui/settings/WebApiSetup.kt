@@ -1,13 +1,13 @@
 package dev.lelonio.square.ui.settings
 
+import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
@@ -93,7 +93,7 @@ internal fun WebApiSetupInline(
             label = { Text(stringResource(R.string.client_id)) },
             singleLine = true,
             enabled = !state.connecting,
-            shape = RoundedCornerShape(16.dp),
+            shape = ContinuousCornerShape(16.dp),
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(top = 16.dp),
@@ -116,11 +116,7 @@ internal fun WebApiSetupInline(
                 .height(50.dp),
         ) {
             if (state.connecting) {
-                CircularProgressIndicator(
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(18.dp),
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
+                FluidSpinner(size = 18.dp, color = MaterialTheme.colorScheme.onPrimary)
             } else {
                 Text(stringResource(R.string.connect), style = MaterialTheme.typography.titleMedium)
             }

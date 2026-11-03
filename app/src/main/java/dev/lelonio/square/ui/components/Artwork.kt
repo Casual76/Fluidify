@@ -1,9 +1,9 @@
 package dev.lelonio.square.ui.components
 
+import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -60,7 +60,7 @@ fun Artwork(
      */
     decodeSize: Dp = 0.dp,
 ) {
-    val shape = remember(corner) { RoundedCornerShape(corner) }
+    val shape = remember(corner) { ContinuousCornerShape(corner) }
     val context = LocalContext.current
     val density = LocalDensity.current
 
@@ -158,7 +158,7 @@ fun PlaylistCover(
             .orEmpty()
     }
 
-    val shape = remember(corner) { RoundedCornerShape(corner) }
+    val shape = remember(corner) { ContinuousCornerShape(corner) }
     Box(modifier.clip(shape), contentAlignment = Alignment.Center) {
         val list = arts
         when {

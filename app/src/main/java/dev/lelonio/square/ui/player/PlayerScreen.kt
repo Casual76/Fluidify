@@ -1,5 +1,8 @@
 package dev.lelonio.square.ui.player
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
+import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
+import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.SizeTransform
 import androidx.compose.animation.togetherWith
@@ -18,7 +21,6 @@ import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateDpAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.verticalScroll
@@ -42,8 +44,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.LocalContentColor
@@ -453,7 +454,7 @@ fun PlayerScreen(
     val panelOpen = panel != PlayerPanel.NONE
     val canvasBlur = animateDpAsState(
         targetValue = if (panelOpen) 26.dp else 0.dp,
-        animationSpec = tween(320),
+        animationSpec = FluidMotion.crossFade(320),
         label = "canvasBlur",
     )
 
@@ -469,16 +470,16 @@ fun PlayerScreen(
     )
     val lightBottom = animateFloatAsState(
         targetValue = if (canvasReady || videoOn || panel != PlayerPanel.NONE) 1f else 0f,
-        animationSpec = tween(420), label = "audioLightOrigin")
+        animationSpec = FluidMotion.crossFade(420), label = "audioLightOrigin")
     // Crossed over at a track change like the aura's own colours, not switched in one frame.
     val lightColor = androidx.compose.animation.animateColorAsState(
         targetValue = auraColors.firstOrNull() ?: MaterialTheme.colorScheme.primary,
-        animationSpec = tween(700),
+        animationSpec = FluidMotion.crossFade(700),
         label = "audioLightColor",
     )
     val lightContrast = animateFloatAsState(
         targetValue = if (canvasReady || videoOn) 1f else 0f,
-        animationSpec = tween(420), label = "audioLightContrast")
+        animationSpec = FluidMotion.crossFade(420), label = "audioLightContrast")
 
     Box(Modifier.fillMaxSize()) {
         Box(
@@ -543,13 +544,13 @@ fun PlayerScreen(
             // to a cover crossfading out reads as two separate events.
             val clipAlpha by animateFloatAsState(
                 targetValue = if (canvasReady) 1f else 0f,
-                animationSpec = tween(420),
+                animationSpec = FluidMotion.crossFade(420),
                 label = "clipAlpha",
             )
 
             Crossfade(
                 targetState = canvas,
-                animationSpec = tween(500),
+                animationSpec = FluidMotion.crossFade(500),
                 label = "canvas",
                 modifier = Modifier
                     .fillMaxSize()
@@ -625,7 +626,7 @@ fun PlayerScreen(
                 // is precisely when nothing else can afford it.
                 val dim = animateFloatAsState(
                     targetValue = if (state.isPlaying && !panelOpen) 0f else 1f,
-                    animationSpec = tween(420),
+                    animationSpec = FluidMotion.crossFade(420),
                     label = "canvasDim",
                 )
                 // The veil exists for the controls, so with the controls gone
@@ -634,7 +635,7 @@ fun PlayerScreen(
                 // exactly what carries it.
                 val veil = animateFloatAsState(
                     targetValue = if (immersive) IMMERSIVE_VEIL else 1f,
-                    animationSpec = tween(420),
+                    animationSpec = FluidMotion.crossFade(420),
                     label = "canvasVeil",
                 )
                 // Black on both sides, and this one does not turn over.
@@ -760,13 +761,13 @@ fun PlayerScreen(
                     androidx.compose.animation.AnimatedVisibility(
                         visible = !immersive,
                         enter = androidx.compose.animation.expandVertically(
-                            animationSpec = tween(CHROME_IN_MS),
+                            animationSpec = FluidMotion.intSize(),
                             expandFrom = Alignment.Bottom,
-                        ) + androidx.compose.animation.fadeIn(tween(CHROME_IN_MS)),
+                        ) + androidx.compose.animation.fadeIn(FluidMotion.fadeIn(CHROME_IN_MS)),
                         exit = androidx.compose.animation.shrinkVertically(
-                            animationSpec = tween(CHROME_OUT_MS),
+                            animationSpec = FluidMotion.intSize(),
                             shrinkTowards = Alignment.Bottom,
-                        ) + androidx.compose.animation.fadeOut(tween(CHROME_FADE_MS)),
+                        ) + androidx.compose.animation.fadeOut(FluidMotion.fadeOut(CHROME_FADE_MS)),
                     ) {
                     TopBar(
                         panel = panel,
@@ -860,9 +861,7 @@ fun PlayerScreen(
                         val toClip = panel == PlayerPanel.NONE
                         val phase = animateFloatAsState(
                             targetValue = if (coverShowing) 0f else 1f,
-                            animationSpec = tween(
-                                if (toClip) CLIP_FADE_MS else STAGE_FADE_MS * 2,
-                            ),
+                            animationSpec = FluidMotion.crossFade(if (toClip) CLIP_FADE_MS else STAGE_FADE_MS * 2),
                             label = "stageFade",
                         )
                         // The two halves of the clock, each read where it is
@@ -917,8 +916,8 @@ fun PlayerScreen(
                                 .collectAsStateWithLifecycle()
                             androidx.compose.animation.AnimatedVisibility(
                                 visible = karaokeAmount > 0f,
-                                enter = fadeIn(tween(220)),
-                                exit = fadeOut(tween(180)),
+                                enter = fadeIn(FluidMotion.fadeIn(220)),
+                                exit = fadeOut(FluidMotion.fadeOut(180)),
                                 modifier = Modifier
                                     .align(Alignment.TopCenter)
                                     .then(androidx.compose.ui.Modifier)
@@ -1005,8 +1004,8 @@ fun PlayerScreen(
                             // or from the cover it is held at nothing until its
                             // turn; see the second half of the clock below.
                             transitionSpec = {
-                                fadeIn(tween(STAGE_FADE_MS)) togetherWith
-                                    fadeOut(tween(STAGE_FADE_MS)) using null
+                                fadeIn(FluidMotion.fadeIn(STAGE_FADE_MS)) togetherWith
+                                    fadeOut(FluidMotion.fadeOut(STAGE_FADE_MS)) using null
                             },
                             label = "stage",
                             modifier = Modifier
@@ -1153,10 +1152,10 @@ fun PlayerScreen(
                             // song's name and where it has got to, and an offer
                             // to watch something else is none of those.
                             visible = videoFileId != null && !immersive,
-                            enter = fadeIn(tween(260)) + scaleIn(tween(260), initialScale = 0.9f) +
-                                expandVertically(tween(260)),
-                            exit = fadeOut(tween(180)) + scaleOut(tween(180), targetScale = 0.92f) +
-                                shrinkVertically(tween(180)),
+                            enter = fadeIn(FluidMotion.fadeIn(260)) + scaleIn(FluidMotion.standard(), initialScale = 0.9f) +
+                                expandVertically(FluidMotion.intSize()),
+                            exit = fadeOut(FluidMotion.fadeOut(180)) + scaleOut(FluidMotion.standard(), targetScale = 0.92f) +
+                                shrinkVertically(FluidMotion.intSize()),
                             modifier = Modifier.align(Alignment.CenterHorizontally),
                         ) {
                             PlayerPane(
@@ -1255,13 +1254,13 @@ fun PlayerScreen(
                                 androidx.compose.animation.AnimatedVisibility(
                                     visible = !immersive,
                                     enter = androidx.compose.animation.expandHorizontally(
-                                        animationSpec = tween(CHROME_IN_MS),
+                                        animationSpec = FluidMotion.intSize(),
                                         expandFrom = Alignment.Start,
-                                    ) + androidx.compose.animation.fadeIn(tween(CHROME_IN_MS)),
+                                    ) + androidx.compose.animation.fadeIn(FluidMotion.fadeIn(CHROME_IN_MS)),
                                     exit = androidx.compose.animation.shrinkHorizontally(
-                                        animationSpec = tween(CHROME_OUT_MS),
+                                        animationSpec = FluidMotion.intSize(),
                                         shrinkTowards = Alignment.Start,
-                                    ) + androidx.compose.animation.fadeOut(tween(CHROME_FADE_MS)),
+                                    ) + androidx.compose.animation.fadeOut(FluidMotion.fadeOut(CHROME_FADE_MS)),
                                 ) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                 // A station built from this track, the way the
@@ -1348,25 +1347,18 @@ fun PlayerScreen(
 
                         Spacer(Modifier.height(18.dp))
 
-                        GlassProgressBar(
-                            positionMs = positionMs,
-                            durationMs = state.durationMs,
-                            onSeek = onSeek,
-                            accentColor = GlassInk,
-                            trackColor = GlassInk.copy(alpha = 0.28f),
-                        )
-                        TimeRow(positionMs, state.durationMs)
+                        PlaybackScrubber(positionMs, state.durationMs, onSeek)
 
                         androidx.compose.animation.AnimatedVisibility(
                             visible = !immersive,
                             enter = androidx.compose.animation.expandVertically(
-                                animationSpec = tween(CHROME_IN_MS),
+                                animationSpec = FluidMotion.intSize(),
                                 expandFrom = Alignment.Top,
-                            ) + androidx.compose.animation.fadeIn(tween(CHROME_IN_MS)),
+                            ) + androidx.compose.animation.fadeIn(FluidMotion.fadeIn(CHROME_IN_MS)),
                             exit = androidx.compose.animation.shrinkVertically(
-                                animationSpec = tween(CHROME_OUT_MS),
+                                animationSpec = FluidMotion.intSize(),
                                 shrinkTowards = Alignment.Top,
-                            ) + androidx.compose.animation.fadeOut(tween(CHROME_FADE_MS)),
+                            ) + androidx.compose.animation.fadeOut(FluidMotion.fadeOut(CHROME_FADE_MS)),
                         ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Spacer(Modifier.height(14.dp))
@@ -1437,7 +1429,7 @@ private fun VideoStage(
             Modifier
                 .fillMaxWidth()
                 .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(18.dp)),
+                .clip(ContinuousCornerShape(18.dp)),
         )
         PanelAmbient(player, onAmbient)
         return
@@ -1479,7 +1471,7 @@ private fun VideoStage(
         modifier = Modifier
             .fillMaxWidth()
             .aspectRatio(16f / 9f)
-            .clip(RoundedCornerShape(18.dp)),
+            .clip(ContinuousCornerShape(18.dp)),
     )
 }
 
@@ -1493,16 +1485,16 @@ private fun VideoStage(
 @Composable
 private fun AmbientLight(edges: AmbientEdges?) {
     val topLeft by animateColorAsState(
-        edges?.topLeft ?: Color.Transparent, tween(AMBIENT_FADE_MS), label = "tl",
+        edges?.topLeft ?: Color.Transparent, FluidMotion.color(AMBIENT_FADE_MS), label = "tl",
     )
     val topRight by animateColorAsState(
-        edges?.topRight ?: Color.Transparent, tween(AMBIENT_FADE_MS), label = "tr",
+        edges?.topRight ?: Color.Transparent, FluidMotion.color(AMBIENT_FADE_MS), label = "tr",
     )
     val bottomLeft by animateColorAsState(
-        edges?.bottomLeft ?: Color.Transparent, tween(AMBIENT_FADE_MS), label = "bl",
+        edges?.bottomLeft ?: Color.Transparent, FluidMotion.color(AMBIENT_FADE_MS), label = "bl",
     )
     val bottomRight by animateColorAsState(
-        edges?.bottomRight ?: Color.Transparent, tween(AMBIENT_FADE_MS), label = "br",
+        edges?.bottomRight ?: Color.Transparent, FluidMotion.color(AMBIENT_FADE_MS), label = "br",
     )
 
     Canvas(Modifier.fillMaxSize()) {
@@ -1693,7 +1685,7 @@ private fun TopBar(
                 // the player not already spoken for.
                 PlayerPanel.NONE -> source.ifBlank { stringResource(R.string.now_playing) }
             },
-            animationSpec = tween(220),
+            animationSpec = FluidMotion.crossFade(220),
             label = "topBarTitle",
             modifier = Modifier.weight(1f),
         ) { title ->
@@ -1777,15 +1769,12 @@ private fun Cover(
     )
     val playingScale by animateFloatAsState(
         targetValue = if (state.isPlaying) 1f else 0.88f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioLowBouncy,
-            stiffness = Spring.StiffnessLow,
-        ),
+        animationSpec = FluidMotion.fluid(),
         label = "coverScale",
     )
     val playingLift by animateFloatAsState(
         targetValue = if (state.isPlaying) 1f else 0.35f,
-        animationSpec = tween(420),
+        animationSpec = FluidMotion.crossFade(420),
         label = "coverLift",
     )
 
@@ -1819,7 +1808,7 @@ private fun Cover(
     ) {
         Crossfade(
             targetState = state.artworkUrl to state.title,
-            animationSpec = tween(320),
+            animationSpec = FluidMotion.crossFade(320),
             label = "art",
         ) { (url, title) ->
             Artwork(
@@ -1829,7 +1818,7 @@ private fun Cover(
                     .fillMaxSize()
 
                     .softShadow(
-                        RoundedCornerShape(26.dp),
+                        ContinuousCornerShape(26.dp),
                         elevation = (10 + 30 * playingLift).dp,
                         ambient = 0.10f + 0.10f * playingLift,
                         spot = 0.20f + 0.25f * playingLift,
@@ -1853,8 +1842,8 @@ private fun TitleBlock(
     AnimatedContent(
         targetState = state.title to state.artist,
         transitionSpec = {
-            (slideInVertically { it / 2 } + fadeIn(tween(220)))
-                .togetherWith(slideOutVertically { -it / 2 } + fadeOut(tween(170)))
+            (slideInVertically { it / 2 } + fadeIn(FluidMotion.fadeIn(220)))
+                .togetherWith(slideOutVertically { -it / 2 } + fadeOut(FluidMotion.fadeOut(170)))
         },
         label = "title",
         modifier = modifier,
@@ -2039,15 +2028,11 @@ internal fun Controls(
             // ring belongs *around* the icon rather than beside it.
             Box(contentAlignment = Alignment.Center) {
                 if (state.isBuffering) {
-                    CircularProgressIndicator(
-                        color = LocalContentColor.current.copy(alpha = 0.5f),
-                        strokeWidth = 2.dp,
-                        modifier = Modifier.grow(BufferRingSmall, BufferRing, amount),
-                    )
+                    FluidSpinner(modifier = Modifier.grow(BufferRingSmall, BufferRing, amount), size = BufferRing, color = LocalContentColor.current.copy(alpha = 0.5f))
                 }
                 Crossfade(
                     state.wantsPlay,
-                    animationSpec = tween(180),
+                    animationSpec = FluidMotion.crossFade(180),
                     label = "playPause",
                 ) { playing ->
                     Icon(
@@ -2351,10 +2336,7 @@ internal fun LyricsStage(
 
     Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
         when {
-            loading -> androidx.compose.material3.CircularProgressIndicator(
-                color = GlassInkDim,
-                strokeWidth = 2.dp,
-            )
+            loading -> FluidSpinner(size = 36.dp, color = GlassInkDim)
 
             lyrics == null -> Text(
                 stringResource(R.string.no_lyrics),
@@ -2472,7 +2454,7 @@ private fun InfoPanel(
         // as a rendering fault rather than as depth.
         val tail by animateFloatAsState(
             targetValue = if (scroll.canScrollForward) 1f else 0.18f,
-            animationSpec = tween(180),
+            animationSpec = FluidMotion.crossFade(180),
             label = "infoTail",
         )
         androidx.compose.animation.AnimatedContent(
@@ -2480,9 +2462,9 @@ private fun InfoPanel(
             transitionSpec = {
                 // The same short vertical swap the library's chips make: the
                 // pages are siblings, so nothing about the change is sideways.
-                (androidx.compose.animation.fadeIn(tween(200)) +
-                    androidx.compose.animation.slideInVertically(tween(240)) { it / 14 })
-                    .togetherWith(androidx.compose.animation.fadeOut(tween(110)))
+                (androidx.compose.animation.fadeIn(FluidMotion.fadeIn(200)) +
+                    androidx.compose.animation.slideInVertically(FluidMotion.intOffset()) { it / 14 })
+                    .togetherWith(androidx.compose.animation.fadeOut(FluidMotion.fadeOut(110)))
             },
             label = "info page",
             modifier = Modifier
@@ -2524,9 +2506,9 @@ private fun InfoPanel(
                     // follower count.
                     contentKey = { it?.uri },
                     transitionSpec = {
-                        (androidx.compose.animation.fadeIn(tween(260)) +
-                            androidx.compose.animation.slideInVertically(tween(300)) { it / 16 })
-                            .togetherWith(androidx.compose.animation.fadeOut(tween(150)))
+                        (androidx.compose.animation.fadeIn(FluidMotion.fadeIn(260)) +
+                            androidx.compose.animation.slideInVertically(FluidMotion.intOffset()) { it / 16 })
+                            .togetherWith(androidx.compose.animation.fadeOut(FluidMotion.fadeOut(150)))
                     },
                     label = "artist",
                     modifier = Modifier.fillMaxSize(),

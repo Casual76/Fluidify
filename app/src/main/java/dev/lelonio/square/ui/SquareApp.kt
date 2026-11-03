@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
@@ -111,7 +110,6 @@ import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import dev.antigravity.fluidengine.ui.navigation.FluidNavHost
 import dev.antigravity.fluidengine.ui.navigation.composable
 import dev.antigravity.fluidengine.ui.navigation.navigateToPeer
-import dev.antigravity.fluidengine.ui.page.FluidBackSwipe
 import dev.antigravity.fluidengine.ui.page.FluidPageTransition
 import dev.antigravity.fluidengine.ui.page.FluidPeerMove
 import dev.antigravity.fluidengine.ui.page.rememberFluidPageHostState
@@ -137,8 +135,9 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.IntOffset
 import dev.lelonio.square.ui.components.TrackSheet
 import dev.lelonio.square.ui.components.TrackSheetAction
-import dev.lelonio.square.ui.components.UpdateDialog
-import dev.lelonio.square.update.Updater
+import dev.lelonio.square.update.FluidifyUpdates
+import dev.lelonio.square.update.LocalUpdateController
+import dev.lelonio.square.update.UpdatePrompt
 import dev.lelonio.square.ui.library.openLink
 import com.adamglin.phosphoricons.fill.ArrowCircleDown
 import com.adamglin.phosphoricons.regular.ArrowCircleDown
@@ -371,8 +370,6 @@ fun SquareApp(
     val offlineNow by dev.lelonio.square.playback.OfflineMode.active
         .collectAsStateWithLifecycle()
     val artistDownload by viewModel.artistDownload.collectAsStateWithLifecycle()
-
-    UpdatePrompt()
 
     // The session as it was left, so the player has something to draw before
     // the media controller connects. Read once, off the saved queue.
@@ -957,7 +954,19 @@ fun SquareApp(
         return
     }
 
+    // The one update controller: the launch prompt and the About page read the same one, so a check
+    // made in either shows in both. Root scope, so a download goes on while the pages change.
+    val updateChannel by (context.applicationContext as dev.lelonio.square.SquareApplication)
+        .preferences.updateChannel.collectAsStateWithLifecycle()
+    val updateController = dev.antigravity.fluidengine.ui.fluid.rememberFluidUpdateController(
+        updater = (context.applicationContext as dev.lelonio.square.SquareApplication).updater,
+        currentVersion = FluidifyUpdates.currentVersion,
+        channel = updateChannel,
+        strings = dev.lelonio.square.ui.theme.rememberFluidifyUpdateStrings(),
+    )
+
     androidx.compose.runtime.CompositionLocalProvider(
+        LocalUpdateController provides updateController,
         dev.antigravity.fluidengine.ui.fluid.LocalFluidGlassModalHostState provides modalHost,
         dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides pageGlass,
         // The ambient canvas: the ground, recorded *before* the page stands on
@@ -1536,9 +1545,8 @@ fun SquareApp(
                         composable(
                             Routes.PLAYLIST,
                             transition = FluidPageTransition.Expand,
-                            // The rows take every sideways drag for the queue (SwipeToQueue),
-                            // so the finger goes back from the edge only.
-                            backSwipe = FluidBackSwipe.EdgeOnly,
+                            // The rows take every sideways drag for the queue (SwipeToQueue), so the
+                            // finger goes back from the edge: the engine's default since 3.0.3.
                         ) {
                             // Re-seeded from the open playlist, album or artist.
                             // The rest of the app is themed after whatever is
@@ -2832,6 +2840,10 @@ fun SquareApp(
                     }
                 }
 
+                // A new release, offered in a sheet. Here and not at the top: the sheet is a modal
+                // and opens in the host, which the root does not have yet.
+                UpdatePrompt()
+
                 // The engine's alert, in the modal host: real glass over the
                 // page, and an exit that is seen after the question is gone.
                 deleting?.let { target ->
@@ -3115,7 +3127,7 @@ private fun AppBackdrop(artworkUrl: String?, alive: Boolean) {
                     // has nothing to cross: it is simply there.
                     fade.snapTo(1f)
                 } else {
-                    fade.animateTo(1f, tween(BACKDROP_FADE_MS, easing = LinearEasing))
+                    fade.animateTo(1f, FluidMotion.crossFade(BACKDROP_FADE_MS))
                 }
                 settled = artworkUrl
                 fade.snapTo(0f)
@@ -3425,78 +3437,6 @@ private fun Player.cycleRepeatMode() {
  * pre-shuffle one, so the permutation has to be applied to find the track that
  * was actually playing.
  */
-/**
- * Asks GitHub for a newer release when the app opens, and says so if there is one.
- *
- * This used to be a button in the settings and nothing else, on the grounds
- * that the check is a request made for the app's benefit rather than the
- * user's. The trouble with that is who it leaves behind: an app no store can
- * reach, whose owner never opens the settings, stays on the version it was
- * installed with forever, security fixes and all. So it runs on its own now,
- * with the cost kept small: at most one request every six hours, and one
- * dialog per release, ever.
- *
- * Everything that can go wrong is silence. The check is not something the user
- * asked for, so a failure is not something to tell them about.
- */
-@Composable
-private fun UpdatePrompt() {
-    val context = LocalContext.current
-    val updater = remember(context) {
-        (context.applicationContext as dev.lelonio.square.SquareApplication).updater
-    }
-    val prefs = remember(context) { dev.lelonio.square.data.PreferencesStore(context) }
-    val scope = rememberCoroutineScope()
-    val state by updater.state.collectAsStateWithLifecycle()
-
-    LaunchedEffect(Unit) {
-        val now = System.currentTimeMillis()
-        if (now - prefs.lastUpdateCheck() < UPDATE_CHECK_INTERVAL_MS) return@LaunchedEffect
-        // Recorded before the call rather than after it: a phone with no
-        // network would otherwise ask again at every launch, which is the one
-        // shape of this that would be a nuisance.
-        prefs.setLastUpdateCheck(now)
-        runCatching { updater.check() }
-    }
-
-    val available = state as? Updater.State.Available ?: return
-    // Already offered, and turned down. The version is remembered rather than
-    // a flag, so the next release is news again.
-    if (available.version == prefs.skippedUpdate()) return
-
-    // Held across the trip to the system settings, so granting the permission
-    // continues the install instead of dropping it.
-    var pending by remember { mutableStateOf<Updater.State.Available?>(null) }
-    val permission = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) {
-        val update = pending ?: return@rememberLauncherForActivityResult
-        pending = null
-        scope.launch { if (updater.canInstall()) updater.install(update) }
-    }
-
-    UpdateDialog(
-        version = available.version,
-        size = available.bytes.takeIf { it > 0 }?.let { "%.1f MB".format(it / 1_000_000.0) },
-        changelog = available.changelog,
-        onInstall = {
-            prefs.setSkippedUpdate(available.version)
-            scope.launch {
-                if (updater.canInstall()) {
-                    updater.install(available)
-                } else {
-                    pending = available
-                    permission.launch(updater.permissionIntent())
-                }
-            }
-        },
-        onDismiss = { prefs.setSkippedUpdate(available.version) },
-    )
-}
-
-/** At most one check every six hours, however often the app is opened. */
-private const val UPDATE_CHECK_INTERVAL_MS = 6 * 60 * 60 * 1000L
-
 private fun savedPlaybackSeed(context: android.content.Context): PlaybackState? {
     val saved = dev.lelonio.square.data.PlaybackStore(context).load() ?: return null
     val position = saved.shuffleOrder?.getOrNull(saved.index) ?: saved.index

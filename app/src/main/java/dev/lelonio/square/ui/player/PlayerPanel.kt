@@ -1,5 +1,7 @@
 package dev.lelonio.square.ui.player
 
+import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
+import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
 import com.adamglin.phosphoricons.regular.Queue
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
@@ -19,7 +21,6 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Icon
@@ -369,7 +370,7 @@ internal fun QueueList(
                             scaleX = QueueHeldScale
                             scaleY = QueueHeldScale
                             shadowElevation = QueueHeldElevation.toPx()
-                            shape = RoundedCornerShape(14.dp)
+                            shape = ContinuousCornerShape(14.dp)
                             clip = false
                         }
                     }
@@ -532,7 +533,7 @@ internal fun QueueRow(
             Box(
                 Modifier
                     .size(QueueTouchTarget)
-                    .clip(RoundedCornerShape(50))
+                    .clip(FluidCapsuleShape)
                     .then(
                         if (onRemove != null) {
                             Modifier.fluidPressable(onClick = onRemove, pressedScale = 0.86f)

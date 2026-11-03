@@ -5,31 +5,23 @@ import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.shrinkVertically
-import androidx.compose.foundation.background
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
-import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.CloudSlash
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
+import dev.antigravity.fluidengine.ui.theme.FluidInlineMessage
+import dev.antigravity.fluidengine.ui.theme.FluidTone
 import dev.lelonio.square.R
 import dev.lelonio.square.playback.OfflineMode
-import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 
 /**
  * A line saying the app is offline, and why.
@@ -49,47 +41,28 @@ fun OfflineNotice(modifier: Modifier = Modifier, onTurnOff: () -> Unit = {}) {
 
     AnimatedVisibility(
         visible = reason != null,
-        enter = fadeIn() + expandVertically(),
-        exit = fadeOut() + shrinkVertically(),
+        enter = fadeIn(FluidMotion.fadeIn()) + expandVertically(FluidMotion.intSize()),
+        exit = fadeOut(FluidMotion.fadeOut()) + shrinkVertically(FluidMotion.intSize()),
         modifier = modifier,
     ) {
         val manual = reason == OfflineMode.Reason.MANUAL
-        Row(
-            Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 18.dp, vertical = 6.dp)
-                .clip(RoundedCornerShape(12.dp))
-                .background(dev.lelonio.square.ui.theme.glassFilm(0.08f))
-                // Only when there is something a tap can do. Offline because
-                // the network is gone is not something to be talked out of.
-                .then(
-                    if (manual) {
-                        Modifier.fluidPressable(onClick = onTurnOff, pressedScale = 0.99f)
-                    } else {
-                        Modifier
-                    },
-                )
-                .padding(horizontal = 12.dp, vertical = 10.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
-        ) {
-            Icon(
-                PhosphorIcons.Regular.CloudSlash,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.size(16.dp),
-            )
-            Text(
-                stringResource(
-                    when (reason) {
-                        OfflineMode.Reason.MANUAL -> R.string.offline_banner_manual
-                        OfflineMode.Reason.SLOW -> R.string.offline_banner_slow
-                        else -> R.string.offline_banner_no_network
-                    },
-                ),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        // The engine's inline message. Only touchable when there is something a tap can do:
+        // offline because the network is gone is not something to be talked out of.
+        FluidInlineMessage(
+            message = stringResource(
+                when (reason) {
+                    OfflineMode.Reason.MANUAL -> R.string.offline_banner_manual
+                    OfflineMode.Reason.SLOW -> R.string.offline_banner_slow
+                    else -> R.string.offline_banner_no_network
+                },
+            ),
+            tone = FluidTone.Neutral,
+            onClick = if (manual) onTurnOff else null,
+            leading = {
+                Icon(PhosphorIcons.Regular.CloudSlash, contentDescription = null, modifier = Modifier.size(16.dp))
+            },
+            glass = true,
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 6.dp),
+        )
     }
 }

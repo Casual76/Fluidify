@@ -1,5 +1,7 @@
 package dev.lelonio.square.ui.settings
 
+import dev.antigravity.fluidengine.ui.fluid.FluidToggleRow
+import dev.antigravity.fluidengine.ui.theme.FluidListDivider
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -48,7 +50,7 @@ fun GlassSection() {
             valueRange = 0f..MaxBarFrost,
             valueLabel = "${config.blurRadius.coerceIn(0f, MaxBarFrost).roundToInt()} dp",
         )
-        RowDivider()
+        FluidListDivider()
         FluidSliderRow(
             title = stringResource(R.string.glass_indicator),
             value = config.puckOpacity,
@@ -56,17 +58,16 @@ fun GlassSection() {
             valueRange = 0f..1f,
             valueLabel = "${(config.puckOpacity * 100).roundToInt()}%",
         )
-        RowDivider()
-        SwitchRow(
-            label = stringResource(R.string.glass_where_player),
-            note = null,
+        FluidListDivider()
+        FluidToggleRow(
+            title = stringResource(R.string.glass_where_player),
             checked = config.playerEnabled,
             onCheckedChange = store::setPlayerEnabled,
         )
-        RowDivider()
-        SwitchRow(
-            label = stringResource(R.string.bar_folds),
-            note = stringResource(R.string.bar_folds_note),
+        FluidListDivider()
+        FluidToggleRow(
+            title = stringResource(R.string.bar_folds),
+            subtitle = stringResource(R.string.bar_folds_note),
             checked = folds,
             onCheckedChange = store::setBarFolds,
         )

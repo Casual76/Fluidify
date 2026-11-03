@@ -1,8 +1,8 @@
 package dev.lelonio.square.ui.player
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
@@ -139,9 +139,9 @@ fun CoverGestures(
                         // is about to be replaced by the next track's, and
                         // leaving it parked off-screen would show the new art
                         // already displaced.
-                        scope.launch { offsetX.animateTo(0f, spring()) }
+                        scope.launch { offsetX.animateTo(0f, FluidMotion.pixels()) }
                     },
-                    onDragCancel = { scope.launch { offsetX.animateTo(0f, tween(200)) } },
+                    onDragCancel = { scope.launch { offsetX.animateTo(0f, FluidMotion.pixels()) } },
                 ) { change, drag ->
                     change.consume()
                     // Resists in the direction that has nowhere to go rather

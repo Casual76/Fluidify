@@ -1,5 +1,7 @@
 package dev.lelonio.square.ui.components
 
+import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
+import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -18,7 +20,6 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -122,7 +123,7 @@ fun SharedTrackCard(
                         .padding(top = 18.dp)
                         .fillMaxWidth()
                         .aspectRatio(1f)
-                        .softShadow(RoundedCornerShape(22.dp), elevation = 24.dp, spot = 0.45f),
+                        .softShadow(ContinuousCornerShape(22.dp), elevation = 24.dp, spot = 0.45f),
                     corner = 22.dp,
                 )
 
@@ -200,7 +201,7 @@ private fun CardButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    val shape = RoundedCornerShape(percent = 50)
+    val shape = FluidCapsuleShape
     Row(
         modifier
             .clip(shape)

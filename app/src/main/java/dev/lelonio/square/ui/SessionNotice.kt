@@ -22,7 +22,6 @@ import androidx.compose.ui.unit.dp
 import dev.lelonio.square.R
 import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import dev.lelonio.square.ui.player.GlassSurface
-import androidx.compose.foundation.shape.RoundedCornerShape
 
 /**
  * The one thing an expired Web API session should cost the listener: a tap.

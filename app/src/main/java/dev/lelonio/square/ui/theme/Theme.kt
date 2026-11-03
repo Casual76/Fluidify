@@ -1,7 +1,7 @@
 package dev.lelonio.square.ui.theme
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import androidx.compose.animation.animateColorAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
@@ -211,7 +211,8 @@ fun SquareTheme(
                 // once.
                 LocalFluidSurfaceSide provides darkTheme,
             ) {
-                if (seed == null) content() else ArtworkAccentTheme(seed, content)
+                // The engine's own words (back, clear, close, the update phrases) in the app's language.
+                EngineWords { if (seed == null) content() else ArtworkAccentTheme(seed, content) }
             }
         }
     }
@@ -278,7 +279,7 @@ fun ArtworkAccentTheme(
         light -> seed.deepenFor(LightBase)
         else -> seed.liftFor(DarkBase)
     }
-    val animatedAccent by animateColorAsState(accent, tween(600), label = "accent")
+    val animatedAccent by animateColorAsState(accent, FluidMotion.color(600), label = "accent")
 
     val base = MaterialTheme.colorScheme
     val scheme = remember(base, animatedAccent) {

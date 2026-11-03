@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.components
 
+import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -19,7 +20,6 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -154,7 +154,7 @@ private fun AddFriendField(
                 keyboardActions = KeyboardActions(onDone = { onAdd(typed) }),
                 modifier = Modifier
                     .weight(1f)
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(ContinuousCornerShape(14.dp))
                     .background(dev.lelonio.square.ui.theme.glassFilm(0.10f))
                     .padding(horizontal = 14.dp, vertical = 11.dp),
                 decorationBox = { field ->
@@ -176,7 +176,7 @@ private fun AddFriendField(
                 style = MaterialTheme.typography.labelLarge,
                 color = if (working) Ink.copy(alpha = 0.4f) else Ink,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(14.dp))
+                    .clip(ContinuousCornerShape(14.dp))
                     .fluidPressable(onClick = { if (!working) onAdd(typed) })
                     .padding(horizontal = 12.dp, vertical = 10.dp),
             )

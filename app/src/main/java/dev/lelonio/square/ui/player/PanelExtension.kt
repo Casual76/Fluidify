@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.player
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -82,10 +83,7 @@ internal fun PanelExtension(
     }
     val share by animateFloatAsState(
         targetValue = if (away) 0f else LyricsShare,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioNoBouncy,
-            stiffness = Spring.StiffnessMediumLow,
-        ),
+        animationSpec = FluidMotion.snappy(),
         label = "extensionSplit",
     )
 

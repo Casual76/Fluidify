@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.player
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -62,7 +63,7 @@ fun CoverAura(
     val blended = colors.mapIndexed { index, target ->
         androidx.compose.animation.animateColorAsState(
             targetValue = target,
-            animationSpec = tween(700),
+            animationSpec = FluidMotion.color(700),
             label = "aura$index",
         ).value
     }
@@ -73,10 +74,7 @@ fun CoverAura(
     val phase = transition.animateFloat(
         initialValue = 0f,
         targetValue = 1f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(CYCLE_MS, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
+        animationSpec = FluidMotion.loop(CYCLE_MS),
         label = "phase",
     )
 
@@ -101,7 +99,7 @@ fun CoverAura(
     // derives it, so it changes only when the light does.
     val presence = androidx.compose.animation.core.animateFloatAsState(
         targetValue = if (suppress()) 0f else 1f,
-        animationSpec = tween(HANDOVER_MS),
+        animationSpec = FluidMotion.crossFade(HANDOVER_MS),
         label = "auraPresence",
     )
     Canvas(

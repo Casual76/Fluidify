@@ -1,5 +1,8 @@
 package dev.lelonio.square.ui.library
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
+import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
+import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
 import dev.antigravity.fluidengine.ui.fluid.fluidReadingWidth
 import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
 import dev.antigravity.fluidengine.ui.fluid.glassSurface
@@ -7,7 +10,6 @@ import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.RowScope
 import dev.lelonio.square.ui.player.GlassFilm
 import androidx.compose.foundation.background
@@ -30,8 +32,7 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -80,7 +81,8 @@ import dev.lelonio.square.data.DownloadState
 import dev.lelonio.square.data.OwnerState
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.Artwork
-import dev.lelonio.square.ui.components.LazyScrollBar
+import dev.antigravity.fluidengine.ui.fluid.FluidFastScroller
+import dev.antigravity.fluidengine.ui.fluid.FluidSearchField
 import dev.lelonio.square.ui.components.SwipeToQueue
 import dev.lelonio.square.ui.components.GlassButton
 import dev.antigravity.fluidengine.ui.fluid.fluidPressable
@@ -535,20 +537,12 @@ fun PlaylistScreen(
 
                 item(contentType = "search") {
                     AnimatedVisibility(visible = searching) {
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            placeholder = { Text(stringResource(R.string.search_in_tracks)) },
-                            singleLine = true,
-                            leadingIcon = { Icon(PhosphorIcons.Fill.MagnifyingGlass, contentDescription = null) },
-                            trailingIcon = {
-                                if (query.isNotEmpty()) {
-                                    IconButton(onClick = { query = "" }) {
-                                        Icon(PhosphorIcons.Regular.X, contentDescription = stringResource(R.string.clear))
-                                    }
-                                }
-                            },
-                            shape = RoundedCornerShape(14.dp),
+                        // The engine's search field, which brings its own clear button and glass.
+                        FluidSearchField(
+                            query = query,
+                            onQueryChange = { query = it },
+                            placeholder = stringResource(R.string.search_in_tracks),
+                            autoFocus = false,
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .padding(horizontal = 24.dp, vertical = 6.dp),
@@ -559,7 +553,7 @@ fun PlaylistScreen(
 
             when {
                 state.loading -> item(contentType = "status") {
-                    StatusBox { CircularProgressIndicator(strokeWidth = 2.dp) }
+                    StatusBox { FluidSpinner(size = 36.dp) }
                 }
 
                 // The one empty list in the app that is a question rather than
@@ -695,11 +689,7 @@ fun PlaylistScreen(
                         horizontalArrangement = Arrangement.Center,
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        CircularProgressIndicator(
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(16.dp),
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
+                        FluidSpinner(size = 16.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
                         Text(
                             stringResource(R.string.more_tracks_coming),
                             style = MaterialTheme.typography.bodySmall,
@@ -712,9 +702,23 @@ fun PlaylistScreen(
         }
         }
 
-        LazyScrollBar(
+        // The engine's fast scroller: a glass handle on the edge of a long list, with a bubble that
+        // says which track you have reached. The bubble is the track's number, worked out from the
+        // rows on screen (their keys start with their index), because the list also holds the
+        // header and the albums and an item index is not a track number.
+        FluidFastScroller(
             state = listState,
-            startAfter = "track",
+            label = { item ->
+                val shown = listState.layoutInfo.visibleItemsInfo
+                    .firstOrNull { it.contentType == "track" }
+                val number = shown?.let { row ->
+                    (row.key as? String)?.substringBefore(' ')?.toIntOrNull()?.let { track ->
+                        item - (row.index - track) + 1
+                    }
+                }
+                number?.takeIf { it in 1..visible.size }?.toString()
+            },
+            minItems = 40,
             modifier = Modifier
                 .align(Alignment.CenterEnd)
                 .padding(
@@ -1391,7 +1395,7 @@ private fun DownloadMark(state: DownloadState) {
             else -> {
                 val progress by animateFloatAsState(
                     targetValue = running?.progress ?: 0f,
-                    animationSpec = tween(320),
+                    animationSpec = FluidMotion.crossFade(320),
                     label = "row download",
                 )
                 androidx.compose.foundation.Canvas(Modifier.size(12.dp)) {
@@ -1449,7 +1453,7 @@ private fun DownloadAction(
     // Eased, so a ring that jumps a track at a time still reads as travel.
     val progress by animateFloatAsState(
         targetValue = running?.progress ?: 0f,
-        animationSpec = tween(320),
+        animationSpec = FluidMotion.crossFade(320),
         label = "download progress",
     )
 
@@ -1553,7 +1557,7 @@ private fun AlbumStrip(
                         title = album.title,
                         modifier = Modifier
                             .size(132.dp)
-                            .softShadow(RoundedCornerShape(14.dp), elevation = 14.dp),
+                            .softShadow(ContinuousCornerShape(14.dp), elevation = 14.dp),
                         corner = 14.dp,
                         decodeSize = 132.dp,
                     )
@@ -1665,7 +1669,7 @@ private fun TrackRow(
      */
     unavailable: Boolean = false,
 ) {
-    val shape = RoundedCornerShape(14.dp)
+    val shape = ContinuousCornerShape(14.dp)
     // One menu, two ways in: the long press the hand expects, and the dots the
     // eye does. Both lift this very row; see the library's tiles.
     val contextMenu = dev.antigravity.fluidengine.ui.fluid.rememberFluidContextMenu(
@@ -1685,7 +1689,7 @@ private fun TrackRow(
     // deserves.
     val highlight by animateFloatAsState(
         targetValue = if (isCurrent) 1f else 0f,
-        animationSpec = tween(260),
+        animationSpec = FluidMotion.crossFade(260),
         label = "row",
     )
     val rowInk = MaterialTheme.colorScheme.onSurface
@@ -1750,7 +1754,7 @@ private fun TrackRow(
                 Box(
                     Modifier
                         .size(46.dp)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(ContinuousCornerShape(8.dp))
                         .background(dev.lelonio.square.ui.theme.pageWash(0.45f)),
                     contentAlignment = Alignment.Center,
                 ) {
@@ -1940,7 +1944,7 @@ private fun ArtistAbout(
  */
 @Composable
 private fun FollowPill(following: Boolean, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(percent = 50)
+    val shape = FluidCapsuleShape
     Row(
         Modifier
             .clip(shape)

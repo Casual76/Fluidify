@@ -1,5 +1,8 @@
 package dev.lelonio.square.ui.library
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
+import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
+import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
 import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollContent
 import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollEdge
 import dev.antigravity.fluidengine.ui.fluid.FluidCollapsingTitle
@@ -15,7 +18,6 @@ import dev.antigravity.fluidengine.ui.fluid.rememberFluidTitleCollapse
 import dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop
 import dev.antigravity.fluidengine.ui.fluid.rememberFluidEdgeOverscroll
 import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.togetherWith
 import androidx.annotation.PluralsRes
 import androidx.annotation.StringRes
@@ -36,8 +38,7 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -220,7 +221,7 @@ fun LibraryScreen(
                 style = MaterialTheme.typography.labelLarge,
                 color = InkDim,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(percent = 50))
+                    .clip(FluidCapsuleShape)
                     .clickable(onClick = onOpenSettings)
                     .padding(horizontal = 18.dp, vertical = 12.dp),
             )
@@ -229,7 +230,7 @@ fun LibraryScreen(
         MainViewModel.UiState.Connecting,
         MainViewModel.UiState.Loading,
         -> Centered {
-            CircularProgressIndicator(color = Ink, strokeWidth = 2.dp)
+            FluidSpinner(size = 36.dp, color = Ink)
         }
 
         is MainViewModel.UiState.Failed -> Centered {
@@ -408,9 +409,9 @@ fun LibraryScreen(
                     // from. Equal, overlapping fades cost one extra layer for a
                     // fifth of a second and move nothing.
                     transitionSpec = {
-                        androidx.compose.animation.fadeIn(tween(FILTER_FADE_MS))
+                        androidx.compose.animation.fadeIn(FluidMotion.fadeIn(FILTER_FADE_MS))
                             .togetherWith(
-                                androidx.compose.animation.fadeOut(tween(FILTER_FADE_MS)),
+                                androidx.compose.animation.fadeOut(FluidMotion.fadeOut(FILTER_FADE_MS)),
                             )
                             .using(
                                 androidx.compose.animation.SizeTransform(clip = false),
@@ -788,7 +789,7 @@ private fun GridTile(
             modifier = Modifier
                 .fillMaxWidth()
                 .aspectRatio(1f)
-                .softShadow(RoundedCornerShape(20.dp), elevation = 18.dp, spot = 0.4f),
+                .softShadow(ContinuousCornerShape(20.dp), elevation = 18.dp, spot = 0.4f),
             corner = 20.dp,
             decodeSize = 220.dp,
         )
@@ -825,7 +826,7 @@ private fun ListRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(ContinuousCornerShape(16.dp))
             .fluidContextMenuAnchor(contextMenu)
             .fluidPressable(
                 onClick = onClick,
@@ -844,7 +845,7 @@ private fun ListRow(
             playlist = playlist,
             modifier = Modifier
                 .size(52.dp)
-                .softShadow(RoundedCornerShape(14.dp), elevation = 10.dp),
+                .softShadow(ContinuousCornerShape(14.dp), elevation = 10.dp),
             corner = 14.dp,
             decodeSize = 52.dp,
         )
@@ -929,7 +930,7 @@ private fun Notice(
         Modifier
             .fillMaxWidth()
             .padding(bottom = 10.dp)
-            .clip(RoundedCornerShape(16.dp))
+            .clip(ContinuousCornerShape(16.dp))
             .background(Ink.copy(alpha = 0.06f))
             .padding(start = 14.dp, end = 6.dp, top = 10.dp, bottom = 10.dp),
         verticalAlignment = Alignment.CenterVertically,

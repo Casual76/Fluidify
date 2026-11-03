@@ -216,8 +216,8 @@ class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost {
     }
 
     /** Checks the project's own releases; there is no store to do it. */
-    val updater: dev.lelonio.square.update.Updater by lazy {
-        dev.lelonio.square.update.Updater(this, channel = { preferences.updateChannel.value })
+    val updater: dev.antigravity.fluidengine.foundation.AppUpdater by lazy {
+        dev.lelonio.square.update.FluidifyUpdates.create(this)
     }
 
     /**

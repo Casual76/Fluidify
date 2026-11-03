@@ -1,5 +1,7 @@
 package dev.lelonio.square.ui.settings
 
+import dev.antigravity.fluidengine.ui.fluid.FluidToggleRow
+import dev.antigravity.fluidengine.ui.theme.FluidListDivider
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
@@ -117,7 +119,7 @@ internal fun WatchSection() {
                 stringResource(R.string.watch_status),
                 current.name.ifBlank { stringResource(R.string.page_watch) },
             )
-            RowDivider()
+            FluidListDivider()
             InfoRow(stringResource(R.string.watch_version), current.hello.versionName)
         } else if (looking) {
             ProgressRow(stringResource(R.string.watch_looking))
@@ -134,11 +136,11 @@ internal fun WatchSection() {
             ActionRow(stringResource(R.string.retry), destructive = false) { attempt++ }
         }
 
-        RowDivider()
+        FluidListDivider()
         InfoRow(stringResource(R.string.watch_update), describe(state, outcome))
         // What the version being offered, sent or installed brings, when the release says.
         whatsNew(state, outcome, current?.hello?.versionName)?.let { (version, notes) ->
-            RowDivider()
+            FluidListDivider()
             WhatsNewRow(version, notes)
         }
         // Not while one is under way: pressed again, it started the same transfer twice. After a
@@ -152,13 +154,13 @@ internal fun WatchSection() {
             }
         }
 
-        RowDivider()
+        FluidListDivider()
         UpdateChannelRows(showLabel = true)
 
-        RowDivider()
-        SwitchRow(
-            label = stringResource(R.string.watch_auto_update),
-            note = stringResource(R.string.watch_auto_update_note),
+        FluidListDivider()
+        FluidToggleRow(
+            title = stringResource(R.string.watch_auto_update),
+            subtitle = stringResource(R.string.watch_auto_update_note),
             checked = auto,
             onCheckedChange = {
                 auto = it
@@ -173,7 +175,7 @@ internal fun WatchSection() {
 
         // While developing: any build, straight from the phone, without a computer.
         if (BuildConfig.BUILD_TYPE != "release" && current != null) {
-            RowDivider()
+            FluidListDivider()
             ActionRow(stringResource(R.string.watch_push_apk), destructive = false) {
                 picker.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream"))
             }
@@ -275,24 +277,25 @@ private fun WhatsNewRow(version: String, notes: String) {
 /**
  * Which release line to follow, Stable or Beta: one setting for the phone and the watch.
  *
- * Shown in both places it matters (About, where the phone's own update row is, and the Watch page)
+ * Shown in both places it matters (About, in the engine's update section, and the Watch page)
  * and the same setting in each. Changing it clears the memory of what was last found on the other
  * line and asks the watch to say hello again, so that it hears the new one and the next check is
  * made at once rather than within six hours.
  */
 @Composable
-internal fun UpdateChannelRows(showLabel: Boolean) {
+internal fun rememberChooseUpdateChannel(): (UpdateChannel) -> Unit {
     val context = LocalContext.current
     val app = remember(context) { context.applicationContext as SquareApplication }
     val chosen by app.preferences.updateChannel.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
-    val choose = { channel: UpdateChannel ->
+    val update = dev.lelonio.square.update.LocalUpdateController.current
+    return { channel: UpdateChannel ->
         if (channel != chosen) {
             app.preferences.setUpdateChannel(channel)
-            // The launch prompt's six-hour gate is the phone's own, and the dialog that may be
+            // The launch prompt's six-hour gate is the phone's own, and the sheet that may be
             // showing the last line's release is no longer true.
             app.preferences.setLastUpdateCheck(0L)
-            app.updater.dismiss()
+            update.reset()
             scope.launch {
                 val bridge = app.wearBridge
                 bridge.updates.onChannelChanged()
@@ -300,6 +303,15 @@ internal fun UpdateChannelRows(showLabel: Boolean) {
             }
         }
     }
+}
+
+/** The Watch page's two choice rows for the channel (About has the engine's own). */
+@Composable
+internal fun UpdateChannelRows(showLabel: Boolean) {
+    val context = LocalContext.current
+    val app = remember(context) { context.applicationContext as SquareApplication }
+    val chosen by app.preferences.updateChannel.collectAsStateWithLifecycle()
+    val choose = rememberChooseUpdateChannel()
     if (showLabel) {
         Text(
             stringResource(R.string.update_channel),
@@ -310,11 +322,11 @@ internal fun UpdateChannelRows(showLabel: Boolean) {
     ChoiceRow(stringResource(R.string.update_channel_stable), selected = chosen == UpdateChannel.STABLE) {
         choose(UpdateChannel.STABLE)
     }
-    RowDivider()
+    FluidListDivider()
     ChoiceRow(stringResource(R.string.update_channel_beta), selected = chosen == UpdateChannel.BETA) {
         choose(UpdateChannel.BETA)
     }
-    RowDivider()
+    FluidListDivider()
     Text(
         stringResource(R.string.update_channel_note),
         style = MaterialTheme.typography.bodySmall,
@@ -372,7 +384,7 @@ private fun WatchDownloadsRows(app: SquareApplication, watchKnown: Boolean) {
         // after the update rows reads as a page with nothing to say, when the truth is that the
         // watch has not reported yet (or the read is still on its way).
         if (watchKnown) {
-            RowDivider()
+            FluidListDivider()
             if (reading) {
                 ProgressRow(stringResource(R.string.watch_downloads_reading))
             } else {
@@ -384,7 +396,7 @@ private fun WatchDownloadsRows(app: SquareApplication, watchKnown: Boolean) {
         return
     }
 
-    RowDivider()
+    FluidListDivider()
     InfoRow(
         stringResource(R.string.watch_downloads),
         if (current.owners.isEmpty()) {
@@ -402,30 +414,30 @@ private fun WatchDownloadsRows(app: SquareApplication, watchKnown: Boolean) {
         },
     )
     current.owners.forEach { owner ->
-        RowDivider()
+        FluidListDivider()
         // A blank title is a playlist the watch has not been told the name of: not something to
         // read out as a spotify: address.
         InfoRow(owner.title.ifBlank { stringResource(R.string.unknown) }, "${owner.done}/${owner.tracks}")
     }
     current.paused?.let { reason ->
-        RowDivider()
+        FluidListDivider()
         InfoRow(
             stringResource(R.string.watch_downloads_paused),
             stringResource(if (reason == "storage") R.string.watch_downloads_paused_storage else R.string.watch_downloads_paused_offline),
         )
     }
 
-    RowDivider()
+    FluidListDivider()
     InfoRow(stringResource(R.string.watch_download_quality), stringResource(R.string.kbps_value, current.qualityKbps))
     listOf(96, 160, 320).forEach { kbps ->
         ChoiceRow(stringResource(R.string.kbps_value, kbps), selected = current.qualityKbps == kbps) {
             scope.launch { remote.request(DownloadRequest(qualityKbps = kbps)) }
         }
     }
-    RowDivider()
-    SwitchRow(
-        label = stringResource(R.string.watch_transfer_bluetooth),
-        note = stringResource(R.string.watch_transfer_bluetooth_note),
+    FluidListDivider()
+    FluidToggleRow(
+        title = stringResource(R.string.watch_transfer_bluetooth),
+        subtitle = stringResource(R.string.watch_transfer_bluetooth_note),
         checked = current.preference == TransferPreference.BLUETOOTH_FIRST,
         onCheckedChange = { bluetooth ->
             scope.launch {

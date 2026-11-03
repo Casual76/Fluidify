@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -53,7 +53,7 @@ fun ArtistInfoView(
     if (artist == null) {
         Box(modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
             if (loading) {
-                CircularProgressIndicator(color = Ink, strokeWidth = 2.dp)
+                FluidSpinner(size = 36.dp, color = Ink)
             } else {
                 Text(
                     stringResource(R.string.no_artist_info),

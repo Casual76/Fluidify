@@ -3,7 +3,6 @@ package dev.lelonio.square.ui.player
 import androidx.compose.animation.Crossfade
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -14,7 +13,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -202,7 +200,7 @@ fun NowPlayingPanel(
     // stand there until it is not.
     val clipAlpha by animateFloatAsState(
         targetValue = if (canvasReady) 1f else 0f,
-        animationSpec = tween(420),
+        animationSpec = FluidMotion.crossFade(420),
         label = "panel-clip",
     )
 
@@ -216,10 +214,7 @@ fun NowPlayingPanel(
         // Critically damped, and the family's own sheet spring: the whole pane
         // changes height with this, and a panel that bounces reads as loose
         // layout. Same choice and same reason as PlayerMorphSpec.
-        animationSpec = spring(
-            dampingRatio = FluidMotion.DampingChrome,
-            stiffness = FluidMotion.ResponseSmooth,
-        ),
+        animationSpec = FluidMotion.tuned(FluidMotion.DampingChrome, FluidMotion.ResponseSmooth),
         label = "panel-picture",
     )
 
@@ -412,7 +407,7 @@ fun NowPlayingPanel(
                             isInteractive = interactive && tall,
                             onClick = onToggleWide,
                         ) {
-                            Crossfade(wide, animationSpec = tween(160), label = "panel-wide") { open ->
+                            Crossfade(wide, animationSpec = FluidMotion.crossFade(160), label = "panel-wide") { open ->
                                 Icon(
                                     if (open) PhosphorIcons.Regular.ArrowsInSimple
                                     else PhosphorIcons.Regular.ArrowsOutSimple,
@@ -678,7 +673,7 @@ private fun InsetCover(
     ) {
         Crossfade(
             targetState = state.artworkUrl to state.title,
-            animationSpec = tween(320),
+            animationSpec = FluidMotion.crossFade(320),
             label = "panel-art",
         ) { (url, title) ->
             Artwork(
@@ -864,7 +859,8 @@ private fun PanelFrame(
             // Rounded in transit, continuous at rest: a continuous corner is a
             // path, and a path re-cut every frame is the one thing the corner
             // rules forbid.
-            !picSettled -> RoundedCornerShape(picRadius)
+            // (picRadius is in pixels here, which is what RoundedCornerShape(Float) takes.)
+            !picSettled -> androidx.compose.foundation.shape.RoundedCornerShape(picRadius)
             k >= 0.999f -> ContinuousCornerShape(PanelPictureRadius)
             else -> ContinuousCornerShape(FluidRadius.Sheet)
         }

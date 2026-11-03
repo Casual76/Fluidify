@@ -3,7 +3,6 @@ package dev.lelonio.square.ui.player
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.SizeTransform
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -13,7 +12,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -112,8 +110,8 @@ private fun SungLineText(
     AnimatedContent(
         targetState = text ?: held[0],
         transitionSpec = {
-            (slideInVertically { it } + fadeIn(tween(LINE_IN_MS)))
-                .togetherWith(slideOutVertically { -it } + fadeOut(tween(LINE_OUT_MS)))
+            (slideInVertically { it } + fadeIn(FluidMotion.fadeIn(LINE_IN_MS)))
+                .togetherWith(slideOutVertically { -it } + fadeOut(FluidMotion.fadeOut(LINE_OUT_MS)))
                 // The height is part of the change, not something that happens
                 // to the layout around it.
                 //
@@ -194,8 +192,8 @@ internal fun SungLineCapsule(
     // written this way.
     AnimatedVisibility(
         visible = wanted && sung != null,
-        enter = fadeIn(tween(LINE_ENTER_MS)) + expandVertically(tween(LINE_ENTER_MS)),
-        exit = fadeOut(tween(LINE_EXIT_MS)) + shrinkVertically(tween(LINE_EXIT_MS)),
+        enter = fadeIn(FluidMotion.fadeIn(LINE_ENTER_MS)) + expandVertically(FluidMotion.intSize()),
+        exit = fadeOut(FluidMotion.fadeOut(LINE_EXIT_MS)) + shrinkVertically(FluidMotion.intSize()),
         modifier = modifier,
     ) {
         PlayerPane(
@@ -245,8 +243,8 @@ internal fun SungLineLabel(
 
     AnimatedVisibility(
         visible = sung != null,
-        enter = fadeIn(tween(LINE_ENTER_MS)) + expandVertically(tween(LINE_ENTER_MS)),
-        exit = fadeOut(tween(LINE_EXIT_MS)) + shrinkVertically(tween(LINE_EXIT_MS)),
+        enter = fadeIn(FluidMotion.fadeIn(LINE_ENTER_MS)) + expandVertically(FluidMotion.intSize()),
+        exit = fadeOut(FluidMotion.fadeOut(LINE_EXIT_MS)) + shrinkVertically(FluidMotion.intSize()),
         modifier = modifier,
     ) {
         SungLineText(

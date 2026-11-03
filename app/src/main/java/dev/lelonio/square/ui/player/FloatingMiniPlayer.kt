@@ -12,6 +12,7 @@
 
 package dev.lelonio.square.ui.player
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
@@ -30,7 +31,8 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.material3.CircularProgressIndicator
+import dev.antigravity.fluidengine.ui.fluid.FluidProgressBar
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -38,7 +40,6 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
 import dev.antigravity.fluidengine.ui.fluid.glassSurface
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -130,7 +131,7 @@ fun FloatingMiniPlayer(
     val isPressed by pressInteractionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
         targetValue = if (isPressed) 1.04f else 1f,
-        animationSpec = spring(stiffness = Spring.StiffnessMediumLow),
+        animationSpec = FluidMotion.snappy(),
         label = "accessoryPressScale",
     )
 
@@ -149,7 +150,7 @@ fun FloatingMiniPlayer(
     // stands in only until the first palette arrives.
     val lightTint = androidx.compose.animation.animateColorAsState(
         targetValue = lightPalette.firstOrNull() ?: MaterialTheme.colorScheme.primary,
-        animationSpec = androidx.compose.animation.core.tween(LIGHT_TINT_MS),
+        animationSpec = FluidMotion.crossFade(LIGHT_TINT_MS),
         label = "lightTint",
     )
     // The light under the pill, recorded so the pane over it can bend it, and
@@ -344,11 +345,7 @@ fun FloatingMiniPlayer(
                 // its place, so the button stays where it is and stays pressable.
                 Box(contentAlignment = Alignment.Center) {
                     if (state.isBuffering) {
-                        CircularProgressIndicator(
-                            color = contentColor.copy(alpha = 0.5f),
-                            strokeWidth = 1.5.dp,
-                            modifier = Modifier.size(if (inline) 30.dp else 34.dp),
-                        )
+                        FluidSpinner(size = if (inline) 30.dp else 34.dp, color = contentColor.copy(alpha = 0.5f))
                     }
                     Icon(
                         if (state.wantsPlay) PhosphorIcons.Fill.Pause else PhosphorIcons.Fill.Play,
@@ -365,19 +362,12 @@ fun FloatingMiniPlayer(
         // The old bar's own hairline, back where the wave was: a coloured line
         // along the bottom of the pill. It says where the track is without
         // asking to be read, which on a strip this size is the whole job.
-        androidx.compose.material3.LinearProgressIndicator(
-            progress = {
-                val duration = state.durationMs
-                if (duration > 0) (positionMs.value.toFloat() / duration).coerceIn(0f, 1f) else 0f
-            },
+        FluidProgressBar(
+            progress = { progressOf(positionMs.value, state.durationMs) },
             modifier = Modifier
                 .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .padding(horizontal = 14.dp)
-                .height(2.dp),
-            color = MaterialTheme.colorScheme.primary,
-            trackColor = contentColor.copy(alpha = 0.18f),
-            drawStopIndicator = {},
+                .padding(horizontal = 14.dp),
+            height = 2.dp,
         )
     }
 }

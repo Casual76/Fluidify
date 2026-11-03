@@ -19,9 +19,8 @@ import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -262,11 +261,7 @@ private fun PlaylistRow(
                 .weight(1f),
         )
         when {
-            busy -> CircularProgressIndicator(
-                color = GlassInkDim,
-                strokeWidth = 2.dp,
-                modifier = Modifier.size(18.dp),
-            )
+            busy -> FluidSpinner(size = 18.dp, color = GlassInkDim)
 
             liked -> Icon(
                 PhosphorIcons.Fill.Heart,

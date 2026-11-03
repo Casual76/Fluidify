@@ -6,6 +6,15 @@ import dev.antigravity.fluidengine.ui.fluid.rememberFluidEdgeOverscroll
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.foundation.layout.ColumnScope
+import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.SpanStyle
+import dev.antigravity.fluidengine.ui.fluid.FluidSectionHeader
+import dev.antigravity.fluidengine.ui.fluid.FluidToggleRow
+import dev.antigravity.fluidengine.ui.fluid.FluidChoiceRow
+import dev.antigravity.fluidengine.ui.theme.FluidListGroup
+import dev.antigravity.fluidengine.ui.theme.FluidListRow
+import dev.antigravity.fluidengine.ui.theme.FluidListDivider
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -18,7 +27,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -59,7 +67,11 @@ import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
 import dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.antigravity.fluidengine.ui.fluid.fluidLicensesSection
-import dev.lelonio.square.update.Updater
+import dev.antigravity.fluidengine.ui.fluid.fluidUpdateSection
+import dev.antigravity.fluidengine.ui.fluid.release
+import dev.lelonio.square.SquareApplication
+import dev.lelonio.square.update.LocalUpdateController
+import dev.lelonio.square.ui.theme.rememberFluidifyUpdateStrings
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -156,6 +168,14 @@ fun SettingsScreen(
 
     // Resolved here because fluidLicensesSection is a LazyListScope extension,
     // where composable calls like stringResource are out of reach.
+    val update = LocalUpdateController.current
+    val updateStrings = rememberFluidifyUpdateStrings()
+    val updateChannelNote = stringResource(R.string.update_channel_note)
+    val chooseUpdateChannel = rememberChooseUpdateChannel()
+    val updateContext = LocalContext.current
+    val updateApp = remember(updateContext) { updateContext.applicationContext as SquareApplication }
+    val prefs = updateApp.preferences
+    val updateChannel by prefs.updateChannel.collectAsStateWithLifecycle()
     val engineLicencesTitle = stringResource(R.string.engine_licences_title)
     val engineLicencesFootnote = stringResource(
         R.string.engine_licences_footnote,
@@ -230,7 +250,7 @@ fun SettingsScreen(
         if (open == null) item("pages") {
             Section(null) {
                 SettingsPage.entries.forEachIndexed { index, page ->
-                    if (index > 0) RowDivider()
+                    if (index > 0) FluidListDivider()
                     PageRow(stringResource(page.title), stringResource(page.summary)) {
                         openPage(page)
                     }
@@ -278,7 +298,7 @@ fun SettingsScreen(
                     }
                 }
 
-                RowDivider()
+                FluidListDivider()
                 InfoRow(stringResource(R.string.connect_device), deviceName)
             }
         }
@@ -287,7 +307,7 @@ fun SettingsScreen(
             Section(stringResource(R.string.web_api)) {
                 if (webApi.connected) {
                     InfoRow(stringResource(R.string.application), stringResource(R.string.connected))
-                    RowDivider()
+                    FluidListDivider()
                     InfoRow(
                         stringResource(R.string.client_id),
                         webApi.clientId.take(8) + if (webApi.clientId.length > 8) "…" else "",
@@ -296,7 +316,7 @@ fun SettingsScreen(
                     // sign-in to someone whose application already has every
                     // permission is an invitation to break what works.
                     if (webApi.incomplete) {
-                        RowDivider()
+                        FluidListDivider()
                         ActionRow(
                             stringResource(R.string.web_api_regrant),
                             destructive = false,
@@ -309,7 +329,7 @@ fun SettingsScreen(
                             modifier = Modifier.padding(horizontal = 18.dp).padding(bottom = 12.dp),
                         )
                     }
-                    RowDivider()
+                    FluidListDivider()
                     ActionRow(stringResource(R.string.disconnect), destructive = true, onClick = onDisconnectWebApi)
                 } else {
                     // The full explanation, because with no application
@@ -382,7 +402,7 @@ fun SettingsScreen(
             val prefs = (context.applicationContext as dev.lelonio.square.SquareApplication).audioLightPreferences
             val enabled by prefs.enabled.collectAsStateWithLifecycle()
             Section(stringResource(R.string.audio_light_section)) {
-                SwitchRow(label = stringResource(R.string.audio_light_title), note = stringResource(R.string.audio_light_note),
+                FluidToggleRow(title = stringResource(R.string.audio_light_title), subtitle = stringResource(R.string.audio_light_note),
                     checked = enabled, onCheckedChange = prefs::setEnabled)
             }
         }
@@ -395,9 +415,9 @@ fun SettingsScreen(
         // like.
         if (open == SettingsPage.App) item("local-files") {
             Section(stringResource(R.string.local_files)) {
-                SwitchRow(
-                    label = stringResource(R.string.show_local_files),
-                    note = stringResource(R.string.show_local_files_note),
+                FluidToggleRow(
+                    title = stringResource(R.string.show_local_files),
+                    subtitle = stringResource(R.string.show_local_files_note),
                     checked = showLocalFiles,
                     onCheckedChange = onShowLocalFiles,
                 )
@@ -407,7 +427,7 @@ fun SettingsScreen(
         if (open == SettingsPage.App) item("language") {
             Section(stringResource(R.string.language)) {
                 AppLanguages.forEachIndexed { index, (tag, name) ->
-                    if (index > 0) RowDivider()
+                    if (index > 0) FluidListDivider()
                     ChoiceRow(
                         label = name.ifEmpty { stringResource(R.string.system_language) },
                         selected = tag == language,
@@ -425,7 +445,7 @@ fun SettingsScreen(
                         color = InkDim,
                         modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
                     )
-                    RowDivider()
+                    FluidListDivider()
                     ActionRow(
                         stringResource(R.string.open_by_default),
                         destructive = false,
@@ -461,7 +481,7 @@ fun SettingsScreen(
                     modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
                 )
                 SCOPES.forEach { (scope, why) ->
-                    RowDivider()
+                    FluidListDivider()
                     InfoRow(scope, stringResource(why))
                 }
             }
@@ -486,21 +506,29 @@ fun SettingsScreen(
             }
         }
 
-        // Beside the update row it governs, and the same setting as on the Watch page.
-        if (open == SettingsPage.About) item("update-channel") {
-            Section(stringResource(R.string.update_channel)) {
-                UpdateChannelRows(showLabel = false)
-            }
-        }
-
         if (open == SettingsPage.About) item("about") {
             Section(stringResource(R.string.about)) {
                 InfoRow(stringResource(R.string.version), "${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_TYPE})")
-                RowDivider()
-                UpdateRow()
-                RowDivider()
+                FluidListDivider()
                 Licences()
             }
+        }
+
+        // The engine's update section: what is installed, whether there is something newer, the
+        // channel to follow (the same setting as on the Watch page) and the way to install it.
+        if (open == SettingsPage.About) {
+            fluidUpdateSection(
+                state = update.state,
+                onCheck = update::check,
+                onInstall = update::install,
+                lastCheckedAtMillis = update.lastCheckedAtMillis,
+                channel = updateChannel,
+                onChannelChange = chooseUpdateChannel,
+                onSkip = { update.state.release?.version?.let { prefs.setSkippedUpdate(it) } },
+                strings = updateStrings,
+                glass = true,
+                footnote = updateChannelNote,
+            )
         }
 
         // The engine's own third-party credits. The Apache-2.0 notice for the
@@ -566,33 +594,15 @@ private enum class SettingsPage(
     About(R.string.about, R.string.page_about_summary),
 }
 
-/** A row that opens a page. */
+/** A row that opens a page: the engine's own row, with its chevron. */
 @Composable
 private fun PageRow(title: String, summary: String, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 16.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f)) {
-            Text(title, style = MaterialTheme.typography.titleMedium)
-            Text(
-                summary,
-                style = MaterialTheme.typography.bodySmall,
-                color = InkDim,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        Icon(
-            PhosphorIcons.Regular.CaretRight,
-            contentDescription = null,
-            tint = InkDim,
-            modifier = Modifier.size(18.dp),
-        )
-    }
+    FluidListRow(
+        title = title,
+        subtitle = summary,
+        onClick = onClick,
+        subtitleMaxLines = 1,
+    )
 }
 
 /**
@@ -618,13 +628,12 @@ private fun CanvasSection() {
     val enabled by store.canvasEnabled.collectAsStateWithLifecycle()
 
     Section(stringResource(R.string.canvas)) {
-        SwitchRow(
-            label = stringResource(R.string.canvas_show),
-            note = null,
+        FluidToggleRow(
+            title = stringResource(R.string.canvas_show),
             checked = enabled,
             onCheckedChange = store::setCanvasEnabled,
         )
-        RowDivider()
+        FluidListDivider()
         Text(
             stringResource(R.string.canvas_note),
             style = MaterialTheme.typography.bodySmall,
@@ -644,13 +653,13 @@ private fun EffectQualitySection() {
 
     Section(stringResource(R.string.effect_quality)) {
         EffectQuality.entries.forEachIndexed { index, quality ->
-            if (index > 0) RowDivider()
+            if (index > 0) FluidListDivider()
             ChoiceRow(
                 label = stringResource(quality.label),
                 selected = quality == chosen,
             ) { store.set(quality) }
         }
-        RowDivider()
+        FluidListDivider()
         Text(
             stringResource(chosen.note),
             style = MaterialTheme.typography.bodySmall,
@@ -677,7 +686,7 @@ private fun ThemeSection() {
 
     Section(stringResource(R.string.theme)) {
         AppThemeMode.entries.forEachIndexed { index, mode ->
-            if (index > 0) RowDivider()
+            if (index > 0) FluidListDivider()
             ChoiceRow(
                 label = stringResource(
                     when (mode) {
@@ -690,7 +699,7 @@ private fun ThemeSection() {
                 selected = mode == chosen,
             ) { store.setThemeMode(mode) }
         }
-        RowDivider()
+        FluidListDivider()
         Text(
             stringResource(R.string.theme_note),
             style = MaterialTheme.typography.bodySmall,
@@ -732,18 +741,18 @@ private fun SleepTimerSection() {
             selected = endsAt == null && !atTrackEnd,
         ) { dev.lelonio.square.playback.SleepTimer.cancel() }
         SleepLengths.forEach { minutes ->
-            RowDivider()
+            FluidListDivider()
             ChoiceRow(
                 label = stringResource(R.string.sleep_timer_minutes, minutes),
                 selected = chosen == minutes,
             ) { dev.lelonio.square.playback.SleepTimer.inMinutes(minutes) }
         }
-        RowDivider()
+        FluidListDivider()
         ChoiceRow(
             label = stringResource(R.string.sleep_timer_track_end),
             selected = atTrackEnd,
         ) { dev.lelonio.square.playback.SleepTimer.atEndOfTrack() }
-        RowDivider()
+        FluidListDivider()
         val running = left
         Text(
             when {
@@ -798,7 +807,7 @@ private fun WidgetSection() {
                 )
             }
         }
-        RowDivider()
+        FluidListDivider()
         Text(
             stringResource(R.string.widget_add_note),
             style = MaterialTheme.typography.bodySmall,
@@ -818,7 +827,7 @@ private fun CrossfadeSection() {
 
     Section(stringResource(R.string.crossfade)) {
         CrossfadeSteps.forEachIndexed { index, seconds ->
-            if (index > 0) RowDivider()
+            if (index > 0) FluidListDivider()
             ChoiceRow(
                 label = if (seconds == 0) {
                     stringResource(R.string.crossfade_off)
@@ -828,7 +837,7 @@ private fun CrossfadeSection() {
                 selected = seconds == chosen,
             ) { store.set(seconds) }
         }
-        RowDivider()
+        FluidListDivider()
         Text(
             stringResource(R.string.crossfade_note) + " " +
                 stringResource(R.string.quality_restarts),
@@ -849,7 +858,7 @@ private fun QualitySection() {
 
     Section(stringResource(R.string.quality)) {
         Quality.entries.forEachIndexed { index, quality ->
-            if (index > 0) RowDivider()
+            if (index > 0) FluidListDivider()
             ChoiceRow(
                 label = stringResource(quality.label),
                 selected = quality == chosen,
@@ -858,7 +867,7 @@ private fun QualitySection() {
         // What automatic is deciding, and from what. A setting that answers
         // "it depends" should say what it depends on.
         if (chosen == Quality.Auto) {
-            RowDivider()
+            FluidListDivider()
             val link = store.linkKbps()
             InfoRow(
                 stringResource(R.string.quality_link),
@@ -869,7 +878,7 @@ private fun QualitySection() {
                 },
             )
         }
-        RowDivider()
+        FluidListDivider()
         Text(
             stringResource(R.string.quality_auto_note) + " " +
                 stringResource(R.string.quality_restarts),
@@ -933,10 +942,10 @@ private fun DownloadsSection() {
                 ),
             ),
         )
-        RowDivider()
+        FluidListDivider()
         InfoRow(stringResource(R.string.downloaded_tracks), files.size.toString())
 
-        RowDivider()
+        FluidListDivider()
         Text(
             stringResource(R.string.download_quality),
             style = MaterialTheme.typography.labelLarge,
@@ -956,26 +965,26 @@ private fun DownloadsSection() {
             modifier = Modifier.padding(horizontal = 18.dp, vertical = 10.dp),
         )
 
-        RowDivider()
-        SwitchRow(
-            label = stringResource(R.string.download_wifi_only),
-            note = stringResource(R.string.download_wifi_only_note),
+        FluidListDivider()
+        FluidToggleRow(
+            title = stringResource(R.string.download_wifi_only),
+            subtitle = stringResource(R.string.download_wifi_only_note),
             checked = wifiOnly,
             onCheckedChange = settings::setWifiOnly,
         )
 
-        RowDivider()
-        SwitchRow(
-            label = stringResource(R.string.download_liked_songs),
-            note = stringResource(R.string.download_liked_songs_note),
+        FluidListDivider()
+        FluidToggleRow(
+            title = stringResource(R.string.download_liked_songs),
+            subtitle = stringResource(R.string.download_liked_songs_note),
             checked = likedSongs,
             onCheckedChange = settings::setDownloadLikedSongs,
         )
 
-        RowDivider()
-        SwitchRow(
-            label = stringResource(R.string.offline_mode),
-            note = stringResource(R.string.offline_mode_note),
+        FluidListDivider()
+        FluidToggleRow(
+            title = stringResource(R.string.offline_mode),
+            subtitle = stringResource(R.string.offline_mode_note),
             checked = offline,
             onCheckedChange = settings::setOfflineMode,
         )
@@ -984,7 +993,7 @@ private fun DownloadsSection() {
         // a row about nothing, on a screen that is already long.
         val givenUp = failures.count { it.value.attempts >= dev.lelonio.square.data.DownloadStore.MAX_ATTEMPTS }
         if (givenUp > 0) {
-            RowDivider()
+            FluidListDivider()
             InfoRow(
                 stringResource(R.string.downloads),
                 pluralStringResource(R.plurals.download_failed_count, givenUp, givenUp),
@@ -998,7 +1007,7 @@ private fun DownloadsSection() {
         }
 
         if (files.isNotEmpty()) {
-            RowDivider()
+            FluidListDivider()
             ActionRow(stringResource(R.string.remove_all_downloads), destructive = true) {
                 confirmingClear = true
             }
@@ -1027,127 +1036,6 @@ private fun DownloadsSection() {
         )
     }
 
-}
-
-/**
- * A label, a line of explanation and a switch.
- *
- * The canvas setting grew its own copy of this inline; three more would have
- * been four.
- *
- * The whole row is the switch, as far as touch and TalkBack go: it is the row
- * that is `toggleable`, with the switch role, so the label is as tappable as
- * the little pill and a screen reader announces one control called "Wi-Fi
- * only, on" instead of an unlabelled switch beside a piece of text. The
- * engine's switch is told to answer nothing itself (`onCheckedChange = null`,
- * which is what that parameter is for) and so the haptic it would have played
- * on its own is played here, where the touch now lands.
- */
-@Composable
-internal fun SwitchRow(
-    label: String,
-    note: String?,
-    checked: Boolean,
-    onCheckedChange: (Boolean) -> Unit,
-) {
-    val haptics = LocalFluidHaptics.current
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .toggleable(
-                value = checked,
-                role = Role.Switch,
-                onValueChange = { value ->
-                    haptics.play(if (value) FluidHapticEvent.ToggleOn else FluidHapticEvent.ToggleOff)
-                    onCheckedChange(value)
-                },
-            )
-            .padding(horizontal = 18.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(Modifier.weight(1f).padding(end = 12.dp)) {
-            Text(label, style = MaterialTheme.typography.bodyLarge)
-            if (note != null) {
-                Text(
-                    note,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = InkDim,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-        }
-        dev.antigravity.fluidengine.ui.fluid.FluidSwitch(
-            checked = checked,
-            onCheckedChange = null,
-        )
-    }
-}
-
-@Composable
-private fun UpdateRow() {
-    val context = LocalContext.current
-    val updater = remember(context) {
-        (context.applicationContext as dev.lelonio.square.SquareApplication).updater
-    }
-    val state by updater.state.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
-
-    val status = when (val current = state) {
-        is Updater.State.Idle -> null
-        is Updater.State.Checking -> stringResource(R.string.update_checking)
-        is Updater.State.UpToDate -> stringResource(R.string.update_none)
-        is Updater.State.Available -> stringResource(R.string.update_available, current.version)
-        is Updater.State.Downloading ->
-            current.progress?.let { "${(it * 100).toInt()}%" } ?: stringResource(R.string.update_downloading)
-        is Updater.State.Installing -> stringResource(R.string.update_installing)
-        is Updater.State.Failed ->
-            if (current.reason == Updater.REASON_PERMISSION) stringResource(R.string.update_needs_permission)
-            else stringResource(R.string.update_failed)
-    }
-
-    val busy = state is Updater.State.Checking ||
-        state is Updater.State.Downloading ||
-        state is Updater.State.Installing
-
-    // Held across the trip to the system settings, so granting the permission
-    // continues the install instead of ending in a row that has to be pressed
-    // again.
-    var pending by remember { mutableStateOf<Updater.State.Available?>(null) }
-    val permission = rememberLauncherForActivityResult(
-        ActivityResultContracts.StartActivityForResult(),
-    ) {
-        val update = pending ?: return@rememberLauncherForActivityResult
-        pending = null
-        scope.launch { if (updater.canInstall()) updater.install(update) }
-    }
-
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .clickable(enabled = !busy) {
-                scope.launch {
-                    pending = updater.checkAndInstall()
-                    pending?.let { permission.launch(updater.permissionIntent()) }
-                }
-            }
-            .padding(horizontal = 18.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Text(
-            stringResource(R.string.check_for_updates),
-            style = MaterialTheme.typography.bodyLarge,
-            modifier = Modifier.weight(1f),
-        )
-        if (status != null) {
-            Text(
-                status,
-                style = MaterialTheme.typography.bodyMedium,
-                color = InkDim,
-                textAlign = androidx.compose.ui.text.style.TextAlign.End,
-            )
-        }
-    }
 }
 
 /**
@@ -1193,26 +1081,26 @@ private fun Licences() {
     }
 }
 
+/**
+ * A titled group of rows: the engine's section header over the engine's group.
+ *
+ * Glass, because the page stands on the artwork wash and the engine's group knows how to
+ * be a panel on a canvas; the rows inside are the engine's too (`FluidToggleRow`,
+ * `FluidChoiceRow`, `FluidListRow`), so a switch can be slid by its thumb.
+ */
 @Composable
-internal fun Section(title: String?, content: @Composable () -> Unit) {
+internal fun Section(title: String?, content: @Composable ColumnScope.() -> Unit) {
     Column(Modifier.padding(horizontal = 20.dp, vertical = 10.dp)) {
         if (title != null) {
-            Text(
+            FluidSectionHeader(
                 // The reader's locale, not Locale.ROOT's: in Turkish a lowercase "i" capitalises
-                // to a dotted "İ", and the plain uppercase() spells every heading wrongly.
-                title.uppercase(LocalConfiguration.current.locales[0]),
-                style = MaterialTheme.typography.labelLarge,
-                color = InkDim,
-                modifier = Modifier.padding(start = 6.dp, bottom = 8.dp),
+                // to a dotted "I", and the header's own uppercase() spells every heading wrongly.
+                // Capitalised here, the header's second pass has nothing left to change.
+                title = title.uppercase(LocalConfiguration.current.locales[0]),
+                modifier = Modifier.padding(bottom = 6.dp),
             )
         }
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(22.dp))
-                .background(Ink.copy(alpha = 0.07f)),
-            content = { content() },
-        )
+        FluidListGroup(glass = true, content = content)
     }
 }
 
@@ -1263,12 +1151,13 @@ private fun CreditRow(name: String, url: String, avatarUrl: String) {
     }
 }
 
+/** A label and its value, side by side. The engine has no such row: it is the one the app keeps. */
 @Composable
 internal fun InfoRow(label: String, value: String) {
     Row(
         Modifier
             .fillMaxWidth()
-            .padding(horizontal = 18.dp, vertical = 14.dp),
+            .padding(horizontal = 16.dp, vertical = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.spacedBy(12.dp),
     ) {
@@ -1283,62 +1172,26 @@ internal fun InfoRow(label: String, value: String) {
     }
 }
 
+/** A row that does something. Destructive ones read in the error colour. */
 @Composable
 internal fun ActionRow(label: String, destructive: Boolean, onClick: () -> Unit) {
-    Text(
-        label,
-        style = MaterialTheme.typography.bodyLarge,
-        fontWeight = FontWeight.Medium,
-        color = if (destructive) MaterialTheme.colorScheme.error else Ink,
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 16.dp),
+    val error = MaterialTheme.colorScheme.error
+    FluidListRow(
+        title = if (destructive) {
+            AnnotatedString(label, SpanStyle(color = error))
+        } else {
+            AnnotatedString(label)
+        },
+        subtitle = "",
+        onClick = onClick,
+        disclosure = false,
     )
 }
 
-/**
- * A row of a list where one is picked, with a tick on the one that is.
- *
- * The tick is only a picture, so the choice is also said in the row's
- * semantics (`selectable`, radio-button role): a screen reader announces
- * "selected" on the one that is, which the icon with no description never did.
- */
+/** One of a list where one is picked: the engine's choice row, a tick on the one that is. */
 @Composable
 internal fun ChoiceRow(label: String, selected: Boolean, onClick: () -> Unit) {
-    Row(
-        Modifier
-            .fillMaxWidth()
-            .selectable(selected = selected, role = Role.RadioButton, onClick = onClick)
-            .padding(horizontal = 18.dp, vertical = 14.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Text(
-            label,
-            style = MaterialTheme.typography.bodyLarge,
-            color = if (selected) Ink else InkDim,
-            modifier = Modifier.weight(1f),
-        )
-        if (selected) {
-            Icon(
-                PhosphorIcons.Regular.Check,
-                contentDescription = null,
-                tint = MaterialTheme.colorScheme.primary,
-                modifier = Modifier.size(18.dp),
-            )
-        }
-    }
-}
-
-@Composable
-internal fun RowDivider() {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .padding(start = 18.dp)
-            .height(1.dp)
-            .background(Ink.copy(alpha = 0.08f)),
-    )
+    FluidChoiceRow(title = label, selected = selected, onSelect = onClick)
 }
 
 /** Kept next to the request that asks for them; see MainViewModel.connectWebApi. */

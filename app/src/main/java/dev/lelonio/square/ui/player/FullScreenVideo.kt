@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.player
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -148,10 +149,10 @@ fun FullScreenVideo(
         androidx.compose.animation.AnimatedVisibility(
             visible = showControls,
             enter = androidx.compose.animation.fadeIn(
-                androidx.compose.animation.core.tween(180),
+                FluidMotion.fadeIn(180),
             ),
             exit = androidx.compose.animation.fadeOut(
-                androidx.compose.animation.core.tween(220),
+                FluidMotion.fadeOut(220),
             ),
             modifier = Modifier.fillMaxSize(),
         ) {
@@ -167,10 +168,10 @@ fun FullScreenVideo(
         androidx.compose.animation.AnimatedVisibility(
             visible = showControls,
             enter = androidx.compose.animation.fadeIn(
-                androidx.compose.animation.core.tween(180),
+                FluidMotion.fadeIn(180),
             ),
             exit = androidx.compose.animation.fadeOut(
-                androidx.compose.animation.core.tween(220),
+                FluidMotion.fadeOut(220),
             ),
             modifier = Modifier.align(Alignment.TopStart),
         ) {
@@ -195,10 +196,10 @@ fun FullScreenVideo(
         androidx.compose.animation.AnimatedVisibility(
             visible = showControls,
             enter = androidx.compose.animation.fadeIn(
-                androidx.compose.animation.core.tween(180),
+                FluidMotion.fadeIn(180),
             ),
             exit = androidx.compose.animation.fadeOut(
-                androidx.compose.animation.core.tween(220),
+                FluidMotion.fadeOut(220),
             ),
             modifier = Modifier.align(Alignment.BottomCenter),
         ) {
@@ -213,14 +214,7 @@ fun FullScreenVideo(
             // The vertical player's own bar and its own discs of glass. Same
             // controls, same material: turning the phone changes where they sit
             // on the screen, not what the app is made of.
-            GlassProgressBar(
-                positionMs = positionMs,
-                durationMs = state.durationMs,
-                onSeek = onSeek,
-                accentColor = Color.White,
-                trackColor = Color.White.copy(alpha = 0.28f),
-            )
-            TimeRow(positionMs, state.durationMs)
+            PlaybackScrubber(positionMs, state.durationMs, onSeek)
 
             Spacer(Modifier.height(10.dp))
 

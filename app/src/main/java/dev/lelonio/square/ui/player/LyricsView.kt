@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.player
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -304,10 +305,7 @@ private fun LyricRow(
                     // has reached, so the line is treated as the unit it is.
                     val lineBump by animateFloatAsState(
                         targetValue = if (isActive) 1f else 0f,
-                        animationSpec = spring(
-                            dampingRatio = Spring.DampingRatioLowBouncy,
-                            stiffness = Spring.StiffnessLow,
-                        ),
+                        animationSpec = FluidMotion.fluid(),
                         label = "lineBump",
                     )
 

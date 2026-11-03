@@ -1,7 +1,9 @@
 package dev.lelonio.square.ui.player
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
+
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
@@ -58,12 +60,12 @@ fun TranslationToggle(
     // Gives under the finger, like every other control in the player.
     val grip by animateFloatAsState(
         targetValue = if (pressed) 0.94f else 1f,
-        animationSpec = tween(140),
+        animationSpec = FluidMotion.crossFade(140),
         label = "translationGrip",
     )
     val lit by animateFloatAsState(
         targetValue = if (pressed) 0.12f else 0f,
-        animationSpec = tween(140),
+        animationSpec = FluidMotion.crossFade(140),
         label = "translationPress",
     )
 
@@ -114,11 +116,7 @@ fun TranslationToggle(
         // before, and a button that only dimmed looked like one that had not
         // registered the press.
         if (busy) {
-            androidx.compose.material3.CircularProgressIndicator(
-                color = GlassInk,
-                strokeWidth = 2.dp,
-                modifier = Modifier.size(18.dp),
-            )
+            FluidSpinner(size = 18.dp, color = GlassInk)
         } else {
             Icon(
                 if (on) PhosphorIcons.Fill.Translate else PhosphorIcons.Regular.Translate,

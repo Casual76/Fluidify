@@ -1,5 +1,6 @@
 package dev.lelonio.square.ui.settings
 
+import dev.antigravity.fluidengine.ui.theme.FluidListDivider
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.layout.Column
@@ -42,7 +43,7 @@ import dev.lelonio.square.wear.install.WatchInstaller
 @Composable
 internal fun WatchInstallRows(app: SquareApplication) {
     var open by rememberSaveable { mutableStateOf(false) }
-    RowDivider()
+    FluidListDivider()
     if (!open) {
         ActionRow(stringResource(R.string.watch_install), destructive = false) { open = true }
         return
@@ -152,7 +153,7 @@ internal fun WatchInstallRows(app: SquareApplication) {
     }
     val busy = step !is WatchInstaller.Step.Idle && step !is WatchInstaller.Step.Done && step !is WatchInstaller.Step.Failed
     if (!busy) {
-        RowDivider()
+        FluidListDivider()
         ActionRow(stringResource(R.string.watch_install_go), destructive = false) {
             val host = shownAddress.substringBeforeLast(':').trim()
             val port = shownAddress.substringAfterLast(':', "").trim().toIntOrNull()
@@ -169,7 +170,7 @@ internal fun WatchInstallRows(app: SquareApplication) {
                 if (apk != null) app.wearBridge.updates.apkFromUri(apk) else app.wearBridge.updates.latestApk(progress)
             }
         }
-        RowDivider()
+        FluidListDivider()
         ActionRow(stringResource(R.string.watch_install_pick), destructive = false) {
             pickApk.launch(arrayOf("application/vnd.android.package-archive", "application/octet-stream"))
         }

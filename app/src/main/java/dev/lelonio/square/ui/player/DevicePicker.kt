@@ -13,10 +13,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Slider
+import dev.antigravity.fluidengine.ui.fluid.FluidSlider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -104,10 +104,7 @@ fun DeviceList(
                     .padding(vertical = 26.dp),
                 contentAlignment = Alignment.Center,
             ) {
-                CircularProgressIndicator(
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    strokeWidth = 2.dp,
-                )
+                FluidSpinner(size = 36.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
             state.error != null -> Text(
@@ -258,11 +255,7 @@ private fun DeviceRow(
             // moment, and without this the row simply sat there, so it was
             // pressed again and again.
             if (switching) {
-                CircularProgressIndicator(
-                    color = inkDim,
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(18.dp),
-                )
+                FluidSpinner(size = 18.dp, color = inkDim)
             }
         }
 
@@ -305,7 +298,7 @@ private fun DeviceVolume(raw: Int, onSetVolume: (Int) -> Unit) {
             modifier = Modifier.size(16.dp),
         )
         Spacer(Modifier.width(10.dp))
-        Slider(
+        FluidSlider(
             value = fraction.coerceIn(0f, 1f),
             onValueChange = {
                 dragging = true
@@ -313,9 +306,8 @@ private fun DeviceVolume(raw: Int, onSetVolume: (Int) -> Unit) {
                 onSetVolume((it * MAX_VOLUME).toInt())
             },
             onValueChangeFinished = { dragging = false },
-            modifier = Modifier
-                .weight(1f)
-                .height(28.dp),
+            modifier = Modifier.weight(1f),
+            contentDescription = stringResource(R.string.volume),
         )
         Spacer(Modifier.width(10.dp))
         Icon(

@@ -1,7 +1,9 @@
 package dev.lelonio.square.ui.onboarding
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
+import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
+import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInHorizontally
@@ -27,9 +29,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.CircularProgressIndicator
+import dev.antigravity.fluidengine.ui.fluid.FluidPagerDots
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -152,10 +154,10 @@ fun OnboardingScreen(
                 transitionSpec = {
                     val forward = targetState > initialState
                     val width = { w: Int -> if (forward) w / 5 else -w / 5 }
-                    (slideInHorizontally(tween(260), width) + fadeIn(tween(200)))
+                    (slideInHorizontally(FluidMotion.intOffset(), width) + fadeIn(FluidMotion.fadeIn(200)))
                         .togetherWith(
-                            slideOutHorizontally(tween(200)) { w -> -width(w) } +
-                                fadeOut(tween(140)),
+                            slideOutHorizontally(FluidMotion.intOffset()) { w -> -width(w) } +
+                                fadeOut(FluidMotion.fadeOut(140)),
                         )
                 },
                 label = "onboarding",
@@ -190,18 +192,15 @@ fun OnboardingScreen(
                     .padding(horizontal = 26.dp, vertical = 16.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                    repeat(STEP_COUNT) { index ->
-                        Box(
-                            Modifier
-                                .size(if (index == step) 9.dp else 7.dp)
-                                .clip(CircleShape)
-                                .background(
-                                    if (index == step) Ink else Ink.copy(alpha = 0.28f),
-                                ),
-                        )
-                    }
-                }
+                // The engine's dots: the active one is longer and slides to the next as the step changes.
+                val stepLabelContext = androidx.compose.ui.platform.LocalContext.current
+                FluidPagerDots(
+                    pageCount = STEP_COUNT,
+                    position = { step.toFloat() },
+                    color = Ink.copy(alpha = 0.28f),
+                    activeColor = Ink,
+                    pageLabel = { page, count -> stepLabelContext.getString(R.string.onboarding_step_of, page, count) },
+                )
                 Spacer(Modifier.weight(1f))
                 GlassButton(
                     onClick = { if (step == last) onFinish() else step++ },
@@ -257,11 +256,7 @@ private fun LogIn(
             contentHeight = 52.dp,
         ) {
             if (connecting) {
-                CircularProgressIndicator(
-                    strokeWidth = 2.dp,
-                    modifier = Modifier.size(18.dp),
-                    color = MaterialTheme.colorScheme.onPrimary,
-                )
+                FluidSpinner(size = 18.dp, color = MaterialTheme.colorScheme.onPrimary)
             } else {
                 Text(stringResource(R.string.log_in_with_spotify), style = MaterialTheme.typography.titleMedium)
             }
@@ -281,7 +276,7 @@ private fun Dashboard(redirectUri: String) {
         Modifier
             .padding(top = 16.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(18.dp))
+            .clip(ContinuousCornerShape(18.dp))
             .background(Ink.copy(alpha = 0.08f))
             .clickable { uriHandler.openUri(DASHBOARD_URL) }
             .padding(horizontal = 18.dp, vertical = 16.dp),
@@ -312,7 +307,7 @@ private fun Dashboard(redirectUri: String) {
         Modifier
             .padding(top = 10.dp, start = 34.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(14.dp))
+            .clip(ContinuousCornerShape(14.dp))
             .background(Ink.copy(alpha = 0.08f))
             .padding(start = 14.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -388,7 +383,7 @@ private fun LanguageChips(language: String, onLanguage: (String) -> Unit) {
                 style = MaterialTheme.typography.bodyMedium,
                 color = if (selected) Ink else InkDim,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
+                    .clip(FluidCapsuleShape)
                     .background(Ink.copy(alpha = if (selected) 0.18f else 0.07f))
                     .clickable { onLanguage(tag) }
                     .padding(horizontal = 14.dp, vertical = 8.dp),
@@ -449,7 +444,7 @@ private fun Note(text: String) {
         Modifier
             .padding(top = 16.dp)
             .fillMaxWidth()
-            .clip(RoundedCornerShape(16.dp))
+            .clip(ContinuousCornerShape(16.dp))
             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f))
             .padding(horizontal = 16.dp, vertical = 14.dp),
     ) {

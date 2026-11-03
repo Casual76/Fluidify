@@ -1,9 +1,9 @@
 package dev.lelonio.square.ui.components
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import dev.lelonio.square.R
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -104,9 +104,9 @@ fun SwipeToQueue(
                                 haptics.play(FluidHapticEvent.Confirm)
                                 onQueue()
                             }
-                            scope.launch { offset.animateTo(0f, tween(220)) }
+                            scope.launch { offset.animateTo(0f, FluidMotion.pixels()) }
                         },
-                        onDragCancel = { scope.launch { offset.animateTo(0f, tween(220)) } },
+                        onDragCancel = { scope.launch { offset.animateTo(0f, FluidMotion.pixels()) } },
                     ) { change, dragAmount ->
                         change.consume()
                         // Left only, and increasingly resistant: the row can be

@@ -1,5 +1,7 @@
 package dev.lelonio.square.ui.search
 
+import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
+import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
 import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollContent
 import dev.antigravity.fluidengine.ui.fluid.fluidReadingWidth
 import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollEdge
@@ -20,8 +22,7 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyListScope
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -143,7 +144,7 @@ fun SearchScreen(
             }
 
             state.loading -> item(contentType = "status") {
-                StatusBox { CircularProgressIndicator(color = Ink, strokeWidth = 2.dp) }
+                StatusBox { FluidSpinner(size = 36.dp, color = Ink) }
             }
 
             state.error != null -> item(contentType = "status") {
@@ -375,7 +376,7 @@ private fun ResultRow(
                         maxLines = 1,
                         modifier = Modifier
                             .padding(end = 8.dp)
-                            .clip(RoundedCornerShape(6.dp))
+                            .clip(ContinuousCornerShape(6.dp))
                             .background(BadgeFilm)
                             .padding(horizontal = 6.dp, vertical = 2.dp),
                     )
@@ -395,7 +396,7 @@ private fun ResultRow(
                 contentDescription = stringResource(R.string.more),
                 tint = InkDim,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(50))
+                    .clip(FluidCapsuleShape)
                     .fluidPressable(onClick = onMenu, pressedScale = 0.88f)
                     .padding(10.dp)
                     .size(20.dp),

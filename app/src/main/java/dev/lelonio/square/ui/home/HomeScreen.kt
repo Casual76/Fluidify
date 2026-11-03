@@ -1,5 +1,8 @@
 package dev.lelonio.square.ui.home
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
+import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
+import dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape
 import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollContent
 import dev.antigravity.fluidengine.ui.fluid.fluidOverscrollEdge
 import dev.antigravity.fluidengine.ui.fluid.rememberFluidEdgeOverscroll
@@ -35,14 +38,12 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.ui.zIndex
-import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
+import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.foundation.clickable
 import androidx.compose.runtime.Composable
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.SizeTransform
@@ -204,7 +205,7 @@ fun HomeScreen(
                 style = MaterialTheme.typography.labelLarge,
                 color = InkDim,
                 modifier = Modifier
-                    .clip(RoundedCornerShape(percent = 50))
+                    .clip(FluidCapsuleShape)
                     .clickable(onClick = onOpenSettings)
                     .padding(horizontal = 18.dp, vertical = 12.dp),
             )
@@ -213,7 +214,7 @@ fun HomeScreen(
         MainViewModel.UiState.Connecting,
         MainViewModel.UiState.Loading,
         -> Centered {
-            CircularProgressIndicator(color = Ink, strokeWidth = 2.dp)
+            FluidSpinner(size = 36.dp, color = Ink)
         }
 
         is MainViewModel.UiState.Failed -> Centered {
@@ -363,8 +364,8 @@ fun HomeScreen(
                         // each other is invisible, because the header is the
                         // same in both; only the shelves underneath, which
                         // genuinely differ, are seen to change.
-                        fadeIn(tween(FILTER_FADE_MS))
-                            .togetherWith(fadeOut(tween(FILTER_FADE_MS)))
+                        fadeIn(FluidMotion.fadeIn(FILTER_FADE_MS))
+                            .togetherWith(fadeOut(FluidMotion.fadeOut(FILTER_FADE_MS)))
                             .using(SizeTransform(clip = false))
                     },
                     label = "feed",
@@ -957,7 +958,7 @@ private fun FilterRow(selected: Feed, onSelect: (Feed) -> Unit) {
  */
 @Composable
 private fun FeedCard(item: SearchItem, onClick: () -> Unit) {
-    val shape = RoundedCornerShape(28.dp)
+    val shape = ContinuousCornerShape(28.dp)
     Box(
         Modifier
             .padding(start = 20.dp, end = 20.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current, top = 8.dp, bottom = 8.dp)
@@ -998,7 +999,7 @@ private fun FeedCard(item: SearchItem, onClick: () -> Unit) {
                 title = item.title,
                 modifier = Modifier
                     .size(COVER_SIZE)
-                    .softShadow(RoundedCornerShape(18.dp), elevation = 24.dp, spot = 0.5f),
+                    .softShadow(ContinuousCornerShape(18.dp), elevation = 24.dp, spot = 0.5f),
                 corner = 18.dp,
                 decodeSize = COVER_SIZE,
             )
@@ -1121,7 +1122,7 @@ private fun PlaylistTile(playlist: CatalogPlaylist, onClick: () -> Unit) {
             playlist = playlist,
             modifier = Modifier
                 .size(152.dp)
-                .softShadow(RoundedCornerShape(20.dp), elevation = 18.dp),
+                .softShadow(ContinuousCornerShape(20.dp), elevation = 18.dp),
             corner = 20.dp,
         )
         Text(
@@ -1148,7 +1149,7 @@ private fun TrackTile(track: CatalogTrack, onClick: () -> Unit) {
             title = track.name,
             modifier = Modifier
                 .size(128.dp)
-                .softShadow(RoundedCornerShape(18.dp), elevation = 14.dp),
+                .softShadow(ContinuousCornerShape(18.dp), elevation = 14.dp),
             corner = 18.dp,
             decodeSize = 128.dp,
         )
@@ -1194,7 +1195,7 @@ private fun SkeletonSection(
                 .padding(start = 20.dp, end = 20.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current)
                 .width(140.dp)
                 .height(20.dp)
-                .clip(RoundedCornerShape(6.dp))
+                .clip(ContinuousCornerShape(6.dp))
                 .background(fill),
         )
         if (card) {
@@ -1203,7 +1204,7 @@ private fun SkeletonSection(
                     .padding(start = 20.dp, end = 20.dp + dev.lelonio.square.ui.theme.LocalPageEndInset.current, top = 14.dp, bottom = 14.dp)
                     .fillMaxWidth()
                     .height(tileHeight)
-                    .clip(RoundedCornerShape(28.dp))
+                    .clip(ContinuousCornerShape(28.dp))
                     .background(fill),
             )
         } else {
@@ -1218,7 +1219,7 @@ private fun SkeletonSection(
                         Modifier
                             .width(tileWidth)
                             .height(tileHeight)
-                            .clip(if (round) CircleShape else RoundedCornerShape(18.dp))
+                            .clip(if (round) CircleShape else ContinuousCornerShape(18.dp))
                             .background(fill),
                     )
                 }
@@ -1260,7 +1261,7 @@ private fun FeedTile(item: SearchItem, onClick: () -> Unit) {
             title = item.title,
             modifier = Modifier
                 .size(152.dp)
-                .softShadow(RoundedCornerShape(20.dp), elevation = 18.dp),
+                .softShadow(ContinuousCornerShape(20.dp), elevation = 18.dp),
             corner = 20.dp,
         )
         Text(
