@@ -193,13 +193,13 @@ fun OnboardingScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 // The engine's dots: the active one is longer and slides to the next as the step changes.
-                val stepLabelContext = androidx.compose.ui.platform.LocalContext.current
+                val stepLabelResources = androidx.compose.ui.platform.LocalResources.current
                 FluidPagerDots(
                     pageCount = STEP_COUNT,
                     position = { step.toFloat() },
                     color = Ink.copy(alpha = 0.28f),
                     activeColor = Ink,
-                    pageLabel = { page, count -> stepLabelContext.getString(R.string.onboarding_step_of, page, count) },
+                    pageLabel = { page, count -> stepLabelResources.getString(R.string.onboarding_step_of, page, count) },
                 )
                 Spacer(Modifier.weight(1f))
                 GlassButton(
