@@ -167,7 +167,7 @@
     <string name="forked_by">Fork eden</string>
     <string name="based_on">Temel alınan</string>
     <string name="engine_licences_title">Fluid Engine lisansları</string>
-    <string name="engine_licences_footnote">Fluid Engine %1$s bu üçüncü taraf çalışmaları içerir. Lisansların tamamı engine deposunda, LICENSES/ altındadır.</string>
+    <string name="engine_licences_footnote">Fluid Engine %1$s bu üçüncü taraf çalışmaları içerir; aralarında GPL-3.0 kodu (LibrePods) da vardır: Fluidify aynı lisansla dağıtılır ve kaynak kodu, uygulamayı alan herkese github.com/Casual76/Fluidify adresinde açıktır. Lisansların tamamı engine deposunda, LICENSES/ altındadır.</string>
     <string name="about">Hakkında</string>
     <string name="version">Sürüm</string>
     <string name="licences">Lisanslar</string>

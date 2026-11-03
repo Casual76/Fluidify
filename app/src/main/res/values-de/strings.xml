@@ -155,7 +155,7 @@
     <string name="forked_by">Geforkt von</string>
     <string name="based_on">Basiert auf</string>
     <string name="engine_licences_title">Fluid-Engine-Lizenzen</string>
-    <string name="engine_licences_footnote">Die Fluid Engine %1$s enthält diese Werke Dritter. Die vollständigen Lizenzen liegen im Engine-Repository unter LICENSES/.</string>
+    <string name="engine_licences_footnote">Die Fluid Engine %1$s enthält diese Werke Dritter, darunter GPL-3.0-Code (LibrePods): Fluidify wird unter derselben Lizenz verbreitet, und der Quellcode steht allen, die die App erhalten, unter github.com/Casual76/Fluidify zur Verfügung. Die vollständigen Lizenzen liegen im Engine-Repository unter LICENSES/.</string>
     <string name="about">Info</string>
     <string name="version">Version</string>
     <string name="licences">Lizenzen</string>

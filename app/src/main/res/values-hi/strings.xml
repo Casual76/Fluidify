@@ -167,7 +167,7 @@
     <string name="forked_by">फ़ोर्क किया</string>
     <string name="based_on">आधारित है</string>
     <string name="engine_licences_title">Fluid Engine लाइसेंस</string>
-    <string name="engine_licences_footnote">Fluid Engine %1$s में ये third-party कार्य शामिल हैं। पूरे लाइसेंस engine repository में LICENSES/ के अंतर्गत हैं।</string>
+    <string name="engine_licences_footnote">Fluid Engine %1$s में ये third-party कार्य शामिल हैं, जिनमें GPL-3.0 कोड (LibrePods) भी है: Fluidify इसी लाइसेंस के तहत वितरित होता है, और इसका source code हर उस व्यक्ति के लिए github.com/Casual76/Fluidify पर उपलब्ध है जिसे यह मिलता है। पूरे लाइसेंस engine repository में LICENSES/ के अंतर्गत हैं।</string>
     <string name="about">परिचय</string>
     <string name="version">संस्करण</string>
     <string name="licences">लाइसेंस</string>

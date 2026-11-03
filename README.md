@@ -219,10 +219,18 @@ is already dead. It is the bug behind the random logouts in most other clients.
 | [lossless.wtf](https://lossless.wtf) | n/a | Synced TTML lyrics, asked first on both backends. |
 | [LrcLib](https://lrclib.net) | n/a | Synced lyrics for the YouTube Music backend, over its open API. |
 | [Bungee](https://github.com/kupix/bungee) | MPL-2.0 | Time stretching, fetched at build time. |
-| [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) | Apache-2.0 | The glass material; the catalog components are copied with their notice. |
+| [Fluid Engine](https://github.com/Casual76/fluid-engine) | GPL-3.0 | The design system, the pages and the glass, as the `engine/` submodule. It carries code from [LibrePods](https://github.com/librepods-org/librepods) (GPL-3.0: the buttons and the pages) and from [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) (Apache-2.0: the glass renderer and the catalog controls), each listed in the app under Settings › About. |
 | [Phosphor Icons](https://phosphoricons.com) | MIT | Every icon in the app. |
 | librespot-java | Apache-2.0 | The listening-event format, re-implemented from its `EventService` rather than copied. |
 
 ## Licence
 
 GPL-3.0-or-later. See [LICENSE](LICENSE).
+
+The Fluid Engine underneath (from 3.0) contains GPL-3.0 code from LibrePods, so
+every APK of Fluidify — the phone app and the watch app alike — is distributed
+under the GPL-3.0 as well. Whoever receives an APK is entitled to its source:
+it is this repository, public at
+[github.com/Casual76/Fluidify](https://github.com/Casual76/Fluidify), with the
+engine pinned as the `engine/` submodule at the version `engine.properties`
+names. The third-party notices travel inside the app, under Settings › About.
