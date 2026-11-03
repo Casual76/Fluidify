@@ -40,12 +40,8 @@ import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.activity.compose.PredictiveBackHandler
-import androidx.compose.animation.core.Animatable
-import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.ui.graphics.graphicsLayer
 import dev.antigravity.fluidengine.ui.fluid.FluidMotion
-import dev.antigravity.fluidengine.ui.theme.FluidRouteMotion
 import androidx.compose.foundation.lazy.rememberLazyListState
 import dev.antigravity.fluidengine.ui.fluid.FluidCollapsingTitle
 import dev.antigravity.fluidengine.ui.fluid.FluidCollapsingTopBar
@@ -161,29 +157,6 @@ fun SettingsScreen(
         }
     }
 
-    // The back gesture closes the page first and leaves the settings second,
-    // which is the order the screen is read in.
-    //
-    // Driven by the finger rather than played afterwards, the way the player's
-    // own collapse is: the page recedes as far as the thumb has taken it and
-    // comes back if the thumb changes its mind. Only part of the travel is
-    // given to the preview — a gesture that could finish on its own would leave
-    // the commit nothing to do.
-    val backAway = remember { Animatable(0f) }
-    val backScope = rememberCoroutineScope()
-    PredictiveBackHandler(enabled = open != null) { events ->
-        try {
-            events.collect { event ->
-                backAway.snapTo(event.progress.coerceIn(0f, 1f))
-            }
-            open = null
-            backAway.snapTo(0f)
-        } catch (cancelled: kotlin.coroutines.cancellation.CancellationException) {
-            // `backScope` and not this one, which is being cancelled.
-            backScope.launch { backAway.animateTo(0f, FluidMotion.standard()) }
-        }
-    }
-
     // Resolved here because fluidLicensesSection is a LazyListScope extension,
     // where composable calls like stringResource are out of reach.
     val engineLicencesTitle = stringResource(R.string.engine_licences_title)
@@ -191,6 +164,25 @@ fun SettingsScreen(
         R.string.engine_licences_footnote,
         dev.antigravity.fluidengine.foundation.EngineBuild.VERSION,
     )
+
+    // The back gesture closes the page first and leaves the settings second,
+    // which is the order the screen is read in. The pages are the engine's
+    // (3.0): a page comes in from the side over the list of them, and the back
+    // holds it under the finger. The hand-made preview that scaled the whole
+    // page -- glass bar included, which glass must never be -- is gone with it.
+    val stack = remember(open) { listOf(RootPageKey) + listOfNotNull(open?.name) }
+    val openPage: (SettingsPage) -> Unit = { open = it }
+    val onClosePage: () -> Unit = { open = null }
+    dev.antigravity.fluidengine.ui.page.FluidPageHost(
+        stack = stack,
+        onBack = { open = null },
+        modifier = Modifier.fillMaxSize(),
+        // The artwork wash behind the whole app shows through every page,
+        // as it does through the settings themselves.
+        pageColor = androidx.compose.ui.graphics.Color.Transparent,
+    ) { key ->
+    @Suppress("NAME_SHADOWING")
+    val open = SettingsPage.entries.firstOrNull { it.name == key }
 
     // The elastic edge every page in the family has; see the engine's
     // FluidOverscroll. Two modifiers on purpose: only the content travels.
@@ -218,28 +210,6 @@ fun SettingsScreen(
     Box(
         Modifier
             .fillMaxSize()
-            // The page going back where it came from, at the speed of the hand.
-            //
-            // Pivoted on the trailing edge, because that is the edge the gesture
-            // is pulling from, and rounded while it is not the whole screen for
-            // the reason the engine's route motion gives: a rectangle of one
-            // page pasted over another has to hide its own edge, and a rounded
-            // one reads as a card lifting instead.
-            .graphicsLayer {
-                val away = backAway.value
-                if (away <= 0.001f) {
-                    clip = false
-                    return@graphicsLayer
-                }
-                val shrink = 1f - BackAwayScale * away
-                transformOrigin = TransformOrigin(1f, 0.5f)
-                scaleX = shrink
-                scaleY = shrink
-                translationX = size.width * BackAwayShift * away
-                alpha = 1f - BackAwayFade * away
-                shape = RoundedCornerShape(FluidRouteMotion.ExpandCornerRadius)
-                clip = true
-            }
             .fluidTitleCollapseOrigin(collapse),
     ) {
     LazyColumn(
@@ -265,7 +235,7 @@ fun SettingsScreen(
                 SettingsPage.entries.forEachIndexed { index, page ->
                     if (index > 0) RowDivider()
                     PageRow(stringResource(page.title), stringResource(page.summary)) {
-                        open = page
+                        openPage(page)
                     }
                 }
             }
@@ -566,11 +536,15 @@ fun SettingsScreen(
             // holds the other side of that argument.
             barTint = dev.lelonio.square.ui.theme.pageBarTint(),
             modifier = Modifier.align(Alignment.TopCenter),
-            onBack = { if (open != null) open = null else onBack() },
+            onBack = { if (open != null) onClosePage() else onBack() },
             contentTranslation = { overscroll.offsetPx },
         )
     }
+    }
 }
+
+/** The list of pages, under the pages themselves in the settings' own stack. */
+private const val RootPageKey = "root"
 
 /**
  * The pages the settings are divided into.
@@ -1384,13 +1358,3 @@ private const val UPSTREAM_NAME = "Square"
 private const val UPSTREAM_USER = "Lelonio"
 private const val UPSTREAM_URL = "https://github.com/Lelonio/Square"
 
-/**
- * How far a settings page goes while the back gesture is still being decided.
- *
- * Small on purpose, and the three move together. The preview is a promise, not
- * the act: enough that the page is visibly answering the thumb, little enough
- * that letting go halfway and having it come back does not read as a mistake.
- */
-private const val BackAwayScale = 0.08f
-private const val BackAwayShift = 0.06f
-private const val BackAwayFade = 0.22f

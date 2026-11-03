@@ -40,8 +40,6 @@ import dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape
 import dev.antigravity.fluidengine.ui.fluid.GlassDefaults
 import dev.antigravity.fluidengine.ui.fluid.GlassRole
 import dev.antigravity.fluidengine.ui.fluid.glassSurface
-import dev.antigravity.fluidengine.ui.fluid.FluidTabBarDefaults
-import dev.antigravity.fluidengine.ui.fluid.FluidTabItem
 import dev.antigravity.fluidengine.ui.fluid.FluidFloatingTabBar
 import dev.antigravity.fluidengine.ui.fluid.FluidFloatingTabBarDefaults
 import dev.antigravity.fluidengine.ui.fluid.FluidFloatingTabBarGlass
@@ -109,22 +107,16 @@ import androidx.lifecycle.viewmodel.compose.viewModel
 import androidx.media3.common.PlaybackParameters
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
-import androidx.compose.animation.AnimatedContentTransitionScope
-import androidx.compose.animation.EnterTransition
-import androidx.compose.animation.ExitTransition
-import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
 import androidx.navigation.NavBackStackEntry
 import dev.antigravity.fluidengine.ui.fluid.FluidMotion
-import dev.antigravity.fluidengine.ui.theme.FluidRouteMotion
-import dev.antigravity.fluidengine.ui.theme.FluidRouteMotionHost
-import dev.antigravity.fluidengine.ui.theme.LocalRouteMotionSignals
-import dev.antigravity.fluidengine.ui.theme.RouteMotionSignals
-import dev.antigravity.fluidengine.ui.theme.rememberRouteMotionSignals
+import dev.antigravity.fluidengine.ui.navigation.FluidNavHost
+import dev.antigravity.fluidengine.ui.navigation.composable
+import dev.antigravity.fluidengine.ui.navigation.navigateToPeer
+import dev.antigravity.fluidengine.ui.page.FluidBackSwipe
+import dev.antigravity.fluidengine.ui.page.FluidPageTransition
+import dev.antigravity.fluidengine.ui.page.FluidPeerMove
+import dev.antigravity.fluidengine.ui.page.rememberFluidPageHostState
 import androidx.navigation.NavHostController
-import androidx.navigation.compose.NavHost
-import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
 import androidx.navigation.compose.rememberNavController
 import androidx.compose.ui.platform.LocalContext
@@ -227,137 +219,24 @@ private data class TrackMenuRequest(
  */
 private val PeerRoutes = listOf(Routes.HOME, Routes.SEARCH, Routes.LIBRARY)
 
-/** Which way a step between two tabs goes, or null when it is not one. */
-private fun peerDirection(
-    from: String?,
-    to: String?,
-): AnimatedContentTransitionScope.SlideDirection? {
+/**
+ * Which way a step between two tabs goes: positive towards the end of the row,
+ * negative towards its start, zero when the two are not both tabs.
+ *
+ * Zero is what makes everything else a page. The host asks this about every
+ * change at the top of the stack; a playlist or the settings opening over a tab
+ * is not a step along the row, and the answer zero hands it back to the page
+ * rules -- opaque, from the side, the one underneath backing off a third.
+ */
+private val TabOrder = FluidPeerMove<NavBackStackEntry> { from, to ->
+    tabStep(from.destination.route, to.destination.route)
+}
+
+/** [TabOrder] on the routes themselves, so it can be checked without a stack. */
+internal fun tabStep(from: String?, to: String?): Int {
     val a = PeerRoutes.indexOf(from)
     val b = PeerRoutes.indexOf(to)
-    if (a < 0 || b < 0 || a == b) return null
-    return if (b > a) {
-        AnimatedContentTransitionScope.SlideDirection.Left
-    } else {
-        AnimatedContentTransitionScope.SlideDirection.Right
-    }
-}
-
-/** A fraction of the width, not the whole of it; see FluidMotion.PeerSlideFraction. */
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.peerOffset(width: Int) =
-    (width * FluidMotion.PeerSlideFraction).toInt()
-
-/**
- * The page arriving.
- *
- * Never a fade, whichever kind of movement it is: the arriving page is the one
- * being read, and a page fading up over another is two readable screens at once.
- * Sideways it slides the last eighth of the way in; upwards it grows the last
- * ninth, which its host rounds the corners of so the page underneath shows round
- * it rather than through it.
- */
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.routeEnter(
-    signals: RouteMotionSignals,
-): EnterTransition {
-    val direction = peerDirection(initialState.destination.route, targetState.destination.route)
-    signals.hierarchical = direction == null
-    return if (direction != null) {
-        slideIntoContainer(
-            towards = direction,
-            animationSpec = tween(FluidMotion.DurationPeer, easing = FluidMotion.EaseEmphasized),
-            initialOffset = { peerOffset(it) },
-        )
-    } else {
-        scaleIn(
-            animationSpec = tween(
-                FluidMotion.DurationExpand,
-                easing = FluidMotion.EaseEmphasized,
-            ),
-            initialScale = FluidRouteMotion.ExpandInitialScale,
-        )
-    }
-}
-
-/**
- * The page being left.
- *
- * This one may fade, and sideways it has to: a peer that only slides leaves a
- * strip of itself beside the page that is arriving for the length of the step.
- * Upwards it does not — the page going under is meant to be seen going under,
- * and its host takes the focus off it instead.
- */
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.routeExit(
-    signals: RouteMotionSignals,
-): ExitTransition {
-    val direction = peerDirection(initialState.destination.route, targetState.destination.route)
-    signals.hierarchical = direction == null
-    return if (direction != null) {
-        slideOutOfContainer(
-            towards = direction,
-            animationSpec = tween(FluidMotion.DurationPeer, easing = FluidMotion.EaseEmphasized),
-            targetOffset = { peerOffset(it) },
-        ) + fadeOut(FluidMotion.fadeOut(FluidMotion.DurationPeerFadeOut))
-    } else {
-        scaleOut(
-            animationSpec = tween(
-                FluidMotion.DurationExpand,
-                easing = FluidMotion.EaseEmphasized,
-            ),
-            targetScale = FluidRouteMotion.ExpandParentScale,
-        )
-    }
-}
-
-/** Coming back to the page that was underneath: it comes up from where it went. */
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.routePopEnter(
-    signals: RouteMotionSignals,
-): EnterTransition {
-    val direction = peerDirection(initialState.destination.route, targetState.destination.route)
-    signals.hierarchical = direction == null
-    return if (direction != null) {
-        slideIntoContainer(
-            towards = direction,
-            animationSpec = tween(FluidMotion.DurationPeer, easing = FluidMotion.EaseEmphasized),
-            initialOffset = { peerOffset(it) },
-        )
-    } else {
-        scaleIn(
-            animationSpec = tween(
-                FluidMotion.DurationCollapse,
-                easing = FluidMotion.EaseEmphasized,
-            ),
-            initialScale = FluidRouteMotion.ExpandParentScale,
-        )
-    }
-}
-
-/**
- * The page leaving for good, which is the half the back gesture drags.
- *
- * It shrinks back to where it grew from and fades as it goes: this one *is*
- * allowed to, because the page under it has to be read through the gap it
- * leaves, and because a hand holding the gesture halfway has to be able to see
- * what it is choosing between.
- */
-private fun AnimatedContentTransitionScope<NavBackStackEntry>.routePopExit(
-    signals: RouteMotionSignals,
-): ExitTransition {
-    val direction = peerDirection(initialState.destination.route, targetState.destination.route)
-    signals.hierarchical = direction == null
-    return if (direction != null) {
-        slideOutOfContainer(
-            towards = direction,
-            animationSpec = tween(FluidMotion.DurationPeer, easing = FluidMotion.EaseEmphasized),
-            targetOffset = { peerOffset(it) },
-        ) + fadeOut(FluidMotion.fadeOut(FluidMotion.DurationPeerFadeOut))
-    } else {
-        scaleOut(
-            animationSpec = tween(
-                FluidMotion.DurationCollapse,
-                easing = FluidMotion.EaseEmphasized,
-            ),
-            targetScale = FluidRouteMotion.ExpandInitialScale,
-        ) + fadeOut(FluidMotion.fadeOut(FluidMotion.DurationRouteFadeOut))
-    }
+    return if (a < 0 || b < 0 || a == b) 0 else b - a
 }
 
 object Routes {
@@ -1200,10 +1079,21 @@ fun SquareApp(
                 }
                 val route = currentEntry?.destination?.route
 
-                // A screen that leaves mid-gesture never delivers its fling,
-                // and the scroll-hold it started would freeze every glass
-                // capture in the app; see FluidFloatingTabBarScrollConnection.settle.
-                LaunchedEffect(route) { tabBarScroll.settle() }
+                // No settle() on a route change any more: since engine 3.0.1 the
+                // page host tells the bar itself, which closes the scroll that a
+                // screen leaving mid-gesture never finished and opens the bar.
+
+                // Back from the search or the library goes to Home, as it always
+                // has here. The tabs are one stack of one page (navigateToPeer),
+                // so without this the back from a tab would leave the app. The
+                // page host and the player are composed after this and so are
+                // asked first: a page opened over the tab still goes back to the
+                // tab, and an open player still closes.
+                androidx.activity.compose.BackHandler(
+                    enabled = route == Routes.SEARCH || route == Routes.LIBRARY,
+                ) {
+                    navController.switchTab(Routes.HOME)
+                }
 
                 // Which tab the bar shows as the current one.
                 //
@@ -1318,8 +1208,12 @@ fun SquareApp(
                     }
                 }
 
-                /** Shared by every destination's motion host; see the NavHost. */
-                val routeSignals = rememberRouteMotionSignals()
+                /**
+                 * What the pages are doing, for the chrome that leaves with one
+                 * of them: the bars step out of the settings page at the pace
+                 * of the page itself, finger included (see `chrome` below).
+                 */
+                val pageHost = rememberFluidPageHostState()
 
                 val statusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
                 val navBar = WindowInsets.navigationBars.asPaddingValues().calculateBottomPadding()
@@ -1386,12 +1280,19 @@ fun SquareApp(
                 // Settings is not a place you listen from: it is a full page of
                 // its own, and the tab bar and the now-playing bar step out of
                 // the way for it instead of floating over a form.
-                val chromeHidden = route == Routes.SETTINGS
-                val chrome by animateFloatAsState(
-                    if (chromeHidden) 0f else 1f,
-                    tween(220),
-                    label = "chrome",
-                )
+                //
+                // At the page's own pace rather than on a timer of their own:
+                // the page coming in, the spring taking it out, and a finger
+                // holding it halfway all move the bars by the same amount. A
+                // State, so only what reads it wakes while the page moves.
+                val chromeState = remember(pageHost) {
+                    derivedStateOf {
+                        1f - pageHost.fractionToward { entry ->
+                            (entry as? NavBackStackEntry)?.destination?.route == Routes.SETTINGS
+                        }
+                    }
+                }
+                val chrome by chromeState
 
                 // Lists end above the bottom bar rather than scrolling behind
                 // it.
@@ -1486,10 +1387,6 @@ fun SquareApp(
                     // would recompose the whole app with it.
                     PageEndInsetHost(
                         inset = pageEndInset,
-                        // Which kind of movement is on screen, and how much
-                        // optics the glass may spend while it lasts. Read from
-                        // the draw pass by every page's own host.
-                        routeSignals = routeSignals,
                     ) {
                     Box(
                         Modifier
@@ -1511,132 +1408,454 @@ fun SquareApp(
                                 }
                             },
                     ) {
-                    // The engine's own route motion, which the app had never
-                    // asked for.
+                    // The engine's pages (3.0).
                     //
-                    // Left alone, `NavHost` swaps destinations with a cross-fade,
-                    // and a cross-fade is the one thing the family forbids: two
-                    // readable pages on screen at once, even for a tenth of a
-                    // second, is what makes an app look like a prototype. What
-                    // replaces it is two movements — a step sideways between the
-                    // tabs, a page lifting off the one it came from everywhere
-                    // else — and the host below defocuses whichever is leaving,
-                    // rounds whichever is not yet the whole screen, and tells the
-                    // chrome which of the two it should be refracting.
+                    // Two movements and no cross-fade: a step sideways between
+                    // the tabs (TabOrder), and everywhere else a page that comes
+                    // in opaque while the one under it backs off. The back gesture
+                    // holds the page under the finger -- its real position, not
+                    // the system's eased progress, which is what made the old
+                    // declared transitions run ahead of the thumb.
                     //
-                    // The predictive back gesture comes with them: navigation
-                    // drives declared transitions with the finger, so the page
-                    // follows the thumb and comes back if the thumb changes its
-                    // mind, exactly as the player already does.
-                    NavHost(
-                        navController,
+                    // Transparent pages, on purpose: every screen stands on the
+                    // one artwork wash drawn behind this host (AppBackdrop, above),
+                    // and an opaque page would cover it. While two pages move the
+                    // one underneath shows through the gaps of the one on top,
+                    // which is what the app looked like before the move too.
+                    FluidNavHost(
+                        navController = navController,
                         startDestination = Routes.HOME,
-                        enterTransition = { routeEnter(routeSignals) },
-                        exitTransition = { routeExit(routeSignals) },
-                        popEnterTransition = { routePopEnter(routeSignals) },
-                        popExitTransition = { routePopExit(routeSignals) },
+                        peer = TabOrder,
+                        state = pageHost,
+                        pageColor = Color.Transparent,
                     ) {
                         composable(Routes.HOME) {
-                            FluidRouteMotionHost(this) {
-                                HomeScreen(
-                                    state = state,
-                                    contentPadding = listPadding,
-                                    ground = groundGlass,
-                                    onLogIn = viewModel::logIn,
-                                    onRetry = { viewModel.refresh() },
-                                    onLogOut = viewModel::logOut,
-                                    onOpenPlaylist = { navController.openPlaylist(viewModel, it) },
-                                    playlistOrder = playlistOrder,
-                                    recent = recent,
-                                    onPlayRecent = { tracks, index ->
-                                        onPlay(tracks, index, null, false, playAgainLabel, 0L)
-                                    },
-                                    onPlayFeed = { tracks, index, label ->
-                                        onPlay(tracks, index, null, false, label, 0L)
-                                    },
-                                    feed = feed,
-                                    onOpenItem = { item ->
-                                        viewModel.openContext(item.uri, item.title, item.artworkUrl)
-                                        navController.navigate(Routes.PLAYLIST)
-                                    },
-                                    backdrop = artBackdrop,
-                                    shelves = homeShelves,
-                                    onPlayTrending = { tracks, index ->
-                                        onPlay(tracks, index, null, false, trendingLabel, 0L)
-                                    },
-                                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                                    friends = friends,
-                                    onOpenFriends = {
-                                        friendsOpen = true
-                                        // Read again as it opens: what somebody is
-                                        // playing is only worth showing if it is
-                                        // what they are playing now.
-                                        viewModel.loadFriends()
-                                    },
-                                )
-                            }
+                            HomeScreen(
+                                state = state,
+                                contentPadding = listPadding,
+                                ground = groundGlass,
+                                onLogIn = viewModel::logIn,
+                                onRetry = { viewModel.refresh() },
+                                onLogOut = viewModel::logOut,
+                                onOpenPlaylist = { navController.openPlaylist(viewModel, it) },
+                                playlistOrder = playlistOrder,
+                                recent = recent,
+                                onPlayRecent = { tracks, index ->
+                                    onPlay(tracks, index, null, false, playAgainLabel, 0L)
+                                },
+                                onPlayFeed = { tracks, index, label ->
+                                    onPlay(tracks, index, null, false, label, 0L)
+                                },
+                                feed = feed,
+                                onOpenItem = { item ->
+                                    viewModel.openContext(item.uri, item.title, item.artworkUrl)
+                                    navController.navigate(Routes.PLAYLIST)
+                                },
+                                backdrop = artBackdrop,
+                                shelves = homeShelves,
+                                onPlayTrending = { tracks, index ->
+                                    onPlay(tracks, index, null, false, trendingLabel, 0L)
+                                },
+                                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                                friends = friends,
+                                onOpenFriends = {
+                                    friendsOpen = true
+                                    // Read again as it opens: what somebody is
+                                    // playing is only worth showing if it is
+                                    // what they are playing now.
+                                    viewModel.loadFriends()
+                                },
+                            )
                         }
 
                         composable(Routes.SEARCH) {
-                            FluidRouteMotionHost(this) {
-                                SearchScreen(
-                                    state = search,
-                                    webApi = webApi,
-                                    contentPadding = listPadding,
-                                    nowPlayingUri = playback.mediaId,
-                                    onClientIdChange = viewModel::onWebApiClientIdChange,
-                                    onConnectWebApi = { viewModel.connectWebApi() },
-                                    onPlayTrack = { tracks, index ->
-                                        tracks.getOrNull(index)?.let(viewModel::recordSearchPlay)
-                                        onPlay(tracks, index, null, false, searchLabel, 0L)
-                                    },
-                                    history = searchHistory,
-                                    onClearHistory = viewModel::clearSearchHistory,
-                                    onEnqueue = onEnqueue,
-                                    onTrackMenu = { track ->
-                                        trackMenu = TrackMenuRequest(
-                                            track = track,
-                                            // Nothing to take a search result out
-                                            // of: it belongs to no playlist here.
-                                            removable = false,
-                                        )
-                                    },
-                                    onOpenContext = { item ->
-                                        viewModel.openContext(item.uri, item.title, item.artworkUrl)
-                                        navController.navigate(Routes.PLAYLIST)
-                                    },
-                                    backdrop = artBackdrop,
-                                )
-                            }
+                            SearchScreen(
+                                state = search,
+                                webApi = webApi,
+                                contentPadding = listPadding,
+                                nowPlayingUri = playback.mediaId,
+                                onClientIdChange = viewModel::onWebApiClientIdChange,
+                                onConnectWebApi = { viewModel.connectWebApi() },
+                                onPlayTrack = { tracks, index ->
+                                    tracks.getOrNull(index)?.let(viewModel::recordSearchPlay)
+                                    onPlay(tracks, index, null, false, searchLabel, 0L)
+                                },
+                                history = searchHistory,
+                                onClearHistory = viewModel::clearSearchHistory,
+                                onEnqueue = onEnqueue,
+                                onTrackMenu = { track ->
+                                    trackMenu = TrackMenuRequest(
+                                        track = track,
+                                        // Nothing to take a search result out
+                                        // of: it belongs to no playlist here.
+                                        removable = false,
+                                    )
+                                },
+                                onOpenContext = { item ->
+                                    viewModel.openContext(item.uri, item.title, item.artworkUrl)
+                                    navController.navigate(Routes.PLAYLIST)
+                                },
+                                backdrop = artBackdrop,
+                            )
                         }
 
                         composable(Routes.LIBRARY) {
-                            FluidRouteMotionHost(this) {
-                                LibraryScreen(
-                                    state = state,
-                                    ground = groundGlass,
-                                    contentPadding = listPadding,
-                                    onLogIn = viewModel::logIn,
-                                    onRetry = { viewModel.refresh() },
-                                    onLogOut = viewModel::logOut,
-                                    onOpenPlaylist = { navController.openPlaylist(viewModel, it) },
-                                    onOpenSettings = { navController.navigate(Routes.SETTINGS) },
-                                    playlistOrder = playlistOrder,
-                                    pinned = pinnedPlaylists,
-                                    canEdit = viewModel.canEditPlaylists,
-                                    onCreatePlaylist = { naming = NamingRequest(null) },
-                                    onPlaylistMenu = { playlistMenu = it },
-                                    playlistActions = actions@{ playlist ->
-                                        // The phone's own shelf and Liked Songs are
-                                        // fixtures: pinnable at most, never renamed
-                                        // or deleted, and with no link to share.
-                                        val fixture = playlist.uri.endsWith(":collection") ||
-                                            dev.lelonio.square.data.LocalLibrary.isLocalContext(playlist.uri)
-                                        val isPinned = playlist.uri in pinnedPlaylists
-                                        buildList {
-                                            if (!fixture) add(
+                            LibraryScreen(
+                                state = state,
+                                ground = groundGlass,
+                                contentPadding = listPadding,
+                                onLogIn = viewModel::logIn,
+                                onRetry = { viewModel.refresh() },
+                                onLogOut = viewModel::logOut,
+                                onOpenPlaylist = { navController.openPlaylist(viewModel, it) },
+                                onOpenSettings = { navController.navigate(Routes.SETTINGS) },
+                                playlistOrder = playlistOrder,
+                                pinned = pinnedPlaylists,
+                                canEdit = viewModel.canEditPlaylists,
+                                onCreatePlaylist = { naming = NamingRequest(null) },
+                                onPlaylistMenu = { playlistMenu = it },
+                                playlistActions = actions@{ playlist ->
+                                    // The phone's own shelf and Liked Songs are
+                                    // fixtures: pinnable at most, never renamed
+                                    // or deleted, and with no link to share.
+                                    val fixture = playlist.uri.endsWith(":collection") ||
+                                        dev.lelonio.square.data.LocalLibrary.isLocalContext(playlist.uri)
+                                    val isPinned = playlist.uri in pinnedPlaylists
+                                    buildList {
+                                        if (!fixture) add(
+                                            dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                label = rowShareLabel,
+                                                icon = PhosphorIcons.Regular.Export,
+                                            ) {
+                                                context.startActivity(
+                                                    android.content.Intent.createChooser(
+                                                        android.content.Intent(
+                                                            android.content.Intent.ACTION_SEND,
+                                                        )
+                                                            .setType("text/plain")
+                                                            .putExtra(
+                                                                android.content.Intent.EXTRA_TEXT,
+                                                                dev.lelonio.square.ui.library
+                                                                    .openLinkOf(playlist.uri),
+                                                            ),
+                                                        null,
+                                                    ),
+                                                )
+                                            },
+                                        )
+                                        add(
+                                            dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                label = if (isPinned) rowUnpinLabel else rowPinLabel,
+                                                icon = PhosphorIcons.Regular.PushPin,
+                                            ) { viewModel.togglePinned(playlist.uri) },
+                                        )
+                                        if (!fixture && viewModel.canEditPlaylists) {
+                                            add(
                                                 dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                    label = rowShareLabel,
+                                                    label = rowRenameLabel,
+                                                    icon = PhosphorIcons.Regular.PencilSimple,
+                                                ) { naming = NamingRequest(playlist) },
+                                            )
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = rowDeleteLabel,
+                                                    icon = PhosphorIcons.Regular.Trash,
+                                                    destructive = true,
+                                                ) { deleting = playlist },
+                                            )
+                                        }
+                                    }
+                                },
+                                artists = followedArtists,
+                                albums = savedAlbums,
+                                downloaded = downloadOwners.keys,
+                                downloadedSongs = downloadedSongsShelf,
+                                webApiConnected = webApi.connected,
+                                onConnectWebApi = { viewModel.connectWebApi() },
+                                onOpenArtist = { artist ->
+                                    viewModel.openContext(
+                                        artist.uri,
+                                        artist.title,
+                                        artist.artworkUrl,
+                                    )
+                                    navController.navigate(Routes.PLAYLIST)
+                                },
+                                backdrop = artBackdrop,
+                            )
+                        }
+
+                        composable(Routes.SETTINGS, transition = FluidPageTransition.Expand) {
+                            SettingsScreen(
+                                state = state,
+                                webApi = webApi,
+                                contentPadding = settingsPadding,
+                                backdrop = artBackdrop,
+                                ground = groundGlass,
+                                deviceName = android.os.Build.MODEL ?: "Android",
+                                onClientIdChange = viewModel::onWebApiClientIdChange,
+                                onConnectWebApi = viewModel::connectWebApi,
+                                onDisconnectWebApi = viewModel::disconnectWebApi,
+                                onLogOut = viewModel::logOut,
+                                onShowTutorial = { showTutorial = true },
+                                language = language,
+                                onLanguage = setLanguage,
+                                showLocalFiles = showLocalFiles,
+                                onShowLocalFiles = viewModel::setShowLocalFiles,
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
+
+                        composable(
+                            Routes.PLAYLIST,
+                            transition = FluidPageTransition.Expand,
+                            // The rows take every sideways drag for the queue (SwipeToQueue),
+                            // so the finger goes back from the edge only.
+                            backSwipe = FluidBackSwipe.EdgeOnly,
+                        ) {
+                            // Re-seeded from the open playlist, album or artist.
+                            // The rest of the app is themed after whatever is
+                            // playing, which is right for the home page and
+                            // wrong here: an album page tinted by an unrelated
+                            // track reads as belonging to something else.
+                            val detailAccent by rememberArtworkColor(playlist.artworkUrl)
+                            // Resolved here because the menu is built in a click
+                            // lambda, where composable calls are out of reach.
+                            val shareLabel = stringResource(R.string.copy_link)
+                            val playLabel = stringResource(R.string.play)
+                            val queueLabel = stringResource(R.string.add_to_queue)
+                            val addToPlaylistLabel = stringResource(R.string.add_to_playlist)
+                            val removeLabel = stringResource(R.string.remove_from_playlist)
+                            val downloadLabel = stringResource(R.string.download)
+                            val removeDownloadLabel = stringResource(R.string.remove_download)
+                            val detailClipboard =
+                                androidx.compose.ui.platform.LocalClipboardManager.current
+                            val pinLabel = stringResource(R.string.pin)
+                            val unpinLabel = stringResource(R.string.unpin)
+                            val renameLabel = stringResource(R.string.rename)
+                            val deleteLabel = stringResource(R.string.delete)
+                            // Resolved here rather than inside the play
+                            // callbacks: those are not composables.
+                            val source = playlist.sourceLabel()
+                            SquareTheme(seed = detailAccent) {
+                                PlaylistScreen(
+                                    state = playlist,
+                                    contentPadding = listPadding,
+                                    nowPlayingUri = playback.mediaId,
+                                    onBack = { navController.popBackStack() },
+                                    onAskLocalPermission = { askLocalPermission() },
+                                    onPlay = { tracks, index, asContext ->
+                                        // Already this page? Then the button is
+                                        // a play/pause, not a "start over": a
+                                        // list that is playing has nothing to
+                                        // begin. Tapping a row still restarts
+                                        // from that row, because naming a track
+                                        // is a new instruction.
+                                        val here = playlist.uri != null &&
+                                            playback.contextUri == playlist.uri &&
+                                            playback.hasItem
+                                        if (here && index == 0) {
+                                            if (remote != null) {
+                                                val playing = remote?.playing == true
+                                                onRemote { id ->
+                                                    if (playing) RemoteConnect.pause(id)
+                                                    else RemoteConnect.play(id)
+                                                }
+                                            } else {
+                                                player?.togglePlay()
+                                            }
+                                        } else {
+                                            onPlay(
+                                                tracks,
+                                                index,
+                                                playlist.uri,
+                                                asContext,
+                                                source,
+                                                0L,
+                                            )
+                                        }
+                                    },
+                                    onEnqueue = onEnqueue,
+                                    // A mode the page reflects rather than an
+                                    // action it fires: the player owns the
+                                    // truth and stamps it onto whatever queue
+                                    // arrives next (see reapplyShuffle).
+                                    shuffleOn = playback.shuffleEnabled,
+                                    onToggleShuffle = {
+                                        if (remote != null) {
+                                            val wanted = remote?.shuffle != true
+                                            onRemote { id -> RemoteConnect.setShuffle(id, wanted) }
+                                        } else {
+                                            player?.let {
+                                                it.shuffleModeEnabled = !it.shuffleModeEnabled
+                                            }
+                                        }
+                                    },
+                                    playingThis = playlist.uri != null &&
+                                        playback.contextUri == playlist.uri &&
+                                        playback.isPlaying,
+                                    onAddToPlaylist = { track ->
+                                        viewModel.openAddToPlaylist(track.uri, track.name)
+                                    },
+                                    onTrackMenu = { track ->
+                                        trackMenu = TrackMenuRequest(
+                                            track = track,
+                                            // Only a playlist can have
+                                            // something taken out of it.
+                                            // Taking a track out goes through
+                                            // the Spotify Web API, so only a
+                                            // Spotify playlist can offer it.
+                                            removable = playlist.kind ==
+                                                MainViewModel.DetailKind.PLAYLIST,
+                                        )
+                                    },
+                                    storedSort = trackSort,
+                                    onSortChange = viewModel::setTrackSort,
+                                    storedSortDescending = trackSortDescending,
+                                    onSortDescendingChange = viewModel::setTrackSortDescending,
+                                    onOpenItem = { item ->
+                                        viewModel.openContext(
+                                            item.uri,
+                                            item.title,
+                                            item.artworkUrl,
+                                        )
+                                    },
+                                    onToggleFollow = viewModel::toggleFollowArtist,
+                                    onToggleSaved = viewModel::toggleSaved,
+                                    onShare = {
+                                        val uri = playlist.uri ?: return@PlaylistScreen
+                                        context.startActivity(
+                                            android.content.Intent.createChooser(
+                                                android.content.Intent(android.content.Intent.ACTION_SEND)
+                                                    .setType("text/plain")
+                                                    .putExtra(
+                                                        android.content.Intent.EXTRA_TEXT,
+                                                        dev.lelonio.square.ui.library.openLinkOf(uri),
+                                                    ),
+                                                null,
+                                            ),
+                                        )
+                                    },
+                                    downloadState = playlist.uri
+                                        ?.let { downloadOwners[it] }
+                                        ?: dev.lelonio.square.data.OwnerState.None,
+                                    onToggleDownload = { viewModel.toggleDownload(playlist) },
+                                    // Only once a watch with downloads has spoken; see WatchDownloadsRemote.
+                                    watchKept = if (watchDownloads != null) {
+                                        playlist.uri?.let { uri -> watchDownloads?.owners?.any { it.uri == uri } } ?: false
+                                    } else {
+                                        null
+                                    },
+                                    onToggleWatch = { viewModel.toggleWatchDownload(playlist) },
+                                    // Everything Spotify serves, and nothing
+                                    // else. The local files shelf is already on
+                                    // the phone, and an empty page has nothing
+                                    // to fetch.
+                                    canDownload = playlist.uri
+                                        ?.startsWith("spotify:") == true &&
+                                        playlist.tracks.isNotEmpty(),
+                                    offline = offlineNow,
+                                    onLeaveOffline = {
+                                        viewModel.downloadSettings.setOfflineMode(false)
+                                    },
+                                    trackDownload = { track ->
+                                        when {
+                                            downloadedFiles.containsKey(track.uri) ->
+                                                dev.lelonio.square.data.DownloadState.Done
+                                            downloadProgress.containsKey(track.uri) ->
+                                                dev.lelonio.square.data.DownloadState.Running(
+                                                    downloadProgress.getValue(track.uri),
+                                                )
+                                            else -> dev.lelonio.square.data.DownloadState.None
+                                        }
+                                    },
+                                    trackActions = { track ->
+                                        buildList {
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = playLabel,
+                                                    icon = PhosphorIcons.Fill.Play,
+                                                ) { onPlay(listOf(track), 0, null, false, "", 0L) },
+                                            )
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = queueLabel,
+                                                    icon = PhosphorIcons.Regular.Queue,
+                                                ) { onEnqueue(track) },
+                                            )
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = addToPlaylistLabel,
+                                                    icon = PhosphorIcons.Regular.Plus,
+                                                ) { viewModel.openAddToPlaylist(track.uri, track.name) },
+                                            )
+                                            // The only way to download one
+                                            // song. Deliberately not the mark in
+                                            // the row: a fourteen-pixel target
+                                            // inside a list built to be scrolled
+                                            // would start megabytes on a mis-tap.
+                                            if (track.uri.startsWith("spotify:")) {
+                                                // Whether this song is kept in
+                                                // its own right. A track that is
+                                                // only here because its playlist
+                                                // is still shows the mark in the
+                                                // row — it is on the phone — but
+                                                // this entry is about pinning it
+                                                // for itself, so it must not
+                                                // offer to remove what another
+                                                // owner is holding.
+                                                val kept = downloadSingles.contains(track.uri)
+                                                add(
+                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                        label = if (kept) removeDownloadLabel
+                                                        else downloadLabel,
+                                                        icon = if (kept) {
+                                                            PhosphorIcons.Fill.ArrowCircleDown
+                                                        } else {
+                                                            PhosphorIcons.Regular.ArrowCircleDown
+                                                        },
+                                                    ) { viewModel.toggleTrackDownload(track) },
+                                                )
+                                            }
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = shareLabel,
+                                                    icon = PhosphorIcons.Regular.LinkSimple,
+                                                ) {
+                                                    detailClipboard.setText(
+                                                        AnnotatedString(track.openLink()),
+                                                    )
+                                                },
+                                            )
+                                            // Taking a track out goes through the
+                                            // Spotify Web API, so only a playlist
+                                            // can offer it.
+                                            if (playlist.kind == MainViewModel.DetailKind.PLAYLIST) {
+                                                add(
+                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                        label = removeLabel,
+                                                        icon = PhosphorIcons.Regular.Trash,
+                                                        destructive = true,
+                                                    ) { viewModel.removeFromPlaylist(track) },
+                                                )
+                                            }
+                                        }
+                                    },
+                                    onMenuAt = menuAt@{ bounds ->
+                                        val uri = playlist.uri ?: return@menuAt
+                                        // What the menu is allowed to offer, from
+                                        // the page that knows: whose list this is,
+                                        // and whether it is in the library at all.
+                                        val target = CatalogPlaylist(
+                                            uri = uri,
+                                            name = playlist.name,
+                                            artworkUrl = playlist.artworkUrl,
+                                        )
+                                        val editable = !uri.endsWith(":collection") &&
+                                            playlist.mine != false
+                                        val actions = buildList {
+                                            add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = shareLabel,
                                                     icon = PhosphorIcons.Regular.Export,
                                                 ) {
                                                     context.startActivity(
@@ -1647,381 +1866,51 @@ fun SquareApp(
                                                                 .setType("text/plain")
                                                                 .putExtra(
                                                                     android.content.Intent.EXTRA_TEXT,
-                                                                    dev.lelonio.square.ui.library
-                                                                        .openLinkOf(playlist.uri),
+                                                                    dev.lelonio.square.ui.library.openLinkOf(uri),
                                                                 ),
                                                             null,
                                                         ),
                                                     )
                                                 },
                                             )
-                                            add(
+                                            if (playlist.saved != false) add(
                                                 dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                    label = if (isPinned) rowUnpinLabel else rowPinLabel,
+                                                    label = if (uri in pinnedPlaylists) unpinLabel else pinLabel,
                                                     icon = PhosphorIcons.Regular.PushPin,
-                                                ) { viewModel.togglePinned(playlist.uri) },
+                                                ) { viewModel.togglePinned(uri) },
                                             )
-                                            if (!fixture && viewModel.canEditPlaylists) {
-                                                add(
-                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                        label = rowRenameLabel,
-                                                        icon = PhosphorIcons.Regular.PencilSimple,
-                                                    ) { naming = NamingRequest(playlist) },
-                                                )
-                                                add(
-                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                        label = rowDeleteLabel,
-                                                        icon = PhosphorIcons.Regular.Trash,
-                                                        destructive = true,
-                                                    ) { deleting = playlist },
-                                                )
-                                            }
+                                            if (editable) add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = renameLabel,
+                                                    icon = PhosphorIcons.Regular.PencilSimple,
+                                                ) { naming = NamingRequest(target) },
+                                            )
+                                            if (editable) add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = deleteLabel,
+                                                    icon = PhosphorIcons.Regular.Trash,
+                                                    destructive = true,
+                                                ) { deleting = target },
+                                            )
+                                        }
+                                        if (actions.isNotEmpty()) {
+                                            morphMenu.open(
+                                                bounds,
+                                                null,
+                                                null,
+                                                actions,
+                                                // The capsule's own face, so
+                                                // the last frame of the return
+                                                // journey hands the pixel back
+                                                // to something identical
+                                                // instead of swapping one dots
+                                                // icon for share-and-dots.
+                                                content = { CapsuleFace() },
+                                            )
                                         }
                                     },
-                                    artists = followedArtists,
-                                    albums = savedAlbums,
-                                    downloaded = downloadOwners.keys,
-                                    downloadedSongs = downloadedSongsShelf,
-                                    webApiConnected = webApi.connected,
-                                    onConnectWebApi = { viewModel.connectWebApi() },
-                                    onOpenArtist = { artist ->
-                                        viewModel.openContext(
-                                            artist.uri,
-                                            artist.title,
-                                            artist.artworkUrl,
-                                        )
-                                        navController.navigate(Routes.PLAYLIST)
-                                    },
-                                    backdrop = artBackdrop,
+                                    menuShown = { morphMenu.isOnScreen },
                                 )
-                            }
-                        }
-
-                        composable(Routes.SETTINGS) {
-                            FluidRouteMotionHost(this) {
-                                SettingsScreen(
-                                    state = state,
-                                    webApi = webApi,
-                                    contentPadding = settingsPadding,
-                                    backdrop = artBackdrop,
-                                    ground = groundGlass,
-                                    deviceName = android.os.Build.MODEL ?: "Android",
-                                    onClientIdChange = viewModel::onWebApiClientIdChange,
-                                    onConnectWebApi = viewModel::connectWebApi,
-                                    onDisconnectWebApi = viewModel::disconnectWebApi,
-                                    onLogOut = viewModel::logOut,
-                                    onShowTutorial = { showTutorial = true },
-                                    language = language,
-                                    onLanguage = setLanguage,
-                                    showLocalFiles = showLocalFiles,
-                                    onShowLocalFiles = viewModel::setShowLocalFiles,
-                                    onBack = { navController.popBackStack() },
-                                )
-                            }
-                        }
-
-                        composable(Routes.PLAYLIST) {
-                            FluidRouteMotionHost(this) {
-                                // Re-seeded from the open playlist, album or artist.
-                                // The rest of the app is themed after whatever is
-                                // playing, which is right for the home page and
-                                // wrong here: an album page tinted by an unrelated
-                                // track reads as belonging to something else.
-                                val detailAccent by rememberArtworkColor(playlist.artworkUrl)
-                                // Resolved here because the menu is built in a click
-                                // lambda, where composable calls are out of reach.
-                                val shareLabel = stringResource(R.string.copy_link)
-                                val playLabel = stringResource(R.string.play)
-                                val queueLabel = stringResource(R.string.add_to_queue)
-                                val addToPlaylistLabel = stringResource(R.string.add_to_playlist)
-                                val removeLabel = stringResource(R.string.remove_from_playlist)
-                                val downloadLabel = stringResource(R.string.download)
-                                val removeDownloadLabel = stringResource(R.string.remove_download)
-                                val detailClipboard =
-                                    androidx.compose.ui.platform.LocalClipboardManager.current
-                                val pinLabel = stringResource(R.string.pin)
-                                val unpinLabel = stringResource(R.string.unpin)
-                                val renameLabel = stringResource(R.string.rename)
-                                val deleteLabel = stringResource(R.string.delete)
-                                // Resolved here rather than inside the play
-                                // callbacks: those are not composables.
-                                val source = playlist.sourceLabel()
-                                SquareTheme(seed = detailAccent) {
-                                    PlaylistScreen(
-                                        state = playlist,
-                                        contentPadding = listPadding,
-                                        nowPlayingUri = playback.mediaId,
-                                        onBack = { navController.popBackStack() },
-                                        onAskLocalPermission = { askLocalPermission() },
-                                        onPlay = { tracks, index, asContext ->
-                                            // Already this page? Then the button is
-                                            // a play/pause, not a "start over": a
-                                            // list that is playing has nothing to
-                                            // begin. Tapping a row still restarts
-                                            // from that row, because naming a track
-                                            // is a new instruction.
-                                            val here = playlist.uri != null &&
-                                                playback.contextUri == playlist.uri &&
-                                                playback.hasItem
-                                            if (here && index == 0) {
-                                                if (remote != null) {
-                                                    val playing = remote?.playing == true
-                                                    onRemote { id ->
-                                                        if (playing) RemoteConnect.pause(id)
-                                                        else RemoteConnect.play(id)
-                                                    }
-                                                } else {
-                                                    player?.togglePlay()
-                                                }
-                                            } else {
-                                                onPlay(
-                                                    tracks,
-                                                    index,
-                                                    playlist.uri,
-                                                    asContext,
-                                                    source,
-                                                    0L,
-                                                )
-                                            }
-                                        },
-                                        onEnqueue = onEnqueue,
-                                        // A mode the page reflects rather than an
-                                        // action it fires: the player owns the
-                                        // truth and stamps it onto whatever queue
-                                        // arrives next (see reapplyShuffle).
-                                        shuffleOn = playback.shuffleEnabled,
-                                        onToggleShuffle = {
-                                            if (remote != null) {
-                                                val wanted = remote?.shuffle != true
-                                                onRemote { id -> RemoteConnect.setShuffle(id, wanted) }
-                                            } else {
-                                                player?.let {
-                                                    it.shuffleModeEnabled = !it.shuffleModeEnabled
-                                                }
-                                            }
-                                        },
-                                        playingThis = playlist.uri != null &&
-                                            playback.contextUri == playlist.uri &&
-                                            playback.isPlaying,
-                                        onAddToPlaylist = { track ->
-                                            viewModel.openAddToPlaylist(track.uri, track.name)
-                                        },
-                                        onTrackMenu = { track ->
-                                            trackMenu = TrackMenuRequest(
-                                                track = track,
-                                                // Only a playlist can have
-                                                // something taken out of it.
-                                                // Taking a track out goes through
-                                                // the Spotify Web API, so only a
-                                                // Spotify playlist can offer it.
-                                                removable = playlist.kind ==
-                                                    MainViewModel.DetailKind.PLAYLIST,
-                                            )
-                                        },
-                                        storedSort = trackSort,
-                                        onSortChange = viewModel::setTrackSort,
-                                        storedSortDescending = trackSortDescending,
-                                        onSortDescendingChange = viewModel::setTrackSortDescending,
-                                        onOpenItem = { item ->
-                                            viewModel.openContext(
-                                                item.uri,
-                                                item.title,
-                                                item.artworkUrl,
-                                            )
-                                        },
-                                        onToggleFollow = viewModel::toggleFollowArtist,
-                                        onToggleSaved = viewModel::toggleSaved,
-                                        onShare = {
-                                            val uri = playlist.uri ?: return@PlaylistScreen
-                                            context.startActivity(
-                                                android.content.Intent.createChooser(
-                                                    android.content.Intent(android.content.Intent.ACTION_SEND)
-                                                        .setType("text/plain")
-                                                        .putExtra(
-                                                            android.content.Intent.EXTRA_TEXT,
-                                                            dev.lelonio.square.ui.library.openLinkOf(uri),
-                                                        ),
-                                                    null,
-                                                ),
-                                            )
-                                        },
-                                        downloadState = playlist.uri
-                                            ?.let { downloadOwners[it] }
-                                            ?: dev.lelonio.square.data.OwnerState.None,
-                                        onToggleDownload = { viewModel.toggleDownload(playlist) },
-                                        // Only once a watch with downloads has spoken; see WatchDownloadsRemote.
-                                        watchKept = if (watchDownloads != null) {
-                                            playlist.uri?.let { uri -> watchDownloads?.owners?.any { it.uri == uri } } ?: false
-                                        } else {
-                                            null
-                                        },
-                                        onToggleWatch = { viewModel.toggleWatchDownload(playlist) },
-                                        // Everything Spotify serves, and nothing
-                                        // else. The local files shelf is already on
-                                        // the phone, and an empty page has nothing
-                                        // to fetch.
-                                        canDownload = playlist.uri
-                                            ?.startsWith("spotify:") == true &&
-                                            playlist.tracks.isNotEmpty(),
-                                        offline = offlineNow,
-                                        onLeaveOffline = {
-                                            viewModel.downloadSettings.setOfflineMode(false)
-                                        },
-                                        trackDownload = { track ->
-                                            when {
-                                                downloadedFiles.containsKey(track.uri) ->
-                                                    dev.lelonio.square.data.DownloadState.Done
-                                                downloadProgress.containsKey(track.uri) ->
-                                                    dev.lelonio.square.data.DownloadState.Running(
-                                                        downloadProgress.getValue(track.uri),
-                                                    )
-                                                else -> dev.lelonio.square.data.DownloadState.None
-                                            }
-                                        },
-                                        trackActions = { track ->
-                                            buildList {
-                                                add(
-                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                        label = playLabel,
-                                                        icon = PhosphorIcons.Fill.Play,
-                                                    ) { onPlay(listOf(track), 0, null, false, "", 0L) },
-                                                )
-                                                add(
-                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                        label = queueLabel,
-                                                        icon = PhosphorIcons.Regular.Queue,
-                                                    ) { onEnqueue(track) },
-                                                )
-                                                add(
-                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                        label = addToPlaylistLabel,
-                                                        icon = PhosphorIcons.Regular.Plus,
-                                                    ) { viewModel.openAddToPlaylist(track.uri, track.name) },
-                                                )
-                                                // The only way to download one
-                                                // song. Deliberately not the mark in
-                                                // the row: a fourteen-pixel target
-                                                // inside a list built to be scrolled
-                                                // would start megabytes on a mis-tap.
-                                                if (track.uri.startsWith("spotify:")) {
-                                                    // Whether this song is kept in
-                                                    // its own right. A track that is
-                                                    // only here because its playlist
-                                                    // is still shows the mark in the
-                                                    // row — it is on the phone — but
-                                                    // this entry is about pinning it
-                                                    // for itself, so it must not
-                                                    // offer to remove what another
-                                                    // owner is holding.
-                                                    val kept = downloadSingles.contains(track.uri)
-                                                    add(
-                                                        dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                            label = if (kept) removeDownloadLabel
-                                                            else downloadLabel,
-                                                            icon = if (kept) {
-                                                                PhosphorIcons.Fill.ArrowCircleDown
-                                                            } else {
-                                                                PhosphorIcons.Regular.ArrowCircleDown
-                                                            },
-                                                        ) { viewModel.toggleTrackDownload(track) },
-                                                    )
-                                                }
-                                                add(
-                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                        label = shareLabel,
-                                                        icon = PhosphorIcons.Regular.LinkSimple,
-                                                    ) {
-                                                        detailClipboard.setText(
-                                                            AnnotatedString(track.openLink()),
-                                                        )
-                                                    },
-                                                )
-                                                // Taking a track out goes through the
-                                                // Spotify Web API, so only a playlist
-                                                // can offer it.
-                                                if (playlist.kind == MainViewModel.DetailKind.PLAYLIST) {
-                                                    add(
-                                                        dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                            label = removeLabel,
-                                                            icon = PhosphorIcons.Regular.Trash,
-                                                            destructive = true,
-                                                        ) { viewModel.removeFromPlaylist(track) },
-                                                    )
-                                                }
-                                            }
-                                        },
-                                        onMenuAt = menuAt@{ bounds ->
-                                            val uri = playlist.uri ?: return@menuAt
-                                            // What the menu is allowed to offer, from
-                                            // the page that knows: whose list this is,
-                                            // and whether it is in the library at all.
-                                            val target = CatalogPlaylist(
-                                                uri = uri,
-                                                name = playlist.name,
-                                                artworkUrl = playlist.artworkUrl,
-                                            )
-                                            val editable = !uri.endsWith(":collection") &&
-                                                playlist.mine != false
-                                            val actions = buildList {
-                                                add(
-                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                        label = shareLabel,
-                                                        icon = PhosphorIcons.Regular.Export,
-                                                    ) {
-                                                        context.startActivity(
-                                                            android.content.Intent.createChooser(
-                                                                android.content.Intent(
-                                                                    android.content.Intent.ACTION_SEND,
-                                                                )
-                                                                    .setType("text/plain")
-                                                                    .putExtra(
-                                                                        android.content.Intent.EXTRA_TEXT,
-                                                                        dev.lelonio.square.ui.library.openLinkOf(uri),
-                                                                    ),
-                                                                null,
-                                                            ),
-                                                        )
-                                                    },
-                                                )
-                                                if (playlist.saved != false) add(
-                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                        label = if (uri in pinnedPlaylists) unpinLabel else pinLabel,
-                                                        icon = PhosphorIcons.Regular.PushPin,
-                                                    ) { viewModel.togglePinned(uri) },
-                                                )
-                                                if (editable) add(
-                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                        label = renameLabel,
-                                                        icon = PhosphorIcons.Regular.PencilSimple,
-                                                    ) { naming = NamingRequest(target) },
-                                                )
-                                                if (editable) add(
-                                                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
-                                                        label = deleteLabel,
-                                                        icon = PhosphorIcons.Regular.Trash,
-                                                        destructive = true,
-                                                    ) { deleting = target },
-                                                )
-                                            }
-                                            if (actions.isNotEmpty()) {
-                                                morphMenu.open(
-                                                    bounds,
-                                                    null,
-                                                    null,
-                                                    actions,
-                                                    // The capsule's own face, so
-                                                    // the last frame of the return
-                                                    // journey hands the pixel back
-                                                    // to something identical
-                                                    // instead of swapping one dots
-                                                    // icon for share-and-dots.
-                                                    content = { CapsuleFace() },
-                                                )
-                                            }
-                                        },
-                                        menuShown = { morphMenu.isOnScreen },
-                                    )
-                                }
                             }
                         }
 
@@ -3239,6 +3128,12 @@ fun SquareApp(
                     backdrop = pageGlass,
                 )
 
+                // The guide asked for again from the settings closes on a back
+                // from its first step. On a first launch it does not: there it
+                // is the way in, and a back leaves the app as it always has.
+                androidx.activity.compose.BackHandler(enabled = showTutorial && onboarded) {
+                    showTutorial = false
+                }
                 if (showTutorial || !onboarded) {
                     OnboardingScreen(
                         state = state,
@@ -3479,12 +3374,10 @@ private class BackdropDrift(
 @Composable
 private fun PageEndInsetHost(
     inset: State<Dp>,
-    routeSignals: RouteMotionSignals,
     content: @Composable () -> Unit,
 ) {
     androidx.compose.runtime.CompositionLocalProvider(
         dev.lelonio.square.ui.theme.LocalPageEndInset provides inset.value,
-        LocalRouteMotionSignals provides routeSignals,
         content = content,
     )
 }
@@ -3583,12 +3476,6 @@ private fun NavHostController.openPlaylist(viewModel: MainViewModel, playlist: C
 }
 
 /**
- * Switches tab without stacking destinations.
- *
- * Without popping back to the start, tapping between tabs would grow the back
- * stack forever and the system back button would walk the entire history.
- */
-/**
  * What the player says the track is coming from: "Playlist · Estate 2025".
  *
  * The kind first, because the name alone reads as a title and the two are worth
@@ -3600,22 +3487,19 @@ private fun MainViewModel.PlaylistState.sourceLabel(): String {
     return if (name.isBlank()) kindName else "$kindName · $name"
 }
 
-private fun NavHostController.switchTab(route: String) {
-    if (currentDestination?.route == route) return
-    navigate(route) {
-        // No `saveState`/`restoreState`, and that is the fix rather than a
-        // simplification. With them, leaving Home for a playlist saved the pair
-        // [home, playlist] under Home's id, and tapping Home restored exactly
-        // that — the playlist came straight back and the tab looked dead.
-        //
-        // Popping to the start destination without saving leaves Home on top
-        // and, for Library, one entry over it. What a tab loses is its scroll
-        // position, which is the right thing to lose when the tap means "take
-        // me back to this page".
-        popUpTo(Routes.HOME)
-        launchSingleTop = true
-    }
-}
+/**
+ * Switches tab without stacking destinations: the engine's one-stack recipe
+ * (3.0.1).
+ *
+ * After the step the stack is the tab alone. A tab already on top does nothing
+ * (the second tap belongs to the page); a tab under a page opened from it comes
+ * back as it was, the page closing; anything else empties the stack and opens
+ * the tab. No saved state, which is what this app had chosen on its own: with
+ * `saveState`, leaving Home for a playlist saved [home, playlist] under Home and
+ * tapping Home brought the playlist straight back. What a tab loses is its
+ * scroll position, the right thing to lose when the tap means "take me there".
+ */
+private fun NavHostController.switchTab(route: String) = navigateToPeer(route)
 
 private fun Player.togglePlay() {
     // playWhenReady, not isPlaying: a track that is still being fetched is not

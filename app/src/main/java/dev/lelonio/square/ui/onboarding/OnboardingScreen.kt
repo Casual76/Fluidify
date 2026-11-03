@@ -99,6 +99,12 @@ fun OnboardingScreen(
 ) {
     var step by remember { mutableIntStateOf(0) }
     val loggedIn = state is MainViewModel.UiState.Ready
+
+    // The back button walks the steps back, as the arrow at the top does. The
+    // overlay below swallows every touch meant for the app under it, and it
+    // used to let the back through: a back in the middle of the guide acted on
+    // the page underneath, or left the app.
+    androidx.activity.compose.BackHandler(enabled = step > 0) { step-- }
     val last = STEP_COUNT - 1
 
     val statusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
