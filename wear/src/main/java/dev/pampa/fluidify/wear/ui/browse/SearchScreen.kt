@@ -29,10 +29,10 @@ import dev.pampa.fluidify.wear.WearApp
 import dev.pampa.fluidify.wear.protocol.LibraryKind
 import dev.pampa.fluidify.wear.protocol.LibraryPage
 import dev.pampa.fluidify.wear.ui.common.Thumb
-import dev.pampa.fluidify.wear.ui.common.WatchList
-import dev.pampa.fluidify.wear.ui.common.failedItem
-import dev.pampa.fluidify.wear.ui.common.loadingItem
-import dev.pampa.fluidify.wear.ui.common.noticeItem
+import dev.antigravity.fluidengine.wear.components.FluidWearList
+import dev.antigravity.fluidengine.wear.components.failedItem
+import dev.antigravity.fluidengine.wear.components.loadingItem
+import dev.antigravity.fluidengine.wear.components.noticeItem
 import dev.pampa.fluidify.wear.ui.theme.WearDimens
 import kotlinx.coroutines.launch
 
@@ -83,7 +83,7 @@ fun SearchScreen(
     // Straight to the keyboard/voice screen the first time, like Spotify.
     LaunchedEffect(Unit) { if (query.isEmpty()) ask() else if (results == null && !busy) run(query) }
 
-    WatchList(title = null) {
+    FluidWearList(title = null) {
         item {
             FluidWearListRow(
                 title = query.ifEmpty { label },

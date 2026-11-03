@@ -11,7 +11,7 @@ import androidx.wear.compose.material3.MaterialTheme
 import androidx.wear.compose.material3.Text
 import dev.antigravity.fluidengine.wear.components.FluidWearListRow
 import dev.pampa.fluidify.wear.R
-import dev.pampa.fluidify.wear.ui.common.WatchList
+import dev.antigravity.fluidengine.wear.components.FluidWearList
 
 /**
  * The mobile-data question, asked once, the first time a watch with its own
@@ -20,7 +20,7 @@ import dev.pampa.fluidify.wear.ui.common.WatchList
  */
 @Composable
 fun CellularScreen(onAnswer: (Boolean) -> Unit) {
-    WatchList(title = stringResource(R.string.cellular_question)) {
+    FluidWearList(title = stringResource(R.string.cellular_question)) {
         item {
             Text(
                 text = stringResource(R.string.cellular_question_body),

@@ -1,8 +1,7 @@
 package dev.pampa.fluidify.wear.ui.player
 
+import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.runtime.Composable
@@ -45,11 +44,11 @@ internal fun WatchAmbientSurface(
     LaunchedEffect(inAmbient, selfDrawn) {
         if (inAmbient && !selfDrawn) {
             val enteredAt = ambient.updateTick
-            launch { covered.animateTo(1f, tween(CoverInMs, easing = FastOutSlowInEasing)) }
+            launch { covered.animateTo(1f, FluidMotion.crossFade(CoverInMs)) }
             snapshotFlow { ambient.updateTick }.first { it != enteredAt }
             covered.snapTo(1f)
         } else {
-            covered.animateTo(0f, tween(CoverOutMs, easing = FastOutSlowInEasing))
+            covered.animateTo(0f, FluidMotion.crossFade(CoverOutMs))
         }
     }
     val showPlayer by remember { derivedStateOf { covered.value > 0f } }

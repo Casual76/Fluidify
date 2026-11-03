@@ -21,10 +21,10 @@ import com.adamglin.phosphoricons.regular.Playlist
 import com.adamglin.phosphoricons.regular.User
 import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.protocol.LibraryKind
-import dev.pampa.fluidify.wear.ui.common.WatchListScope
-import dev.pampa.fluidify.wear.ui.common.failedItem
-import dev.pampa.fluidify.wear.ui.common.loadingItem
-import dev.pampa.fluidify.wear.ui.common.staleItem
+import dev.antigravity.fluidengine.wear.components.FluidWearListScope
+import dev.antigravity.fluidengine.wear.components.failedItem
+import dev.antigravity.fluidengine.wear.components.loadingItem
+import dev.antigravity.fluidengine.wear.components.staleItem
 
 /**
  * Loads something the phone has, showing the copy kept on the watch first.
@@ -90,7 +90,7 @@ fun rememberPhoneDataTexts(): PhoneDataTexts = PhoneDataTexts(
  *
  * Null when there is nothing to show, and the list has said why.
  */
-fun <T : Any> WatchListScope.phoneDataNotices(data: PhoneData<T>, texts: PhoneDataTexts): T? {
+fun <T : Any> FluidWearListScope.phoneDataNotices(data: PhoneData<T>, texts: PhoneDataTexts): T? {
     val value = data.value
     when {
         value == null && data.failed -> failedItem(texts.failed, texts.retry, data.retry)

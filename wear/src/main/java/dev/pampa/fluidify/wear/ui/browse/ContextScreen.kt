@@ -30,8 +30,8 @@ import dev.antigravity.fluidengine.wear.components.FluidWearPill
 import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.WearApp
 import dev.pampa.fluidify.wear.ui.common.Thumb
-import dev.pampa.fluidify.wear.ui.common.WatchList
-import dev.pampa.fluidify.wear.ui.common.noticeItem
+import dev.antigravity.fluidengine.wear.components.FluidWearList
+import dev.antigravity.fluidengine.wear.components.noticeItem
 import dev.pampa.fluidify.wear.ui.theme.WearDimens
 import kotlinx.coroutines.launch
 
@@ -47,8 +47,8 @@ fun ContextScreen(
     val texts = rememberPhoneDataTexts()
     val nothingHere = stringResource(R.string.nothing_here)
     val page = data.value
-    WatchList(title = page?.title?.ifEmpty { null } ?: title) {
-        page?.unavailableReason?.let { noticeItem(it); return@WatchList }
+    FluidWearList(title = page?.title?.ifEmpty { null } ?: title) {
+        page?.unavailableReason?.let { noticeItem(it); return@FluidWearList }
         item {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 Thumb(

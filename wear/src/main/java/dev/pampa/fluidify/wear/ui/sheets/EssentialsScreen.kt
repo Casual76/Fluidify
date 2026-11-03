@@ -18,7 +18,7 @@ import com.adamglin.phosphoricons.regular.User
 import dev.antigravity.fluidengine.wear.components.FluidWearListRow
 import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.playback.PlaybackControls
-import dev.pampa.fluidify.wear.ui.common.WatchList
+import dev.antigravity.fluidengine.wear.components.FluidWearList
 import dev.pampa.fluidify.wear.ui.theme.WearDimens
 
 /**
@@ -37,7 +37,7 @@ fun EssentialsScreen(
 ) {
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
     val track = now.snapshot?.track
-    WatchList(title = track?.title ?: stringResource(R.string.more)) {
+    FluidWearList(title = track?.title ?: stringResource(R.string.more)) {
         item {
             FluidWearListRow(
                 title = stringResource(R.string.queue),

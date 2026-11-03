@@ -7,7 +7,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import dev.antigravity.fluidengine.wear.components.FluidWearListRow
 import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.playback.PlaybackControls
-import dev.pampa.fluidify.wear.ui.common.WatchList
+import dev.antigravity.fluidengine.wear.components.FluidWearList
 import java.text.DateFormat
 import java.util.Date
 
@@ -16,7 +16,7 @@ import java.util.Date
 fun SleepScreen(controls: PlaybackControls, onSet: () -> Unit) {
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
     val sleep = now.snapshot?.sleep
-    WatchList(title = stringResource(R.string.sleep_timer)) {
+    FluidWearList(title = stringResource(R.string.sleep_timer)) {
         if (sleep != null) {
             item {
                 FluidWearListRow(

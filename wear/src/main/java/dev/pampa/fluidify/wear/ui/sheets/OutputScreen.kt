@@ -24,9 +24,9 @@ import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.playback.PlaybackControls
 import dev.pampa.fluidify.wear.protocol.DeviceList
 import dev.pampa.fluidify.wear.standalone.LocalOutput
-import dev.pampa.fluidify.wear.ui.common.WatchList
-import dev.pampa.fluidify.wear.ui.common.failedItem
-import dev.pampa.fluidify.wear.ui.common.loadingItem
+import dev.antigravity.fluidengine.wear.components.FluidWearList
+import dev.antigravity.fluidengine.wear.components.failedItem
+import dev.antigravity.fluidengine.wear.components.loadingItem
 import dev.pampa.fluidify.wear.ui.theme.WearDimens
 import dev.pampa.fluidify.wear.ui.player.deviceIcon
 import kotlin.math.roundToInt
@@ -65,7 +65,7 @@ fun OutputScreen(
     val loadingText = stringResource(R.string.loading)
     val failedText = stringResource(R.string.couldnt_load)
     val retryText = stringResource(R.string.retry)
-    WatchList(title = stringResource(R.string.audio_output)) {
+    FluidWearList(title = stringResource(R.string.audio_output)) {
         if (watchOutputs.isNotEmpty() || onConnectHeadphones != null) {
             item { ListSubHeader { Text(stringResource(R.string.on_this_watch)) } }
         }

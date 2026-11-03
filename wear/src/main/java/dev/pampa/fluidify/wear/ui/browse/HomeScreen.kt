@@ -38,10 +38,11 @@ import dev.antigravity.fluidengine.wear.theme.FluidWearDimens
 import dev.pampa.fluidify.wear.protocol.LibraryKind
 import kotlinx.coroutines.launch
 import dev.antigravity.fluidengine.wear.components.FluidWearPill
+import dev.antigravity.fluidengine.ui.fluid.FluidPressGrip
 import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.WearApp
 import dev.pampa.fluidify.wear.ui.common.Thumb
-import dev.pampa.fluidify.wear.ui.common.WatchList
+import dev.antigravity.fluidengine.wear.components.FluidWearList
 import dev.pampa.fluidify.wear.ui.common.LocalNotice
 import dev.pampa.fluidify.wear.ui.theme.WearDimens
 
@@ -85,7 +86,7 @@ fun HomeScreen(
             } finally { pendingPins = pendingPins - entry.uri }
         }
     }
-    WatchList(title = null) {
+    FluidWearList(title = null) {
         item {
             ListHeader { Icon(PhosphorIcons.Regular.House, contentDescription = stringResource(R.string.home), modifier = Modifier.size(WearDimens.ListIcon)) }
         }
@@ -94,10 +95,10 @@ fun HomeScreen(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(8.dp),
             ) {
-                FluidWearPill(onClick = onSearch, modifier = Modifier.weight(1f)) {
+                FluidWearPill(onClick = onSearch, modifier = Modifier.weight(1f), grip = FluidPressGrip.YieldsToScroll) {
                     Icon(PhosphorIcons.Regular.MagnifyingGlass, contentDescription = stringResource(R.string.search), modifier = Modifier.size(WearDimens.PillIcon))
                 }
-                FluidWearPill(onClick = onLibrary, modifier = Modifier.weight(1f)) {
+                FluidWearPill(onClick = onLibrary, modifier = Modifier.weight(1f), grip = FluidPressGrip.YieldsToScroll) {
                     Icon(PhosphorIcons.Regular.Books, contentDescription = stringResource(R.string.library), modifier = Modifier.size(WearDimens.PillIcon))
                 }
             }

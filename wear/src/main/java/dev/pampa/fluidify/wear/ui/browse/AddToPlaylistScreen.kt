@@ -25,8 +25,8 @@ import dev.pampa.fluidify.wear.protocol.LibraryItem
 import dev.pampa.fluidify.wear.protocol.LibraryKind
 import dev.pampa.fluidify.wear.protocol.LibrarySection
 import dev.pampa.fluidify.wear.ui.common.Thumb
-import dev.pampa.fluidify.wear.ui.common.WatchList
-import dev.pampa.fluidify.wear.ui.common.noticeItem
+import dev.antigravity.fluidengine.wear.components.FluidWearList
+import dev.antigravity.fluidengine.wear.components.noticeItem
 import dev.pampa.fluidify.wear.ui.theme.WearDimens
 import kotlinx.coroutines.launch
 
@@ -54,7 +54,7 @@ fun AddToPlaylistScreen(
     val noEditable = stringResource(R.string.no_editable_playlists)
     val playlists = data.value?.shelves.orEmpty().flatMap { it.items }.filter(::canTake)
 
-    WatchList(title = stringResource(R.string.add_to_playlist)) {
+    FluidWearList(title = stringResource(R.string.add_to_playlist)) {
         if (trackTitle.isNotEmpty()) noticeItem(trackTitle)
         val page = phoneDataNotices(data, texts)
         when {

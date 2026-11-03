@@ -8,8 +8,8 @@ import dev.pampa.fluidify.wear.WearApp
 import dev.pampa.fluidify.wear.protocol.LibraryKind
 import dev.pampa.fluidify.wear.protocol.LibrarySection
 import dev.pampa.fluidify.wear.ui.common.Thumb
-import dev.pampa.fluidify.wear.ui.common.WatchList
-import dev.pampa.fluidify.wear.ui.common.noticeItem
+import dev.antigravity.fluidengine.wear.components.FluidWearList
+import dev.antigravity.fluidengine.wear.components.noticeItem
 
 /** One library section: playlists, albums, artists, downloads or recent tracks. */
 @Composable
@@ -23,7 +23,7 @@ fun SectionScreen(
     val data = rememberPhoneData(section, { app.library.cachedSection(section) }, { app.library.peekSection(section) }) { app.library.section(section) }
     val texts = rememberPhoneDataTexts()
     val nothingHere = stringResource(R.string.nothing_here)
-    WatchList(title = title) {
+    FluidWearList(title = title) {
         val page = phoneDataNotices(data, texts)
         when {
             page == null -> Unit

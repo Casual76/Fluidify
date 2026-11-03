@@ -25,8 +25,8 @@ import dev.antigravity.fluidengine.wear.components.FluidWearListRow
 import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.downloads.WatchDownloads
 import dev.pampa.fluidify.wear.protocol.logic.TransferPreference
-import dev.pampa.fluidify.wear.ui.common.WatchList
-import dev.pampa.fluidify.wear.ui.common.noticeItem
+import dev.antigravity.fluidengine.wear.components.FluidWearList
+import dev.antigravity.fluidengine.wear.components.noticeItem
 import dev.pampa.fluidify.wear.ui.theme.WearDimens
 
 /**
@@ -57,7 +57,7 @@ fun WatchDownloadsScreen(downloads: WatchDownloads, onOpen: (String, String) -> 
     var quality by remember { mutableIntStateOf(downloads.qualityKbps) }
     var bluetoothFirst by remember { mutableStateOf(downloads.preference == TransferPreference.BLUETOOTH_FIRST) }
 
-    WatchList(title = stringResource(R.string.downloads)) {
+    FluidWearList(title = stringResource(R.string.downloads)) {
         if (status.owners.isEmpty()) noticeItem(emptyText)
         if (status.unavailable > 0) noticeItem(unavailableText)
         status.owners.forEach { owner ->

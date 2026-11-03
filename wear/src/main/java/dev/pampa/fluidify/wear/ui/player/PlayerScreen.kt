@@ -1,9 +1,7 @@
 package dev.pampa.fluidify.wear.ui.player
 
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -78,6 +76,7 @@ import dev.antigravity.fluidengine.wear.components.FluidArcRow
 import dev.antigravity.fluidengine.wear.components.fluidRotarySteps
 import dev.antigravity.fluidengine.wear.glass.FluidGlassCapsule
 import dev.antigravity.fluidengine.wear.glass.FluidGlassDisc
+import dev.antigravity.fluidengine.ui.fluid.FluidPressGrip
 import dev.antigravity.fluidengine.wear.glass.FluidGlassTimePill
 import dev.antigravity.fluidengine.wear.theme.FluidWearAccent
 import dev.antigravity.fluidengine.wear.theme.FluidWearDimens
@@ -335,11 +334,11 @@ internal fun rememberAmbientDim(ambient: FluidAmbientState): State<Float> {
     LaunchedEffect(ambient.isAmbient) {
         if (ambient.isAmbient) {
             val enteredAt = ambient.updateTick
-            launch { dimmed.animateTo(1f, tween(AmbientEnterMs, easing = FastOutSlowInEasing)) }
+            launch { dimmed.animateTo(1f, FluidMotion.crossFade(AmbientEnterMs)) }
             snapshotFlow { ambient.updateTick }.first { it != enteredAt }
             dimmed.snapTo(1f)
         } else {
-            dimmed.animateTo(0f, tween(AmbientExitMs, easing = FastOutSlowInEasing))
+            dimmed.animateTo(0f, FluidMotion.crossFade(AmbientExitMs))
         }
     }
     return dimmed.asState()
@@ -547,6 +546,7 @@ private fun Transport(
             FluidGlassDisc(
                 onClick = controls::previous,
                 backdrop = backdrop,
+                grip = FluidPressGrip.YieldsToScroll,
                 contentDescription = stringResource(R.string.previous),
                 size = minOf(sizes.side, maxDisc),
                 enabled = hasTrack,
@@ -554,6 +554,7 @@ private fun Transport(
             FluidGlassDisc(
                 onClick = controls::togglePlay,
                 backdrop = backdrop,
+                grip = FluidPressGrip.YieldsToScroll,
                 contentDescription = stringResource(if (playing) R.string.pause else R.string.play),
                 size = minOf(sizes.main, maxDisc),
                 haptic = FluidHapticEvent.Confirm,
@@ -567,6 +568,7 @@ private fun Transport(
             FluidGlassDisc(
                 onClick = controls::next,
                 backdrop = backdrop,
+                grip = FluidPressGrip.YieldsToScroll,
                 contentDescription = stringResource(R.string.next),
                 size = minOf(sizes.side, maxDisc),
                 enabled = hasTrack,
@@ -606,12 +608,14 @@ private fun ArcActions(
         FluidGlassDisc(
             onClick = onOutput,
             backdrop = backdrop,
+            grip = FluidPressGrip.YieldsToScroll,
             contentDescription = stringResource(R.string.audio_output),
             size = size,
         ) { Icon(deviceIcon(deviceKind), contentDescription = null, modifier = Modifier.size(FluidWearDimens.IconMedium)) }
         FluidGlassDisc(
             onClick = onQueue,
             backdrop = backdrop,
+            grip = FluidPressGrip.YieldsToScroll,
             contentDescription = stringResource(R.string.queue),
             size = queueSize,
         ) { Icon(PhosphorIcons.Regular.Queue, contentDescription = null, modifier = Modifier.size(QueueIcon)) }
@@ -629,6 +633,7 @@ private fun ArcActions(
             onClick = { likes.toggle(liked) },
             onLongClick = onAddToPlaylist?.takeIf { likeable },
             backdrop = backdrop,
+            grip = FluidPressGrip.YieldsToScroll,
             contentDescription = stringResource(if (liked) R.string.unlike else R.string.like),
             size = size,
             enabled = likeable,

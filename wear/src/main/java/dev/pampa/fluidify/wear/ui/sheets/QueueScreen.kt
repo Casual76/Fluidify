@@ -20,10 +20,10 @@ import dev.pampa.fluidify.wear.link.ArtStore
 import dev.pampa.fluidify.wear.playback.PlaybackControls
 import dev.pampa.fluidify.wear.protocol.QueueWindow
 import dev.pampa.fluidify.wear.ui.common.Thumb
-import dev.pampa.fluidify.wear.ui.common.WatchList
-import dev.pampa.fluidify.wear.ui.common.failedItem
-import dev.pampa.fluidify.wear.ui.common.loadingItem
-import dev.pampa.fluidify.wear.ui.common.noticeItem
+import dev.antigravity.fluidengine.wear.components.FluidWearList
+import dev.antigravity.fluidengine.wear.components.failedItem
+import dev.antigravity.fluidengine.wear.components.loadingItem
+import dev.antigravity.fluidengine.wear.components.noticeItem
 
 /**
  * What plays next, asked of the phone when the screen opens. A tap jumps there.
@@ -50,7 +50,7 @@ fun QueueScreen(
     val failedText = stringResource(R.string.couldnt_load)
     val retryText = stringResource(R.string.retry)
     val emptyText = stringResource(R.string.queue_empty)
-    WatchList(title = stringResource(R.string.queue)) {
+    FluidWearList(title = stringResource(R.string.queue)) {
         val current = window
         when {
             current == null && failed -> failedItem(failedText, retryText) { attempt++ }

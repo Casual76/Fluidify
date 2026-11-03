@@ -60,7 +60,7 @@ import dev.pampa.fluidify.wear.system.FirstRunPrefs
 import dev.pampa.fluidify.wear.system.SurfacePrefs
 import dev.pampa.fluidify.wear.ui.common.LocalNotice
 import dev.pampa.fluidify.wear.ui.theme.WearDimens
-import dev.pampa.fluidify.wear.ui.common.WatchList
+import dev.antigravity.fluidengine.wear.components.FluidWearList
 import dev.pampa.fluidify.wear.ui.debug.GlassMeterPrefs
 import dev.pampa.fluidify.wear.ui.player.deviceIcon
 import dev.pampa.fluidify.wear.update.UpdateChannelPrefs
@@ -164,7 +164,7 @@ fun MoreScreen(
     val watchAuth by (standalone?.auth?.state ?: remember { MutableStateFlow(dev.pampa.fluidify.wear.standalone.AuthState.NOT_YET) })
         .collectAsStateWithLifecycle()
 
-    WatchList(title = stringResource(R.string.more), modifier = modifier) {
+    FluidWearList(title = stringResource(R.string.more), modifier = modifier) {
         item { ListSubHeader { Text(stringResource(R.string.group_playback)) } }
         item {
             FluidWearListRow(

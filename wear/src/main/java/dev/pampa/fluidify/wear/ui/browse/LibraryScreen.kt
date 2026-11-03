@@ -16,13 +16,13 @@ import com.adamglin.phosphoricons.regular.User
 import dev.antigravity.fluidengine.wear.components.FluidWearListRow
 import dev.pampa.fluidify.wear.R
 import dev.pampa.fluidify.wear.protocol.LibrarySection
-import dev.pampa.fluidify.wear.ui.common.WatchList
+import dev.antigravity.fluidengine.wear.components.FluidWearList
 import dev.pampa.fluidify.wear.ui.theme.WearDimens
 
 /** "La tua libreria": the sections, one row each, like Spotify's. */
 @Composable
 fun LibraryScreen(onSection: (LibrarySection, String) -> Unit, onWatchDownloads: (() -> Unit)? = null) {
-    WatchList(title = stringResource(R.string.your_library)) {
+    FluidWearList(title = stringResource(R.string.your_library)) {
         // What the watch keeps itself first: it plays with no phone at all.
         if (onWatchDownloads != null) {
             item(key = "watch-downloads") {
