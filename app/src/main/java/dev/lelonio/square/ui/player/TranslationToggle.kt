@@ -30,9 +30,6 @@ import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.fill.Translate
 import com.adamglin.phosphoricons.regular.Translate
 import dev.lelonio.square.R
-import dev.lelonio.square.ui.glass.LocalGlassEffectConfig
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
-import dev.lelonio.square.ui.glass.liquidGlass
 import dev.lelonio.square.ui.glass.shapes.ContinuousCapsule
 
 /**
@@ -53,7 +50,6 @@ fun TranslationToggle(
     /** Turns the glyph into a spinner while the lines are away being translated. */
     busy: Boolean = false,
     onChange: (Boolean) -> Unit,
-    backdrop: Backdrop,
     modifier: Modifier = Modifier,
 ) {
     var pressed by remember { mutableStateOf(false) }

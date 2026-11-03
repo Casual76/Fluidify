@@ -74,11 +74,9 @@ import com.adamglin.phosphoricons.regular.ArrowUpRight
 import com.adamglin.phosphoricons.regular.CaretDown
 import com.adamglin.phosphoricons.regular.CaretRight
 import com.adamglin.phosphoricons.regular.CaretUp
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.BuildConfig
 import dev.lelonio.square.R
 import dev.lelonio.square.data.AppThemeMode
-import dev.lelonio.square.ui.components.ConfirmDialog
 import dev.lelonio.square.data.AppLanguages
 import dev.lelonio.square.data.CrossfadeSteps
 import dev.lelonio.square.data.EffectQuality
@@ -108,7 +106,6 @@ fun SettingsScreen(
     state: MainViewModel.UiState,
     webApi: MainViewModel.WebApiState,
     contentPadding: PaddingValues,
-    backdrop: Backdrop,
     /**
      * The artwork wash on its own.
      *
@@ -318,7 +315,7 @@ fun SettingsScreen(
                     // The full explanation, because with no application
                     // connected search does not work at all and the reason is
                     // not something anyone would guess.
-                    WebApiSetup(webApi, backdrop, onClientIdChange, onConnectWebApi)
+                    WebApiSetup(webApi, onClientIdChange, onConnectWebApi)
                 }
             }
         }
@@ -371,7 +368,8 @@ fun SettingsScreen(
         // How the app looks and what that costs, so under the app rather than
         // under playback: nothing here touches a note of audio.
         if (open == SettingsPage.App) item("glass") {
-            GlassSection(backdrop)
+            GlassSection()
+
         }
 
         // The light that follows the music, in the player and the mini player. Under the app
@@ -1008,17 +1006,27 @@ private fun DownloadsSection() {
     }
 
     if (confirmingClear) {
-        ConfirmDialog(
+        dev.antigravity.fluidengine.ui.fluid.FluidAlert(
+            onDismissRequest = { confirmingClear = false },
             title = stringResource(R.string.remove_all_downloads),
             message = stringResource(R.string.remove_all_downloads_confirm),
-            confirmLabel = stringResource(R.string.remove_all_downloads),
-            onConfirm = {
-                confirmingClear = false
-                scope.launch { store.clearAll() }
-            },
-            onDismiss = { confirmingClear = false },
+            actions = listOf(
+                dev.antigravity.fluidengine.ui.fluid.FluidAlertAction(
+                    stringResource(R.string.cancel),
+                    { confirmingClear = false },
+                ),
+                dev.antigravity.fluidengine.ui.fluid.FluidAlertAction(
+                    stringResource(R.string.remove_all_downloads),
+                    {
+                        confirmingClear = false
+                        scope.launch { store.clearAll() }
+                    },
+                    dev.antigravity.fluidengine.ui.fluid.FluidAlertAction.Emphasis.Destructive,
+                ),
+            ),
         )
     }
+
 }
 
 /**

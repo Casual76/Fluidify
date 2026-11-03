@@ -98,12 +98,6 @@ import kotlinx.coroutines.withContext
 import dev.lelonio.square.backend.spotify.panelAt
 import androidx.core.graphics.scale
 import dev.lelonio.square.ui.glass.pressable
-import dev.lelonio.square.ui.glass.LocalGlassEffectConfig
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
-import dev.lelonio.square.ui.glass.liquidGlass
-import dev.lelonio.square.ui.glass.backdrop.backdrops.layerBackdrop
-import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberCombinedBackdrop
-import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberLayerBackdrop
 import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
 import dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics
 import dev.lelonio.square.R
@@ -222,12 +216,6 @@ fun PlayerScreen(
     /** Whether the listener has asked to watch rather than listen. */
     videoMode: Boolean = false,
     onToggleVideo: () -> Unit = {},
-    /**
-     * The app-wide backdrop, shared rather than built here: this screen covers
-     * the same blurred artwork the rest of the app already draws, and recording
-     * a second copy of it would be two full-screen blurs for one image.
-     */
-    backdrop: Backdrop,
     /** The track's Canvas clip, or null when it has none. */
     canvas: dev.lelonio.square.data.CanvasClip?,
     /** See MiniPlayer: the cover is shared with the bar this screen grew out of. */
@@ -405,8 +393,6 @@ fun PlayerScreen(
     // rather than the app's blurred artwork. It is combined with the app
     // backdrop rather than replacing it, because with no Canvas this layer is
     // empty and the panes would have nothing to sample.
-    val canvasBackdrop = rememberLayerBackdrop()
-    val glassBackdrop = rememberCombinedBackdrop(backdrop, canvasBackdrop)
 
     /**
      * What the engine's own glass refracts inside this screen.
@@ -531,7 +517,6 @@ fun PlayerScreen(
                     scaleY = shrink
                     alpha = 1f - travel * 0.5f
                 }
-                .layerBackdrop(canvasBackdrop, frozen = stageFrozen)
                 // The engine's copy of the same picture; see stageGlass.
                 .glassBackdropSource(stageGlass, frozen = stageFrozen),
         ) {
@@ -784,7 +769,6 @@ fun PlayerScreen(
                         ) + androidx.compose.animation.fadeOut(tween(CHROME_FADE_MS)),
                     ) {
                     TopBar(
-                        backdrop = glassBackdrop,
                         panel = panel,
                         source = state.source,
                         onOpenSource = state.contextUri?.let { uri ->
@@ -940,7 +924,7 @@ fun PlayerScreen(
                                     .then(androidx.compose.ui.Modifier)
 
                             ) {
-                                KaraokeBadge(karaokeAmount, glassBackdrop) {
+                                KaraokeBadge(karaokeAmount) {
                                     panel = PlayerPanel.LYRICS
                                     karaokeExpand++
                                 }
@@ -1073,7 +1057,6 @@ fun PlayerScreen(
                                     positionMs = positionMs,
                                     isPlaying = state.isPlaying,
                                     onSeek = onSeek,
-                                    backdrop = glassBackdrop,
                                     expandSignal = karaokeExpand,
                                 )
 
@@ -1227,7 +1210,6 @@ fun PlayerScreen(
                             // stage above: the line this would show is the one
                             // already lit in the middle of the screen.
                             wanted = panel != PlayerPanel.LYRICS,
-                            backdrop = glassBackdrop,
                             // The same question the title's own capsule asks,
                             // asked the same way; see GlassSurface.
                             onPicture = { canvas != null },
@@ -1391,7 +1373,6 @@ fun PlayerScreen(
 
                         Controls(
                             state = state,
-                            backdrop = glassBackdrop,
                             onTogglePlay = onTogglePlay,
                             onNext = onNext,
                             onPrevious = onPrevious,
@@ -1410,7 +1391,6 @@ fun PlayerScreen(
                             positionMs = positionMs,
                             onPlayQueueItem = onPlayQueueItem,
                             onSeek = onSeek,
-                            backdrop = glassBackdrop,
                         )
                         }
                         }
@@ -1675,7 +1655,6 @@ fun VideoSurface(player: Player, attachKey: Any? = null, modifier: Modifier = Mo
 
 @Composable
 private fun TopBar(
-    backdrop: Backdrop,
     panel: PlayerPanel,
     /** Where the queue came from: "Playlist · Estate 2025", "Ricerca". */
     source: String,
@@ -1994,8 +1973,6 @@ internal fun TimeRow(positionMs: State<Long>, durationMs: Long) {
 @Composable
 internal fun Controls(
     state: PlaybackState,
-    /** Unused since the discs stopped taking one; kept so the callers read as they did. */
-    @Suppress("UNUSED_PARAMETER") backdrop: Backdrop?,
     onTogglePlay: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
@@ -2206,18 +2183,18 @@ private val TransportGap = 16.dp
  * The control is the microphone at the other end of the panel.
  */
 @Composable
-private fun KaraokeBadge(amount: Float, backdrop: Backdrop, onClick: () -> Unit) {
+private fun KaraokeBadge(amount: Float, onClick: () -> Unit) {
     Row(
         Modifier
             .padding(top = 4.dp)
-            .clip(dev.lelonio.square.ui.glass.shapes.ContinuousCapsule())
+            .clip(dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape)
             // A way to the thing it is talking about: the lyrics, with the
             // control open. A label about a setting that cannot be reached from
             // where it is read is half a message.
             .pressable(onClick, pressedScale = 0.94f)
             // The app's material, not a grey plate: it sits among glass and a
             // painted rectangle is the one thing that reads as pasted on.
-            .playerControlGlass(dev.lelonio.square.ui.glass.shapes.ContinuousCapsule())
+            .playerControlGlass(dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape)
             .padding(horizontal = 12.dp, vertical = 5.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -2323,7 +2300,6 @@ internal fun LyricsStage(
     positionMs: State<Long>,
     isPlaying: Boolean,
     onSeek: (Long) -> Unit,
-    backdrop: Backdrop,
     /** Bumped when somebody arrives here asking for the karaoke control. */
     expandSignal: Int,
     modifier: Modifier = Modifier,
@@ -2417,7 +2393,6 @@ internal fun LyricsStage(
                 on = translated,
                 busy = translating,
                 onChange = { translated = it },
-                backdrop = backdrop,
                 modifier = Modifier
                     // Above the karaoke dial, in the same column: the two are
                     // the panel's controls, and a second one loose on the other
@@ -2430,7 +2405,6 @@ internal fun LyricsStage(
         KaraokeDial(
             amount = karaoke,
             onChange = dev.lelonio.square.playback.AudioEffects::setKaraoke,
-            backdrop = backdrop,
             expandSignal = expandSignal,
             modifier = Modifier
                 // Low on the right, just above the transport — where Apple puts

@@ -2,13 +2,13 @@ package dev.lelonio.square.ui.library
 
 import dev.antigravity.fluidengine.ui.fluid.fluidReadingWidth
 import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
+import dev.antigravity.fluidengine.ui.fluid.glassSurface
 import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
 import androidx.annotation.StringRes
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.layout.RowScope
-import dev.lelonio.square.ui.glass.liquidGlass
 import dev.lelonio.square.ui.player.GlassFilm
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.aspectRatio
@@ -79,14 +79,7 @@ import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.data.DownloadState
 import dev.lelonio.square.data.OwnerState
 import dev.lelonio.square.ui.MainViewModel
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
-import dev.lelonio.square.ui.glass.backdrop.backdrops.layerBackdrop
-import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberCombinedBackdrop
-import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberLayerBackdrop
 import dev.lelonio.square.ui.components.Artwork
-import dev.lelonio.square.ui.components.CHOICE_MENU_WIDTH
-import dev.lelonio.square.ui.components.GlassChoiceItem
-import dev.lelonio.square.ui.components.GlassChoiceMenu
 import dev.lelonio.square.ui.components.LazyScrollBar
 import dev.lelonio.square.ui.components.SwipeToQueue
 import dev.lelonio.square.ui.components.GlassButton
@@ -239,7 +232,33 @@ fun PlaylistScreen(
         )
     }
     var descending by remember(storedSortDescending) { mutableStateOf(storedSortDescending) }
-    var sortOpen by remember { mutableStateOf(false) }
+
+    // The sort, as the engine's menu (3.0.1): the button becomes the panel, the
+    // choice has its tick and the finger that opened it can choose by sliding.
+    // The direction is its own section, and choosing it closes the menu like any
+    // other row: the engine's menus have no row that keeps them open, which the
+    // app's own menu did here so the two directions could be compared.
+    val sortLabels = TrackSort.entries.associateWith { stringResource(it.label) }
+    val descendingLabel = stringResource(R.string.sort_descending)
+    val sortActions: () -> List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction> = {
+        TrackSort.entries.map { option ->
+            dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                label = sortLabels.getValue(option),
+                selected = option == sort,
+            ) {
+                sort = option
+                onSortChange(option.name)
+            }
+        } + dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+            label = descendingLabel,
+            startsSection = true,
+            selected = descending,
+        ) {
+            descending = !descending
+            onSortDescendingChange(descending)
+        }
+    }
+
 
     // Whether the rows on screen are the playlist itself, in its order. Sorting
     // or searching makes them a selection out of it, and playing that as the
@@ -289,33 +308,20 @@ fun PlaylistScreen(
      */
     val headerGround = pageColor
 
-    // What the glass on this screen refracts.
-    //
-    // Not the app's backdrop: that is the blurred cover of whatever is playing,
-    // so the buttons here — back, play, shuffle, search — picked up the colour
-    // of an unrelated track while the page around them was tinted from this
-    // cover.
-    val pageBackdrop = rememberLayerBackdrop()
-
     /**
-     * The same picture again, for the renderer that cannot read the one above.
+     * What the glass on this screen refracts: this page's own ground.
      *
-     * `pageBackdrop` is the app's own vendored layer, and the capsule in the header samples it. The
-     * back arrow beside that capsule is a `GlassButton`, which is the engine's material and reads a
-     * `GlassBackdropState` — so with only the vendored layer recorded it fell through to the root
-     * canvas and refracted the blurred cover of *whatever was playing*. Two controls a finger apart,
-     * reflecting two different records.
+     * Not the app's backdrop: that is the blurred cover of whatever is playing,
+     * so the buttons here — back, play, shuffle, the capsule — picked up the
+     * colour of an unrelated track while the page around them was tinted from
+     * this cover. Handed down as the canvas, which is the one the engine says to
+     * use for glass standing *inside* a page: it holds the ground only, recorded
+     * before the body, so nothing that samples it can ever be inside it.
      *
-     * Recorded over the same box and handed down as the canvas, which is the one the engine says to
-     * use for glass standing *inside* a page: it holds the ground only, recorded before the body, so
-     * nothing that samples it can ever be inside it.
+     * There used to be a second, vendored copy of the same picture for the
+     * app's own glass renderer; that renderer is gone (engine 3.0).
      */
     val pageGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
-
-    /** The rows, for the one piece of glass that opens over them. */
-    val listBackdrop = rememberLayerBackdrop()
-
-    var sortAnchor by remember { mutableStateOf(IntOffset.Zero) }
 
     val density = LocalDensity.current
     val listState = rememberLazyListState()
@@ -397,7 +403,6 @@ fun PlaylistScreen(
         Box(
             Modifier
                 .fillMaxSize()
-                .layerBackdrop(pageBackdrop)
                 .glassBackdropSource(pageGlass),
         ) {
             // A child of the recording rather than a modifier on it, which is how the app's own
@@ -455,7 +460,6 @@ fun PlaylistScreen(
             onToggleFollow = onToggleFollow,
             trackCount = state.tracks.size,
             totalMs = state.tracks.sumOf { it.durationMs },
-            backdrop = pageBackdrop,
             collapse = collapseFraction,
             collapsedHeight = collapsedHeight,
             topPadding = topPadding,
@@ -499,7 +503,6 @@ fun PlaylistScreen(
             // reading width, which is every phone, this measures as before.
                 .padding(end = dev.lelonio.square.ui.theme.LocalPageEndInset.current)
                 .fluidReadingWidth()
-                .layerBackdrop(listBackdrop)
                 // The hero takes the gesture first and closes; only what is
                 // left over reaches the list.
                 .nestedScroll(headerScroll),
@@ -526,8 +529,7 @@ fun PlaylistScreen(
                             else R.string.tracks,
                         ),
                         sort = sort,
-                        onSortOpen = { sortOpen = it },
-                        onAnchor = { sortAnchor = it },
+                        sortActions = sortActions,
                     )
                 }
 
@@ -740,7 +742,6 @@ fun PlaylistScreen(
             androidx.compose.runtime.mutableStateOf<androidx.compose.ui.geometry.Rect?>(null)
         }
         GlassCapsule(
-            backdrop = pageBackdrop,
             modifier = Modifier
                 .padding(top = contentPadding.calculateTopPadding() + 8.dp, end = 14.dp)
                 .align(Alignment.TopEnd)
@@ -794,49 +795,8 @@ fun PlaylistScreen(
         }
         }
 
-        // In the page rather than in a popup of its own: the sort button is up
-        // by the header, well clear of the bars that would otherwise be drawn
-        // over this, so it can be real glass instead of a dark card.
-        GlassChoiceMenu(
-            visible = sortOpen,
-            anchor = sortAnchor.leftOf(density),
-            backdrop = listBackdrop,
-            onDismiss = { sortOpen = false },
-        ) {
-            TrackSort.entries.forEach { option ->
-                GlassChoiceItem(stringResource(option.label), selected = option == sort) {
-                    sort = option
-                    onSortChange(option.name)
-                    sortOpen = false
-                }
-            }
-            dev.lelonio.square.ui.components.GlassMenuRule()
-
-            // Deliberately leaves the menu open: the direction is the one choice
-            // people flip back and forth to compare, and reopening for each flip
-            // makes a sort feel heavy.
-            GlassChoiceItem(
-                stringResource(R.string.sort_descending),
-                selected = descending,
-            ) {
-                descending = !descending
-                onSortDescendingChange(descending)
-            }
-        }
     }
     }
-}
-
-/**
- * Turns a button's position into where a menu hanging off its right edge goes.
- *
- * Menus open leftwards from the control that owns them, because every one of
- * those controls is at the right-hand edge of the screen.
- */
-private fun IntOffset.leftOf(density: androidx.compose.ui.unit.Density): IntOffset {
-    val width = with(density) { CHOICE_MENU_WIDTH.roundToPx() }
-    val gap = with(density) { 8.dp.roundToPx() }
-    return IntOffset((x - width + gap).coerceAtLeast(gap), y + gap)
 }
 
 /**
@@ -874,7 +834,6 @@ private fun DetailHeader(
     onToggleFollow: () -> Unit,
     trackCount: Int,
     totalMs: Long,
-    backdrop: Backdrop,
     /** 0 fully open, 1 collapsed into the bar. A lambda, so reading it costs a
      * re-layout rather than a recomposition of the header on every frame. */
     collapse: () -> Float,
@@ -966,7 +925,6 @@ private fun DetailHeader(
                     icon = PhosphorIcons.Regular.Shuffle,
                     description = stringResource(R.string.shuffle),
                     size = 52.dp,
-                    backdrop = backdrop,
                     onClick = onToggleShuffle,
                     active = shuffleOn,
                 )
@@ -1018,7 +976,6 @@ private fun DetailHeader(
                             if (saved) R.string.remove_from_library else R.string.add_to_library,
                         ),
                         size = 52.dp,
-                        backdrop = backdrop,
                         onClick = onToggleSaved,
                     )
                 }
@@ -1031,7 +988,6 @@ private fun DetailHeader(
                     DownloadAction(
                         state = downloadState,
                         size = 52.dp,
-                        backdrop = backdrop,
                         onClick = onToggleDownload,
                     )
                 }
@@ -1042,7 +998,6 @@ private fun DetailHeader(
                         icon = if (watchKept) PhosphorIcons.Fill.Watch else PhosphorIcons.Regular.Watch,
                         description = stringResource(if (watchKept) R.string.watch_unkeep else R.string.watch_keep),
                         size = 52.dp,
-                        backdrop = backdrop,
                         onClick = onToggleWatch,
                     )
                 }
@@ -1303,24 +1258,23 @@ fun CapsuleFace() {
 
 @Composable
 private fun GlassCapsule(
-    backdrop: Backdrop,
     modifier: Modifier = Modifier,
     content: @Composable RowScope.() -> Unit,
 ) {
-    val shape = RoundedCornerShape(percent = 50)
+    // The engine's floating glass, on a photograph: the same family as the bar
+    // and the pill, with the film the engine keeps for pictures. It was the
+    // app's own renderer until 3.0, with a hand-drawn edge on top; the engine's
+    // rim is the edge now, and there is one.
     Row(
         modifier
             .height(42.dp)
-            .clip(shape)
-            .liquidGlass(
-                config = dev.lelonio.square.ui.glass.LocalGlassEffectConfig.current,
-                shape = shape,
-                blurRadiusDp = dev.lelonio.square.ui.glass.LocalGlassEffectConfig.current.blurRadius,
-                ownBackdrop = backdrop,
-            )
-            // The rim comes with the material now; this is the drawn edge that
-            // separates the two halves' pane from the artwork behind it.
-            .border(0.6.dp, dev.lelonio.square.ui.theme.glassEdge(0.30f), shape),
+            .glassSurface(
+                state = dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop.current
+                    ?: dev.antigravity.fluidengine.ui.fluid.currentGlassBackdrop(),
+                tint = dev.antigravity.fluidengine.ui.fluid.GlassDefaults.floatingTintOnPhoto(),
+                shape = dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape,
+                role = dev.antigravity.fluidengine.ui.fluid.GlassRole.Floating,
+            ),
         verticalAlignment = Alignment.CenterVertically,
         content = content,
     )
@@ -1355,7 +1309,6 @@ private fun CircleAction(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     description: String,
     size: androidx.compose.ui.unit.Dp,
-    backdrop: Backdrop,
     onClick: () -> Unit,
     /** Lit in the accent when the thing it switches is on. */
     active: Boolean = false,
@@ -1482,7 +1435,6 @@ private fun DownloadMark(state: DownloadState) {
 private fun DownloadAction(
     state: OwnerState,
     size: androidx.compose.ui.unit.Dp,
-    backdrop: Backdrop,
     onClick: () -> Unit,
 ) {
     val accent = MaterialTheme.colorScheme.primary
@@ -1629,9 +1581,8 @@ private fun AlbumStrip(
 private fun SectionHeader(
     title: String,
     sort: TrackSort,
-    onSortOpen: (Boolean) -> Unit,
-    /** Where the sort button is, for the menu drawn above the list. */
-    onAnchor: (IntOffset) -> Unit,
+    /** The sort, as the rows of the menu the sort button becomes. */
+    sortActions: () -> List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction>,
 ) {
     Row(
         Modifier
@@ -1641,26 +1592,24 @@ private fun SectionHeader(
     ) {
         Text(title, style = MaterialTheme.typography.titleMedium, modifier = Modifier.weight(1f))
 
-        IconButton(
-            onClick = { onSortOpen(true) },
-            modifier = Modifier.onGloballyPositioned {
-                val root = it.boundsInRoot()
-                onAnchor(IntOffset(root.left.toInt(), root.bottom.toInt()))
-            },
+        // The engine's menu, from a button that becomes it (3.0.1). On the
+        // ground and not on the page: the button lives inside the recording the
+        // page's glass is made from, and glass sampling a layer it is drawn
+        // into recurses until the process dies.
+        androidx.compose.runtime.CompositionLocalProvider(
+            dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides
+                (dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop.current
+                    ?: dev.antigravity.fluidengine.ui.fluid.currentGlassBackdrop()),
         ) {
-            run {
-                Icon(
-                    PhosphorIcons.Regular.ArrowsDownUp,
-                    contentDescription = stringResource(R.string.sort),
-                    tint = if (sort == TrackSort.ORIGINAL) {
-                        MaterialTheme.colorScheme.onSurfaceVariant
-                    } else {
-                        MaterialTheme.colorScheme.primary
-                    },
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+            dev.antigravity.fluidengine.ui.fluid.FluidBarAction(
+                icon = PhosphorIcons.Regular.ArrowsDownUp,
+                contentDescription = stringResource(R.string.sort),
+                onClick = {},
+                actions = sortActions,
+                opensOn = dev.antigravity.fluidengine.ui.fluid.FluidMenuOpensOn.Tap,
+            )
         }
+
     }
 }
 

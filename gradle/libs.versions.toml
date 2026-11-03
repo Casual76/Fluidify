@@ -78,12 +78,6 @@ coil-compose = { module = "io.coil-kt:coil-compose", version = "2.7.0" }
 androidx-palette = { module = "androidx.palette:palette-ktx", version = "1.0.0" }
 androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version = "2.9.8" }
 
-# Liquid glass surfaces (Apache-2.0). Compose-native and guarded internally:
-# the refraction shader needs API 33, and the library falls back to a plain
-# translucent fill below that rather than failing.
-backdrop = { module = "io.github.kyant0:backdrop", version = "2.0.0" }
-# Capsule and friends, used by the vendored Liquid* components.
-kyant-shapes = { module = "io.github.kyant0:shapes", version = "1.2.0" }
 # Phosphor (MIT). Apple's SF Symbols are licensed for Apple platforms only, so
 # they cannot be used here; Phosphor is the closest set that can, and it carries
 # the outline/fill pair this UI already relies on for selected states.

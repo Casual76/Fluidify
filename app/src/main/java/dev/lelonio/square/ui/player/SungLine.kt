@@ -29,7 +29,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import dev.lelonio.square.data.Lyrics
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.ui.glass.pressable
 import dev.lelonio.square.ui.theme.Ink
 
@@ -181,7 +180,6 @@ internal fun SungLineCapsule(
     isPlaying: Boolean,
     /** False while the whole lyric is already the thing on screen. */
     wanted: Boolean,
-    backdrop: Backdrop,
     /** Whether the capsule stands on a clip; see GlassSurface. */
     onPicture: () -> Boolean,
     onOpenLyrics: () -> Unit,

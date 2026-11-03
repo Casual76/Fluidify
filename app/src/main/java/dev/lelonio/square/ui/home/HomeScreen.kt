@@ -66,7 +66,6 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.lerp
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.SpotifyLogo
@@ -172,8 +171,6 @@ fun HomeScreen(
     /** Friend activity, for the faces beside the account picture. */
     friends: List<dev.lelonio.square.data.FriendListen> = emptyList(),
     onOpenFriends: () -> Unit = {},
-    /** The layer the glass on this page refracts; see the note in SquareApp. */
-    backdrop: Backdrop,
     onPlayTrending: (List<CatalogTrack>, Int) -> Unit = { _, _ -> },
     /**
      * Spotify's own personalised shelves, empty when the gateway said nothing.
@@ -195,7 +192,7 @@ fun HomeScreen(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 40.dp),
             )
-            GlassAction(stringResource(R.string.log_in_with_spotify), backdrop, onLogIn)
+            GlassAction(stringResource(R.string.log_in_with_spotify), onLogIn)
             // A way out of this page that is not the one button on it.
             //
             // Signed out there is no header, so there is no way into the settings at all: somebody
@@ -227,8 +224,8 @@ fun HomeScreen(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 40.dp),
             )
-            GlassAction(stringResource(R.string.retry), backdrop, onRetry)
-            GlassAction(stringResource(R.string.log_out), backdrop, onLogOut)
+            GlassAction(stringResource(R.string.retry), onRetry)
+            GlassAction(stringResource(R.string.log_out), onLogOut)
         }
 
         is MainViewModel.UiState.Ready -> {
@@ -428,7 +425,6 @@ fun HomeScreen(
                             // mean "this is what you are looking at because you
                             // asked for it".
                             highlighted = filter,
-                            backdrop = backdrop,
                             topPadding = barHeight,
                             onFilter = { filterName = it.name },
                             onOpenSettings = onOpenSettings,
@@ -637,7 +633,6 @@ fun HomeScreen(
                 // glass once the page has moved under the status bar.
                 HomeTopBar(
                     backdrop = barBackdrop,
-                    plate = backdrop,
                     height = barHeight,
                     statusBar = statusBar,
                     collapse = { collapse },
@@ -661,7 +656,6 @@ fun HomeScreen(
 @Composable
 private fun HomeTopBar(
     backdrop: dev.antigravity.fluidengine.ui.fluid.GlassBackdropState,
-    plate: Backdrop,
     height: Dp,
     statusBar: Dp,
     collapse: () -> Float,
@@ -717,7 +711,7 @@ private fun HomeTopBar(
         AppLockup(
             iconSize = 44.dp,
             nameHeight = 22.dp,
-            plate = plate,
+            onPlate = true,
             modifier = Modifier
                 .onSizeChanged { lockupWidthPx = it.width.toFloat() }
                 .graphicsLayer {
@@ -785,7 +779,6 @@ private fun Header(
     onLockupPlaced: (top: Float, height: Float) -> Unit,
     /** The chip drawn as active: the one that was tapped. */
     highlighted: Feed,
-    backdrop: Backdrop,
     topPadding: Dp,
     onFilter: (Feed) -> Unit,
     onOpenSettings: () -> Unit,
@@ -876,7 +869,7 @@ private fun Header(
                     // the size it was to read at a glance.
                     iconSize = 44.dp,
                     nameHeight = 22.dp,
-                    plate = backdrop,
+                    onPlate = true,
                     modifier = Modifier
                         .padding(top = 4.dp)
                         .onGloballyPositioned {
@@ -924,12 +917,12 @@ private fun Header(
 
         // The chips carry the header's bottom margin with them; without them
         // the list would start against the app's own name.
-        if (showFilters) FilterRow(highlighted, backdrop, onFilter) else Spacer(Modifier.height(16.dp))
+        if (showFilters) FilterRow(highlighted, onFilter) else Spacer(Modifier.height(16.dp))
     }
 }
 
 @Composable
-private fun FilterRow(selected: Feed, backdrop: Backdrop, onSelect: (Feed) -> Unit) {
+private fun FilterRow(selected: Feed, onSelect: (Feed) -> Unit) {
     LazyRow(
         // The panel's room to the contents, not to the row; see Carousel.
         contentPadding = PaddingValues(
@@ -1321,7 +1314,8 @@ private fun Heading(text: String) {
 
 /** A glass pill, for the handful of places that need a button at all. */
 @Composable
-private fun GlassAction(label: String, backdrop: Backdrop, onClick: () -> Unit) {
+private fun GlassAction(label: String, onClick: () -> Unit) {
+
     GlassButton(
         onClick = onClick,
         contentHeight = 50.dp,

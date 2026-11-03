@@ -114,13 +114,13 @@ fun AppLockup(
      * Null leaves it bare, which is what everywhere but the home header wants:
      * a plate is a control, and a mark in the middle of a login page is not one.
      */
-    plate: dev.lelonio.square.ui.glass.backdrop.Backdrop? = null,
+    onPlate: Boolean = false,
 ) {
     Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        if (plate == null) {
+        if (!onPlate) {
             AppGlyph(iconSize)
         } else {
-            AppPlate(iconSize, plate)
+            AppPlate(iconSize)
         }
         Spacer(Modifier.width(iconSize * 0.32f))
         FluidifyWordmark(nameHeight)
@@ -147,8 +147,8 @@ fun AppLockup(
 @Composable
 fun AppPlate(
     size: Dp,
-    backdrop: dev.lelonio.square.ui.glass.backdrop.Backdrop,
     modifier: Modifier = Modifier,
+
 ) {
     val accent = androidx.compose.material3.MaterialTheme.colorScheme.primary
     // The light on the plate, tinted by the accent rather than plain white:

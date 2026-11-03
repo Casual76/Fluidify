@@ -1,8 +1,6 @@
 package dev.lelonio.square.ui.player
 
 import androidx.compose.foundation.background
-import dev.lelonio.square.ui.glass.backdrop.effects.blur
-import dev.lelonio.square.ui.glass.backdrop.drawBackdrop
 import androidx.compose.ui.graphics.RectangleShape
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.slideInVertically
@@ -40,7 +38,6 @@ import com.adamglin.phosphoricons.Fill
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.fill.Heart
 import com.adamglin.phosphoricons.regular.Check
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.R
 import dev.lelonio.square.data.CatalogPlaylist
 import dev.lelonio.square.ui.MainViewModel
@@ -62,127 +59,89 @@ import dev.lelonio.square.ui.components.PlaylistCover
 @Composable
 fun AddToPlaylistSheet(
     state: MainViewModel.AddToPlaylistState,
-    backdrop: Backdrop,
     onSelect: (CatalogPlaylist) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    Box(Modifier.fillMaxSize()) {
-    // The page out of focus, like the track sheet: this covers the player as
-    // often as it covers a list, and a scrim alone left both perfectly readable
-    // underneath.
-    AnimatedVisibility(
+    // The engine's sheet (3.0): anchored to the bottom edge, the modal host's
+    // scrim behind it, the one glass of every floating pane, and back closes it.
+    // It was the app's own panel over a 28 dp blur of the page, made of the
+    // app's own glass, with no BackHandler.
+    dev.antigravity.fluidengine.ui.fluid.FluidGlassModalPortal(
         visible = state.open,
-        enter = fadeIn(tween(200)),
-        exit = fadeOut(tween(180)),
-        modifier = Modifier.fillMaxSize(),
+        onDismissRequest = onDismiss,
+        presentation = dev.antigravity.fluidengine.ui.fluid.FluidGlassModalPresentation.Sheet,
+        paneTitle = stringResource(R.string.add_to_playlist),
     ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { RectangleShape },
-                    effects = { blur(28f.dp.toPx()) },
-                    onDrawSurface = { drawRect(dev.lelonio.square.ui.theme.sheetScrim(0.42f)) },
-                )
-                .clickable(interactionSource = null, indication = null, onClick = onDismiss),
-        )
-    }
+        Column(Modifier.padding(vertical = 18.dp)) {
+            Text(
+                stringResource(R.string.add_to_playlist),
+                style = MaterialTheme.typography.titleLarge,
+                color = GlassInk,
+                modifier = Modifier.padding(start = 22.dp, end = 22.dp),
+            )
+            Text(
+                // Says what is being added: the sheet can outlive the track
+                // that opened it, since playback carries on underneath.
+                state.trackTitle,
+                style = MaterialTheme.typography.bodyMedium,
+                color = GlassInkDim,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 2.dp, bottom = 12.dp),
+            )
 
-    AnimatedVisibility(
-        visible = state.open,
-        // Up from the bottom edge, since that is where it sits.
-        enter = slideInVertically(tween(240)) { it / 6 } + fadeIn(tween(180)),
-        exit = slideOutVertically(tween(180)) { it / 6 } + fadeOut(tween(150)),
-        modifier = Modifier.align(Alignment.BottomCenter),
-    ) {
-        GlassSurface(
-            backdrop = backdrop,
-            shape = RoundedCornerShape(28.dp),
-            surfaceColor = GlassFilm,
-            // Heavier than the page behind it: the panel samples the unblurred
-            // layer, so at the usual radius the rows underneath came through
-            // sharper inside the sheet than outside it.
-            blurScale = 23.0f,
-            modifier = Modifier
-                .padding(16.dp)
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(28.dp))
-                // Swallows taps so one inside the sheet does not dismiss it.
-                .clickable(interactionSource = null, indication = null) {},
-        ) {
-            Column(Modifier.padding(vertical = 18.dp)) {
+            if (state.error != null) {
                 Text(
-                    stringResource(R.string.add_to_playlist),
-                    style = MaterialTheme.typography.titleLarge,
-                    color = GlassInk,
-                    modifier = Modifier.padding(start = 22.dp, end = 22.dp),
+                    state.error,
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.error,
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
                 )
+            }
+
+            if (state.done != null || state.removed != null) {
                 Text(
-                    // Says what is being added: the sheet can outlive the track
-                    // that opened it, since playback carries on underneath.
-                    state.trackTitle,
+                    if (state.removed != null) {
+                        stringResource(R.string.removed_from, state.removed.orEmpty())
+                    } else {
+                        stringResource(R.string.added_to, state.done.orEmpty())
+                    },
+                    style = MaterialTheme.typography.bodyMedium,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
+                )
+            }
+
+            if (state.playlists.isEmpty()) {
+                Text(
+                    stringResource(R.string.no_playlists_in_account),
                     style = MaterialTheme.typography.bodyMedium,
                     color = GlassInkDim,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 2.dp, bottom = 12.dp),
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
                 )
-
-                if (state.error != null) {
-                    Text(
-                        state.error,
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
-                    )
-                }
-
-                if (state.done != null || state.removed != null) {
-                    Text(
-                        if (state.removed != null) {
-                            stringResource(R.string.removed_from, state.removed.orEmpty())
-                        } else {
-                            stringResource(R.string.added_to, state.done.orEmpty())
-                        },
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
-                    )
-                }
-
-                if (state.playlists.isEmpty()) {
-                    Text(
-                        stringResource(R.string.no_playlists_in_account),
-                        style = MaterialTheme.typography.bodyMedium,
-                        color = GlassInkDim,
-                        modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
-                    )
-                } else {
-                    Column(
-                        Modifier
-                            .heightIn(max = 360.dp)
-                            .verticalScroll(rememberScrollState()),
-                        verticalArrangement = Arrangement.spacedBy(2.dp),
-                    ) {
-                        state.playlists.forEach { playlist ->
-                            PlaylistRow(
-                                playlist = playlist,
-                                busy = state.busy == playlist.uri,
-                                added = state.done == playlist.name,
-                                // Liked Songs is the one row that knows where
-                                // the track already is, and the one a second
-                                // press takes it out of.
-                                liked = state.liked && playlist.uri.endsWith(":collection"),
-                                enabled = state.trackUri != null && state.busy == null,
-                                onClick = { onSelect(playlist) },
-                            )
-                        }
+            } else {
+                Column(
+                    Modifier
+                        .heightIn(max = 360.dp)
+                        .verticalScroll(rememberScrollState()),
+                    verticalArrangement = Arrangement.spacedBy(2.dp),
+                ) {
+                    state.playlists.forEach { playlist ->
+                        PlaylistRow(
+                            playlist = playlist,
+                            busy = state.busy == playlist.uri,
+                            added = state.done == playlist.name,
+                            // Liked Songs is the one row that knows where
+                            // the track already is, and the one a second
+                            // press takes it out of.
+                            liked = state.liked && playlist.uri.endsWith(":collection"),
+                            enabled = state.trackUri != null && state.busy == null,
+                            onClick = { onSelect(playlist) },
+                        )
                     }
                 }
             }
         }
-    }
     }
 }
 

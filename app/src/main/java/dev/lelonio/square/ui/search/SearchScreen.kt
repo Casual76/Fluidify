@@ -39,7 +39,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.R
 import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.data.SearchItem
@@ -95,7 +94,6 @@ fun SearchScreen(
     /** Opens the same track sheet the library rows open. */
     onTrackMenu: (CatalogTrack) -> Unit,
     onOpenContext: (SearchItem) -> Unit,
-    backdrop: Backdrop,
 ) {
     var kind by remember(state.query) { mutableStateOf(Kind.ALL) }
     // A new search answers a new question, so the page goes back to showing all
@@ -135,13 +133,13 @@ fun SearchScreen(
 
         if (!state.results.isEmpty && !state.loading) {
             item(contentType = "chips") {
-                KindRow(kind, backdrop) { kind = it }
+                KindRow(kind) { kind = it }
             }
         }
 
         when {
             state.needsSetup -> item(contentType = "setup") {
-                WebApiSetup(webApi, backdrop, onClientIdChange, onConnectWebApi)
+                WebApiSetup(webApi, onClientIdChange, onConnectWebApi)
             }
 
             state.loading -> item(contentType = "status") {
@@ -239,7 +237,8 @@ fun SearchScreen(
 
 /** The same chips the home page filters with; see the note there. */
 @Composable
-private fun KindRow(selected: Kind, backdrop: Backdrop, onSelect: (Kind) -> Unit) {
+private fun KindRow(selected: Kind, onSelect: (Kind) -> Unit) {
+
     LazyRow(
         contentPadding = PaddingValues(horizontal = 20.dp),
         horizontalArrangement = Arrangement.spacedBy(8.dp),

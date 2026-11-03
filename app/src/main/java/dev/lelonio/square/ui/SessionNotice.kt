@@ -19,7 +19,6 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.R
 import dev.lelonio.square.ui.glass.pressable
 import dev.lelonio.square.ui.player.GlassSurface
@@ -38,7 +37,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 @Composable
 fun SessionExpiredNotice(
     visible: Boolean,
-    backdrop: Backdrop,
     onReconnect: () -> Unit,
     onDismiss: () -> Unit,
     modifier: Modifier = Modifier,
@@ -50,10 +48,8 @@ fun SessionExpiredNotice(
         modifier = modifier,
     ) {
         GlassSurface(
-            backdrop = backdrop,
-            shape = RoundedCornerShape(26.dp),
+            shape = dev.antigravity.fluidengine.ui.fluid.ContinuousCornerShape(26.dp),
             modifier = Modifier.fillMaxWidth().padding(horizontal = 16.dp),
-            surfaceColor = dev.lelonio.square.ui.theme.glassFilm(0.10f),
         ) {
             Column(
                 Modifier.padding(horizontal = 20.dp, vertical = 16.dp),

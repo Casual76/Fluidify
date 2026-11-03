@@ -36,11 +36,9 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
+import dev.antigravity.fluidengine.ui.fluid.glassSurface
 import androidx.compose.foundation.shape.RoundedCornerShape
-import dev.lelonio.square.ui.glass.liquidGlass
-import dev.lelonio.square.ui.glass.backdrop.backdrops.layerBackdrop
-import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberCombinedBackdrop
-import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberLayerBackdrop
 import androidx.compose.runtime.State
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -93,7 +91,12 @@ fun FloatingMiniPlayer(
     /** Folded: the strip has room for the song and one button, nothing else. */
     inline: Boolean = false,
     reactiveVisible: Boolean = true,
-    lightGlassConfig: dev.lelonio.square.ui.glass.GlassEffectConfig? = null,
+    /**
+     * Whether the pill wears its own pane over the light that follows the
+     * music. False for the copy inside the travelling surface, which is a
+     * picture of the pill and is already inside glass.
+     */
+    glass: Boolean = false,
     /**
      * The device the music is coming out of, when it is not this one.
      *
@@ -149,9 +152,15 @@ fun FloatingMiniPlayer(
         animationSpec = androidx.compose.animation.core.tween(LIGHT_TINT_MS),
         label = "lightTint",
     )
-    val lightBackdrop = rememberLayerBackdrop()
-    val combinedLight = if (lightGlassConfig != null) rememberCombinedBackdrop(
-        dev.lelonio.square.ui.glass.LocalAppBackdrop.current, lightBackdrop) else null
+    // The light under the pill, recorded so the pane over it can bend it, and
+    // combined with the page the pill floats over. The engine's glass since
+    // 3.0: it was the app's own renderer, sampling the app's own copy of the
+    // page beside the engine's.
+    val lightGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
+    val combinedLight = dev.antigravity.fluidengine.ui.fluid.rememberCombinedGlassBackdrop(
+        dev.antigravity.fluidengine.ui.fluid.currentGlassBackdrop(),
+        lightGlass,
+    )
     var dragStart by remember { mutableStateOf(0L) }
     var dragged by remember { mutableStateOf(0f) }
     val settle = remember { spring<Float>(stiffness = Spring.StiffnessMediumLow) }
@@ -206,14 +215,14 @@ fun FloatingMiniPlayer(
                 )
             },
     ) {
-        if (lightGlassConfig != null && combinedLight != null) {
+        if (glass) {
             val lightClock = rememberAudioLightClock(audioLight, mini = true)
             AudioLightHalo(
                 audioLight,
                 color = { lightTint.value },
                 mini = true,
                 compact = inline,
-                modifier = Modifier.matchParentSize().layerBackdrop(lightBackdrop),
+                modifier = Modifier.matchParentSize().glassBackdropSource(lightGlass),
                 clock = lightClock,
             )
             // The glass is told to redraw on the halo's clock: it samples the halo's own layer,
@@ -225,12 +234,15 @@ fun FloatingMiniPlayer(
                         lightClock.value
                         drawContent()
                     }
-                    .liquidGlass(
-                        config = lightGlassConfig,
-                        shape = RoundedCornerShape(percent = 50),
-                        highlightAlpha = 0.3f,
-                        ownBackdrop = combinedLight,
+                    // The pill's pane: the floating family, the same film as
+                    // the bar it sits in, over the light and the page together.
+                    .glassSurface(
+                        state = combinedLight,
+                        tint = dev.antigravity.fluidengine.ui.fluid.GlassDefaults.floatingTint(),
+                        shape = dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape,
+                        role = dev.antigravity.fluidengine.ui.fluid.GlassRole.Floating,
                     ),
+
             )
         }
         Row(

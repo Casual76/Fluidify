@@ -19,7 +19,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.unit.dp
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.R
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.GlassButton
@@ -36,7 +35,6 @@ import dev.lelonio.square.ui.components.GlassButton
 @Composable
 internal fun WebApiSetup(
     state: MainViewModel.WebApiState,
-    backdrop: Backdrop,
     onClientIdChange: (String) -> Unit,
     onConnect: () -> Unit,
 ) {
@@ -70,7 +68,8 @@ internal fun WebApiSetup(
             }
         }
 
-        WebApiSetupInline(state, backdrop, onClientIdChange, onConnect)
+        WebApiSetupInline(state, onClientIdChange, onConnect)
+
     }
 }
 
@@ -84,7 +83,6 @@ internal fun WebApiSetup(
 @Composable
 internal fun WebApiSetupInline(
     state: MainViewModel.WebApiState,
-    backdrop: Backdrop,
     onClientIdChange: (String) -> Unit,
     onConnect: () -> Unit,
 ) {

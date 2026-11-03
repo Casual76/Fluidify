@@ -3,8 +3,6 @@ package dev.lelonio.square.data
 import android.content.Context
 import androidx.annotation.StringRes
 import dev.lelonio.square.R
-import dev.lelonio.square.ui.glass.GlassEffectConfig
-import dev.lelonio.square.ui.glass.GlassStyle
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow

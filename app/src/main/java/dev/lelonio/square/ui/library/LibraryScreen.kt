@@ -65,7 +65,6 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.R
 import dev.lelonio.square.data.CatalogPlaylist
 import dev.lelonio.square.data.sortedByRecentlyOpened
@@ -84,13 +83,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.boundsInRoot
-import dev.lelonio.square.ui.components.CHOICE_MENU_WIDTH
-import dev.lelonio.square.ui.components.GlassChoiceItem
-import dev.lelonio.square.ui.components.GlassMenuRule
-import dev.lelonio.square.ui.components.GlassChoiceMenu
-import dev.lelonio.square.ui.glass.backdrop.backdrops.layerBackdrop
-import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberCombinedBackdrop
-import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberLayerBackdrop
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.Fill
 import com.adamglin.phosphoricons.fill.PushPin
@@ -205,7 +197,6 @@ fun LibraryScreen(
      * among the playlists everywhere else.
      */
     downloadedSongs: CatalogPlaylist? = null,
-    backdrop: Backdrop,
 ) {
     when (state) {
         MainViewModel.UiState.LoggedOut -> Centered {
@@ -217,7 +208,7 @@ fun LibraryScreen(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 40.dp),
             )
-            GlassAction(stringResource(R.string.log_in_with_spotify), backdrop, onLogIn)
+            GlassAction(stringResource(R.string.log_in_with_spotify), onLogIn)
             // A way out of this page that is not the one button on it.
             //
             // Signed out there is no header, so there is no way into the settings at all: somebody
@@ -249,8 +240,8 @@ fun LibraryScreen(
                 textAlign = TextAlign.Center,
                 modifier = Modifier.padding(horizontal = 40.dp),
             )
-            GlassAction(stringResource(R.string.retry), backdrop, onRetry)
-            GlassAction(stringResource(R.string.log_out), backdrop, onLogOut)
+            GlassAction(stringResource(R.string.retry), onRetry)
+            GlassAction(stringResource(R.string.log_out), onLogOut)
         }
 
         is MainViewModel.UiState.Ready -> {
@@ -266,19 +257,34 @@ fun LibraryScreen(
                 mutableStateOf(Order.entries.firstOrNull { it.key == view.order } ?: Order.RECENT)
             }
             var filter by remember { mutableStateOf(Filter.ALL) }
-            var sortOpen by remember { mutableStateOf(false) }
-            // Recorded so the menu has the tiles behind it to blur, rather than
-            // the page colour: over a flat fill glass has nothing to bend and
-            // comes out looking like a hole. Safe to record — the menu is drawn
-            // outside the grid, so nothing in this layer samples it.
-            val listBackdrop = rememberLayerBackdrop()
             var descending by remember { mutableStateOf(view.descending) }
             val onOrderChosen: (Order) -> Unit = {
                 order = it
                 view.order = it.key
             }
-            var sortAnchor by remember { mutableStateOf(androidx.compose.ui.unit.IntOffset.Zero) }
-            val density = androidx.compose.ui.platform.LocalDensity.current
+            // The sort is the engine's menu (3.0.1): the button becomes the
+            // panel, the choice has its tick, and the finger that opened it can
+            // pick by sliding. The direction starts its own section. Choosing it
+            // closes the menu like any other row -- the app's own menu used to
+            // stay open on it so the two directions could be compared; the
+            // engine's menus have no row that keeps them open.
+            val orderLabels = Order.entries.associateWith { stringResource(it.label) }
+            val descendingLabel = stringResource(R.string.sort_descending)
+            val sortActions: () -> List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction> = {
+                Order.entries.map { entry ->
+                    dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                        label = orderLabels.getValue(entry),
+                        selected = entry == order,
+                    ) { onOrderChosen(entry) }
+                } + dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                    label = descendingLabel,
+                    startsSection = true,
+                    selected = descending,
+                ) {
+                    descending = !descending
+                    view.descending = descending
+                }
+            }
 
             val artistItems = remember(artists) {
                 artists.map { artist ->
@@ -424,7 +430,6 @@ fun LibraryScreen(
                         // paying: what is lost is a reflection that stops
                         // sliding for the length of the fling, under a blur
                         // heavy enough that it does not read as stopping.
-                        .layerBackdrop(listBackdrop, frozen = { scrolling })
                         .glassBackdropSource(bodyGlass, frozen = { scrolling }),
                 ) { shownFilter ->
                 // `downloaded` and `downloadedSongs` belong in here as much
@@ -477,13 +482,11 @@ fun LibraryScreen(
                                 layout = layout,
                                 order = order,
                                 filter = shownFilter,
-                                backdrop = backdrop,
                                 title = title,
                                 collapse = collapse,
                                 onOrder = { onOrderChosen(it) },
                                 onFilter = { filter = it },
-                                onSort = { sortOpen = true },
-                                onSortAnchor = { sortAnchor = it },
+                                sortActions = sortActions,
                             )
                         }
 
@@ -529,13 +532,11 @@ fun LibraryScreen(
                                 layout = layout,
                                 order = order,
                                 filter = shownFilter,
-                                backdrop = backdrop,
                                 title = title,
                                 collapse = collapse,
                                 onOrder = { onOrderChosen(it) },
                                 onFilter = { filter = it },
-                                onSort = { sortOpen = true },
-                                onSortAnchor = { sortAnchor = it },
+                                sortActions = sortActions,
                             )
                         }
 
@@ -553,39 +554,6 @@ fun LibraryScreen(
                         }
                     }
                 }
-                }
-            }
-
-            // The app's own menu rather than Material's card: see GlassMenu.
-            // The same one the track sort on a playlist page opens, for the
-            // same reason — a menu that arrives from another design system is
-            // the one surface on screen that says so.
-            GlassChoiceMenu(
-                visible = sortOpen,
-                anchor = sortAnchor.leftOf(density),
-                backdrop = rememberCombinedBackdrop(backdrop, listBackdrop),
-                onDismiss = { sortOpen = false },
-            ) {
-                Order.entries.forEach { entry ->
-                    GlassChoiceItem(
-                        stringResource(entry.label),
-                        selected = entry == order,
-                    ) {
-                        sortOpen = false
-                        onOrderChosen(entry)
-                    }
-                }
-                GlassMenuRule()
-
-                // Deliberately leaves the menu open: the direction is the one
-                // choice people flip back and forth to compare, and reopening
-                // for each flip makes a sort feel heavy.
-                GlassChoiceItem(
-                    stringResource(R.string.sort_descending),
-                    selected = descending,
-                ) {
-                    descending = !descending
-                    view.descending = descending
                 }
             }
 
@@ -635,17 +603,6 @@ fun LibraryScreen(
     }
 }
 
-/** Where a menu hanging off the sort button's right edge goes. */
-private fun androidx.compose.ui.unit.IntOffset.leftOf(
-    density: androidx.compose.ui.unit.Density,
-): androidx.compose.ui.unit.IntOffset {
-    val width = with(density) {
-        CHOICE_MENU_WIDTH.roundToPx()
-    }
-    val gap = with(density) { 8.dp.roundToPx() }
-    return androidx.compose.ui.unit.IntOffset((x - width + gap).coerceAtLeast(gap), y + gap)
-}
-
 /**
  * Opens whatever the tile stands for.
  *
@@ -669,14 +626,13 @@ private fun Header(
     layout: Layout,
     order: Order,
     filter: Filter,
-    backdrop: Backdrop,
     title: String,
     /** The heading's handover; the type itself is the engine's to draw. */
     collapse: FluidTitleCollapse,
     onOrder: (Order) -> Unit,
     onFilter: (Filter) -> Unit,
-    onSort: () -> Unit,
-    onSortAnchor: (androidx.compose.ui.unit.IntOffset) -> Unit,
+    /** The sort, as the rows of the menu the sort button becomes. */
+    sortActions: () -> List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction>,
 ) {
     Column(Modifier.fillMaxWidth()) {
         Row(
@@ -729,26 +685,20 @@ private fun Header(
                 Spacer(Modifier.width(8.dp))
             }
 
-            GlassButton(
-                onClick = onSort,
-                flat = true,
-                contentHeight = 36.dp,
-                contentPadding = 12.dp,
-                modifier = Modifier.onGloballyPositioned {
-                    val bounds = it.boundsInRoot()
-                    onSortAnchor(
-                        androidx.compose.ui.unit.IntOffset(
-                            bounds.right.toInt(),
-                            bounds.bottom.toInt(),
-                        ),
-                    )
-                },
+            // On the ground, not on the page: this button lives inside the
+            // recording the page's own glass is made from, and glass that
+            // samples a layer it is drawn into recurses until the process dies.
+            androidx.compose.runtime.CompositionLocalProvider(
+                dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides
+                    (dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop.current
+                        ?: dev.antigravity.fluidengine.ui.fluid.currentGlassBackdrop()),
             ) {
-                Icon(
-                    PhosphorIcons.Regular.ArrowsDownUp,
+                dev.antigravity.fluidengine.ui.fluid.FluidBarAction(
+                    icon = PhosphorIcons.Regular.ArrowsDownUp,
                     contentDescription = stringResource(R.string.sort),
-                    tint = InkDim,
-                    modifier = Modifier.size(18.dp),
+                    onClick = {},
+                    actions = sortActions,
+                    opensOn = dev.antigravity.fluidengine.ui.fluid.FluidMenuOpensOn.Tap,
                 )
             }
         }
@@ -1008,7 +958,8 @@ private fun Notice(
 
 /** A glass pill, for the handful of places that need a button at all. */
 @Composable
-private fun GlassAction(label: String, backdrop: Backdrop, onClick: () -> Unit) {
+private fun GlassAction(label: String, onClick: () -> Unit) {
+
     GlassButton(
         onClick = onClick,
         contentHeight = 50.dp,

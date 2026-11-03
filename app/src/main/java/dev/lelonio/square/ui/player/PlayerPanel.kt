@@ -105,8 +105,6 @@ fun PlayerPanelSection(
     positionMs: androidx.compose.runtime.State<Long>,
     onPlayQueueItem: (Int) -> Unit,
     onSeek: (Long) -> Unit,
-    /** The layer the panel refracts; see the liquid-glass note in PlayerScreen. */
-    backdrop: dev.lelonio.square.ui.glass.backdrop.Backdrop,
 ) {
     Row(
         Modifier.fillMaxWidth().padding(top = 14.dp),

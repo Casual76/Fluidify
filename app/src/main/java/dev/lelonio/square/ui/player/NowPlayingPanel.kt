@@ -540,7 +540,6 @@ fun NowPlayingPanel(
                         // number says; see Controls.
                         Controls(
                             state = state,
-                            backdrop = null,
                             onTogglePlay = onTogglePlay,
                             onNext = onNext,
                             onPrevious = onPrevious,

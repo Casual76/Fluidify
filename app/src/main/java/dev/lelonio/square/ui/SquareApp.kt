@@ -80,7 +80,6 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import com.adamglin.phosphoricons.fill.XCircle
 import androidx.compose.ui.unit.sp
-import dev.lelonio.square.ui.glass.liquidGlass
 import dev.lelonio.square.ui.glass.pressable
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.gestures.detectDragGestures
@@ -123,9 +122,6 @@ import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
 import dev.lelonio.square.ui.components.BlurTransformation
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
-import dev.lelonio.square.ui.glass.backdrop.backdrops.layerBackdrop
-import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberLayerBackdrop
 import dev.lelonio.square.R
 import dev.lelonio.square.data.CanvasClip
 import dev.lelonio.square.data.Catalog
@@ -468,22 +464,6 @@ fun SquareApp(
     }
     val accent by rememberArtworkColor(playback.artworkUrl)
 
-    // How bright the page behind the glass is, from the artwork rather than
-    // from the screen.
-    //
-    // The library's own adaptive-luminance demo photographs its backdrop every
-    // frame and reads the pixels back to average them, which on a bar that is
-    // always on screen is a capture and a GPU-to-CPU copy for ever. The colours
-    // of the cover playing are already extracted for the aura and the accent,
-    // and they answer the same question: is what is behind this light or dark.
-    val palette by dev.lelonio.square.ui.theme.rememberArtworkPalette(playback.artworkUrl)
-    val backdropLuminance by animateFloatAsState(
-        targetValue = remember(palette) {
-            if (palette.isEmpty()) 0f else palette.map { it.luminance() }.average().toFloat()
-        },
-        animationSpec = tween(600),
-        label = "backdropLuminance",
-    )
     val recent by viewModel.recent.collectAsStateWithLifecycle()
     val search by viewModel.search.collectAsStateWithLifecycle()
     val searchHistory by viewModel.searchHistory.collectAsStateWithLifecycle()
@@ -577,23 +557,21 @@ fun SquareApp(
     // ViewModel keeps what it fetched, so navigating away and back does not
     // spend the quota again.
     LaunchedEffect(webApi.connected) { viewModel.loadFeed() }
-    // Two layers, and the split is not optional.
+    // Two recordings, and the split is not optional.
     //
-    // `pageBackdrop` records the artwork *and* the screen on top of it, and is
-    // what the floating bars refract — that is how the list underneath shows
-    // through them. Those bars therefore have to be drawn outside it: a layer
-    // that contains something which draws that same layer recurses until the
-    // render thread's stack runs out, which is exactly the SIGSEGV this caused.
+    // `pageGlass` records the artwork *and* the screen on top of it, and is
+    // what the floating bars, the modals and the menus refract — that is how
+    // the list underneath shows through them. Those therefore have to be drawn
+    // outside it: a layer that contains something which draws that same layer
+    // recurses until the render thread's stack runs out, which is exactly the
+    // SIGSEGV this caused once.
     //
-    // `artBackdrop` records only the blurred artwork, and is what glass *inside*
-    // a screen uses — the playlist buttons, the search button — for the same
-    // reason: they cannot sample a layer they are part of.
-    val artBackdrop = rememberLayerBackdrop()
-    val pageBackdrop = rememberLayerBackdrop()
-
-    // The engine's own record of the same page, for the surfaces that morph:
-    // the modal host, the morph menu, the lifted context-menu rows. Recorded
-    // beside the vendored layer until the whole glass stack is the engine's.
+    // `groundGlass` (below) records only the blurred artwork, and is what glass
+    // *inside* a screen uses, for the same reason.
+    //
+    // Until 3.0 each of the two was recorded twice, once for the engine and once
+    // for the app's own copy of the glass library, on every frame the app drew.
+    // That second renderer is gone: one glass, the engine's.
     val pageGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
 
     /**
@@ -626,12 +604,6 @@ fun SquareApp(
     val panelSurface = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
     val modalHost = dev.antigravity.fluidengine.ui.fluid.rememberFluidGlassModalHostState()
     val morphMenu = dev.antigravity.fluidengine.ui.fluidphysics.rememberFluidMorphMenuState()
-
-    // Everything the modals cover: the screens, the bars *and* the player. The
-    // sheets used to sample `pageBackdrop`, which stops at the navigation host,
-    // so opening one over the player blurred the home page behind it instead of
-    // the player it was opened from.
-    val overlayBackdrop = rememberLayerBackdrop()
 
     // Where the player was left, read before anything is drawn.
     //
@@ -986,7 +958,6 @@ fun SquareApp(
     }
 
     androidx.compose.runtime.CompositionLocalProvider(
-        dev.lelonio.square.ui.glass.LocalBackdropLuminance provides backdropLuminance,
         dev.antigravity.fluidengine.ui.fluid.LocalFluidGlassModalHostState provides modalHost,
         dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides pageGlass,
         // The ambient canvas: the ground, recorded *before* the page stands on
@@ -1047,20 +1018,8 @@ fun SquareApp(
             if (reach.isRunning || panelDragging.value) PanelTravelQuality else 1f
         }
 
-        // Held as a lambda so a scroll starting or stopping costs no
-        // recomposition of the app: the surfaces ask during draw.
-        // The panel travelling counts as the page moving, for the panes that
-        // are not the engine's: the vendored renderer holds its last capture
-        // while this is true, which is what keeps a bar sliding aside from
-        // re-photographing the page on every frame of the slide.
-        val pageMoving = remember(tabBarScroll) {
-            { tabBarScroll.scrolling || reach.isRunning || panelDragging.value }
-        }
-
         CompositionLocalProvider(
             LocalContentColor provides Ink,
-            dev.lelonio.square.ui.glass.LocalGlassEffectConfig provides glassConfig,
-            dev.lelonio.square.ui.glass.LocalGlassFrozen provides pageMoving,
             dev.antigravity.fluidengine.ui.fluid.LocalFluidGlassQuality provides panelQuality,
         ) {
             // The window, in its own pixels. The panel's geometry is worked out
@@ -1333,32 +1292,9 @@ fun SquareApp(
                 // then composited, every frame, whether or not anyone reads it.
                 // The sheets that read this one are shut most of the time, so
                 // the whole app was paying for a full-screen copy of itself for
-                // nothing.
-                // The playlist sheet belongs in here too. Left out, the layer
-                // it refracts was not being recorded while it was the only
-                // thing open, so the glass had nothing behind it and the sheet
-                // came up as a transparent panel with no depth at all.
-                val sheetsOpen = trackMenu != null || addToPlaylist.open || playlistMenu != null ||
-                    sharedTrack != null || friendsOpen
-                // Kept on a little past the close, or the layer would stop
-                // being recorded while the sheet is still fading out over it
-                // and the panel would go black on the way down.
-                var sheetsRecording by remember { mutableStateOf(false) }
-                LaunchedEffect(sheetsOpen) {
-                    if (sheetsOpen) sheetsRecording = true
-                    else {
-                        kotlinx.coroutines.delay(400)
-                        sheetsRecording = false
-                    }
-                }
-                Box(
-                    Modifier
-                        .fillMaxSize()
-                        .then(
-                            if (sheetsOpen || sheetsRecording) Modifier.layerBackdrop(overlayBackdrop)
-                            else Modifier,
-                        ),
-                ) {
+                // nothing. (The sheets record nothing of their own any more:
+                // they are the engine's modals, and the host samples pageGlass.)
+                Box(Modifier.fillMaxSize()) {
                 // Recorded unconditionally, and that is the fix for a real
                 // bug: this modifier used to come and go with the player, and
                 // re-attaching it over Home or the library needed a layout pass
@@ -1368,15 +1304,11 @@ fun SquareApp(
                 Box(
                     Modifier
                         .fillMaxSize()
-                        .layerBackdrop(pageBackdrop)
-                        // The engine's copy of the same record; see pageGlass.
                         .glassBackdropSource(pageGlass),
                 ) {
                     Box(
                         Modifier
                             .fillMaxSize()
-                            .layerBackdrop(artBackdrop)
-                            // The engine's copy of the same ground; see groundGlass.
                             .glassBackdropSource(groundGlass),
                     ) {
                         AppBackdrop(playback.artworkUrl, alive = playback.isPlaying)
@@ -1451,7 +1383,6 @@ fun SquareApp(
                                     viewModel.openContext(item.uri, item.title, item.artworkUrl)
                                     navController.navigate(Routes.PLAYLIST)
                                 },
-                                backdrop = artBackdrop,
                                 shelves = homeShelves,
                                 onPlayTrending = { tracks, index ->
                                     onPlay(tracks, index, null, false, trendingLabel, 0L)
@@ -1495,7 +1426,6 @@ fun SquareApp(
                                     viewModel.openContext(item.uri, item.title, item.artworkUrl)
                                     navController.navigate(Routes.PLAYLIST)
                                 },
-                                backdrop = artBackdrop,
                             )
                         }
 
@@ -1580,7 +1510,6 @@ fun SquareApp(
                                     )
                                     navController.navigate(Routes.PLAYLIST)
                                 },
-                                backdrop = artBackdrop,
                             )
                         }
 
@@ -1589,7 +1518,6 @@ fun SquareApp(
                                 state = state,
                                 webApi = webApi,
                                 contentPadding = settingsPadding,
-                                backdrop = artBackdrop,
                                 ground = groundGlass,
                                 deviceName = android.os.Build.MODEL ?: "Android",
                                 onClientIdChange = viewModel::onWebApiClientIdChange,
@@ -1921,10 +1849,9 @@ fun SquareApp(
                 }
 
                 // Out here for the same reason as the bars below: it refracts
-                // `pageBackdrop`, so it cannot be drawn inside it.
+                // `pageGlass`, so it cannot be drawn inside it.
                 SessionExpiredNotice(
                     visible = webApi.expired && !webApi.connecting,
-                    backdrop = pageBackdrop,
                     onReconnect = viewModel::connectWebApi,
                     onDismiss = viewModel::dismissWebApiExpiry,
                     modifier = Modifier
@@ -1933,7 +1860,7 @@ fun SquareApp(
                 )
 
                 // Outside the recorded layer, and that is structural rather than
-                // stylistic: these refract `pageBackdrop`, and a pane drawn
+                // stylistic: these refract `pageGlass`, and a pane drawn
                 // inside the layer it samples recurses on the render thread
                 // until the process dies.
                 // Faded out *and* taken out: a transparent bar still swallows
@@ -2016,48 +1943,13 @@ fun SquareApp(
                     // one, and that has to stay local — a pane drawn inside the
                     // layer it samples recurses on the render thread until the
                     // process dies.
-                    androidx.compose.runtime.CompositionLocalProvider(
-                        dev.lelonio.square.ui.glass.LocalAppBackdrop provides pageBackdrop,
-                    ) {
-                    // One pane of glass, given to both the bar and the pill
-                    // above it — which is how the reference does it: the tab bar
-                    // component paints no background of its own, the caller
-                    // hands it the material.
-                    // Where the glass is allowed to be, from the settings. Off
-                    // is not "no surface" — a transparent bar swallows the taps
-                    // meant for the page under it and reads as nothing at all —
-                    // but the film, which is the same thing a phone without the
-                    // hardware blur gets.
-                    val flat = dev.lelonio.square.ui.glass.GlassStyle.TRANSPARENT
-                    val barConfig = if (glassConfig.navBarEnabled) {
-                        glassConfig
-                    } else {
-                        glassConfig.copy(style = flat)
-                    }
-                    val pillConfig = if (glassConfig.miniPlayerEnabled) {
-                        glassConfig
-                    } else {
-                        glassConfig.copy(style = flat)
-                    }
-                    // Nothing special while the bar changes shape.
-                    //
-                    // Two things were tried there and both were worse than what
-                    // they fixed. Taking the glass away for the length of the
-                    // fold was the cheapest and you could see it go. Holding the
-                    // last capture instead was invisible while it lasted, but
-                    // the bar's two states are two different pieces of
-                    // composition, so the fresh capture arrives on a node that
-                    // has just been created and the correction is a cut nothing
-                    // can fade. The glass simply keeps working.
-                    val barShape = androidx.compose.foundation.shape.RoundedCornerShape(percent = 50)
-
-                    val barGlass = Modifier.liquidGlass(
-                        config = barConfig,
-                        shape = barShape,
-                        highlightAlpha = 0.3f,
-                    )
-                    // The same pane, on the pill above it, unless the settings
-                    // have singled that one out.
+                    // The bar paints its own glass now (engine 3.0): the panel,
+                    // the band the pill sits in and the puck are one material,
+                    // the engine's. Until 1.7.5 the app handed the bar a pane
+                    // from its own glass renderer (tabBarContentModifier), which
+                    // meant two recordings of the page for one bar. What the
+                    // settings still say about it is the frost and the wash
+                    // under the selected tab, which are the bar's own knobs.
 
                     // No pill while the panel is up: they are two ways of saying
                     // the same thing, and the window can only grow out of one of
@@ -2119,7 +2011,7 @@ fun SquareApp(
                                 // vertical pull never reached it in the first place.
                                 modifier = accessoryModifier
                                     .fillMaxWidth(),
-                                lightGlassConfig = pillConfig,
+                                glass = true,
                                 reactiveVisible = !pillHidden,
                                 inline = tabBarScroll.isInline,
                                 onClick = {
@@ -2153,8 +2045,6 @@ fun SquareApp(
                         null
                     }
 
-                    // Before anything is drawn for real; see GlassWarmUp.
-                    dev.lelonio.square.ui.glass.GlassWarmUp(pageBackdrop)
                     // Two tabs and a circle beside them: the capsule takes what
                     // is left of the row once the circle has its 80dp, and never
                     // more than the 88dp a tab is designed for. Without this the
@@ -2213,14 +2103,6 @@ fun SquareApp(
                             .fillMaxWidth()
                             .padding(horizontal = barMargin)
                             .padding(bottom = navBar + 8.dp),
-                        // The glass is the caller's to apply, and it is what the
-                        // bar is made of: transparent colours underneath, and
-                        // every surface sampling the page through this.
-                        tabBarContentModifier = barGlass,
-                        colors = FluidFloatingTabBarDefaults.colors(
-                            backgroundColor = Color.Transparent,
-                            accessoryBackgroundColor = Color.Transparent,
-                        ),
                         sizes = FluidFloatingTabBarDefaults.sizes(
                             tabBarContentPadding = PaddingValues(4.dp),
                             tabExpandedContentPadding = PaddingValues(vertical = 6.dp, horizontal = 6.dp),
@@ -2237,9 +2119,9 @@ fun SquareApp(
                         // screen moves. Everything else about its glass is the
                         // engine's business now.
                         glass = FluidFloatingTabBarGlass(
-                            blurRadius = barConfig.blurRadius.dp,
-                            puckColor = barConfig.puckColor,
-                            puckOpacity = barConfig.puckOpacity,
+                            blurRadius = glassConfig.blurRadius.dp,
+                            puckColor = glassConfig.puckColor,
+                            puckOpacity = glassConfig.puckOpacity,
                         ),
                         inlineAccessory = accessory,
                         expandedAccessory = accessory,
@@ -2309,11 +2191,11 @@ fun SquareApp(
                             },
                         )
                     }
-                    }
                 }
 
 
                 // What is playing, beside the page, on a window with room for it.
+
                 //
                 // The panel stands in for the pill, and stands in *exactly*: it
                 // is the surface the window grows out of, it reports the same
@@ -2523,7 +2405,6 @@ fun SquareApp(
                                         positionMs = positionMs,
                                         isPlaying = playback.isPlaying,
                                         onSeek = onSeekAction,
-                                        backdrop = artBackdrop,
                                         queue = queue,
                                         onPlayQueueItem = onPlayQueueItemAction,
                                         onRemoveQueueItem = onRemoveQueueItemAction,
@@ -2819,7 +2700,6 @@ fun SquareApp(
                                 onPlayQueueItem = onPlayQueueItemAction,
                                 onRemoveQueueItem = onRemoveQueueItemAction,
                                 onMoveQueueItem = onMoveQueueItemAction,
-                                backdrop = artBackdrop,
                                 canvas = canvas,
                                 devices = devices,
                                 onAnotherDevice = remote != null,
@@ -2908,7 +2788,6 @@ fun SquareApp(
                     title = shownPlaylist?.name.orEmpty(),
                     subtitle = stringResource(R.string.playlist),
                     artworkUrl = shownPlaylist?.artworkUrl,
-                    backdrop = overlayBackdrop,
                     onDismiss = { playlistMenu = null },
                 ) {
                     if (shownPlaylist != null) {
@@ -2953,16 +2832,27 @@ fun SquareApp(
                     }
                 }
 
+                // The engine's alert, in the modal host: real glass over the
+                // page, and an exit that is seen after the question is gone.
                 deleting?.let { target ->
-                    dev.lelonio.square.ui.components.ConfirmDialog(
+                    dev.antigravity.fluidengine.ui.fluid.FluidAlert(
+                        onDismissRequest = { deleting = null },
                         title = stringResource(R.string.delete_playlist_title),
                         message = stringResource(R.string.delete_playlist_message, target.name),
-                        confirmLabel = stringResource(R.string.delete),
-                        onConfirm = {
-                            viewModel.deletePlaylist(target.uri)
-                            deleting = null
-                        },
-                        onDismiss = { deleting = null },
+                        actions = listOf(
+                            dev.antigravity.fluidengine.ui.fluid.FluidAlertAction(
+                                stringResource(R.string.cancel),
+                                { deleting = null },
+                            ),
+                            dev.antigravity.fluidengine.ui.fluid.FluidAlertAction(
+                                stringResource(R.string.delete),
+                                {
+                                    viewModel.deletePlaylist(target.uri)
+                                    deleting = null
+                                },
+                                dev.antigravity.fluidengine.ui.fluid.FluidAlertAction.Emphasis.Destructive,
+                            ),
+                        ),
                     )
                 }
 
@@ -2970,7 +2860,8 @@ fun SquareApp(
                 // have already been resolved by the time this appears, so the
                 // numbers in it are real rather than a guess.
                 artistDownload?.let { asked ->
-                    dev.lelonio.square.ui.components.ConfirmDialog(
+                    dev.antigravity.fluidengine.ui.fluid.FluidAlert(
+                        onDismissRequest = viewModel::dismissArtistDownload,
                         title = stringResource(R.string.download),
                         message = pluralStringResource(
                             R.plurals.download_artist_confirm,
@@ -2982,21 +2873,34 @@ fun SquareApp(
                                 asked.estimate,
                             ),
                         ),
-                        confirmLabel = stringResource(R.string.download),
-                        onConfirm = viewModel::confirmArtistDownload,
-                        onDismiss = viewModel::dismissArtistDownload,
+                        actions = listOf(
+                            dev.antigravity.fluidengine.ui.fluid.FluidAlertAction(
+                                stringResource(R.string.cancel),
+                                viewModel::dismissArtistDownload,
+                            ),
+                            // Not red: a download costs room, not anything that
+                            // cannot be had back.
+                            dev.antigravity.fluidengine.ui.fluid.FluidAlertAction(
+                                stringResource(R.string.download),
+                                viewModel::confirmArtistDownload,
+                                dev.antigravity.fluidengine.ui.fluid.FluidAlertAction.Emphasis.Preferred,
+                            ),
+                        ),
                     )
                 }
 
+                // The engine's prompt: one line of text, the button is the
+                // validation, and Enter confirms.
                 naming?.let { request ->
-                    dev.lelonio.square.ui.components.NameDialog(
+                    dev.antigravity.fluidengine.ui.fluid.FluidPromptAlert(
                         title = stringResource(
                             if (request.playlist == null) R.string.new_playlist else R.string.rename,
                         ),
-                        initial = request.playlist?.name.orEmpty(),
+                        initialValue = request.playlist?.name.orEmpty(),
                         confirmLabel = stringResource(
                             if (request.playlist == null) R.string.create else R.string.save,
                         ),
+                        cancelLabel = stringResource(R.string.cancel),
                         onConfirm = { name ->
                             val playlist = request.playlist
                             if (playlist == null) {
@@ -3006,8 +2910,9 @@ fun SquareApp(
                             }
                             naming = null
                         },
-                        onDismiss = { naming = null },
+                        onDismissRequest = { naming = null },
                     )
+
                 }
 
                 // Held one beat longer than the state that opened it: the
@@ -3024,7 +2929,6 @@ fun SquareApp(
                     title = menu?.track?.name.orEmpty(),
                     subtitle = menu?.track?.artist.orEmpty(),
                     artworkUrl = menu?.track?.artworkUrl,
-                    backdrop = overlayBackdrop,
                     onDismiss = { trackMenu = null },
                 ) {
                     if (menu != null) {
@@ -3060,7 +2964,6 @@ fun SquareApp(
                 FriendsPanel(
                     visible = friendsOpen,
                     friends = friends,
-                    backdrop = overlayBackdrop,
                     onOpenTrack = { friend ->
                         friendsOpen = false
                         sharedTrack = dev.lelonio.square.data.CatalogTrack(
@@ -3087,7 +2990,6 @@ fun SquareApp(
                 SharedTrackCard(
                     visible = sharedTrack != null,
                     track = sharedTrack ?: lastShared,
-                    backdrop = overlayBackdrop,
                     onPlay = {
                         val track = sharedTrack ?: return@SharedTrackCard
                         sharedTrack = null
@@ -3106,7 +3008,6 @@ fun SquareApp(
                 // the player, and it is one sheet with one state.
                 AddToPlaylistSheet(
                     state = addToPlaylist,
-                    backdrop = overlayBackdrop,
                     onSelect = viewModel::addToPlaylist,
                     onDismiss = viewModel::closeAddToPlaylist,
                 )
@@ -3138,7 +3039,6 @@ fun SquareApp(
                     OnboardingScreen(
                         state = state,
                         webApi = webApi,
-                        backdrop = artBackdrop,
                         onLogIn = viewModel::logIn,
                         onClientIdChange = viewModel::onWebApiClientIdChange,
                         onConnectWebApi = { viewModel.connectWebApi() },

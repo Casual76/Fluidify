@@ -34,7 +34,6 @@ import kotlin.math.roundToInt
 import androidx.compose.ui.unit.sp
 import dev.lelonio.square.R
 import dev.lelonio.square.data.Lyrics
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.ui.theme.Ink
 import dev.lelonio.square.ui.theme.InkDim
 import kotlin.math.abs
@@ -60,7 +59,6 @@ internal fun PanelExtension(
     positionMs: State<Long>,
     isPlaying: Boolean,
     onSeek: (Long) -> Unit,
-    backdrop: Backdrop,
     queue: List<QueueEntry>,
     onPlayQueueItem: (Int) -> Unit,
     onRemoveQueueItem: (Int) -> Unit,
@@ -119,7 +117,6 @@ internal fun PanelExtension(
                     positionMs = positionMs,
                     isPlaying = isPlaying,
                     onSeek = onSeek,
-                    backdrop = backdrop,
                     expandSignal = 0,
                     modifier = Modifier.fillMaxSize(),
                 )

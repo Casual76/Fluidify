@@ -31,8 +31,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.height
-import dev.lelonio.square.ui.glass.backdrop.backdrops.layerBackdrop
-import dev.lelonio.square.ui.glass.backdrop.backdrops.rememberLayerBackdrop
 import androidx.media3.common.Player
 import androidx.media3.common.VideoSize
 import com.adamglin.PhosphorIcons
@@ -103,7 +101,6 @@ fun FullScreenVideo(
     // What the glass refracts here is the black behind the picture, recorded on
     // its own: a pane cannot sample a protected video, and asking it to would
     // leave the discs empty.
-    val backdrop = rememberLayerBackdrop()
 
     // The status bar and the gesture pill go away with everything else.
     //
@@ -141,8 +138,7 @@ fun FullScreenVideo(
         Box(
             Modifier
                 .fillMaxSize()
-                .background(Color.Black)
-                .layerBackdrop(backdrop),
+                .background(Color.Black),
         )
 
         VideoSurface(player, attachKey, Modifier.fillMaxWidth().aspectRatio(ratio))
@@ -230,7 +226,6 @@ fun FullScreenVideo(
 
             Controls(
                 state = state,
-                backdrop = backdrop,
                 onTogglePlay = onTogglePlay,
                 onNext = onNext,
                 onPrevious = onPrevious,

@@ -42,13 +42,9 @@ import com.adamglin.phosphoricons.Fill
 import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.fill.Play
 import com.adamglin.phosphoricons.regular.Plus
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
-import dev.lelonio.square.ui.glass.backdrop.drawBackdrop
-import dev.lelonio.square.ui.glass.backdrop.effects.blur
 import dev.lelonio.square.R
 import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.ui.glass.pressable
-import dev.lelonio.square.ui.player.GlassSurface
 import dev.lelonio.square.ui.theme.rememberArtworkPalette
 import dev.lelonio.square.ui.theme.softShadow
 import androidx.compose.ui.res.stringResource
@@ -68,54 +64,25 @@ import androidx.compose.ui.res.stringResource
  * the tab bar and the now-playing bar, not inside a screen.
  */
 @Composable
-fun BoxScope.SharedTrackCard(
+fun SharedTrackCard(
     visible: Boolean,
     track: CatalogTrack?,
-    backdrop: Backdrop,
     onPlay: () -> Unit,
     onAddToPlaylist: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    AnimatedVisibility(
+    val palette by rememberArtworkPalette(track?.artworkUrl)
+    // The engine's pop-up (3.0): the modal host draws the scrim, the panel is
+    // the glass every floating pane in the family is made of, and back closes
+    // it. The app's own panel stood over a 28 dp blur of the page in its own
+    // glass, and with no BackHandler a back used to pop the page underneath.
+    dev.antigravity.fluidengine.ui.fluid.FluidGlassModalPortal(
         visible = visible,
-        enter = fadeIn(tween(200)),
-        exit = fadeOut(tween(180)),
-        modifier = Modifier.fillMaxSize(),
+        onDismissRequest = onDismiss,
+        paneTitle = track?.name,
     ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { RectangleShape },
-                    effects = { blur(30f.dp.toPx()) },
-                    onDrawSurface = { drawRect(dev.lelonio.square.ui.theme.sheetScrim(0.52f)) },
-                )
-                .clickable(interactionSource = null, indication = null, onClick = onDismiss),
-        )
-    }
-
-    AnimatedVisibility(
-        visible = visible,
-        enter = scaleIn(tween(260), initialScale = 0.88f) + fadeIn(tween(180)),
-        exit = scaleOut(tween(170), targetScale = 0.94f) + fadeOut(tween(140)),
-        modifier = Modifier.align(Alignment.Center),
-    ) {
-        val shape = RoundedCornerShape(36.dp)
-        val palette by rememberArtworkPalette(track?.artworkUrl)
-
-        GlassSurface(
-            backdrop = backdrop,
-            shape = shape,
-            surfaceColor = dev.lelonio.square.ui.theme.glassFilm(0.07f),
-            blurScale = 23.0f,
-            modifier = Modifier
-                .padding(horizontal = 26.dp)
-                .fillMaxWidth()
-                .clip(shape)
-                .softShadow(shape, elevation = 30.dp, spot = 0.4f)
-                .clickable(interactionSource = null, indication = null) {},
-        ) {
+        // A box, as the panel was: the record's light sits behind the card.
+        Box {
             // The record's own light, thrown on the panel behind it. Blurred
             // past any shape of its own, so what is left is colour: the card of
             // a red cover is warm and the card of a blue one is cold, without

@@ -54,7 +54,6 @@ import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.ArrowLeft
 import com.adamglin.phosphoricons.regular.ArrowUpRight
 import com.adamglin.phosphoricons.regular.Check
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
 import dev.lelonio.square.R
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.AppIcon
@@ -88,7 +87,6 @@ import dev.lelonio.square.ui.theme.InkDim
 fun OnboardingScreen(
     state: MainViewModel.UiState,
     webApi: MainViewModel.WebApiState,
-    backdrop: Backdrop,
     onLogIn: () -> Unit,
     onClientIdChange: (String) -> Unit,
     onConnectWebApi: () -> Unit,
@@ -176,11 +174,10 @@ fun OnboardingScreen(
                         1 -> LogIn(
                             loggedIn = loggedIn,
                             connecting = state is MainViewModel.UiState.Loading,
-                            backdrop = backdrop,
                             onLogIn = onLogIn,
                         )
                         2 -> Dashboard(redirectUri = webApi.redirectUri)
-                        3 -> ClientId(webApi, backdrop, onClientIdChange, onConnectWebApi)
+                        3 -> ClientId(webApi, onClientIdChange, onConnectWebApi)
                         else -> Done()
                     }
                     Spacer(Modifier.height(28.dp))
@@ -244,7 +241,6 @@ private fun Welcome(language: String, onLanguage: (String) -> Unit) {
 private fun LogIn(
     loggedIn: Boolean,
     connecting: Boolean,
-    backdrop: Backdrop,
     onLogIn: () -> Unit,
 ) {
     StepTitle(stringResource(R.string.onboarding_login_title))
@@ -340,7 +336,6 @@ private fun Dashboard(redirectUri: String) {
 @Composable
 private fun ClientId(
     webApi: MainViewModel.WebApiState,
-    backdrop: Backdrop,
     onClientIdChange: (String) -> Unit,
     onConnectWebApi: () -> Unit,
 ) {
@@ -354,7 +349,8 @@ private fun ClientId(
         // The same form the settings screen shows, so what is learned here is
         // where it stays.
         Box(Modifier.padding(top = 8.dp, start = 0.dp)) {
-            WebApiSetupInline(webApi, backdrop, onClientIdChange, onConnectWebApi)
+            WebApiSetupInline(webApi, onClientIdChange, onConnectWebApi)
+
         }
         Note(stringResource(R.string.onboarding_paste_error))
     }

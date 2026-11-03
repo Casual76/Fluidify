@@ -44,13 +44,9 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
-import dev.lelonio.square.ui.glass.backdrop.Backdrop
-import dev.lelonio.square.ui.glass.backdrop.drawBackdrop
-import dev.lelonio.square.ui.glass.backdrop.effects.blur
 import dev.lelonio.square.R
 import dev.lelonio.square.data.FriendListen
 import dev.lelonio.square.ui.glass.pressable
-import dev.lelonio.square.ui.player.GlassSurface
 import dev.lelonio.square.ui.theme.Ink
 import dev.lelonio.square.ui.theme.softShadow
 
@@ -66,10 +62,9 @@ import dev.lelonio.square.ui.theme.softShadow
  * exactly as a link to it would.
  */
 @Composable
-fun BoxScope.FriendsPanel(
+fun FriendsPanel(
     visible: Boolean,
     friends: List<FriendListen>,
-    backdrop: Backdrop,
     onOpenTrack: (FriendListen) -> Unit,
     onDismiss: () -> Unit,
     /**
@@ -82,80 +77,50 @@ fun BoxScope.FriendsPanel(
     addState: dev.lelonio.square.ui.MainViewModel.AddFriend =
         dev.lelonio.square.ui.MainViewModel.AddFriend.IDLE,
 ) {
-    AnimatedVisibility(
+    // The engine's pop-up (3.0): the modal host draws the scrim, the panel is
+    // the glass every floating pane in the family is made of, and back closes
+    // it. The app's own panel stood over a 28 dp blur of the page in its own
+    // glass, and with no BackHandler a back used to pop the page underneath.
+    dev.antigravity.fluidengine.ui.fluid.FluidGlassModalPortal(
         visible = visible,
-        enter = fadeIn(tween(200)),
-        exit = fadeOut(tween(180)),
-        modifier = Modifier.fillMaxSize(),
+        onDismissRequest = onDismiss,
+        paneTitle = stringResource(R.string.friends_listening),
     ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .drawBackdrop(
-                    backdrop = backdrop,
-                    shape = { RectangleShape },
-                    effects = { blur(28f.dp.toPx()) },
-                    onDrawSurface = { drawRect(dev.lelonio.square.ui.theme.sheetScrim(0.46f)) },
-                )
-                .clickable(interactionSource = null, indication = null, onClick = onDismiss),
-        )
-    }
+        Column(Modifier.padding(vertical = 22.dp)) {
+            Text(
+                stringResource(R.string.friends_listening),
+                style = MaterialTheme.typography.titleMedium,
+                fontWeight = FontWeight.SemiBold,
+                color = dev.lelonio.square.ui.theme.Ink,
+                modifier = Modifier.padding(horizontal = 22.dp),
+            )
 
-    AnimatedVisibility(
-        visible = visible,
-        enter = scaleIn(tween(240), initialScale = 0.9f) + fadeIn(tween(160)),
-        exit = scaleOut(tween(160), targetScale = 0.94f) + fadeOut(tween(140)),
-        modifier = Modifier.align(Alignment.Center),
-    ) {
-        val shape = RoundedCornerShape(32.dp)
-        GlassSurface(
-            backdrop = backdrop,
-            shape = shape,
-            surfaceColor = dev.lelonio.square.ui.theme.glassFilm(0.08f),
-            blurScale = 23.0f,
-            modifier = Modifier
-                .padding(horizontal = 22.dp)
-                .fillMaxWidth()
-                .clip(shape)
-                .softShadow(shape, elevation = 26.dp, spot = 0.35f)
-                .clickable(interactionSource = null, indication = null) {},
-        ) {
-            Column(Modifier.padding(vertical = 22.dp)) {
+            if (friends.isEmpty()) {
+                // Says why it is empty, because there are three reasons and
+                // none of them is a failure the listener could act on.
                 Text(
-                    stringResource(R.string.friends_listening),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontWeight = FontWeight.SemiBold,
-                    color = dev.lelonio.square.ui.theme.Ink,
-                    modifier = Modifier.padding(horizontal = 22.dp),
+                    stringResource(R.string.friends_none),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.6f),
+                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
                 )
-
-                if (friends.isEmpty()) {
-                    // Says why it is empty, because there are three reasons and
-                    // none of them is a failure the listener could act on.
-                    Text(
-                        stringResource(R.string.friends_none),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.6f),
-                        modifier = Modifier.padding(horizontal = 22.dp, vertical = 14.dp),
-                    )
-                    AddFriendField(addState, onAddFriend)
-                    return@Column
-                }
-
-                LazyColumn(
-                    Modifier
-                        .padding(top = 6.dp)
-                        // Bounded, so a well-connected account gets a list that
-                        // scrolls rather than a panel taller than the screen.
-                        .heightIn(max = 420.dp),
-                ) {
-                    items(friends, key = { it.userUri + it.trackUri }) { friend ->
-                        FriendRow(friend) { onOpenTrack(friend) }
-                    }
-                }
-
                 AddFriendField(addState, onAddFriend)
+                return@Column
             }
+
+            LazyColumn(
+                Modifier
+                    .padding(top = 6.dp)
+                    // Bounded, so a well-connected account gets a list that
+                    // scrolls rather than a panel taller than the screen.
+                    .heightIn(max = 420.dp),
+            ) {
+                items(friends, key = { it.userUri + it.trackUri }) { friend ->
+                    FriendRow(friend) { onOpenTrack(friend) }
+                }
+            }
+
+            AddFriendField(addState, onAddFriend)
         }
     }
 }

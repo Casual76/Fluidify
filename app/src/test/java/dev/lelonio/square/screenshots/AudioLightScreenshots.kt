@@ -19,8 +19,8 @@ import com.github.takahirom.roborazzi.captureRoboImage
 import dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop
 import dev.lelonio.square.playback.AudioLightFrame
 import dev.lelonio.square.ui.MainViewModel
-import dev.lelonio.square.ui.glass.*
-import dev.lelonio.square.ui.glass.backdrop.backdrops.*
+import dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop
+import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
 import dev.lelonio.square.ui.player.*
 import dev.lelonio.square.ui.theme.SquareTheme
 import org.junit.*
@@ -46,18 +46,18 @@ class AudioLightScreenshots {
         val frame=mutableStateOf<AudioLightFrame?>(if(enabled) AudioLightFrame(energy=.7f,bass=.9f,mids=.5f,treble=.3f,positionMs=82000,bands=listOf(.8f,.9f,.7f,.4f,.6f,.5f,.3f,.2f)) else null)
         compose.mainClock.autoAdvance=false
         compose.setContent {
-            val backdrop=rememberLayerBackdrop(); val ground=rememberGlassBackdrop()
+            val backdrop=rememberGlassBackdrop(); val ground=rememberGlassBackdrop()
             SquareTheme(darkTheme=!light,amoled=false,systemBars=false) {
-                CompositionLocalProvider(LocalAppBackdrop provides backdrop,LocalAudioLightPreview provides frame) {
+                CompositionLocalProvider(LocalGlassBackdrop provides backdrop,LocalAudioLightPreview provides frame) {
                     Box(Modifier.fillMaxSize()) {
-                        Box(Modifier.fillMaxSize().layerBackdrop(backdrop).background(if(light) Color(0xffeaded4) else Color(0xff261f32)))
+                        Box(Modifier.fillMaxSize().glassBackdropSource(backdrop).background(if(light) Color(0xffeaded4) else Color(0xff261f32)))
                         if(mini) FloatingMiniPlayer(state,remember{mutableLongStateOf(82000)},
-                            modifier=Modifier.align(Alignment.Center).padding(horizontal=20.dp),inline=compact,lightGlassConfig=GlassEffectConfig(style=if(flat) GlassStyle.TRANSPARENT else GlassStyle.LIQUID),
+                            modifier=Modifier.align(Alignment.Center).padding(horizontal=20.dp),inline=compact,glass=!flat,
                             onClick={},onTogglePlay={},onNext={},onPrevious={},onSeek={})
                         else PlayerScreen(state,remember{mutableLongStateOf(82000)},onCollapse={},onTogglePlay={},onNext={},onPrevious={},onSeek={},
                             onToggleShuffle={},onCycleRepeat={},queue=emptyList(),lyrics=null,lyricsLoading=false,credits=null,creditsLoading=false,
                             onWantCredits={},onWantArtist={_,_->},onPlayQueueItem={},onRemoveQueueItem={},onMoveQueueItem={_,_->},
-                            backdrop=backdrop,canvas=if(canvasVisible || canvasLoading) dev.lelonio.square.data.CanvasClip(
+                            canvas=if(canvasVisible || canvasLoading) dev.lelonio.square.data.CanvasClip(
                                 if(canvasLoading) "file:///missing-canvas.png" else file.toURI().toString(),false) else null,
                             devices=MainViewModel.DevicesState(),onOpenDevices={},onCloseDevices={},onMorphDrag={},onMorphRelease={},
                             playerOpen={true},ground=ground,artist=null,artistLoading=false,onRefreshDevices={},onSelectDevice={},onSetDeviceVolume={_,_->},
