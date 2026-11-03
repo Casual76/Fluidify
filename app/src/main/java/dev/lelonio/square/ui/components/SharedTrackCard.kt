@@ -44,7 +44,7 @@ import com.adamglin.phosphoricons.fill.Play
 import com.adamglin.phosphoricons.regular.Plus
 import dev.lelonio.square.R
 import dev.lelonio.square.data.CatalogTrack
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import dev.lelonio.square.ui.theme.rememberArtworkPalette
 import dev.lelonio.square.ui.theme.softShadow
 import androidx.compose.ui.res.stringResource
@@ -208,7 +208,7 @@ private fun CardButton(
                 if (filled) dev.lelonio.square.ui.theme.Ink else dev.lelonio.square.ui.theme.glassFilm(0.12f),
                 shape,
             )
-            .pressable(onClick = onClick, pressedScale = 0.94f)
+            .fluidPressable(onClick = onClick, pressedScale = 0.94f)
             .padding(vertical = 14.dp),
         horizontalArrangement = Arrangement.Center,
         verticalAlignment = Alignment.CenterVertically,

@@ -20,7 +20,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import dev.lelonio.square.R
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import dev.lelonio.square.ui.player.GlassSurface
 import androidx.compose.foundation.shape.RoundedCornerShape
 
@@ -76,13 +76,13 @@ fun SessionExpiredNotice(
                         style = MaterialTheme.typography.labelLarge,
                         fontWeight = FontWeight.SemiBold,
                         color = dev.lelonio.square.ui.theme.Ink,
-                        modifier = Modifier.pressable(onClick = onReconnect),
+                        modifier = Modifier.fluidPressable(onClick = onReconnect),
                     )
                     Text(
                         stringResource(R.string.later),
                         style = MaterialTheme.typography.labelLarge,
                         color = dev.lelonio.square.ui.theme.Ink.copy(alpha = 0.6f),
-                        modifier = Modifier.pressable(onClick = onDismiss),
+                        modifier = Modifier.fluidPressable(onClick = onDismiss),
                     )
                 }
             }

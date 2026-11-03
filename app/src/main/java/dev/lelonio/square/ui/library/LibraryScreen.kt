@@ -74,7 +74,7 @@ import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.Artwork
 import dev.lelonio.square.ui.components.PlaylistCover
 import dev.lelonio.square.ui.components.GlassButton
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import dev.lelonio.square.ui.player.GlassFilm
 import dev.lelonio.square.ui.theme.Ink
 import dev.lelonio.square.ui.theme.InkDim
@@ -676,7 +676,7 @@ private fun Header(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Filter.entries.forEach { entry ->
-                    dev.lelonio.square.ui.components.GlassChip(
+                    dev.antigravity.fluidengine.ui.fluid.FluidChip(
                         label = stringResource(entry.label),
                         selected = entry == filter,
                         onClick = { onFilter(entry) },
@@ -766,19 +766,21 @@ private fun GridTile(
     val contextMenu = dev.antigravity.fluidengine.ui.fluid.rememberFluidContextMenu(
         actions = { contextActions },
     )
-    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // The menu's own word, the engine's Open, and only if it opens: the
+    // platform LongPress that was here came on top of it, outside the 70 ms
+    // net, and read as a knock-knock.
+    val haptics = dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics.current
     Column(
         Modifier
             .fluidContextMenuAnchor(contextMenu)
-            .pressable(
-                onClick,
+            .fluidPressable(
+                onClick = onClick,
                 onLongClick = {
                     if (contextMenu.open()) {
-                        haptics.performHapticFeedback(
-                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
-                        )
+                        haptics.play(dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent.Open)
                     }
                 },
+                longClickHaptic = null,
             ),
     ) {
         PlaylistCover(
@@ -816,23 +818,24 @@ private fun ListRow(
     val contextMenu = dev.antigravity.fluidengine.ui.fluid.rememberFluidContextMenu(
         actions = { contextActions },
     )
-    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // The menu's own word, the engine's Open, and only if it opens: the
+    // platform LongPress that was here came on top of it, outside the 70 ms
+    // net, and read as a knock-knock.
+    val haptics = dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics.current
     Row(
         Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(16.dp))
             .fluidContextMenuAnchor(contextMenu)
-            .pressable(
-                onClick,
-                shape = RoundedCornerShape(16.dp),
-                pressedScale = 0.98f,
+            .fluidPressable(
+                onClick = onClick,
                 onLongClick = {
                     if (contextMenu.open()) {
-                        haptics.performHapticFeedback(
-                            androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
-                        )
+                        haptics.play(dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent.Open)
                     }
                 },
+                longClickHaptic = null,
+                pressedScale = 0.98f,
             )
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -950,7 +953,7 @@ private fun Notice(
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,
             modifier = Modifier
-                .pressable(onAction, shape = RoundedCornerShape(12.dp), pressedScale = 0.96f)
+                .fluidPressable(onClick = onAction, pressedScale = 0.96f)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
         )
     }
@@ -1004,7 +1007,7 @@ private fun ArtistShelf(
                 Column(
                     Modifier
                         .width(76.dp)
-                        .pressable({ onOpen(artist) }),
+                        .fluidPressable(onClick = { onOpen(artist) }),
                     horizontalAlignment = Alignment.CenterHorizontally,
                 ) {
                     Artwork(

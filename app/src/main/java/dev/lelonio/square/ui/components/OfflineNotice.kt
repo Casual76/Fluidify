@@ -29,7 +29,7 @@ import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.regular.CloudSlash
 import dev.lelonio.square.R
 import dev.lelonio.square.playback.OfflineMode
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 
 /**
  * A line saying the app is offline, and why.
@@ -64,7 +64,7 @@ fun OfflineNotice(modifier: Modifier = Modifier, onTurnOff: () -> Unit = {}) {
                 // the network is gone is not something to be talked out of.
                 .then(
                     if (manual) {
-                        Modifier.pressable(onTurnOff, RoundedCornerShape(12.dp), 0.99f)
+                        Modifier.fluidPressable(onClick = onTurnOff, pressedScale = 0.99f)
                     } else {
                         Modifier
                     },

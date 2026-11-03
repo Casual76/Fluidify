@@ -68,7 +68,7 @@ import dev.lelonio.square.R
 import dev.lelonio.square.data.CanvasClip
 import dev.lelonio.square.ui.components.Artwork
 import dev.lelonio.square.ui.components.RoundGlassButton
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import dev.lelonio.square.ui.theme.Ink
 import dev.lelonio.square.ui.theme.InkDim
 import dev.lelonio.square.ui.theme.SelfPaintedPage
@@ -377,7 +377,7 @@ fun NowPlayingPanel(
                             }
                             .then(
                                 if (interactive) {
-                                    Modifier.pressable(onOpen, pressedScale = 0.98f)
+                                    Modifier.fluidPressable(onClick = onOpen, pressedScale = 0.98f)
                                 } else {
                                     Modifier
                                 },
@@ -668,7 +668,7 @@ private fun InsetCover(
             .fillMaxSize()
             .then(
                 if (interactive) {
-                    Modifier.pressable(onOpen, pressedScale = 0.97f)
+                    Modifier.fluidPressable(onClick = onOpen, pressedScale = 0.97f)
                 } else {
                     Modifier
                 },

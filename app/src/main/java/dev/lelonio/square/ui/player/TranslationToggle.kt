@@ -30,7 +30,6 @@ import com.adamglin.phosphoricons.Regular
 import com.adamglin.phosphoricons.fill.Translate
 import com.adamglin.phosphoricons.regular.Translate
 import dev.lelonio.square.R
-import dev.lelonio.square.ui.glass.shapes.ContinuousCapsule
 
 /**
  * Whether to read the song in your own language as well.
@@ -75,9 +74,9 @@ fun TranslationToggle(
                 scaleX = grip
                 scaleY = grip
             }
-            .clip(ContinuousCapsule())
+            .clip(dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape)
             // The dial's material, which is the buttons'; see playerControlGlass.
-            .playerControlGlass(ContinuousCapsule())
+            .playerControlGlass(dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape)
             // Claimed in the first pass, for the reason the dial beside it
             // does: the lyrics behind this scroll, and the player above it
             // closes on a drag, so a touch left unconsumed becomes theirs.

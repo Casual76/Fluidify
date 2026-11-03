@@ -83,7 +83,7 @@ import dev.lelonio.square.ui.components.Artwork
 import dev.lelonio.square.ui.components.LazyScrollBar
 import dev.lelonio.square.ui.components.SwipeToQueue
 import dev.lelonio.square.ui.components.GlassButton
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import dev.lelonio.square.ui.theme.InkDim
 import dev.lelonio.square.ui.theme.rememberArtworkColor
 import dev.lelonio.square.ui.theme.softShadow
@@ -941,7 +941,7 @@ private fun DetailHeader(
                         // written on it have to be each other's opposite, not
                         // two constants that happened to be.
                         .background(dev.lelonio.square.ui.theme.Ink)
-                        .pressable(onPlay, pressedScale = 0.95f)
+                        .fluidPressable(onClick = onPlay, pressedScale = 0.95f)
                         // Narrower with a word button beside it. Three controls
                         // and two labels do not fit across a phone at the width
                         // this has to itself on every other page.
@@ -1292,7 +1292,7 @@ private fun CapsuleAction(
     Box(
         Modifier
             .size(width = 46.dp, height = 42.dp)
-            .pressable(onClick, pressedScale = 0.92f, enabled = enabled),
+            .fluidPressable(onClick = onClick, enabled = enabled, pressedScale = 0.92f),
         contentAlignment = Alignment.Center,
     ) {
         Icon(
@@ -1546,7 +1546,7 @@ private fun AlbumStrip(
                 Column(
                     Modifier
                         .width(132.dp)
-                        .pressable({ onOpen(album) }),
+                        .fluidPressable(onClick = { onOpen(album) }),
                 ) {
                     Artwork(
                         url = album.artworkUrl,
@@ -1671,12 +1671,13 @@ private fun TrackRow(
     val contextMenu = dev.antigravity.fluidengine.ui.fluid.rememberFluidContextMenu(
         actions = { contextActions },
     )
-    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    // The menu's own word, the engine's Open, and only if it opens: the
+    // platform LongPress that was here came on top of it, outside the 70 ms
+    // net, and read as a knock-knock.
+    val haptics = dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics.current
     val raiseMenu = {
         if (contextMenu.open()) {
-            haptics.performHapticFeedback(
-                androidx.compose.ui.hapticfeedback.HapticFeedbackType.LongPress,
-            )
+            haptics.play(dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent.Open)
         }
     }
     // Eased rather than snapped: rows change state on every track advance, and
@@ -1715,14 +1716,15 @@ private fun TrackRow(
                 )
             }
             .fluidContextMenuAnchor(contextMenu)
-            .pressable(
+            .fluidPressable(
                 // Inert rather than disabled: `enabled = false` would take the
                 // long press with it, and copying a link or queueing a song for
                 // when there is a connection again are still worth doing.
                 onClick = { if (!unavailable) onClick() },
-                shape = shape,
-                pressedScale = if (unavailable) 1f else 0.985f,
                 onLongClick = { raiseMenu() },
+                pressedScale = if (unavailable) 1f else 0.985f,
+                // The menu says Open when it opens; nothing else on the hold.
+                longClickHaptic = null,
             )
             .padding(horizontal = 12.dp, vertical = 11.dp)
             // Only when it is actually dimmed. `graphicsLayer` gives every row
@@ -1950,7 +1952,7 @@ private fun FollowPill(following: Boolean, onClick: () -> Unit) {
                     Modifier
                 },
             )
-            .pressable(onClick, pressedScale = 0.94f)
+            .fluidPressable(onClick = onClick, pressedScale = 0.94f)
             .padding(horizontal = 18.dp, vertical = 13.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

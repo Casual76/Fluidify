@@ -13,8 +13,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.hapticfeedback.HapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
+import dev.antigravity.fluidengine.ui.haptics.FluidHaptics
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import dev.antigravity.fluidengine.ui.fluid.FluidMotion
@@ -228,11 +228,11 @@ fun CoroutineScope.dragPlayerMorphBy(
 fun CoroutineScope.settlePlayerMorphUnits(
     expand: Animatable<Float, AnimationVector1D>,
     velocityUnitsPerSec: Float,
-    haptics: HapticFeedback?,
+    haptics: FluidHaptics?,
 ) = launch {
     val target = playerMorphTarget(expand.value, velocityUnitsPerSec)
     if (target == 0f && expand.value > MorphEpsilon) {
-        haptics?.performHapticFeedback(HapticFeedbackType.LongPress)
+        haptics?.play(FluidHapticEvent.Close)
     }
     expand.animateTo(target, PlayerMorphSpec, initialVelocity = velocityUnitsPerSec)
 }
@@ -285,11 +285,11 @@ fun CoroutineScope.settlePanel(
     velocityUnitsPerSec: Float,
     maxReach: Float,
     origin: Float,
-    haptics: HapticFeedback?,
+    haptics: FluidHaptics?,
 ) {
     val target = panelMorphTarget(reach.value + expand.value, velocityUnitsPerSec, maxReach + 1f)
     if (target != origin) {
-        haptics?.performHapticFeedback(HapticFeedbackType.LongPress)
+        haptics?.play(FluidHapticEvent.Threshold)
     }
     val reachTarget = target.coerceAtMost(maxReach)
     val expandTarget = (target - maxReach).coerceAtLeast(0f)
@@ -321,13 +321,13 @@ fun CoroutineScope.settlePlayerMorph(
     expand: Animatable<Float, AnimationVector1D>,
     velocityPxPerSec: Float,
     travelPx: Float,
-    haptics: HapticFeedback?,
+    haptics: FluidHaptics?,
 ) = launch {
     val velocity = -velocityPxPerSec / travelPx.coerceAtLeast(1f)
     val target = playerMorphTarget(expand.value, velocity)
     // One knock, and only when the journey actually ends somewhere it was not.
     if (target == 0f && expand.value > MorphEpsilon) {
-        haptics?.performHapticFeedback(HapticFeedbackType.LongPress)
+        haptics?.play(FluidHapticEvent.Close)
     }
     expand.animateTo(target, PlayerMorphSpec, initialVelocity = velocity)
 }

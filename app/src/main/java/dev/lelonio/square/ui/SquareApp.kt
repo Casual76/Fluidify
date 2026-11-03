@@ -80,7 +80,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.text.style.TextOverflow
 import com.adamglin.phosphoricons.fill.XCircle
 import androidx.compose.ui.unit.sp
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.foundation.gestures.detectDragGestures
 import androidx.compose.foundation.gestures.draggable
@@ -668,7 +668,7 @@ fun SquareApp(
     }
 
     // One knock at the end of a journey that ends somewhere it did not begin.
-    val haptics = androidx.compose.ui.platform.LocalHapticFeedback.current
+    val haptics = dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics.current
     val scope = rememberCoroutineScope()
 
     // Remembered for the next launch. Written when the animation settles rather
@@ -3571,7 +3571,7 @@ private fun BarSearchField(
                 tint = Ink.copy(alpha = 0.55f),
                 modifier = Modifier
                     .size(22.dp)
-                    .pressable(onClick = { onQuery("") }, pressedScale = 0.9f),
+                    .fluidPressable(onClick = { onQuery("") }, pressedScale = 0.9f),
             )
         }
     }

@@ -29,7 +29,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import dev.lelonio.square.data.Lyrics
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import dev.lelonio.square.ui.theme.Ink
 
 /**
@@ -206,7 +206,7 @@ internal fun SungLineCapsule(
             modifier = Modifier
                 .padding(bottom = 10.dp)
                 .fillMaxWidth()
-                .pressable(onOpenLyrics, pressedScale = 0.98f),
+                .fluidPressable(onClick = onOpenLyrics, pressedScale = 0.98f),
         ) {
             SungLineText(
                 line = sung,

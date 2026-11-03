@@ -67,12 +67,12 @@ import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
-import androidx.compose.ui.platform.LocalHapticFeedback
+import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
+import dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.graphicsLayer
 import com.adamglin.phosphoricons.regular.DotsSixVertical
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 
 /** Which panel is open below the transport controls. */
 enum class PlayerPanel {
@@ -290,7 +290,7 @@ internal fun QueueList(
         return
     }
 
-    val haptics = LocalHapticFeedback.current
+    val haptics = LocalFluidHaptics.current
 
     // Which row is in the hand.
     //
@@ -412,9 +412,7 @@ internal fun QueueList(
                                     onDragStart = {
                                         draggingIndex = startIndex
                                         dragOffset = 0f
-                                        haptics.performHapticFeedback(
-                                            HapticFeedbackType.LongPress,
-                                        )
+                                        haptics.play(FluidHapticEvent.GestureStart)
                                     },
                                     onDragEnd = {
                                         draggingIndex = -1
@@ -437,9 +435,7 @@ internal fun QueueList(
                                         onMove(draggingIndex, to)
                                         draggingIndex = to
                                         dragOffset -= rowHeight
-                                        haptics.performHapticFeedback(
-                                            HapticFeedbackType.SegmentTick,
-                                        )
+                                        haptics.play(FluidHapticEvent.Tick)
                                     }
                                     while (dragOffset <= -rowHeight) {
                                         val to = draggingIndex - 1
@@ -447,9 +443,7 @@ internal fun QueueList(
                                         onMove(draggingIndex, to)
                                         draggingIndex = to
                                         dragOffset += rowHeight
-                                        haptics.performHapticFeedback(
-                                            HapticFeedbackType.SegmentTick,
-                                        )
+                                        haptics.play(FluidHapticEvent.Tick)
                                     }
                                 }
                             },
@@ -541,7 +535,7 @@ internal fun QueueRow(
                     .clip(RoundedCornerShape(50))
                     .then(
                         if (onRemove != null) {
-                            Modifier.pressable(onRemove, pressedScale = 0.86f)
+                            Modifier.fluidPressable(onClick = onRemove, pressedScale = 0.86f)
                         } else {
                             Modifier
                         },

@@ -45,7 +45,7 @@ import dev.lelonio.square.data.SearchItem
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.Artwork
 import dev.lelonio.square.ui.components.SwipeToQueue
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import dev.lelonio.square.ui.player.GlassFilm
 import dev.lelonio.square.ui.settings.WebApiSetup
 import dev.lelonio.square.ui.theme.Ink
@@ -304,7 +304,7 @@ private fun HistoryTitle(onClear: () -> Unit) {
             style = MaterialTheme.typography.labelLarge,
             color = InkDim,
             modifier = Modifier
-                .pressable(onClear, shape = RoundedCornerShape(12.dp), pressedScale = 0.96f)
+                .fluidPressable(onClick = onClear, pressedScale = 0.96f)
                 .padding(horizontal = 12.dp, vertical = 6.dp),
         )
     }
@@ -341,7 +341,7 @@ private fun ResultRow(
     Row(
         Modifier
             .fillMaxWidth()
-            .pressable(onClick, shape = RoundedCornerShape(16.dp), pressedScale = 0.98f)
+            .fluidPressable(onClick = onClick, pressedScale = 0.98f)
             .padding(start = 24.dp, end = 12.dp, top = 8.dp, bottom = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -396,7 +396,7 @@ private fun ResultRow(
                 tint = InkDim,
                 modifier = Modifier
                     .clip(RoundedCornerShape(50))
-                    .pressable(onMenu, pressedScale = 0.88f)
+                    .fluidPressable(onClick = onMenu, pressedScale = 0.88f)
                     .padding(10.dp)
                     .size(20.dp),
             )

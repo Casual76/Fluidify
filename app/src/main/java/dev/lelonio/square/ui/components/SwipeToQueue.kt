@@ -25,8 +25,8 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics
+import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -56,7 +56,7 @@ fun SwipeToQueue(
 ) {
     val offset = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
-    val haptics = LocalHapticFeedback.current
+    val haptics = LocalFluidHaptics.current
     val density = LocalDensity.current
 
     val threshold = with(density) { THRESHOLD.toPx() }
@@ -101,7 +101,7 @@ fun SwipeToQueue(
                         onDragEnd = {
                             val commit = -offset.value >= threshold
                             if (commit) {
-                                haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                                haptics.play(FluidHapticEvent.Confirm)
                                 onQueue()
                             }
                             scope.launch { offset.animateTo(0f, tween(220)) }

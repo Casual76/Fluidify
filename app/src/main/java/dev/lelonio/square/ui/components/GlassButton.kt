@@ -217,41 +217,64 @@ internal fun paneTintOnPhoto(): GlassTint =
     }
 
 /**
- * The same glass, cut round, at whatever size the caller asks for.
+ * The engine's round glass button, at whatever size the caller asks for.
  *
- * Lived in PlayerScreen while the player was the only screen with a transport.
- * The now-playing panel has one too, and two hand-rolled copies of a disc are
- * how the two ends of the same app stop matching — so it is here, beside the
- * button it is made of.
+ * Lived in PlayerScreen while the player was the only screen with a transport,
+ * then here as a copy of the engine's control built from its parts. Since engine
+ * 3.0.1 the engine has the tondo at a free size (`FluidGlassIconButton(size)`):
+ * LibrePods' press (grows at the touch, x1.5 up to 48 dp and then 24 dp in all,
+ * follows the finger, holds it), its three knocks, and a target of 48 dp at
+ * least. This is now that, and only keeps the two things a call site here still
+ * says: whether it is a control at all, and what it sounds like.
  *
- * It takes no backdrop, for the reason [GlassButton] gives: the engine's
- * controls find the page they stand on themselves, and the caller's job is to
- * provide the right one around them rather than to thread it through.
+ * It takes no backdrop: the engine's controls find the page they stand on.
  */
 @Composable
 internal fun RoundGlassButton(
     size: Dp,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    /** Draws the material without photographing anything; see [GlassButton.flat]. */
-    flat: Boolean = false,
-    /** False for a copy that is a picture of a control rather than a control. */
+    /**
+     * False for a copy that is a picture of a control rather than a control:
+     * drawn with the material and no press, gesture or sound.
+     */
     isInteractive: Boolean = true,
+    /** What the click says; the press and release knocks are the button's own. */
+    haptic: dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent? =
+        dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent.Tap,
+    /** A button repeated in something that scrolls gives the finger back to it. */
+    grip: dev.antigravity.fluidengine.ui.fluid.FluidPressGrip =
+        dev.antigravity.fluidengine.ui.fluid.FluidPressGrip.HoldsFinger,
     onClick: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    GlassButton(
-        onClick = { if (enabled) onClick() },
-        modifier = modifier
-            .size(size)
-            // Dimmed rather than removed when there is nowhere to go: a control
-            // that disappears makes the whole row jump.
-            .graphicsLayer { alpha = if (enabled) 1f else 0.4f },
-        isInteractive = isInteractive && enabled,
-        contentHeight = size,
-        contentPadding = 0.dp,
-        flat = flat,
+    if (!isInteractive) {
+        // The picture: the same material, nothing to press. The engine's
+        // button has no inert form, and a disabled one would draw dimmed.
+        GlassButton(
+            onClick = {},
+            modifier = modifier.size(size),
+            isInteractive = false,
+            contentHeight = size,
+            contentPadding = 0.dp,
+        ) {
+            content()
+        }
+        return
+    }
+    dev.antigravity.fluidengine.ui.fluid.FluidGlassIconButton(
+        onClick = onClick,
+        size = size,
+        modifier = modifier,
+        // The page's ground first, for the reason GlassButton gives: this lives
+        // inside the page that LocalGlassBackdrop records.
+        backdrop = LocalFluidCanvasBackdrop.current ?: currentGlassBackdrop(),
+        enabled = enabled,
+        haptic = haptic,
+        grip = grip,
     ) {
-        content()
+        CompositionLocalProvider(LocalContentColor provides MaterialTheme.colorScheme.onSurface) {
+            content()
+        }
     }
 }

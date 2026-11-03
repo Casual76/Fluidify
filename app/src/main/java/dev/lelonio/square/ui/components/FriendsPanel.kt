@@ -46,7 +46,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.width
 import dev.lelonio.square.R
 import dev.lelonio.square.data.FriendListen
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import dev.lelonio.square.ui.theme.Ink
 import dev.lelonio.square.ui.theme.softShadow
 
@@ -177,7 +177,7 @@ private fun AddFriendField(
                 color = if (working) Ink.copy(alpha = 0.4f) else Ink,
                 modifier = Modifier
                     .clip(RoundedCornerShape(14.dp))
-                    .pressable(onClick = { if (!working) onAdd(typed) })
+                    .fluidPressable(onClick = { if (!working) onAdd(typed) })
                     .padding(horizontal = 12.dp, vertical = 10.dp),
             )
         }
@@ -205,7 +205,7 @@ private fun FriendRow(friend: FriendListen, onClick: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
-            .pressable(onClick = onClick, shape = RoundedCornerShape(18.dp), pressedScale = 0.98f)
+            .fluidPressable(onClick = onClick, pressedScale = 0.98f)
             .padding(horizontal = 22.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

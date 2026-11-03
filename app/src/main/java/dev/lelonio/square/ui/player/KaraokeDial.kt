@@ -36,7 +36,6 @@ import dev.lelonio.square.R
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.positionChange
-import dev.lelonio.square.ui.glass.shapes.ContinuousCapsule
 
 /**
  * How much of the singing to take away.
@@ -136,12 +135,12 @@ fun KaraokeDial(
                 scaleX = grip
                 scaleY = grip
             }
-            .clip(ContinuousCapsule())
+            .clip(dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape)
             // The player's own material, not a lighter one: this sits in a row
             // of glass controls and reading as a different substance is exactly
             // what made it look bolted on. The engine's, since that is what the
             // controls beside it are made of; see playerControlGlass.
-            .playerControlGlass(ContinuousCapsule())
+            .playerControlGlass(dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape)
             // The touch is claimed the moment it lands, before anything else
             // can decide what it was.
             //

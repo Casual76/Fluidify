@@ -16,11 +16,11 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.hapticfeedback.HapticFeedbackType
+import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.platform.LocalHapticFeedback
+import dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.launch
 import kotlin.math.abs
@@ -78,7 +78,7 @@ fun CoverGestures(
 ) {
     val offsetX = remember { Animatable(0f) }
     val scope = rememberCoroutineScope()
-    val haptics = LocalHapticFeedback.current
+    val haptics = LocalFluidHaptics.current
     val density = LocalDensity.current
 
     val screenWidth = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
@@ -133,7 +133,7 @@ fun CoverGestures(
                             else -> false
                         }
                         if (committed) {
-                            haptics.performHapticFeedback(HapticFeedbackType.LongPress)
+                            haptics.play(FluidHapticEvent.Confirm)
                         }
                         // Always springs back, including on a commit: the cover
                         // is about to be replaced by the next track's, and

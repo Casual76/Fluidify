@@ -97,7 +97,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import kotlinx.coroutines.withContext
 import dev.lelonio.square.backend.spotify.panelAt
 import androidx.core.graphics.scale
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
 import dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics
 import dev.lelonio.square.R
@@ -1169,7 +1169,7 @@ fun PlayerScreen(
                                 // ended up against the title.
                                 modifier = Modifier
                                     .padding(bottom = 14.dp)
-                                    .pressable(onClick = onToggleVideo),
+                                    .fluidPressable(onClick = onToggleVideo),
                             ) {
                                 Row(
                                     Modifier.padding(horizontal = 16.dp, vertical = 10.dp),
@@ -1989,12 +1989,11 @@ internal fun Controls(
     // gives the transport its own row of circles rather than icons on a bar,
     // and the size difference is the only thing marking the primary action —
     // no fill, no accent.
-    // A knock under the finger on each of the three, and it is the engine's
-    // own vocabulary rather than the platform's: a skip is a Tap, the thing
-    // the phone does when you have changed what is happening. The transport
-    // is the one place in the app where the control is small, the
-    // consequence is large, and the eyes are often somewhere else.
-    val transportHaptics = LocalFluidHaptics.current
+    // The engine's round buttons (3.0.1, at a free size): each one knocks at
+    // the touch, at the release and on the click, as LibrePods' do, and play
+    // says ToggleOn/ToggleOff in place of the click. The transport is the one
+    // place in the app where the control is small, the consequence is large,
+    // and the eyes are often somewhere else.
 
     val shuffle: @Composable () -> Unit = {
         ToggleIcon(
@@ -2010,10 +2009,8 @@ internal fun Controls(
             size = SkipDisc,
             enabled = state.hasPrevious,
             isInteractive = isInteractive,
-            onClick = {
-                transportHaptics.play(FluidHapticEvent.Tap)
-                onPrevious()
-            },
+            // The button's own click: a second Tap here was a double knock.
+            onClick = onPrevious,
         ) {
             Icon(
                 PhosphorIcons.Fill.SkipBack,
@@ -2026,13 +2023,10 @@ internal fun Controls(
         RoundGlassButton(
             size = PlayDisc,
             isInteractive = isInteractive,
-            onClick = {
-                transportHaptics.play(
-                    if (state.isPlaying) FluidHapticEvent.ToggleOff
-                    else FluidHapticEvent.ToggleOn,
-                )
-                onTogglePlay()
-            },
+            // Play and pause are a toggle, and say so in place of the click; the
+            // press and the release are the button's.
+            haptic = if (state.isPlaying) FluidHapticEvent.ToggleOff else FluidHapticEvent.ToggleOn,
+            onClick = onTogglePlay,
         ) {
             // A ring around the icon while the track is still being fetched.
             //
@@ -2070,10 +2064,7 @@ internal fun Controls(
             size = SkipDisc,
             enabled = state.hasNext,
             isInteractive = isInteractive,
-            onClick = {
-                transportHaptics.play(FluidHapticEvent.Tap)
-                onNext()
-            },
+            onClick = onNext,
         ) {
             Icon(
                 PhosphorIcons.Fill.SkipForward,
@@ -2191,7 +2182,7 @@ private fun KaraokeBadge(amount: Float, onClick: () -> Unit) {
             // A way to the thing it is talking about: the lyrics, with the
             // control open. A label about a setting that cannot be reached from
             // where it is read is half a message.
-            .pressable(onClick, pressedScale = 0.94f)
+            .fluidPressable(onClick = onClick, pressedScale = 0.94f)
             // The app's material, not a grey plate: it sits among glass and a
             // painted rectangle is the one thing that reads as pasted on.
             .playerControlGlass(dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape)

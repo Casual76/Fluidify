@@ -87,7 +87,7 @@ import dev.lelonio.square.ui.components.PlaylistCover
 import dev.lelonio.square.ui.components.FluidifyWordmark
 import androidx.compose.ui.layout.layout
 import dev.lelonio.square.ui.components.GlassButton
-import dev.lelonio.square.ui.glass.pressable
+import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import dev.lelonio.square.ui.player.GlassFilm
 import dev.lelonio.square.ui.theme.Ink
 import dev.lelonio.square.ui.theme.InkDim
@@ -908,7 +908,7 @@ private fun Header(
                     // composition; see the note on `collapse`.
                     .size(46.dp)
                     .clip(CircleShape)
-                    .pressable(onOpenSettings, pressedScale = 0.90f)
+                    .fluidPressable(onClick = onOpenSettings, pressedScale = 0.90f)
                     .softShadow(CircleShape, elevation = 10.dp),
                 corner = 23.dp,
                 decodeSize = 46.dp,
@@ -933,10 +933,12 @@ private fun FilterRow(selected: Feed, onSelect: (Feed) -> Unit) {
         modifier = Modifier.padding(top = 14.dp, bottom = 10.dp),
     ) {
         items(Feed.entries.toList(), key = { it.name }) { entry ->
-            // The app's own glass, so the row reads as part of the chrome
-            // rather than as a Material control that wandered in. Flat, because
-            // it scrolls: see GlassChip.
-            dev.lelonio.square.ui.components.GlassChip(
+            // The engine's chip (3.0): a glass button where the page has a
+            // canvas, which this one does. The app drew its own flat copy here
+            // because five real panes in a row that scrolls had measured
+            // 8 ms a frame; whether the engine's is fine on the phone is for
+            // the phone to say (the engine has no flat option yet).
+            dev.antigravity.fluidengine.ui.fluid.FluidChip(
                 label = stringResource(entry.label),
                 selected = entry == selected,
                 onClick = { onSelect(entry) },
@@ -962,7 +964,7 @@ private fun FeedCard(item: SearchItem, onClick: () -> Unit) {
             .fillMaxWidth()
             .softShadow(shape, elevation = 26.dp, spot = 0.55f)
             .clip(shape)
-            .pressable(onClick, pressedScale = 0.98f),
+            .fluidPressable(onClick = onClick, pressedScale = 0.98f),
     ) {
         // The same cover twice, and that is the point.
         //
@@ -1055,7 +1057,7 @@ private const val ARTIST_CELL_MIN = 132
 @Composable
 private fun ArtistCell(artist: SearchItem, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Column(
-        modifier.pressable(onClick),
+        modifier.fluidPressable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Artwork(
@@ -1085,7 +1087,7 @@ private fun ArtistTile(artist: SearchItem, onClick: () -> Unit) {
     Column(
         Modifier
             .width(110.dp)
-            .pressable(onClick),
+            .fluidPressable(onClick = onClick),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         Artwork(
@@ -1113,7 +1115,7 @@ private fun PlaylistTile(playlist: CatalogPlaylist, onClick: () -> Unit) {
     Column(
         Modifier
             .width(152.dp)
-            .pressable(onClick),
+            .fluidPressable(onClick = onClick),
     ) {
         PlaylistCover(
             playlist = playlist,
@@ -1139,7 +1141,7 @@ private fun TrackTile(track: CatalogTrack, onClick: () -> Unit) {
         // which spreads wider than the tile itself.
         Modifier
             .width(128.dp)
-            .pressable(onClick),
+            .fluidPressable(onClick = onClick),
     ) {
         Artwork(
             url = track.artworkUrl,
@@ -1251,7 +1253,7 @@ private fun FeedTile(item: SearchItem, onClick: () -> Unit) {
     Column(
         Modifier
             .width(152.dp)
-            .pressable(onClick),
+            .fluidPressable(onClick = onClick),
     ) {
         Artwork(
             url = item.artworkUrl,
@@ -1373,7 +1375,7 @@ private fun FriendFaces(
             .padding(start = 8.dp)
             .width(width)
             .height(FACE)
-            .pressable(onClick, pressedScale = 0.92f),
+            .fluidPressable(onClick = onClick, pressedScale = 0.92f),
     ) {
         shown.forEachIndexed { index, friend ->
             Artwork(

@@ -1153,8 +1153,10 @@ private fun UpdateRow() {
 /**
  * The third-party code this app ships, and under what.
  *
- * Not a nicety: Bungee is MPL-2.0 and the Backdrop components are Apache-2.0,
- * and both licences require the notice to travel with the binary. Collapsed by
+ * Not a nicety: Bungee is MPL-2.0 and librespot is MIT, and both licences
+ * require the notice to travel with the binary. The glass (AndroidLiquidGlass)
+ * and the buttons and pages (LibrePods, GPL-3.0) come with the engine, and the
+ * engine's own section below lists them. Collapsed by
  * default because it is an obligation to the authors, not a feature.
  */
 @Composable
@@ -1352,7 +1354,6 @@ private val SCOPES = listOf(
 private val LICENCES = listOf(
     "librespot" to "MIT",
     "Bungee" to "MPL-2.0",
-    "AndroidLiquidGlass" to "Apache-2.0",
     "Phosphor Icons" to "MIT",
     "Coil" to "Apache-2.0",
     "OkHttp / Retrofit" to "Apache-2.0",
