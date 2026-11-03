@@ -532,4 +532,5 @@
     <string name="watch_update_err_interrupted">The installation was interrupted: try again</string>
     <string name="watch_update_installed_notification">Watch updated to %1$s</string>
     <string name="watch_update_wifi">The watch is downloading %1$s over its Wi-Fi…</string>
+    <string name="onboarding_step_of">Step %1$d of %2$d</string>
 </resources>
