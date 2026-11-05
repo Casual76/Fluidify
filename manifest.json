@@ -15,22 +15,30 @@
       "ref": "master"
     },
     "stable": {
-      "version": "2.0.0",
-      "releaseDate": "2026-11-03",
-      "changelog": "Fluidify 2.0 sul Fluid Engine 3: un solo vetro, quello dell'engine; tasti che tengono il dito, impostazioni e aggiornamenti nuovi, barra di posizione, ricerca e scorrimento rapido di vetro. Licenza GPL-3.0.",
-      "releaseTag": "stable-fluidify-v2.0.0",
-      "apkAsset": "fluidify-2.0.0.apk",
-      "sizeBytes": 19849924
+      "version": "2.0.1",
+      "releaseDate": "2026-11-05",
+      "changelog": "Corretto il problema che lasciava vuoti i pulsanti della barra durante il cambio pagina: le icone ora scompaiono e ricompaiono con la dissolvenza prevista.",
+      "releaseTag": "stable-fluidify-v2.0.1",
+      "apkAsset": "fluidify-2.0.1.apk",
+      "sizeBytes": 19849925
     },
     "beta": {
-      "version": "2.0.0",
-      "releaseDate": "2026-11-03",
-      "changelog": "Fluidify 2.0 sul Fluid Engine 3: un solo vetro, quello dell'engine; tasti che tengono il dito, impostazioni e aggiornamenti nuovi, barra di posizione, ricerca e scorrimento rapido di vetro. Licenza GPL-3.0.",
-      "releaseTag": "stable-fluidify-v2.0.0",
-      "apkAsset": "fluidify-2.0.0.apk",
-      "sizeBytes": 19849924
+      "version": "2.0.1",
+      "releaseDate": "2026-11-05",
+      "changelog": "Corretto il problema che lasciava vuoti i pulsanti della barra durante il cambio pagina: le icone ora scompaiono e ricompaiono con la dissolvenza prevista.",
+      "releaseTag": "stable-fluidify-v2.0.1",
+      "apkAsset": "fluidify-2.0.1.apk",
+      "sizeBytes": 19849925
     },
     "history": [
+      {
+        "version": "2.0.0",
+        "releaseDate": "2026-11-03",
+        "changelog": "Fluidify 2.0 sul Fluid Engine 3: un solo vetro, quello dell'engine; tasti che tengono il dito, impostazioni e aggiornamenti nuovi, barra di posizione, ricerca e scorrimento rapido di vetro. Licenza GPL-3.0.",
+        "releaseTag": "stable-fluidify-v2.0.0",
+        "apkAsset": "fluidify-2.0.0.apk",
+        "sizeBytes": 19849924
+      },
       {
         "version": "1.7.5",
         "releaseDate": "2026-10-13",
