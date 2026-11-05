@@ -9,22 +9,22 @@
       "repoName": "Fluidify"
     },
     "stable": {
-      "version": "1.7.3",
-      "releaseDate": "2026-10-05",
-      "changelog": "Accompagna Fluidify 1.7.3 (correzione delle copertine sul telefono).",
-      "releaseTag": "stable-fluidify-v1.7.3",
-      "apkAsset": "fluidify-wear-1.7.3.apk",
-      "sizeBytes": 24001790,
-      "sha256": "3bceffc20d40dbcdd4c5ad15542114294fa05aa80d24985edf677398c3406e47"
+      "version": "2.0.1",
+      "releaseDate": "2026-11-05",
+      "changelog": "Aggiornamento di manutenzione abbinato a Fluidify 2.0.1.",
+      "releaseTag": "stable-fluidify-v2.0.1",
+      "apkAsset": "fluidify-wear-2.0.1.apk",
+      "sizeBytes": 24050439,
+      "sha256": "f4a32b51d259174dd3aace93c6630138324a60a7f08c0909ef43d76219d838a5"
     },
     "beta": {
-      "version": "1.7.3",
-      "releaseDate": "2026-10-05",
-      "changelog": "Accompagna Fluidify 1.7.3 (correzione delle copertine sul telefono).",
-      "releaseTag": "stable-fluidify-v1.7.3",
-      "apkAsset": "fluidify-wear-1.7.3.apk",
-      "sizeBytes": 24001790,
-      "sha256": "3bceffc20d40dbcdd4c5ad15542114294fa05aa80d24985edf677398c3406e47"
+      "version": "2.0.1",
+      "releaseDate": "2026-11-05",
+      "changelog": "Aggiornamento di manutenzione abbinato a Fluidify 2.0.1.",
+      "releaseTag": "stable-fluidify-v2.0.1",
+      "apkAsset": "fluidify-wear-2.0.1.apk",
+      "sizeBytes": 24050439,
+      "sha256": "f4a32b51d259174dd3aace93c6630138324a60a7f08c0909ef43d76219d838a5"
     }
   }
 }
