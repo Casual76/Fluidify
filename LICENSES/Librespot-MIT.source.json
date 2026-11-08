@@ -1,0 +1,63 @@
+{
+  "appSourceCommit": "22ac7bc05ee043d09c920dd784794accc671a7e3",
+  "appliesTo": [
+    "librespot-core 0.8.0",
+    "librespot-connect 0.8.0",
+    "librespot-playback 0.8.0"
+  ],
+  "copyright": "Copyright (c) 2015 Paul Lietar",
+  "crateManifests": [
+    {
+      "bytes": 3577,
+      "path": "core/Cargo.toml",
+      "sha256": "8c221770085be2d1c301898af4baeb1df735a60d2dab24c24487cf42eb5f73fa",
+      "url": "https://raw.githubusercontent.com/librespot-org/librespot/d36f9f1907e8cc9d68a93f8ebc6b627b1bf7267d/core/Cargo.toml"
+    },
+    {
+      "bytes": 1266,
+      "path": "connect/Cargo.toml",
+      "sha256": "a8640f06e12b99e4ea75b1cfd37ddf28dbba0e79d4b1f6537247330980fe9a6c",
+      "url": "https://raw.githubusercontent.com/librespot-org/librespot/d36f9f1907e8cc9d68a93f8ebc6b627b1bf7267d/connect/Cargo.toml"
+    },
+    {
+      "bytes": 3066,
+      "path": "playback/Cargo.toml",
+      "sha256": "c66cb733022b5cc6442399164ec78b0d21b2f95502275d86373a09f7ca9c701a",
+      "url": "https://raw.githubusercontent.com/librespot-org/librespot/d36f9f1907e8cc9d68a93f8ebc6b627b1bf7267d/playback/Cargo.toml"
+    }
+  ],
+  "destinationFiles": [
+    {
+      "path": "LICENSES/Librespot-MIT.txt",
+      "sha256": "b6e979ad38c429c5811e9eb6930040a984619786f55ebc60660db05df5325ed6"
+    },
+    {
+      "path": "native/vendor/librespot-core/LICENSE",
+      "sha256": "b6e979ad38c429c5811e9eb6930040a984619786f55ebc60660db05df5325ed6"
+    },
+    {
+      "path": "native/vendor/librespot-connect/LICENSE",
+      "sha256": "b6e979ad38c429c5811e9eb6930040a984619786f55ebc60660db05df5325ed6"
+    },
+    {
+      "path": "native/vendor/librespot-playback/LICENSE",
+      "sha256": "b6e979ad38c429c5811e9eb6930040a984619786f55ebc60660db05df5325ed6"
+    }
+  ],
+  "engineCommit": "bcfc73debe9d4cb78942cc6cdf177aacc4fa7dcb",
+  "license": {
+    "bytes": 1078,
+    "path": "LICENSE",
+    "sha256": "b6e979ad38c429c5811e9eb6930040a984619786f55ebc60660db05df5325ed6",
+    "url": "https://raw.githubusercontent.com/librespot-org/librespot/d36f9f1907e8cc9d68a93f8ebc6b627b1bf7267d/LICENSE"
+  },
+  "scope": "Exact upstream MIT text copied verbatim. Local source patches remain as in appSourceCommit; no added authorship claim or binary equivalence claim.",
+  "upstreamCommit": "d36f9f1907e8cc9d68a93f8ebc6b627b1bf7267d",
+  "upstreamLicenseGitBlob": "b06ecfb231a3959337f79df3ad613551cefbc36e",
+  "upstreamRepository": "https://github.com/librespot-org/librespot",
+  "workspaceLicenseAttestation": {
+    "license": "MIT",
+    "sha256": "9a3447e45a6c9a0d794c4b248d222aca95e57f45efbc0eeae8945c9ffe6f6f09",
+    "url": "https://raw.githubusercontent.com/librespot-org/librespot/d36f9f1907e8cc9d68a93f8ebc6b627b1bf7267d/Cargo.toml"
+  }
+}
