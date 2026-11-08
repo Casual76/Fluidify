@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="search_downloads_scope">Nei download</string>
+    <string name="search_downloads_network_fallback">La ricerca online non è disponibile per un errore di rete. Sono mostrati i brani scaricati corrispondenti.</string>
+    <string name="search_downloads_empty">Nessun brano scaricato corrisponde a “%1$s”. La ricerca include titoli, artisti e album dei download completati.</string>
+</resources>

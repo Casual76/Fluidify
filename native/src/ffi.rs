@@ -219,6 +219,50 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeLoa
 }
 
 #[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeLoadOwnedQueue(
+    mut env: JNIEnv,
+    _class: JClass,
+    uris_json: JString,
+    index: jint,
+    start_playing: jboolean,
+    position_ms: jint,
+    context_uri: JString,
+    play_as_context: jboolean,
+    restore_nonce: JString,
+) {
+    // JSON rather than a jobjectArray: the Kotlin side already serialises track
+    // lists for the catalogue calls, and one decoder is easier to keep correct
+    // than two ways of crossing the same boundary.
+    let nonce = match read_string(&mut env, &restore_nonce) {
+        Ok(value) if value.len() == 36 && value.chars().all(|c| c.is_ascii_hexdigit() || c == '-') => value,
+        _ => { let _ = env.throw_new(EXCEPTION, "invalid restore nonce"); return; }
+    };
+    let context = read_string(&mut env, &context_uri).unwrap_or_default();
+    let raw = match read_string(&mut env, &uris_json) {
+        Ok(value) => value,
+        Err(message) => {
+            let _ = env.throw_new(EXCEPTION, message);
+            return;
+        }
+    };
+    guard(&mut env, "LoadQueue", || {
+        serde_json::from_str::<Vec<String>>(&raw)
+            .map_err(|e| format!("bad queue: {e}"))
+            .and_then(|uris| {
+            engine::load_queue_owned(
+                uris,
+                index.max(0) as u32,
+                start_playing == JNI_TRUE,
+                position_ms.max(0) as u32,
+                context,
+                play_as_context == JNI_TRUE,
+                Some(nonce),
+            )
+        })
+    });
+}
+
+#[no_mangle]
 pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeNext(
     mut env: JNIEnv,
     _class: JClass,

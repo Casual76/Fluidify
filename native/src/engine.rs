@@ -373,7 +373,7 @@ struct Recipe {
 /// because listening history is reported through the session and the pump holds
 /// one for the life of the engine.
 enum Pump {
-    Event(PlayerEvent),
+    Event(PlayerEvent, u64),
     Session(Session),
     /// Something changed on another of the account's devices; see `remote`.
     Cluster,
@@ -1333,7 +1333,7 @@ fn spawn_event_forwarder(
                 }
             }
 
-            if events_tx.send(Pump::Event(event)).is_err() {
+            if events_tx.send(Pump::Event(event, generation)).is_err() {
                 break;
             }
         }
@@ -1496,10 +1496,13 @@ fn spawn_event_pump(
             // Built on the first session, which arrives before any of its
             // events, and rebound to each one after that.
             let mut history: Option<History> = None;
+            // Measurement-only transport identity: request IDs may restart in a new player.
+            // Keep Spotify History/reporting observation below completely unchanged.
+            let pump_identity = events::random_id();
 
             while let Ok(message) = events.recv() {
-                let event = match message {
-                    Pump::Event(event) => event,
+                let (event, player_generation) = match message {
+                    Pump::Event(event, generation) => (event, generation),
                     // Carries nothing: the Kotlin side reads the state it wants
                     // when it hears there is a new one, rather than having every
                     // field of it pushed through this boundary.
@@ -1532,6 +1535,17 @@ fn spawn_event_pump(
                 }
 
                 let (kind, uri, position_ms) = match event {
+                    PlayerEvent::OwnedLoadBound(binding) => (
+                        "playback_restore_bound",
+                        serde_json::json!({"nonce": binding.nonce, "request":
+                            format!("{}:{}:{}", pump_identity, player_generation, binding.play_request_id)}).to_string(),
+                        0,
+                    ),
+                    PlayerEvent::PlayRequestIdChanged { play_request_id } => (
+                        "playback_request",
+                        format!("{}:{}:{}", pump_identity, player_generation, play_request_id),
+                        0,
+                    ),
                     PlayerEvent::Playing {
                         track_id,
                         position_ms,
@@ -2018,13 +2032,17 @@ pub const PREMIUM_REQUIRED: &str = "premium account required";
 /// track is most often a file on this phone, and preloading it would decode a
 /// second stream to save four milliseconds.
 fn local_load(uris: &[String], index: u32, play: bool, position_ms: u32) -> EngineResult<()> {
+    local_load_owned(uris, index, play, position_ms, None)
+}
+fn local_load_owned(uris: &[String], index: u32, play: bool, position_ms: u32,
+    restore_nonce: Option<String>) -> EngineResult<()> {
     let uri = uris
         .get(index as usize)
         .ok_or_else(|| "nothing at that index".to_string())?;
     let parsed = SpotifyUri::from_uri(uri).map_err(|e| format!("bad uri {uri}: {e}"))?;
     log::debug!("direct: loading {uri} at {position_ms}ms, play={play}");
     SPIRC_KNOWS.store(false, Ordering::SeqCst);
-    with_engine(|e| e.player.load(parsed, play, position_ms))
+    with_engine(|e| e.player.load_with_restore_nonce(parsed, play, position_ms, restore_nonce))
 }
 
 /// Whether there is no Connect device right now.
@@ -2094,6 +2112,14 @@ pub fn load_queue(
     context_uri: String,
     play_as_context: bool,
 ) -> EngineResult<()> {
+    load_queue_owned(uris, index, start_playing, position_ms, context_uri, play_as_context, None)
+}
+
+/// Explicit app-owned restore nonce travels with this exact command on every dispatch path.
+pub fn load_queue_owned(
+    uris: Vec<String>, index: u32, start_playing: bool, position_ms: u32,
+    context_uri: String, play_as_context: bool, restore_nonce: Option<String>,
+) -> EngineResult<()> {
     if uris.is_empty() {
         return Err("empty queue".into());
     }
@@ -2154,13 +2180,14 @@ pub fn load_queue(
     // The alternative is silence under a finger that asked for a song.
     let listening = with_engine(|e| e.spirc.as_ref().is_some_and(Spirc::is_established))?;
     if !CONNECTED.load(Ordering::SeqCst) || !listening {
-        let result = local_load(&uris, index, start_playing, position_ms);
+        let result = local_load_owned(&uris, index, start_playing, position_ms, restore_nonce.clone());
         let _ = reconnect(false);
         return result;
     }
 
     let options = LoadRequestOptions {
         start_playing,
+        restore_nonce: restore_nonce.clone(),
         seek_to: position_ms,
         playing_track: Some(PlayingTrack::Index(index)),
         ..LoadRequestOptions::default()
@@ -2234,7 +2261,7 @@ pub fn load_queue(
     match sent {
         Ok(()) => {
             SPIRC_KNOWS.store(true, Ordering::SeqCst);
-            watch_load(sequence, uris, index, start_playing, position_ms);
+            watch_load(sequence, uris, index, start_playing, position_ms, restore_nonce);
             Ok(())
         }
         Err(e) => {
@@ -2246,7 +2273,7 @@ pub fn load_queue(
                 *expect = None;
             }
             device_lost();
-            let result = local_load(&uris, index, start_playing, position_ms);
+            let result = local_load_owned(&uris, index, start_playing, position_ms, restore_nonce.clone());
             let _ = reconnect(false);
             result
         }
@@ -2261,7 +2288,7 @@ pub fn load_queue(
 /// things at a player that will not move. This waits [`LOAD_ACK`] for the
 /// player to say it is loading the track, and when it does not, gives the
 /// player the track itself and has the device rebuilt.
-fn watch_load(sequence: u64, uris: Vec<String>, index: u32, play: bool, position_ms: u32) {
+fn watch_load(sequence: u64, uris: Vec<String>, index: u32, play: bool, position_ms: u32, restore_nonce: Option<String>) {
     let Ok(handle) = runtime_handle() else { return };
     handle.spawn(async move {
         tokio::time::sleep(LOAD_ACK).await;
@@ -2292,7 +2319,7 @@ fn watch_load(sequence: u64, uris: Vec<String>, index: u32, play: bool, position
             }
         }
         device_lost();
-        if let Err(e) = local_load(&uris, index, play, position_ms) {
+        if let Err(e) = local_load_owned(&uris, index, play, position_ms, restore_nonce) {
             log::error!("direct load failed as well: {e}");
         }
         let _ = reconnect(true);

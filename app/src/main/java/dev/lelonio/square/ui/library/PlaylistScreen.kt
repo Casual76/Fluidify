@@ -8,7 +8,6 @@ import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
 import dev.antigravity.fluidengine.ui.fluid.glassSurface
 import dev.antigravity.fluidengine.ui.fluid.fluidContextMenuAnchor
 import androidx.annotation.StringRes
-import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.layout.RowScope
 import dev.lelonio.square.ui.player.GlassFilm
@@ -39,6 +38,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.key
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -70,6 +71,9 @@ import dev.lelonio.square.ui.player.GlassSurface
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalFocusManager
+import androidx.compose.ui.platform.LocalSoftwareKeyboardController
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.layout.boundsInRoot
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.graphics.graphicsLayer
@@ -77,6 +81,9 @@ import androidx.compose.runtime.derivedStateOf
 import androidx.compose.foundation.layout.BoxScope
 import dev.lelonio.square.R
 import dev.lelonio.square.data.CatalogTrack
+import dev.lelonio.square.data.matchesTrackText
+import dev.lelonio.square.data.orderPlaylistTracksByAddedAt
+import dev.lelonio.square.data.hasKnownPlaylistAddedAt
 import dev.lelonio.square.data.DownloadState
 import dev.lelonio.square.data.OwnerState
 import dev.lelonio.square.ui.MainViewModel
@@ -89,7 +96,6 @@ import dev.antigravity.fluidengine.ui.fluid.fluidPressable
 import dev.lelonio.square.ui.theme.InkDim
 import dev.lelonio.square.ui.theme.rememberArtworkColor
 import dev.lelonio.square.ui.theme.softShadow
-import java.util.Locale
 import java.util.concurrent.TimeUnit
 import com.adamglin.PhosphorIcons
 import com.adamglin.phosphoricons.regular.Watch
@@ -223,8 +229,11 @@ fun PlaylistScreen(
     storedSortDescending: Boolean = false,
     onSortDescendingChange: (Boolean) -> Unit = {},
 ) {
-    var query by remember { mutableStateOf("") }
-    var searching by remember { mutableStateOf(false) }
+    var query by remember(state.uri) { mutableStateOf("") }
+    var searching by remember(state.uri) { mutableStateOf(false) }
+    var searchReady by remember(state.uri) { mutableStateOf(false) }
+    val focusManager = LocalFocusManager.current
+    val keyboard = LocalSoftwareKeyboardController.current
     // Seeded from the stored choice and written back on change: picking an
     // order and finding it gone on the next playlist is the kind of thing that
     // makes a setting feel like it did not take.
@@ -242,6 +251,13 @@ fun PlaylistScreen(
     // app's own menu did here so the two directions could be compared.
     val sortLabels = TrackSort.entries.associateWith { stringResource(it.label) }
     val descendingLabel = stringResource(R.string.sort_descending)
+    val directionLabels = when (sort) {
+        TrackSort.ADDED -> stringResource(R.string.playlist_added_newest_first) to
+            stringResource(R.string.playlist_added_oldest_first)
+        TrackSort.TITLE -> stringResource(R.string.playlist_title_a_to_z) to
+            stringResource(R.string.playlist_title_z_to_a)
+        else -> null
+    }
     val sortActions: () -> List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction> = {
         TrackSort.entries.map { option ->
             dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
@@ -251,14 +267,23 @@ fun PlaylistScreen(
                 sort = option
                 onSortChange(option.name)
             }
-        } + dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+        } + if (directionLabels != null) listOf(false, true).map { reverse ->
+            dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                label = if (reverse) directionLabels.second else directionLabels.first,
+                startsSection = !reverse,
+                selected = descending == reverse,
+            ) {
+                descending = reverse
+                onSortDescendingChange(reverse)
+            }
+        } else listOf(dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
             label = descendingLabel,
             startsSection = true,
             selected = descending,
         ) {
             descending = !descending
             onSortDescendingChange(descending)
-        }
+        })
     }
 
 
@@ -271,13 +296,17 @@ fun PlaylistScreen(
     // Derived, not stored: keeping a second list in state would leave the two
     // able to disagree after a reload.
     val visible = remember(state.tracks, query, sort, descending) {
-        state.tracks
-            .filter { it.matches(query) }
-            .sortedWith(sort.comparator())
-            // Reversed after sorting rather than by a second comparator: the
-            // playlist's own order has no comparator to invert, and turning it
-            // upside down is exactly what "descending" means there too.
-            .let { if (descending) it.reversed() else it }
+        val filtered = state.tracks.filter { matchesTrackText(it, query) }
+        if (sort == TrackSort.ADDED) {
+            // The persisted boolean still reverses the default newest-first order.
+            orderPlaylistTracksByAddedAt(filtered, oldestFirst = descending)
+        } else {
+            filtered.sortedWith(sort.comparator()).let { if (descending) it.reversed() else it }
+        }
+    }
+    val addedDatesUnavailable = remember(state.tracks, sort) {
+        sort == TrackSort.ADDED && state.tracks.isNotEmpty() &&
+            !hasKnownPlaylistAddedAt(state.tracks)
     }
 
     // Taken from *this* screen's cover, not from whatever is playing. The two
@@ -326,7 +355,7 @@ fun PlaylistScreen(
     val pageGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
 
     val density = LocalDensity.current
-    val listState = rememberLazyListState()
+    val listState = key(state.uri) { rememberLazyListState() }
 
     val topPadding = contentPadding.calculateTopPadding()
     val collapsedHeight = topPadding + COLLAPSED_BAR_HEIGHT
@@ -340,8 +369,18 @@ fun PlaylistScreen(
     // list, so a single gesture closes the cover and then carries on into the
     // tracks.
     val collapseRange = with(density) { (HERO_HEIGHT - collapsedHeight).toPx() }
-    var collapsed by remember { mutableFloatStateOf(0f) }
+    var collapsed by remember(state.uri) { mutableFloatStateOf(0f) }
     val collapseFraction = { (collapsed / collapseRange).coerceIn(0f, 1f) }
+
+    LaunchedEffect(state.uri, searching, state.tracks.isNotEmpty(), state.kind) {
+        if (searching && state.tracks.isNotEmpty()) {
+            // The search item is lazy: scroll it into composition before autofocus.
+            // Offline notice, optional artist about, section title, then search.
+            collapsed = collapseRange
+            listState.scrollToItem(if (state.kind == MainViewModel.DetailKind.ARTIST) 3 else 2)
+            searchReady = true
+        }
+    }
 
     /**
      * Which set of controls owns the touch.
@@ -353,9 +392,9 @@ fun PlaylistScreen(
      * page. Whichever is more than half visible is the one that answers.
      * Derived, so this flips once per collapse instead of once per frame.
      */
-    val chromeExpanded by remember { derivedStateOf { collapseFraction() < 0.5f } }
+    val chromeExpanded by remember(state.uri, collapseRange) { derivedStateOf { collapseFraction() < 0.5f } }
 
-    val headerScroll = remember(collapseRange) {
+    val headerScroll = remember(state.uri, collapseRange) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (available.y >= 0f) return Offset.Zero
@@ -475,7 +514,12 @@ fun PlaylistScreen(
             playing = playingThis,
             onToggleSearch = {
                 searching = !searching
-                if (!searching) query = ""
+                searchReady = false
+                if (!searching) {
+                    query = ""
+                    focusManager.clearFocus()
+                    keyboard?.hide()
+                }
             },
             searching = searching,
             downloadState = downloadState,
@@ -493,6 +537,7 @@ fun PlaylistScreen(
             // out as a grey card. Safe to record: the menu is drawn outside the
             // list, so nothing in this layer samples it.
             modifier = Modifier
+                .testTag("playlist-track-list")
             // The panel's room, and then a column somebody can read.
             //
             // Two modifiers and one rule between them. The panel is taken off
@@ -535,19 +580,46 @@ fun PlaylistScreen(
                     )
                 }
 
-                item(contentType = "search") {
-                    AnimatedVisibility(visible = searching) {
-                        // The engine's search field, which brings its own clear button and glass.
-                        FluidSearchField(
-                            query = query,
-                            onQueryChange = { query = it },
-                            placeholder = stringResource(R.string.search_in_tracks),
-                            autoFocus = false,
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .padding(horizontal = 24.dp, vertical = 6.dp),
-                        )
+                item(key = "playlist-search", contentType = "search") {
+                    if (searching && searchReady) {
+                        Column {
+                            // The engine's search field, which brings its own clear button and glass.
+                            FluidSearchField(
+                                query = query,
+                                onQueryChange = { query = it },
+                                placeholder = stringResource(R.string.search_in_tracks),
+                                autoFocus = true,
+                                modifier = Modifier
+                                    .testTag("playlist-track-search")
+                                    .fillMaxWidth()
+                                    .padding(horizontal = 24.dp, vertical = 6.dp),
+                            )
+                            Text(
+                                stringResource(R.string.playlist_search_loaded_count, visible.size, state.tracks.size),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
+                            )
+                            if (state.loadingMore) Text(
+                                stringResource(R.string.playlist_search_loading_scope),
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
+                            )
+                        }
+                    } else if (searching) {
+                        // A zero-height lazy item can be skipped by scrollToItem. Reserve the
+                        // field's height until it is in view, then compose it with autofocus.
+                        Spacer(Modifier.height(dev.antigravity.fluidengine.ui.fluid.FluidSearchFieldDefaults.Height))
                     }
+                }
+                if (addedDatesUnavailable) item(contentType = "addedDatesUnavailable") {
+                    Text(
+                        stringResource(R.string.playlist_added_dates_unavailable),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
+                    )
                 }
             }
 
@@ -1864,24 +1936,13 @@ private fun StatusBox(content: @Composable () -> Unit) {
     ) { content() }
 }
 
-/** Case- and accent-insensitive enough for a phone search box. */
-private fun CatalogTrack.matches(query: String): Boolean {
-    if (query.isBlank()) return true
-    val needle = query.trim().lowercase(Locale.getDefault())
-    return name.lowercase(Locale.getDefault()).contains(needle) ||
-        artist.lowercase(Locale.getDefault()).contains(needle) ||
-        album.lowercase(Locale.getDefault()).contains(needle)
-}
-
 private fun TrackSort.comparator(): Comparator<CatalogTrack> = when (this) {
     // Stable no-op: the list is already in playlist order.
     TrackSort.ORIGINAL -> Comparator { _, _ -> 0 }
     TrackSort.TITLE -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.name }
     TrackSort.ARTIST -> compareBy(String.CASE_INSENSITIVE_ORDER) { it.artist }
-    // Most recent first, and anything without a date last rather than first:
-    // a null here means the list came from the access point, which does not
-    // carry the field, and those belong at the end instead of on top.
-    TrackSort.ADDED -> compareByDescending(nullsFirst()) { it.addedAt }
+    // ADDED is handled by orderPlaylistTracksByAddedAt before this comparator.
+    TrackSort.ADDED -> Comparator { _, _ -> 0 }
     TrackSort.DURATION -> compareBy { it.durationMs }
 }
 

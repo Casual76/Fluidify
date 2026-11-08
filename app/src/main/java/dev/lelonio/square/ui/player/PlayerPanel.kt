@@ -70,6 +70,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.ui.input.pointer.pointerInput
 import dev.antigravity.fluidengine.ui.haptics.FluidHapticEvent
 import dev.antigravity.fluidengine.ui.haptics.LocalFluidHaptics
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.graphicsLayer
 import com.adamglin.phosphoricons.regular.DotsSixVertical
@@ -192,8 +193,8 @@ private fun InfoButton(
 ) {
     GlassButton(
         onClick = onClick,
-        modifier = Modifier.size(42.dp),
-        contentHeight = 42.dp,
+        modifier = Modifier.size(48.dp),
+        contentHeight = 48.dp,
         contentPadding = 0.dp,
     ) {
         Icon(
@@ -307,7 +308,11 @@ internal fun QueueList(
     // finger again, so carrying the whole distance forward would move it a
     // second time for a journey it has already made.
     var dragOffset by remember { mutableFloatStateOf(0f) }
-    val rowHeight = with(LocalDensity.current) { QueueRowHeight.toPx() }
+    val initialRowHeight = with(LocalDensity.current) { QueueRowHeight.toPx() }
+    var measuredRowHeight by remember { mutableFloatStateOf(initialRowHeight) }
+    // The drag detector survives recomposition; read the latest measured height inside it.
+    // Font scaling and the 48dp handle can both make a row taller than its artwork.
+    val rowHeight by rememberUpdatedState(measuredRowHeight)
 
     // Keyed on the track, not on where it sits.
     //
@@ -343,6 +348,7 @@ internal fun QueueList(
                 entry = entry,
                 modifier = Modifier
                     .fillMaxWidth()
+                    .onSizeChanged { if (it.height > 0) measuredRowHeight = it.height.toFloat() }
                     // A block each, with air between them.
                     //
                     // The list was rows of text standing on the panel's own
@@ -633,7 +639,7 @@ private fun Modifier.queueBlock(): Modifier {
  * wrong only if somebody changes the row without changing this.
  */
 /** A block on its own: a 44 dp cover with 8 dp above and below it. */
-private val QueueBlockHeight = 60.dp
+private val QueueBlockHeight = 64.dp
 
 /** The air between two blocks, and what keeps them off the panel's edge. */
 private val QueueBlockGap = 6.dp
@@ -651,7 +657,7 @@ private val QueueBlockShape = dev.antigravity.fluidengine.ui.fluid.ContinuousCor
 private val QueueDragHandleWidth = 22.dp
 
 /** What a finger is given for the two things at the end of a row. */
-private val QueueTouchTarget = 44.dp
+private val QueueTouchTarget = 48.dp
 
 /** How much a held row grows, and how far it stands off the list. */
 private const val QueueHeldScale = 1.02f

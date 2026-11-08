@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_host_title">AirPods</string>
+    <string name="airpods_host_absent">The AirPods runtime has not been installed by this app. Setup is unavailable.</string>
+    <string name="airpods_host_storage">AirPods configuration could not be read. No commands are authorized.</string>
+    <string name="airpods_host_requirements">Requires a selected, verified pair, current permissions and the applicable product gates.</string>
+    <string name="airpods_host_information">Received information is shown on this page. A separate information refresh is unavailable.</string>
+    <string name="airpods_host_diagnostics">The runtime keeps a bounded, process-local list of sanitized events while running. There is no separate recording session.</string>
+    <string name="airpods_host_disconnect">Automatic audio disconnection requires platform access unavailable to ordinary apps. Use Bluetooth settings.</string>
+    <string name="airpods_host_candidate">Paired device %1$d</string>
+    <string name="airpods_host_label_only">Bluetooth name is a label; verify the selected device explicitly.</string>
+    <string name="airpods_host_stale">Selection or authorization changed. Repeat the action from the current screen.</string>
+    <string name="airpods_host_rejected">The action was not accepted. Device writes require received confirmation.</string>
+    <string name="airpods_host_platform_failure">The system action failed or is unavailable. Review permissions and try again explicitly.</string>
+    <string name="airpods_host_tile">Open Android Quick Settings, edit tiles and add AirPods. The tile uses the same opt-in and stop controls.</string>
+</resources>

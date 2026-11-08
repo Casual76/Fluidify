@@ -23,8 +23,28 @@ import dev.lelonio.square.nativecore.NativeBridge
  */
 class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost {
 
+    /** Observation is inert: no Bluetooth/service creation or automatic consent. */
+    val airPodsVisibility = dev.lelonio.square.airpods.runtime.AirPodsAppVisibility()
+
+    /** Optional process host. Installation never grants consent or starts a Bluetooth session. */
+    var airPodsRuntime: dev.lelonio.square.airpods.runtime.android.AirPodsAndroidController? = null
+        private set
+
     override fun onCreate() {
         super.onCreate()
+        airPodsVisibility.attach(this)
+        airPodsRuntime = dev.lelonio.square.airpods.runtime.AirPodsApplicationStartup.install(
+            this,
+            airPodsVisibility.active,
+        ) {
+            dev.lelonio.square.airpods.runtime.media.AndroidAirPodsMediaRuntime(
+                this,
+                local = dev.lelonio.square.playback.PlaybackAirPodsMediaBridge,
+            )
+        }.onFailure {
+            // Optional controls must not prevent the music app from starting. No private data.
+            android.util.Log.w("FluidifyAirPods", "Optional host unavailable: ${it.javaClass.simpleName}")
+        }.getOrNull()
         // Before anything can read or write them. The service used to do this on
         // creation, which is late: the player screen and the media session both
         // exist by then and either can announce a default that would be saved
@@ -91,6 +111,7 @@ class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost {
         get() = tokenStore.isLoggedIn ||
             dev.lelonio.square.auth.EngineCredentials.exist(this)
     val recentStore: RecentStore by lazy { RecentStore(this) }
+    val listeningHistory by lazy { dev.lelonio.square.data.ListeningRepository(this) }
 
     /** Songs found by searching and then played; see [SearchHistoryStore]. */
     val searchHistory: dev.lelonio.square.data.SearchHistoryStore by lazy {

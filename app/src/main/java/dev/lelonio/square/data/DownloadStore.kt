@@ -2,6 +2,8 @@ package dev.lelonio.square.data
 
 import android.content.Context
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -49,7 +51,14 @@ import java.io.File
  * download interrupted halfway resumes from the `.part` file the engine left.
  * A queue file would have been a second truth to keep in step with this one.
  */
-class DownloadStore(context: Context) {
+class DownloadStore internal constructor(
+    context: Context,
+    private val ioDispatcher: CoroutineDispatcher,
+    private val persistIndex: (File, String) -> Unit,
+) {
+    constructor(context: Context) : this(context, Dispatchers.IO, { file, text ->
+        writeDownloadIndexAtomically(file, text)
+    })
 
     /**
      * A file that is actually on disk, as the engine reported it.
@@ -97,13 +106,18 @@ class DownloadStore(context: Context) {
         }
     }
 
+    /** Position, not URI alone, identifies an occurrence (playlists allow repeats). */
+    @Serializable
+    private data class OwnerOccurrence(val uri: String, val addedAt: String? = null)
+
     @Serializable
     private data class Index(
         val version: Int = 1,
         val files: Map<String, FileRecord> = emptyMap(),
         val owners: Map<String, List<String>> = emptyMap(),
         /**
-         * Metadata for every track any owner asked for.
+         * Shared audio metadata for every track any owner asked for. Context
+         * dates live only in ownerOccurrences, never in this URI-keyed map.
          *
          * Kept here rather than read from [ContextCacheStore] because that
          * cache expires after a week and is trimmed to forty contexts, and a
@@ -113,6 +127,7 @@ class DownloadStore(context: Context) {
         val tracks: Map<String, CatalogTrack> = emptyMap(),
         val labels: Map<String, OwnerLabel> = emptyMap(),
         val failures: Map<String, Failure> = emptyMap(),
+        val ownerOccurrences: Map<String, List<OwnerOccurrence>> = emptyMap(),
     )
 
     /** Where the engine keeps the audio. Handed to it once, at startup. */
@@ -120,10 +135,10 @@ class DownloadStore(context: Context) {
 
     private val indexFile = File(root, INDEX_NAME)
     private val json = Json { ignoreUnknownKeys = true }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val scope = CoroutineScope(SupervisorJob() + ioDispatcher)
     private val writeLock = Mutex()
 
-    private val _index = MutableStateFlow(Index())
+    private val _index = MutableStateFlow(Index(version = 2))
     private val _progress = MutableStateFlow<Map<String, Float>>(emptyMap())
 
     /** What is on disk, by track URI. */
@@ -167,15 +182,22 @@ class DownloadStore(context: Context) {
      * files on disk are still there and [reconcile] will find them, which is a
      * better answer than refusing to start because a JSON file got truncated.
      */
-    suspend fun load() = withContext(Dispatchers.IO) {
-        if (loaded) return@withContext
-        loaded = true
-        root.mkdirs()
-        val stored = runCatching {
-            if (indexFile.exists()) json.decodeFromString(Index.serializer(), indexFile.readText())
-            else Index()
-        }.getOrElse { Index() }
-        publish(stored)
+    suspend fun load() = withContext(ioDispatcher) {
+        writeLock.withLock {
+            if (loaded) return@withLock
+            loaded = true
+            root.mkdirs()
+            val stored = runCatching {
+                if (indexFile.exists()) json.decodeFromString(Index.serializer(), indexFile.readText())
+                else Index()
+            }.getOrElse { Index() }
+            // A v1 global date has no trustworthy owner/occurrence provenance.
+            // Keep its audio metadata, but never guess the missing context date.
+            publish(stored.copy(
+                version = 2,
+                tracks = stored.tracks.mapValues { (_, track) -> track.copy(addedAt = null) },
+            ))
+        }
     }
 
     private var loaded = false
@@ -189,15 +211,17 @@ class DownloadStore(context: Context) {
      * the audio and leaves the index, and a crash between the rename and the
      * index write leaves a file nothing claims. Cheap enough to run at startup.
      */
-    suspend fun reconcile() = withContext(Dispatchers.IO) {
-        val current = _index.value
-        val surviving = current.files.filterKeys { uri ->
-            val record = current.files[uri] ?: return@filterKeys false
-            audioFile(record.trackId).exists()
-        }
-        if (surviving.size != current.files.size) {
-            publish(current.copy(files = surviving))
-            save()
+    suspend fun reconcile() = withContext(ioDispatcher) {
+        writeLock.withLock {
+            val current = _index.value
+            val surviving = current.files.filterKeys { uri ->
+                val record = current.files[uri] ?: return@filterKeys false
+                audioFile(record.trackId).exists()
+            }
+            if (surviving.size != current.files.size) {
+                publish(current.copy(files = surviving))
+                save()
+            }
         }
     }
 
@@ -320,6 +344,21 @@ class DownloadStore(context: Context) {
     /** Metadata for a downloaded track, for drawing it with no connection. */
     fun trackOf(trackUri: String): CatalogTrack? = _index.value.tracks[trackUri]
 
+    /**
+     * One immutable index snapshot, in owner order, including repeated and pending
+     * tracks. Context dates never come from the shared audio metadata. Legacy
+     * occurrences without a date stay unknown until this owner is refreshed.
+     */
+    fun tracksForOwner(ownerUri: String): List<CatalogTrack> {
+        val snapshot = _index.value
+        val occurrences = snapshot.ownerOccurrences[ownerUri].orEmpty()
+        return snapshot.owners[ownerUri].orEmpty().mapIndexedNotNull { index, uri ->
+            val track = snapshot.tracks[uri] ?: return@mapIndexedNotNull null
+            val occurrence = occurrences.getOrNull(index)?.takeIf { it.uri == uri }
+            track.copy(addedAt = occurrence?.addedAt)
+        }
+    }
+
     fun labelOf(ownerUri: String): OwnerLabel? = _index.value.labels[ownerUri]
 
     fun totalBytes(): Long = _files.value.values.sumOf { it.bytes }
@@ -349,7 +388,9 @@ class DownloadStore(context: Context) {
         publish(
             current.copy(
                 owners = current.owners + (ownerUri to tracks.map { it.uri }),
-                tracks = current.tracks + tracks.associateBy { it.uri },
+                tracks = current.tracks + tracks.associate { it.uri to it.copy(addedAt = null) },
+                ownerOccurrences = current.ownerOccurrences +
+                    (ownerUri to tracks.map { OwnerOccurrence(it.uri, it.addedAt) }),
                 labels = label?.let { current.labels + (ownerUri to it) } ?: current.labels,
                 // Asking again is the listener saying "try this", so the record
                 // of past failures for these tracks goes.
@@ -361,14 +402,17 @@ class DownloadStore(context: Context) {
 
     /** Adds one track to the loose collection of singles. */
     suspend fun addSingle(track: CatalogTrack) {
-        val existing = _owners.value[SINGLES].orEmpty()
-        if (existing.contains(track.uri)) return
         writeLock.withLock {
             val current = _index.value
+            val existing = current.owners[SINGLES].orEmpty()
+            if (existing.contains(track.uri)) return@withLock
             publish(
                 current.copy(
                     owners = current.owners + (SINGLES to existing + track.uri),
-                    tracks = current.tracks + (track.uri to track),
+                    tracks = current.tracks + (track.uri to track.copy(addedAt = null)),
+                    // The source playlist's date is not an addition date in singles.
+                    ownerOccurrences = current.ownerOccurrences + (SINGLES to
+                        (occurrencesFor(current, SINGLES) + OwnerOccurrence(track.uri))),
                     failures = current.failures - track.uri,
                 ),
             )
@@ -377,11 +421,15 @@ class DownloadStore(context: Context) {
     }
 
     suspend fun removeSingle(trackUri: String) {
-        val existing = _owners.value[SINGLES].orEmpty()
-        if (!existing.contains(trackUri)) return
         writeLock.withLock {
             val current = _index.value
-            publish(current.copy(owners = current.owners + (SINGLES to existing - trackUri)))
+            val existing = current.owners[SINGLES].orEmpty()
+            if (!existing.contains(trackUri)) return@withLock
+            publish(current.copy(
+                owners = current.owners + (SINGLES to existing - trackUri),
+                ownerOccurrences = current.ownerOccurrences + (SINGLES to
+                    occurrencesFor(current, SINGLES).filterNot { it.uri == trackUri }),
+            ))
             save()
         }
     }
@@ -399,6 +447,7 @@ class DownloadStore(context: Context) {
         publish(
             current.copy(
                 owners = current.owners - ownerUri,
+                ownerOccurrences = current.ownerOccurrences - ownerUri,
                 labels = current.labels - ownerUri,
             ),
         )
@@ -496,7 +545,7 @@ class DownloadStore(context: Context) {
     /** Everything goes: the index, and the whole store the engine writes into. */
     suspend fun clearAll() = withContext(Dispatchers.IO) {
         writeLock.withLock {
-            publish(Index())
+            publish(Index(version = 2))
             _progress.value = emptyMap()
             runCatching { root.deleteRecursively() }
             root.mkdirs()
@@ -509,6 +558,12 @@ class DownloadStore(context: Context) {
 
     // ------------------------------------------------------------- internals
 
+    private fun occurrencesFor(index: Index, ownerUri: String): List<OwnerOccurrence> =
+        index.owners[ownerUri].orEmpty().mapIndexed { position, uri ->
+            index.ownerOccurrences[ownerUri]?.getOrNull(position)?.takeIf { it.uri == uri }
+                ?: OwnerOccurrence(uri)
+        }
+
     private fun audioFile(trackId: String): File =
         File(File(root, "audio"), trackId.take(2)).resolve(trackId.drop(2))
 
@@ -520,7 +575,10 @@ class DownloadStore(context: Context) {
     }
 
     /**
-     * Writes the index through a temporary file.
+     * Serializes the actual I/O with mutations. Read the latest state only
+     * after acquiring the lock: even workers scheduled in reverse order cannot
+     * overwrite a newer snapshot. The caller only schedules work; no disk I/O
+     * runs on its thread.
      *
      * Not debounced: every caller here is a whole-playlist change or the end of
      * a download, which is at most one write every few seconds even with the
@@ -528,15 +586,15 @@ class DownloadStore(context: Context) {
      * second, never reach this — they live only in [progress].
      */
     private fun save() {
-        val snapshot = _index.value
         scope.launch {
-            runCatching {
-                root.mkdirs()
-                val tmp = File(root, "$INDEX_NAME.tmp")
-                tmp.writeText(json.encodeToString(Index.serializer(), snapshot))
-                if (!tmp.renameTo(indexFile)) {
-                    indexFile.delete()
-                    tmp.renameTo(indexFile)
+            writeLock.withLock {
+                try {
+                    root.mkdirs()
+                    persistIndex(indexFile, json.encodeToString(Index.serializer(), _index.value))
+                } catch (cancelled: CancellationException) {
+                    throw cancelled
+                } catch (failure: Exception) {
+                    android.util.Log.w("SquareDownloads", "Could not persist download index", failure)
                 }
             }
         }

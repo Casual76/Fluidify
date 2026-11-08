@@ -8,8 +8,8 @@ import dev.lelonio.square.data.DownloadSettingsStore
 import dev.lelonio.square.data.DownloadStore
 import dev.lelonio.square.nativecore.NativeBridge
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -68,7 +68,17 @@ class DownloadQueue(
     val status: StateFlow<Status> = _status.asStateFlow()
 
     private val _link = MutableStateFlow(link())
-    private var pump: Job? = null
+    private val pump = DownloadPump(
+        scope = scope,
+        cancelNative = NativeBridge::cancelDownload,
+        canStart = { dev.lelonio.square.playback.PlaybackService.accountAllowsDownloads },
+        onStarting = { _status.value = Status(running = true) },
+        onFinished = {
+            releaseWatch()
+            _status.value = Status()
+        },
+        drain = { drain() },
+    )
     private var watching = false
 
     /** Set when the last attempt was turned away by the key limiter. */
@@ -98,21 +108,19 @@ class DownloadQueue(
      * will ask the store again the moment it finishes what it is on.
      */
     fun wake() {
-        if (pump?.isActive == true) return
         // Published before the coroutine is scheduled, not inside it. The
         // foreground service watches this flow and stops itself the moment it
         // reads "not running" — which, with the pump still queued on a
         // dispatcher, is the very first thing it read.
-        _status.value = Status(running = true)
-        pump = scope.launch { drain() }
+        pump.wake()
     }
 
     fun stop() {
-        pump?.cancel()
-        pump = null
-        releaseWatch()
-        _status.value = Status()
+        pump.stop()
     }
+
+    /** Waits for actual JNI return; use before NativeBridge.shutdown on logout. */
+    suspend fun stopAndJoin() = pump.stopAndJoin()
 
     // ----------------------------------------------------------------- the pump
 
@@ -173,8 +181,6 @@ class DownloadQueue(
             }
         } finally {
             ticks.cancel()
-            releaseWatch()
-            _status.value = Status()
         }
     }
 
@@ -262,8 +268,16 @@ class DownloadQueue(
     private suspend fun attempt(trackUri: String): Outcome {
         val kbps = settings.quality.value.kbps
         val outcome = runCatching {
-            withContext(Dispatchers.IO) { NativeBridge.downloadTrack(trackUri, kbps) }
+            withContext(Dispatchers.IO) {
+                try {
+                    pump.transfer(trackUri) { NativeBridge.downloadTrack(trackUri, kbps) }
+                } finally {
+                    store.clearProgress(trackUri)
+                }
+            }
         }
+
+        outcome.exceptionOrNull()?.let { if (it is CancellationException) throw it }
 
         outcome.onSuccess { sidecar ->
             store.onCompleted(trackUri, recordOf(sidecar, kbps))
@@ -322,6 +336,7 @@ class DownloadQueue(
                 DownloadExtras.keep(clip.url, if (clip.isVideo) "video" else "art")
             }
         }.onFailure {
+            if (it is CancellationException) throw it
             android.util.Log.i("SquareDownloads", "extras for $trackUri: $it")
         }
     }

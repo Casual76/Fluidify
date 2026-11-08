@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_added_newest_first">Newest first</string>
+    <string name="playlist_added_oldest_first">Oldest first</string>
+    <string name="playlist_title_a_to_z">A–Z</string>
+    <string name="playlist_title_z_to_a">Z–A</string>
+    <string name="playlist_search_loaded_count">%1$d of %2$d loaded tracks</string>
+    <string name="playlist_search_loading_scope">More tracks are loading. Search covers the tracks loaded so far.</string>
+    <string name="playlist_added_dates_unavailable">The source has no added dates for these loaded tracks. Their original order is kept.</string>
+</resources>

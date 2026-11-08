@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- Availability is not association, observation, connection or user consent. -->
+    <bool name="airpods_companion_service_enabled">true</bool>
+</resources>

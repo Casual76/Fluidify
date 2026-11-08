@@ -26,7 +26,23 @@ data class SavedPlayback(
     val contextOrdered: Boolean = false,
     /** What the player shows as the source: "Playlist · Estate 2025". */
     val contextLabel: String = "",
+    val listeningOccurrenceId: String? = null,
+    val historyContinuity: String? = null,
 )
+
+/** Continuity requires the explicit playback token and the still-valid history fence. */
+fun SavedPlayback.restoredListeningOccurrence(continuity: String?): String? =
+    listeningOccurrenceId?.takeIf { historyContinuity != null && historyContinuity == continuity }
+
+/** Snapshot authorization plus a live validator reused by the service and producer integration tests. */
+internal fun SavedPlayback.listeningRestoreAuthorization(history: ListeningRepository): Pair<String?, () -> Boolean> {
+    val access = history.session.value.access
+    val token = restoredListeningOccurrence(history.playbackContinuity())
+    return token to {
+        access != null && token != null && history.session.value.access == access &&
+            restoredListeningOccurrence(history.playbackContinuity()) == token
+    }
+}
 
 /**
  * Persists the playing queue so a restart resumes where the user left off.
@@ -58,6 +74,7 @@ class PlaybackStore(context: Context) {
             state.copy(
                 tracks = state.tracks.take(MAX_TRACKS),
                 index = state.index.coerceIn(0, MAX_TRACKS - 1),
+                listeningOccurrenceId = state.listeningOccurrenceId.takeIf { state.index < MAX_TRACKS },
             )
         }
         prefs.edit()

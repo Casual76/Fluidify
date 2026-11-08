@@ -1,7 +1,6 @@
 package dev.lelonio.square.wear
 
 import android.util.Log
-import androidx.core.content.edit
 import com.google.android.gms.wearable.Wearable
 import dev.lelonio.square.SquareApplication
 import dev.pampa.fluidify.wear.protocol.DownloadRequest
@@ -9,13 +8,11 @@ import dev.pampa.fluidify.wear.protocol.WatchDownloadOwner
 import dev.pampa.fluidify.wear.protocol.WatchDownloads
 import dev.pampa.fluidify.wear.protocol.WearCodec
 import dev.pampa.fluidify.wear.protocol.WearPaths
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.builtins.ListSerializer
+import java.io.IOException
 
 /**
  * The phone's view of the watch's downloads, and its way of asking for more.
@@ -32,7 +29,20 @@ class WatchDownloadsRemote(private val app: SquareApplication, private val link:
     /** The watch's last word; null until a watch with downloads has spoken. */
     val status: StateFlow<WatchDownloads?> = _status.asStateFlow()
 
-    private val _waiting = MutableStateFlow(0)
+    private val pending = PendingWatchDownloads(
+        read = { prefs.getString(KEY_PENDING, null) },
+        write = { encoded ->
+            if (!prefs.edit().putString(KEY_PENDING, encoded).commit()) {
+                throw IOException("watch download requests could not be persisted")
+            }
+        },
+        broadcast = { request ->
+            link.broadcast(WearPaths.DOWNLOAD_PLAN, WearCodec.encode(DownloadRequest.serializer(), request))
+        },
+        send = { nodeId, request ->
+            link.send(nodeId, WearPaths.DOWNLOAD_PLAN, WearCodec.encode(DownloadRequest.serializer(), request))
+        },
+    )
 
     /**
      * How many requests are waiting for the watch to come back.
@@ -42,7 +52,7 @@ class WatchDownloadsRemote(private val app: SquareApplication, private val link:
      * what lets the Watch page say it has not been. Zero until [refresh] has read the preferences,
      * so that building this (with the bridge, in every process) does not touch the disk.
      */
-    val waiting: StateFlow<Int> = _waiting.asStateFlow()
+    val waiting: StateFlow<Int> = pending.waiting
 
     fun keeps(uri: String): Boolean = _status.value?.owners?.any { it.uri == uri } == true
 
@@ -52,7 +62,7 @@ class WatchDownloadsRemote(private val app: SquareApplication, private val link:
 
     /** Reads what the Data Layer already holds, for a phone that was away when it changed. */
     suspend fun refresh() {
-        _waiting.value = withContext(Dispatchers.IO) { pending().size }
+        pending.refresh()
         // No watch with the companion: nothing to read, and no Data Layer call made.
         if (!link.hasWatch()) return
         catchingNonCancel {
@@ -77,27 +87,12 @@ class WatchDownloadsRemote(private val app: SquareApplication, private val link:
                 },
             )
         }
-        val sent = link.broadcast(WearPaths.DOWNLOAD_PLAN, WearCodec.encode(DownloadRequest.serializer(), request))
-        if (!sent) savePending(pending() + request)
+        pending.request(request)
     }
 
     /** What waited for the watch to come back. */
     suspend fun flushPending(nodeId: String) {
-        val waiting = pending()
-        if (waiting.isEmpty()) return
-        val left = waiting.filterNot { link.send(nodeId, WearPaths.DOWNLOAD_PLAN, WearCodec.encode(DownloadRequest.serializer(), it)) }
-        savePending(left)
-    }
-
-    private fun pending(): List<DownloadRequest> = runCatching {
-        prefs.getString(KEY_PENDING, null)?.let {
-            WearCodec.json.decodeFromString(ListSerializer(DownloadRequest.serializer()), it)
-        }
-    }.getOrNull().orEmpty()
-
-    private fun savePending(requests: List<DownloadRequest>) {
-        _waiting.value = requests.size
-        prefs.edit { putString(KEY_PENDING, WearCodec.json.encodeToString(ListSerializer(DownloadRequest.serializer()), requests)) }
+        pending.flush(nodeId)
     }
 
     private companion object {

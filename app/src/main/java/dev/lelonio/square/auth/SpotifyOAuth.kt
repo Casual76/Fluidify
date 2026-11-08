@@ -11,8 +11,6 @@ import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
-import java.net.InetAddress
-import java.net.ServerSocket
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -183,11 +181,10 @@ object SpotifyOAuth {
         val challenge = challengeFor(verifier)
         val state = randomState()
 
-        LoopbackReceiver(REDIRECT_PORT, context.getString(R.string.browser_return)).use { receiver ->
+        val (code, redirectUri) = withOAuthLoopbackReceiver(
+            REDIRECT_PORT, context.getString(R.string.browser_return),
+        ) { receiver ->
             val redirectUri = receiver.redirectUri
-            // The port is ephemeral, so without this there is no way to tell a
-            // listener that never accepted from a browser that refused to load
-            // the redirect.
             android.util.Log.i(TAG, "listening for OAuth redirect on $redirectUri")
 
             val authUri = Uri.parse(AUTHORIZE_URL).buildUpon()
@@ -212,13 +209,16 @@ object SpotifyOAuth {
                 }.launchUrl(context, authUri)
             }
 
-            val callback = receiver.awaitRedirect()
+            val target = receiver.awaitRequest()
+            val callback = Uri.parse("http://127.0.0.1$target")
             android.util.Log.i(TAG, "redirect received")
-            check(callback.state == state) { "OAuth state mismatch — request was not ours" }
-            val code = callback.code ?: error("authorization denied: ${callback.error}")
-
-            exchangeCode(code, verifier, redirectUri, clientId)
+            check(callback.getQueryParameter("state") == state) { "OAuth state mismatch — request was not ours" }
+            val code = callback.getQueryParameter("code")
+                ?: error("authorization denied: ${callback.getQueryParameter("error")}")
+            code to redirectUri
         }
+        // The listener is released before the token HTTP exchange as well.
+        exchangeCode(code, verifier, redirectUri, clientId)
     }
 
     /** Trades a refresh token for a fresh access token. */
@@ -288,75 +288,4 @@ object SpotifyOAuth {
 
     private fun base64Url(bytes: ByteArray): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-}
-
-/**
- * Single-shot loopback HTTP listener for the OAuth redirect.
- *
- * Binds an ephemeral port on 127.0.0.1, serves exactly one request, and closes.
- * Only the device's own browser can reach it.
- */
-private class LoopbackReceiver(port: Int, private val doneMessage: String) : AutoCloseable {
-
-    data class Callback(val code: String?, val state: String?, val error: String?)
-
-    /**
-     * Bound to the IPv4 loopback explicitly, on the exact registered port.
-     *
-     * `InetAddress.getLoopbackAddress()` returns `::1` on Android, so binding
-     * through it leaves nothing listening on `127.0.0.1` — which is the literal
-     * Spotify's registered redirect URIs use, and the browser then fails the
-     * redirect with ERR_CONNECTION_REFUSED.
-     */
-    private val server = ServerSocket(port, 1, InetAddress.getByName("127.0.0.1"))
-
-    /** The one line the browser shows once the redirect lands, in the app's language. */
-    private val response: String = buildString {
-        val page = "<html><body><h2>$doneMessage</h2></body></html>"
-        append("HTTP/1.1 200 OK\r\n")
-        append("Content-Type: text/html; charset=utf-8\r\n")
-        append("Content-Length: ${page.toByteArray().size}\r\n")
-        append("Connection: close\r\n\r\n")
-        append(page)
-    }
-
-    /** Derived from the socket, so the URI can never disagree with the bind. */
-    val redirectUri: String =
-        "http://${server.inetAddress.hostAddress}:${server.localPort}/login"
-
-    init {
-        // If the user abandons the browser we must not leak the thread forever.
-        server.soTimeout = REDIRECT_TIMEOUT_MS
-    }
-
-    fun awaitRedirect(): Callback {
-        val socket = server.accept()
-        socket.use {
-            val reader = it.getInputStream().bufferedReader()
-            val requestLine = reader.readLine() ?: error("empty redirect request")
-            // "GET /login?code=...&state=... HTTP/1.1"
-            val target = requestLine.split(' ').getOrNull(1)
-                ?: error("malformed redirect request: $requestLine")
-            val uri = Uri.parse("http://127.0.0.1$target")
-
-            it.getOutputStream().writer().apply {
-                write(response)
-                flush()
-            }
-
-            return Callback(
-                code = uri.getQueryParameter("code"),
-                state = uri.getQueryParameter("state"),
-                error = uri.getQueryParameter("error"),
-            )
-        }
-    }
-
-    override fun close() {
-        runCatching { server.close() }
-    }
-
-    private companion object {
-        const val REDIRECT_TIMEOUT_MS = 5 * 60 * 1000
-    }
 }

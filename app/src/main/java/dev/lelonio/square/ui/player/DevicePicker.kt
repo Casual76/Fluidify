@@ -84,7 +84,7 @@ fun DeviceList(
         ) {
             Box(
                 Modifier
-                    .size(36.dp)
+                    .size(48.dp)
                     .fluidRowPressable(onClick = onRefresh),
                 contentAlignment = Alignment.Center,
             ) {
@@ -97,6 +97,15 @@ fun DeviceList(
             }
         }
 
+        // A failed fallback refresh must not hide an addressable cluster device.
+        if (state.error != null && state.devices.isNotEmpty()) {
+            Text(
+                state.error,
+                style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
+            )
+        }
         when {
             state.loading && state.devices.isEmpty() -> Box(
                 Modifier
@@ -107,7 +116,7 @@ fun DeviceList(
                 FluidSpinner(size = 36.dp, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
 
-            state.error != null -> Text(
+            state.error != null && state.devices.isEmpty() -> Text(
                 state.error,
                 style = MaterialTheme.typography.bodyMedium,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,

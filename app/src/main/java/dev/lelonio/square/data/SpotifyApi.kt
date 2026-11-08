@@ -141,7 +141,7 @@ interface SpotifyApi {
      * Needs `user-read-recently-played`.
      */
     @GET("v1/me/player/recently-played")
-    suspend fun recentlyPlayed(@Query("limit") limit: Int = 30): PageDto<PlayHistoryDto>
+    suspend fun recentlyPlayed(@Query("limit") limit: Int = 30, @Query("before") before: Long? = null): PageDto<PlayHistoryDto>
 
     /**
      * An artist's most-played tracks.
@@ -265,6 +265,11 @@ interface SpotifyApi {
         @Body request: PlaylistDetailsDto,
     )
 
+    // Name-only payload: never silently changes visibility during bridge rename.
+    @Headers("${ApiFactory.SESSION_AUTH}: $PLAYLIST_WRITE")
+    @PUT("v1/playlists/{id}")
+    suspend fun renamePlaylist(@Path("id") playlistId: String, @Body request: PlaylistNameDto)
+
     /**
      * Removes a playlist from the account's library.
      *
@@ -370,6 +375,9 @@ data class PlaylistDetailsDto(
     val name: String,
     @SerialName("public") val isPublic: Boolean = false,
 )
+
+@Serializable
+data class PlaylistNameDto(val name: String)
 
 @Serializable
 data class RemoveTracksRequestDto(val tracks: List<TrackUriDto>)
@@ -538,6 +546,7 @@ data class PlaylistDto(
      * Spotify itself built, from a playlist a stranger named the same thing.
      */
     val owner: OwnerDto? = null,
+    @SerialName("public") val isPublic: Boolean? = null,
 )
 
 @Serializable

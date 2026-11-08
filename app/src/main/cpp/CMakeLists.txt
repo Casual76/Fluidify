@@ -46,3 +46,6 @@ target_compile_definitions(spotstretch PRIVATE
     BUNGEE_VERSION="${BUNGEE_VERSION}")
 
 target_link_libraries(spotstretch PRIVATE pffft log)
+
+# Optional AACP platform access. Kotlin loads this only for an explicit AirPods probe/session.
+add_library(airpods_socket SHARED airpods_socket.cpp)

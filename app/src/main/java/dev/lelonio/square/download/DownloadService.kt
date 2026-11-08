@@ -57,6 +57,13 @@ class DownloadService : android.app.Service() {
             return START_NOT_STICKY
         }
 
+        // A queued start may arrive after logout has invalidated the account.
+        // Stop immediately; it must not revive the native download session.
+        if (!PlaybackService.accountAllowsDownloads) {
+            stop()
+            return START_NOT_STICKY
+        }
+
         // Up front and unconditionally: Android gives a service started into
         // the foreground a few seconds to say so, and the queue's first answer
         // may take longer than that if it has to wait for a session.
@@ -186,6 +193,7 @@ class DownloadService : android.app.Service() {
          * wakes its queue, which was going to ask the store again anyway.
          */
         fun start(context: Context) {
+            if (!PlaybackService.accountAllowsDownloads) return
             val intent = Intent(context, DownloadService::class.java)
             runCatching {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {

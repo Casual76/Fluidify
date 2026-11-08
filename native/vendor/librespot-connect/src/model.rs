@@ -74,6 +74,8 @@ pub(super) enum PlayContext {
 /// The parameters for creating a load request
 #[derive(Debug, Default, Clone)]
 pub struct LoadRequestOptions {
+    /// LOCAL PATCH (Fluidify): never populated by remote/untagged commands.
+    pub restore_nonce: Option<String>,
     /// Whether the given tracks should immediately start playing, or just be initially loaded.
     pub start_playing: bool,
     /// Start the playback at a specific point of the track.

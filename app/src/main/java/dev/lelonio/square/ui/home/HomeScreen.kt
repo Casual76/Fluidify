@@ -55,6 +55,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
@@ -181,6 +182,7 @@ fun HomeScreen(
      * cannot be reconstructed from the account's playlists.
      */
     shelves: List<dev.lelonio.square.data.HomeShelf> = emptyList(),
+    airPods: dev.lelonio.square.ui.airpods.AirPodsUiBinding? = null,
 ) {
     when (state) {
         MainViewModel.UiState.LoggedOut -> Centered {
@@ -267,6 +269,7 @@ fun HomeScreen(
                 dev.antigravity.fluidengine.ui.fluid.FluidScreenDefaults.ControlRowHeight
             var restingTopPx by remember { mutableFloatStateOf(Float.NaN) }
             var lockupHeightPx by remember { mutableFloatStateOf(0f) }
+            var airPodsRightPx by remember { mutableFloatStateOf(0f) }
             val dockedCentrePx = with(density) {
                 (statusBar + dev.antigravity.fluidengine.ui.fluid.FluidScreenDefaults
                     .ControlRowHeight / 2).toPx()
@@ -429,6 +432,7 @@ fun HomeScreen(
                             topPadding = barHeight,
                             onFilter = { filterName = it.name },
                             onOpenSettings = onOpenSettings,
+                            onAirPodsRight = { airPodsRightPx = it },
                             friends = friends,
                             onOpenFriends = onOpenFriends,
                             onLockupPlaced = { top, height ->
@@ -637,6 +641,8 @@ fun HomeScreen(
                     height = barHeight,
                     statusBar = statusBar,
                     collapse = { collapse },
+                    airPods = airPods,
+                    airPodsRightPx = airPodsRightPx,
                     restingTopPx = { restingTopPx },
                     contentTranslation = { overscroll.offsetPx },
                 )
@@ -662,8 +668,11 @@ private fun HomeTopBar(
     collapse: () -> Float,
     restingTopPx: () -> Float,
     contentTranslation: () -> Float,
+    airPods: dev.lelonio.square.ui.airpods.AirPodsUiBinding? = null,
+    airPodsRightPx: Float = 0f,
 ) {
     val density = LocalDensity.current
+    var barLeftPx by remember { mutableFloatStateOf(0f) }
     val restingLeftPx = with(density) { HeaderSidePadding.toPx() }
     val dockedTopPx = with(density) {
         (statusBar + (dev.antigravity.fluidengine.ui.fluid.FluidScreenDefaults.ControlRowHeight -
@@ -673,7 +682,8 @@ private fun HomeTopBar(
     Box(
         Modifier
             .fillMaxWidth()
-            .height(height + dev.antigravity.fluidengine.ui.fluid.FluidScreenDefaults.GlassFadeTail),
+            .height(height + dev.antigravity.fluidengine.ui.fluid.FluidScreenDefaults.GlassFadeTail)
+            .onGloballyPositioned { barLeftPx = it.positionInWindow().x },
     ) {
         Box(
             Modifier
@@ -709,6 +719,27 @@ private fun HomeTopBar(
                     dev.lelonio.square.ui.theme.LocalPageEndInset.current
                 ).toPx()
         }
+        // The trailing measurement precedes FriendFaces and the avatar, including page inset.
+        // Centre in the remaining interval rather than attaching to the brand.
+        val preferredGapPx = with(density) { 8.dp.toPx() }
+        val markRightPx = restingLeftPx + lockupWidthPx
+        val trailingLeftPx = airPodsRightPx - barLeftPx
+        val rawRoomPx = trailingLeftPx - markRightPx
+        val gapPx = ((rawRoomPx - with(density) { 96.dp.toPx() }) / 2f).coerceIn(0f, preferredGapPx)
+        val roomPx = rawRoomPx - 2 * gapPx
+        val capsuleWidthPx = minOf(with(density) { 120.dp.toPx() }, roomPx)
+        val capsuleStartPx = (markRightPx + trailingLeftPx - capsuleWidthPx) / 2f
+        if (lockupWidthPx > 0f && airPods?.state?.homeVisible == true &&
+            capsuleWidthPx >= with(density) { 96.dp.toPx() } &&
+            dev.lelonio.square.ui.airpods.airPodsHeaderFits(
+                trailingLeftPx, markRightPx, 0f, capsuleWidthPx, collapse(), 2 * gapPx)) {
+            dev.lelonio.square.ui.airpods.AirPodsCapsule(airPods,
+                Modifier.width(with(density) { capsuleWidthPx.toDp() })
+                    .then(Modifier.offset {
+                        androidx.compose.ui.unit.IntOffset(capsuleStartPx.toInt(),
+                            ((restingTopPx().takeIf { it.isFinite() } ?: dockedTopPx) + contentTranslation()).toInt())
+                    }), backdrop = backdrop)
+        }
         AppLockup(
             iconSize = 44.dp,
             nameHeight = 22.dp,
@@ -733,7 +764,7 @@ private fun HomeTopBar(
                         dockedTopPx + (from - dockedTopPx) * (1f - p) +
                             contentTranslation() * (1f - eased)
                         ).coerceAtLeast(dockedTopPx)
-                },
+                }.testTag("home-brand"),
         )
     }
 }
@@ -786,6 +817,7 @@ private fun Header(
     /** Who the account follows and what they play; empty hides the control. */
     friends: List<dev.lelonio.square.data.FriendListen> = emptyList(),
     onOpenFriends: () -> Unit = {},
+    onAirPodsRight: (Float) -> Unit = {},
     /**
      * False on a page with no feed to filter.
      *
@@ -896,6 +928,11 @@ private fun Header(
             // not deserve a tab. Absent rather than empty when nobody is
             // playing: a control that opens onto nothing is worse than no
             // control.
+            Row(
+                Modifier.testTag("home-airpods-trailing-boundary")
+                    .onGloballyPositioned { onAirPodsRight(it.positionInWindow().x) },
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
             if (friends.isNotEmpty()) {
                 FriendFaces(friends, onOpenFriends)
             }
@@ -914,6 +951,7 @@ private fun Header(
                 corner = 23.dp,
                 decodeSize = 46.dp,
             )
+            }
         }
 
         // The chips carry the header's bottom margin with them; without them

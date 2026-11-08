@@ -127,23 +127,16 @@ object NativeBridge {
      * other device see, and it is Spirc that advances at the end of a track.
      */
     fun loadQueue(
-        uris: List<String>,
-        index: Int,
-        startPlaying: Boolean,
-        positionMs: Int = 0,
-        /** The playlist or album the queue came from; empty when it came from none. */
-        contextUri: String = "",
-        /** Hand playback to Spotify as that context rather than as loose tracks. */
-        playAsContext: Boolean = false,
-    ) =
-        nativeLoadQueue(
-            Json.encodeToString(ListSerializer(String.serializer()), uris),
-            index,
-            startPlaying,
-            positionMs,
-            contextUri,
-            playAsContext,
-        )
+        uris: List<String>, index: Int, startPlaying: Boolean, positionMs: Int = 0,
+        contextUri: String = "", playAsContext: Boolean = false,
+    ) = nativeLoadQueue(Json.encodeToString(ListSerializer(String.serializer()), uris),
+        index, startPlaying, positionMs, contextUri, playAsContext)
+
+    /** Explicit app-owned saved restore; untagged loadQueue/JNI entry remains unchanged. */
+    fun loadOwnedQueue(uris: List<String>, index: Int, startPlaying: Boolean, positionMs: Int,
+        contextUri: String, playAsContext: Boolean, restoreNonce: String) =
+        nativeLoadOwnedQueue(Json.encodeToString(ListSerializer(String.serializer()), uris),
+            index, startPlaying, positionMs, contextUri, playAsContext, restoreNonce)
 
     /**
      * Tells the device a new running order, leaving the current track playing.
@@ -653,6 +646,10 @@ object NativeBridge {
         listener: NativeEvents,
     )
 
+    private external fun nativeLoadOwnedQueue(
+        urisJson: String, index: Int, startPlaying: Boolean, positionMs: Int,
+        contextUri: String, playAsContext: Boolean, restoreNonce: String,
+    )
     private external fun nativeLoadQueue(
         urisJson: String,
         index: Int,

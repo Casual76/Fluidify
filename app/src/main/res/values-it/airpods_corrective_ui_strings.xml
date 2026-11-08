@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_reason_selection">Scegli prima una coppia di AirPods.</string>
+    <string name="airpods_reason_bluetooth_permission">Consenti l?accesso Bluetooth.</string>
+    <string name="airpods_reason_bluetooth_off">Attiva il Bluetooth.</string>
+    <string name="airpods_reason_setup">Completa la verifica di questa coppia di AirPods.</string>
+    <string name="airpods_reason_gate">I controlli AirPods non sono ancora validati per questa versione.</string>
+    <string name="airpods_reason_resume">Riprendi i controlli AirPods.</string>
+    <string name="airpods_reason_enable">Abilita i controlli AirPods.</string>
+    <string name="airpods_reason_notifications">Consenti le notifiche per i controlli AirPods.</string>
+    <string name="airpods_reason_connection">Collega la coppia di AirPods selezionata.</string>
+    <string name="airpods_reason_session">I controlli AirPods non sono ancora collegati.</string>
+    <string name="airpods_reason_access_granted">Accesso gi? consentito.</string>
+    <string name="airpods_reason_companion_feature">La configurazione dispositivo associato non ? disponibile su questo dispositivo.</string>
+    <string name="airpods_reason_companion_query">Impossibile verificare le associazioni del dispositivo. Riprova pi? tardi.</string>
+    <string name="airpods_reason_companion_present">Questa coppia ? gi? associata a Fluidify.</string>
+    <string name="airpods_reason_verifying">Verifica in corso.</string>
+    <string name="airpods_reason_connected">Questa coppia ? gi? collegata.</string>
+    <string name="airpods_reason_nls">Consenti l?accesso alle sessioni multimediali nelle impostazioni Android.</string>
+    <string name="airpods_reason_media">I controlli multimediali non sono disponibili.</string>
+    <string name="airpods_reason_collecting">La raccolta diagnostica ? gi? in corso.</string>
+    <string name="airpods_reason_not_collecting">La raccolta diagnostica ? ferma.</string>
+    <string name="airpods_reason_volume">Il volume locale non ? disponibile.</string>
+    <string name="airpods_reason_modes">Le modalit? di ascolto supportate non sono ancora disponibili.</string>
+    <string name="airpods_reason_head_preference">Abilita prima i gesti della testa.</string>
+    <string name="airpods_reason_capability">Questo comando non ? disponibile per la connessione AirPods corrente.</string>
+    <string name="airpods_reason_tracking">Il rilevamento della testa ? fermo.</string>
+    <string name="airpods_reason_automations_off">Abilita prima le automazioni di Fluidify.</string>
+    <string name="airpods_ui_host_summary">Preferenze automazioni</string>
+    <string name="airpods_ui_saved_off">Disattivate</string>
+    <string name="airpods_ui_saved_ready">Abilitate · prerequisiti disponibili</string>
+    <string name="airpods_ui_saved_blocked">Abilitate · %1$s</string>
+    <string name="airpods_ui_host_observational">Preferenze salvate, separate dal rilevamento conversazione degli auricolari.</string>
+    <string name="airpods_ui_summary_media">Multimedia</string>
+    <string name="airpods_ui_summary_background">In background</string>
+    <string name="airpods_ui_summary_other_apps">Altre app · best effort</string>
+    <string name="airpods_ui_capsule_battery">Batteria: %1$s</string>
+    <string name="airpods_reason_tracking_background">Tieni Fluidify in primo piano oppure abilita prima i controlli in background.</string>
+    <string name="airpods_reason_information">Sono necessarie le informazioni correnti sul modello AirPods.</string>
+</resources>

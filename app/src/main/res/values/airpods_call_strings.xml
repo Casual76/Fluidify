@@ -1,0 +1,9 @@
+<resources>
+<string name="airpods_call_permission">Set up incoming call gestures</string>
+<string name="airpods_call_explanation">With head gestures and automations enabled: nod to request answer, shake to request reject. Requires Phone state and Answer calls access. Background also requires its explicit opt-in. Ordinary Android support varies; dispatch does not confirm a call outcome. Observable call waiting or multiple calls blocks gestures; some held calls may be invisible. No media gestures during calls.</string>
+<string name="airpods_tile_cycle">ANC / Transparency</string>
+<string name="airpods_tile_unavailable">Open AirPods: session, identity or mode unavailable / pending</string>
+<string name="airpods_audio_connect">Connect media audio (A2DP)</string>
+<string name="airpods_audio_disconnect">Disconnect media audio (A2DP)</string>
+<string name="airpods_audio_explanation">Audio requests do not confirm connection and do not control every Bluetooth profile. If Android refuses, use Open Bluetooth explicitly. Unworn automation never opens Settings. Background assistant attempts require the background automation opt-in and this device associated with Fluidify.</string>
+</resources>

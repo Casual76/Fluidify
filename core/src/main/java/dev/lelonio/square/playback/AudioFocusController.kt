@@ -31,6 +31,14 @@ class AudioFocusController(
     /** True when we paused ourselves and should resume once focus returns. */
     private var pausedByFocusLoss = false
     private var holdsFocus = false
+    private val airPodsObservers = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
+    /** Observation only: includes loss/duck/noisy, even without a Player state change. */
+    fun observeAirPodsFocus(changed: () -> Unit): java.io.Closeable {
+        airPodsObservers.add(changed)
+        return java.io.Closeable { airPodsObservers.remove(changed) }
+    }
+    private fun notifyAirPodsFocus() { airPodsObservers.forEach { runCatching { it() } } }
+
     private var noisyReceiverRegistered = false
 
     private val request = AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
@@ -40,15 +48,16 @@ class AudioFocusController(
                 .setContentType(AudioAttributes.CONTENT_TYPE_MUSIC)
                 .build(),
         )
-        // Duck rather than pause for notifications: pausing for a two-second
-        // chime is more disruptive than briefly dropping the volume.
-        .setWillPauseWhenDucked(false)
-        .setOnAudioFocusChangeListener(::onFocusChange)
+        // Request callbacks instead of platform automatic ducking. CAN_DUCK is
+        // handled once by onDuck; this prevents an invisible second attenuation.
+        .setWillPauseWhenDucked(true)
+        .setOnAudioFocusChangeListener(::onFocusChange, android.os.Handler(android.os.Looper.getMainLooper()))
         .build()
 
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action != AudioManager.ACTION_AUDIO_BECOMING_NOISY) return
+            notifyAirPodsFocus()
             // A deliberate disconnect: do not resume when focus comes back.
             pausedByFocusLoss = false
             onPause()
@@ -68,6 +77,8 @@ class AudioFocusController(
             AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         if (granted) {
             holdsFocus = true
+            if (foreignAttenuationActive) onDuck(false)
+            foreignAttenuationActive = false
             registerNoisyReceiver()
         }
         return granted
@@ -82,7 +93,12 @@ class AudioFocusController(
         unregisterNoisyReceiver()
     }
 
+    var foreignAttenuationActive: Boolean = false
+        private set
+
     private fun onFocusChange(change: Int) {
+        foreignAttenuationActive = change != AudioManager.AUDIOFOCUS_GAIN
+        notifyAirPodsFocus()
         when (change) {
             AudioManager.AUDIOFOCUS_GAIN -> {
                 onDuck(false)

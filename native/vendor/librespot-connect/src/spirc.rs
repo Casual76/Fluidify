@@ -1518,6 +1518,7 @@ impl SpircTask {
                             seek_to: play.options.seek_to.unwrap_or_default(),
                             playing_track: play.options.skip_to.and_then(|s| s.try_into().ok()),
                             context_options,
+                            restore_nonce: None,
                         },
                     },
                     play.context.pages.pop(),
@@ -1876,7 +1877,7 @@ impl SpircTask {
         }
 
         if self.connect_state.current_track(MessageField::is_some) {
-            self.load_track(cmd_options.start_playing, cmd_options.seek_to)?;
+            self.load_track_owned(cmd_options.start_playing, cmd_options.seek_to, cmd_options.restore_nonce)?;
         } else {
             info!("No active track, stopping");
             self.handle_stop()
@@ -2322,6 +2323,12 @@ impl SpircTask {
     }
 
     fn load_track(&mut self, start_playing: bool, position_ms: u32) -> Result<(), Error> {
+        self.load_track_owned(start_playing, position_ms, None)
+    }
+
+    // LOCAL PATCH: tag travels only through its own LoadRequest, not mutable player state.
+    fn load_track_owned(&mut self, start_playing: bool, position_ms: u32,
+        restore_nonce: Option<String>) -> Result<(), Error> {
         if self.connect_state.current_track(MessageField::is_none) {
             debug!("current track is none, stopping playback");
             self.handle_stop();
@@ -2330,7 +2337,7 @@ impl SpircTask {
 
         let current_uri = self.connect_state.current_track(|t| &t.uri);
         let id = SpotifyUri::from_uri(current_uri)?;
-        self.player.load(id, start_playing, position_ms);
+        self.player.load_with_restore_nonce(id, start_playing, position_ms, restore_nonce);
 
         self.connect_state
             .update_position(position_ms, self.now_ms());

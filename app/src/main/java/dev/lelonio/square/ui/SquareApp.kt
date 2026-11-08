@@ -86,6 +86,7 @@ import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.layout.onSizeChanged
@@ -240,6 +241,7 @@ object Routes {
     const val LIBRARY = "library"
     const val PLAYLIST = "playlist"
     const val SETTINGS = "settings"
+    const val AIRPODS = "airpods"
 }
 
 /**
@@ -599,6 +601,7 @@ fun SquareApp(
      * What is actually behind a disc in a panel is the panel, and this is that.
      */
     val panelSurface = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
+    val airPodsHost = dev.lelonio.square.ui.airpods.host.rememberAirPodsHostBinding()
     val modalHost = dev.antigravity.fluidengine.ui.fluid.rememberFluidGlassModalHostState()
     val morphMenu = dev.antigravity.fluidengine.ui.fluidphysics.rememberFluidMorphMenuState()
 
@@ -1256,7 +1259,7 @@ fun SquareApp(
                 val chromeState = remember(pageHost) {
                     derivedStateOf {
                         1f - pageHost.fractionToward { entry ->
-                            (entry as? NavBackStackEntry)?.destination?.route == Routes.SETTINGS
+                            (entry as? NavBackStackEntry)?.destination?.route in setOf(Routes.SETTINGS, Routes.AIRPODS)
                         }
                     }
                 }
@@ -1372,6 +1375,7 @@ fun SquareApp(
                     ) {
                         composable(Routes.HOME) {
                             HomeScreen(
+                                airPods = airPodsHost.binding,
                                 state = state,
                                 contentPadding = listPadding,
                                 ground = groundGlass,
@@ -1522,8 +1526,19 @@ fun SquareApp(
                             )
                         }
 
+                        composable(Routes.AIRPODS, transition = FluidPageTransition.Expand) {
+                            dev.lelonio.square.ui.airpods.host.AirPodsHostPage(
+                                host = airPodsHost,
+                                padding = settingsPadding,
+                                backdrop = groundGlass,
+                                active = isFront,
+                                onBack = { navController.popBackStack() },
+                            )
+                        }
+
                         composable(Routes.SETTINGS, transition = FluidPageTransition.Expand) {
                             SettingsScreen(
+                                onOpenAirPods = { airPodsHost.dismissQuick(); navController.navigate(Routes.AIRPODS) },
                                 state = state,
                                 webApi = webApi,
                                 contentPadding = settingsPadding,
@@ -2638,6 +2653,7 @@ fun SquareApp(
                                       dev.lelonio.square.ui.player.LocalGlassEnabled.current),
                           ) {
                             PlayerScreen(
+                                airPods = airPodsHost.binding,
                                 state = playerState,
                                 positionMs = positionMs,
                                 onCanvasVisible = { canvasVisible = it },
@@ -3032,6 +3048,9 @@ fun SquareApp(
                 // above the bars and the player — a pop-up a floating capsule
                 // can sit on top of is not a modal — but under the onboarding,
                 // which nothing may cover.
+                dev.lelonio.square.ui.airpods.host.AirPodsHostQuick(airPodsHost) {
+                    navController.navigate(Routes.AIRPODS)
+                }
                 dev.antigravity.fluidengine.ui.fluid.FluidGlassModalHost(
                     state = modalHost,
                     backdrop = pageGlass,
@@ -3048,19 +3067,29 @@ fun SquareApp(
                     showTutorial = false
                 }
                 if (showTutorial || !onboarded) {
-                    OnboardingScreen(
-                        state = state,
-                        webApi = webApi,
-                        onLogIn = viewModel::logIn,
-                        onClientIdChange = viewModel::onWebApiClientIdChange,
-                        onConnectWebApi = { viewModel.connectWebApi() },
-                        language = language,
-                        onLanguage = setLanguage,
-                        onFinish = {
-                            showTutorial = false
-                            viewModel.setOnboarded(true)
+                    AirPodsOnboardingAccess(
+                        settings = { close ->
+                            dev.lelonio.square.ui.airpods.host.AirPodsHostPage(
+                                host = airPodsHost, padding = settingsPadding,
+                                backdrop = groundGlass, active = true, onBack = close,
+                            )
                         },
-                    )
+                    ) { openAirPods ->
+                        OnboardingScreen(
+                            state = state,
+                            webApi = webApi,
+                            onOpenAirPods = openAirPods,
+                            onLogIn = viewModel::logIn,
+                            onClientIdChange = viewModel::onWebApiClientIdChange,
+                            onConnectWebApi = { viewModel.connectWebApi() },
+                            language = language,
+                            onLanguage = setLanguage,
+                            onFinish = {
+                                showTutorial = false
+                                viewModel.setOnboarded(true)
+                            },
+                        )
+                    }
                 }
             }
         }
@@ -3565,3 +3594,48 @@ private const val CANVAS_RETRY_MS = 2_000L
 
 /** How long the extras wait for the song; see [awaitAudible]. */
 private const val AUDIBLE_TIMEOUT_MS = 12_000L
+
+/**
+ * Independent of authentication; shares the AirPods binding, but owns the onboarding's UI portals.
+ * The global hosts deliberately stay below onboarding. These hosts render AFTER the opaque page
+ * host, so its alerts and context menus are visible and receive pointers, including with Product off.
+ */
+@Composable
+internal fun AirPodsOnboardingAccess(
+    settings: @Composable (close: () -> Unit) -> Unit,
+    onboarding: @Composable (open: () -> Unit) -> Unit,
+) {
+    var open by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
+    val modal = dev.antigravity.fluidengine.ui.fluid.rememberFluidGlassModalHostState()
+    val menu = dev.antigravity.fluidengine.ui.fluidphysics.rememberFluidMorphMenuState()
+    val pageBackdrop = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
+    val controlBackdrop = dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop.current
+        ?: dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop.current
+    androidx.compose.runtime.CompositionLocalProvider(
+        dev.antigravity.fluidengine.ui.fluid.LocalFluidGlassModalHostState provides modal,
+        dev.antigravity.fluidengine.ui.fluidphysics.LocalFluidMorphMenuState provides menu,
+        // Controls are inside the recording, so sample only the pre-existing ground.
+        dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides controlBackdrop,
+    ) {
+        Box(Modifier.fillMaxSize()) {
+            // Keep the barrier behind the pages, outside their semantics hierarchy:
+            // a clickable ancestor would merge the pages' independent PaneTitle nodes.
+            Box(Modifier.matchParentSize()
+                .clickable(interactionSource = null, indication = null) {}
+                .clearAndSetSemantics {})
+            // Only the pages are recorded; the hosts must never sample their own pixels.
+            dev.antigravity.fluidengine.ui.page.FluidPageHost(
+                stack = if (open) listOf("onboarding", Routes.AIRPODS) else listOf("onboarding"),
+                onBack = { open = false },
+                modifier = Modifier.glassBackdropSource(pageBackdrop),
+                pageColor = dev.lelonio.square.ui.theme.pageFloor,
+            ) { page ->
+                if (page == Routes.AIRPODS) settings { open = false }
+                else onboarding { open = true }
+            }
+            // Registered after the page host: Back dismisses the innermost modal before popping.
+            dev.antigravity.fluidengine.ui.fluid.FluidGlassModalHost(modal, pageBackdrop)
+            dev.antigravity.fluidengine.ui.fluidphysics.FluidMorphMenuHost(menu, pageBackdrop)
+        }
+    }
+}

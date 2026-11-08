@@ -1,0 +1,9 @@
+<resources>
+<string name="airpods_call_permission">Configura gesti per chiamate entranti</string>
+<string name="airpods_call_explanation">Con gesti testa e automazioni attivi: annuisci per richiedere la risposta, scuoti la testa per richiedere il rifiuto. Servono Stato telefono e Rispondi alle chiamate. In background serve anche il consenso dedicato. Il supporto Android varia; invio non significa esito confermato. Avviso di chiamata o chiamate multiple osservabili bloccano i gesti; alcune chiamate in attesa possono restare invisibili. Nessun gesto media durante le chiamate.</string>
+<string name="airpods_tile_cycle">ANC / Trasparenza</string>
+<string name="airpods_tile_unavailable">Apri AirPods: sessione, identit? o modalit? assenti / in attesa</string>
+<string name="airpods_audio_connect">Connetti audio multimediale (A2DP)</string>
+<string name="airpods_audio_disconnect">Disconnetti audio multimediale (A2DP)</string>
+<string name="airpods_audio_explanation">Le richieste audio non confermano la connessione e non controllano tutti i profili Bluetooth. Se Android rifiuta, usa esplicitamente Apri Bluetooth. La disconnessione automatica non apre Impostazioni. I tentativi assistente in background richiedono il consenso automazioni in background e questa coppia associata a Fluidify.</string>
+</resources>

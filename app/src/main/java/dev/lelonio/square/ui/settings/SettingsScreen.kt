@@ -140,6 +140,7 @@ fun SettingsScreen(
     showLocalFiles: Boolean,
     onShowLocalFiles: (Boolean) -> Unit,
     onBack: () -> Unit,
+    onOpenAirPods: (() -> Unit)? = null,
 ) {
     val ready = state as? MainViewModel.UiState.Ready
     val context = LocalContext.current
@@ -253,6 +254,10 @@ fun SettingsScreen(
 
         if (open == null) item("pages") {
             Section(null) {
+                if (onOpenAirPods != null) {
+                    PageRow(stringResource(R.string.airpods_feature_title), stringResource(R.string.airpods_feature_quick_title), onOpenAirPods)
+                    FluidListDivider()
+                }
                 SettingsPage.entries.forEachIndexed { index, page ->
                     if (index > 0) FluidListDivider()
                     PageRow(stringResource(page.title), stringResource(page.summary)) {
@@ -305,6 +310,10 @@ fun SettingsScreen(
                 FluidListDivider()
                 InfoRow(stringResource(R.string.connect_device), deviceName)
             }
+        }
+
+        if (open == SettingsPage.Account) item("listening-history") {
+            ListeningHistorySection(app)
         }
 
         if (open == SettingsPage.Account) item("webapi") {
@@ -515,6 +524,20 @@ fun SettingsScreen(
                 InfoRow(stringResource(R.string.version), "${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_TYPE})")
                 FluidListDivider()
                 Licences()
+            }
+        }
+
+        // Internal probe entry only; there is no exported diagnostic activity or release UI.
+        if (BuildConfig.DEBUG && open == SettingsPage.About) item("airpods_diagnostic") {
+            Section("Debug") {
+                ActionRow("Diagnostica AirPods (POC)", destructive = false) {
+                    context.startActivity(
+                        android.content.Intent().setClassName(
+                            context,
+                            "dev.lelonio.square.airpods.AirPodsDiagnosticActivity",
+                        ),
+                    )
+                }
             }
         }
 
@@ -1231,3 +1254,67 @@ private const val UPSTREAM_NAME = "Square"
 private const val UPSTREAM_USER = "Lelonio"
 private const val UPSTREAM_URL = "https://github.com/Lelonio/Square"
 
+
+
+/** Account controls share the existing grouped settings and confirmation material. */
+@Composable
+private fun ListeningHistorySection(app: dev.lelonio.square.SquareApplication) {
+    val history = app.listeningHistory
+    val session by history.session.collectAsStateWithLifecycle()
+    val access = session.access
+    val scope = rememberCoroutineScope()
+    var confirming by remember { mutableStateOf<dev.lelonio.square.data.HistoryAccess?>(null) }
+    var importing by remember { mutableStateOf(false) }
+    var status by remember(access) { mutableStateOf<String?>(null) }
+    val observed = stringResource(R.string.history_import_observed)
+    val empty = stringResource(R.string.history_import_empty)
+    val failed = stringResource(R.string.history_import_error)
+    val partial = stringResource(R.string.history_import_partial)
+    Section(stringResource(R.string.history_title)) {
+        FluidToggleRow(
+            title = stringResource(R.string.history_record),
+            subtitle = stringResource(R.string.history_retention),
+            checked = session.recording && access != null,
+            onCheckedChange = { if (access != null) history.setRecording(it) },
+        )
+        FluidListDivider()
+        if (access == null) {
+            InfoRow(stringResource(R.string.history_account), stringResource(R.string.not_connected))
+        } else {
+            InfoRow(stringResource(R.string.history_account), access.account.id)
+            FluidListDivider()
+            ActionRow(stringResource(if (importing) R.string.history_importing else R.string.history_import), false) {
+                if (!importing) scope.launch {
+                    importing = true
+                    try {
+                        val result = dev.lelonio.square.data.SpotifyHistoryImport.authenticated(history, app.webApi, access).refresh(access)
+                        status = when (result.status) {
+                            "error" -> failed
+                            "empty" -> empty
+                            "partial" -> partial
+                            else -> if (result.truncated) partial else observed
+                        }
+                    } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (_: Exception) { status = failed }
+                    finally { importing = false }
+                }
+            }
+            status?.let { InfoRow(stringResource(R.string.history_import_result), it) }
+            FluidListDivider()
+            ActionRow(stringResource(R.string.history_delete), true) { confirming = access }
+        }
+    }
+    val deleting = confirming
+    if (deleting != null) dev.antigravity.fluidengine.ui.fluid.FluidAlert(
+        onDismissRequest = { confirming = null },
+        title = stringResource(R.string.history_delete),
+        message = stringResource(R.string.history_delete_confirm, deleting.account.id),
+        actions = listOf(
+            dev.antigravity.fluidengine.ui.fluid.FluidAlertAction(stringResource(R.string.cancel), { confirming = null }),
+            dev.antigravity.fluidengine.ui.fluid.FluidAlertAction(stringResource(R.string.history_delete), {
+                confirming = null
+                scope.launch { runCatching { history.deleteAccount(deleting) } }
+            }, dev.antigravity.fluidengine.ui.fluid.FluidAlertAction.Emphasis.Destructive),
+        ),
+    )
+}

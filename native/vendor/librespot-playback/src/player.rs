@@ -184,6 +184,7 @@ static PLAYER_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 enum PlayerCommand {
     Load {
+        restore_nonce: Option<String>,
         track_id: SpotifyUri,
         play: bool,
         position_ms: u32,
@@ -229,6 +230,8 @@ enum PlayerCommand {
 
 #[derive(Debug, Clone)]
 pub enum PlayerEvent {
+    // LOCAL PATCH: emitted only by the command carrying this explicit nonce.
+    OwnedLoadBound(crate::owned_load::OwnedLoadBinding),
     // Play request id changed
     PlayRequestIdChanged {
         play_request_id: u64,
@@ -636,10 +639,14 @@ impl Player {
     }
 
     pub fn load(&self, track_id: SpotifyUri, start_playing: bool, position_ms: u32) {
+        self.load_with_restore_nonce(track_id, start_playing, position_ms, None);
+    }
+
+    /// LOCAL PATCH (Fluidify): explicit command correlation, never a next-request promise.
+    pub fn load_with_restore_nonce(&self, track_id: SpotifyUri, start_playing: bool,
+        position_ms: u32, restore_nonce: Option<String>) {
         self.command(PlayerCommand::Load {
-            track_id,
-            play: start_playing,
-            position_ms,
+            restore_nonce, track_id, play: start_playing, position_ms,
         });
     }
 
@@ -2794,6 +2801,7 @@ impl PlayerInternal {
         &mut self,
         track_id: SpotifyUri,
         play_request_id_option: Option<u64>,
+        restore_nonce: Option<String>,
         play: bool,
         position_ms: u32,
     ) -> PlayerResult {
@@ -2821,6 +2829,9 @@ impl PlayerInternal {
             }
         }
 
+        if let Some(binding) = crate::owned_load::OwnedLoadBinding::for_command(restore_nonce, play_request_id) {
+            self.send_event(PlayerEvent::OwnedLoadBound(binding));
+        }
         self.send_event(PlayerEvent::PlayRequestIdChanged { play_request_id });
 
         if !self.config.gapless {
@@ -3103,6 +3114,7 @@ impl PlayerInternal {
             return self.handle_command_load(
                 track_id.clone(),
                 Some(play_request_id),
+                None,
                 start_playback,
                 position_ms,
             );
@@ -3161,7 +3173,8 @@ impl PlayerInternal {
                 track_id,
                 play,
                 position_ms,
-            } => self.handle_command_load(track_id, None, play, position_ms)?,
+                restore_nonce,
+            } => self.handle_command_load(track_id, None, restore_nonce, play, position_ms)?,
 
             PlayerCommand::Preload { track_id } => self.handle_command_preload(track_id),
 

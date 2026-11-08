@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- The diagnostic entry remains internal and debug-only. Bluetooth declarations
+         live in main; permission prompts still require an explicit setup action. -->
+    <application>
+        <activity
+            android:name="dev.lelonio.square.airpods.AirPodsDiagnosticActivity"
+            android:exported="false" />
+    </application>
+</manifest>

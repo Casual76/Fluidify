@@ -23,6 +23,7 @@ import androidx.compose.foundation.layout.asPaddingValues
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -42,6 +43,7 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
@@ -96,6 +98,7 @@ fun OnboardingScreen(
     language: String,
     onLanguage: (String) -> Unit,
     onFinish: () -> Unit,
+    onOpenAirPods: () -> Unit,
 ) {
     var step by remember { mutableIntStateOf(0) }
     val loggedIn = state is MainViewModel.UiState.Ready
@@ -186,6 +189,13 @@ fun OnboardingScreen(
                 }
             }
 
+            dev.antigravity.fluidengine.ui.fluid.FluidButton(
+                text = stringResource(R.string.airpods_entry_settings),
+                onClick = onOpenAirPods,
+                modifier = Modifier.fillMaxWidth().padding(horizontal = 26.dp)
+                    .heightIn(min = 48.dp).testTag("onboarding-airpods-entry"),
+                style = dev.antigravity.fluidengine.ui.fluid.FluidButtonStyle.Plain,
+            )
             Row(
                 Modifier
                     .fillMaxWidth()

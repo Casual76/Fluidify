@@ -20,6 +20,30 @@ import java.nio.ByteBuffer
 class AudioOutput {
 
     private var track: AudioTrack? = null
+    private var airPodsOutputGeneration = 0L
+    private val airPodsRoutingObservers = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
+    private val airPodsRouteListener = android.media.AudioRouting.OnRoutingChangedListener {
+        airPodsRoutingObservers.forEach { runCatching { it() } }
+    }
+
+    internal fun observeAirPodsRouting(changed: () -> Unit): java.io.Closeable {
+        airPodsRoutingObservers.add(changed)
+        return java.io.Closeable { airPodsRoutingObservers.remove(changed) }
+    }
+
+    /** Actual renderer routing only. Empty never means the default Bluetooth device. */
+    internal fun readAirPodsRoute(): AirPodsOutputRoute = synchronized(this) {
+        val output = track
+        val devices = if (output == null) emptyList() else runCatching {
+            if (android.os.Build.VERSION.SDK_INT >= 36) output.routedDevices
+            else listOfNotNull(output.routedDevice)
+        }.getOrDefault(emptyList())
+        AirPodsOutputRoute(airPodsOutputGeneration, devices.map {
+            AirPodsRoutedDevice(it.id, it.type,
+                if (android.os.Build.VERSION.SDK_INT >= 28) it.address else null)
+        }, output?.playState == AudioTrack.PLAYSTATE_PLAYING)
+    }
+
     private var configuredSampleRate = 0
     private var configuredChannels = 0
 
@@ -616,8 +640,11 @@ class AudioOutput {
         synchronized(this) {
             if (track !== output) return
             android.util.Log.w(TAG, "AudioTrack write failed ($error); building a new one")
+            runCatching { output.removeOnRoutingChangedListener(airPodsRouteListener) }
             runCatching { output.release() }
             track = null
+            airPodsOutputGeneration++
+            airPodsRoutingObservers.forEach { runCatching { it() } }
             configuredSampleRate = 0
             configuredChannels = 0
         }
@@ -654,9 +681,12 @@ class AudioOutput {
             track?.run {
                 runCatching { pause() }
                 runCatching { flush() }
+                removeOnRoutingChangedListener(airPodsRouteListener)
                 release()
             }
             track = null
+            airPodsOutputGeneration++
+            airPodsRoutingObservers.forEach { runCatching { it() } }
             configuredSampleRate = 0
             configuredChannels = 0
         }
@@ -673,9 +703,13 @@ class AudioOutput {
         }
 
         existing?.run {
+            removeOnRoutingChangedListener(airPodsRouteListener)
             runCatching { pause() }
             release()
         }
+        track = null
+        airPodsOutputGeneration++
+        airPodsRoutingObservers.forEach { runCatching { it() } }
         // Bound to the old format's rate and channel count.
         stretcher?.release()
         stretcher = null
@@ -745,6 +779,9 @@ class AudioOutput {
             fadeExecutor.execute { ramp(created, 1f, FADE_IN_MS) }
         }
         track = created
+        airPodsOutputGeneration++
+        created.addOnRoutingChangedListener(airPodsRouteListener, android.os.Handler(android.os.Looper.getMainLooper()))
+        airPodsRoutingObservers.forEach { runCatching { it() } }
         configuredSampleRate = sampleRate
         configuredChannels = channels
         // A new track knows nothing of the rate the old one was given.

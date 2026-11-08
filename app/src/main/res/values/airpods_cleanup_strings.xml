@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_cleanup_pending">Pending removals: %1$d</string>
+    <string name="airpods_cleanup_retry">Complete pending removal</string>
+    <string name="airpods_cleanup_none">There are no pending removals.</string>
+    <string name="airpods_cleanup_identity">The previous association cannot be identified with certainty. Removal remains pending.</string>
+    <string name="airpods_cleanup_permission">Android access is insufficient to complete this removal.</string>
+    <string name="airpods_cleanup_storage">The removal result could not be saved. It remains pending.</string>
+    <string name="airpods_cleanup_stop">The previous controls could not be stopped. Try again explicitly.</string>
+    <string name="airpods_cleanup_platform">Android did not complete the removal. Try again explicitly.</string>
+</resources>

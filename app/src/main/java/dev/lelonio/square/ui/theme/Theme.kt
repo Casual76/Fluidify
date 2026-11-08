@@ -1,6 +1,7 @@
 package dev.lelonio.square.ui.theme
 
 import dev.antigravity.fluidengine.ui.fluid.FluidMotion
+import dev.antigravity.fluidengine.ui.fluid.FluidMotionPolicyProvider
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.material3.MaterialTheme
@@ -133,7 +134,7 @@ fun SquareTheme(
      */
     systemBars: Boolean = true,
     content: @Composable () -> Unit,
-) {
+) = FluidMotionPolicyProvider {
     FluidTheme(
         // Handed through, not only applied above: FluidTheme sets the bars itself, so a theme that
         // does not claim them has to say so twice or the engine claims them on its behalf.
