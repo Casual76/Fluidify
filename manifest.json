@@ -23,14 +23,22 @@
       "sizeBytes": 19849925
     },
     "beta": {
-      "version": "2.0.1",
-      "releaseDate": "2026-11-05",
-      "changelog": "Corretto il problema che lasciava vuoti i pulsanti della barra durante il cambio pagina: le icone ora scompaiono e ricompaiono con la dissolvenza prevista.",
-      "releaseTag": "stable-fluidify-v2.0.1",
-      "apkAsset": "fluidify-2.0.1.apk",
-      "sizeBytes": 19849925
+      "version": "2.1.0-beta.1",
+      "releaseDate": "2026-11-08",
+      "changelog": "Beta di compatibilità con Aria: contratto source-proof per storia e playlist, con negoziazione typed v2 e controlli di autorizzazione/account esistenti.\n\nRicerca nei brani scaricati anche offline e come fallback agli errori di rete, con ambito «Nei download». Ricerca interna delle playlist più immediata e ordinamento per aggiunta più chiaro.\n\nL'integrazione AirPods è ancora in collaudo e resta disattivata in questa beta. Collegamento Aria sul telefono, autorizzazione Binder e comportamento sullo stesso account non ancora verificati in esecuzione. La stabile 2.0.1 resta disponibile.\n\nSorgenti dell'app e dell'Engine pubblicati con riferimenti esatti; l'archivio dei sorgenti e notice nativi accompagna la release. Nessuna riproducibilità binaria completa dichiarata.",
+      "releaseTag": "beta-fluidify-v2.1.0-beta.1",
+      "apkAsset": "fluidify-2.1.0-beta.1.apk",
+      "sizeBytes": 20684756
     },
     "history": [
+      {
+        "version": "2.0.1",
+        "releaseDate": "2026-11-05",
+        "changelog": "Corretto il problema che lasciava vuoti i pulsanti della barra durante il cambio pagina: le icone ora scompaiono e ricompaiono con la dissolvenza prevista.",
+        "releaseTag": "stable-fluidify-v2.0.1",
+        "apkAsset": "fluidify-2.0.1.apk",
+        "sizeBytes": 19849925
+      },
       {
         "version": "2.0.0",
         "releaseDate": "2026-11-03",
