@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.data.ListeningOccurrenceRestoreTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-07T20:44:51.813Z" hostname="PC_FISSO" time="0.344">
+  <properties/>
+  <testcase name="revocationAccountRecordingAndDeletionFenceSavedPlaybackButKeepHistory" classname="dev.lelonio.square.data.ListeningOccurrenceRestoreTest" time="0.151"/>
+  <testcase name="missingOrMismatchingExactCheckpointStartsIndependentIdentity" classname="dev.lelonio.square.data.ListeningOccurrenceRestoreTest" time="0.088"/>
+  <testcase name="explicitSavedPlaybackResumesTwentyPlusTwentyWithoutDowntime" classname="dev.lelonio.square.data.ListeningOccurrenceRestoreTest" time="0.08"/>
+  <testcase name="oldPlaybackJsonRetainsQueueWithoutInventingOccurrence" classname="dev.lelonio.square.data.ListeningOccurrenceRestoreTest" time="0.02"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

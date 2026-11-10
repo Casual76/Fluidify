@@ -26,7 +26,16 @@ data class DownloadRequest(
     /** The watch's download quality: 96, 160 or 320. */
     val qualityKbps: Int? = null,
     val preference: TransferPreference? = null,
+    /** Current phone correlation; missing legacy plans have no authority. */
+    val accountSession: String? = null,
+    val accountNamespace: String? = null,
+    /** Stable durable plan id, independent of the current process/session. */
+    val requestId: String? = null,
 )
+
+/** Watch-to-phone message on DOWNLOAD_PLAN, after durable application (including duplicate ids). */
+@Serializable
+data class DownloadPlanAck(val requestId: String, val accountSession: String?, val accountNamespace: String?, val accepted: Boolean)
 
 /** One playlist or album the watch keeps, and how far it has got. */
 @Serializable
@@ -54,6 +63,8 @@ data class WatchDownloads(
     val preference: TransferPreference = TransferPreference.BLUETOOTH_FIRST,
     val updatedAtEpochMs: Long = 0,
     val unavailable: Int = 0,
+    val accountSession: String? = null,
+    val accountNamespace: String? = null,
 )
 
 /** What the phone has of one track: its sidecar (format, file id, key), or nothing. */
@@ -82,6 +93,7 @@ data class FileRequest(
     val stageKbps: Int? = null,
     /** Identity of the partial file, required before an offset can be trusted. */
     val fileId: String? = null,
+    val accountSession: String? = null,
 )
 
 /** The first line the phone writes back, before the bytes. */
@@ -94,4 +106,5 @@ data class FileHeader(
     val error: String? = null,
     /** The actual accepted offset; zero when the partial file belongs to another encoding. */
     val offset: Long = 0,
+    val accountSession: String? = null,
 )

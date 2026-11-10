@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.provider.ContentPartsTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:20.089Z" hostname="PC_FISSO" time="0.005">
+  <properties/>
+  <testcase name="un documento e' una parte file solo dove il provider la accetta" classname="dev.antigravity.fluidengine.ai.provider.ContentPartsTest" time="0.001"/>
+  <testcase name="le capacita' vengono dal catalogo o dal nome" classname="dev.antigravity.fluidengine.ai.provider.ContentPartsTest" time="0.0"/>
+  <testcase name="il catalogo su disco conserva visione e documenti" classname="dev.antigravity.fluidengine.ai.provider.ContentPartsTest" time="0.0"/>
+  <testcase name="il livello profondo si sceglie dal catalogo per documenti, visione e contesto, e non un modello piccolo" classname="dev.antigravity.fluidengine.ai.provider.ContentPartsTest" time="0.003"/>
+  <testcase name="un utente di solo testo resta una stringa, uno con parti diventa una lista" classname="dev.antigravity.fluidengine.ai.provider.ContentPartsTest" time="0.0"/>
+  <testcase name="il catalogo OpenRouter legge la visione dalle modalita' e i documenti sempre" classname="dev.antigravity.fluidengine.ai.provider.ContentPartsTest" time="0.001"/>
+  <testcase name="Gemini mette immagini e documenti in inlineData" classname="dev.antigravity.fluidengine.ai.provider.ContentPartsTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

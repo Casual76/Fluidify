@@ -32,7 +32,11 @@ enum class DownloadQuality(
     }
 }
 
-class DownloadSettingsStore(context: Context) {
+class DownloadSettingsStore(
+    context: Context,
+    private val accounts: AccountLocalDataCoordinator,
+    private val onOfflineChanged: (Boolean) -> Unit = {},
+) {
 
     private val prefs = context.applicationContext
         .getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
@@ -66,16 +70,30 @@ class DownloadSettingsStore(context: Context) {
         prefs.edit().putBoolean(KEY_WIFI_ONLY, value).apply()
     }
 
-    private val _likedSongs = MutableStateFlow(prefs.getBoolean(KEY_LIKED, false))
+    private val _likedSongs = MutableStateFlow(false)
 
     /** Whether the whole of Liked Songs is kept offline, and kept in step. */
     val downloadLikedSongs: StateFlow<Boolean> = _likedSongs.asStateFlow()
 
-    fun setDownloadLikedSongs(value: Boolean) {
-        if (value == _likedSongs.value) return
-        _likedSongs.value = value
-        prefs.edit().putBoolean(KEY_LIKED, value).apply()
+    init {
+        accounts.observe { access ->
+            // The global legacy preference proves neither ownership nor new-account consent.
+            val restored = access?.let { prefs.getBoolean(likedKey(it), false) } ?: false
+            _likedSongs.value = access != null && accounts.isCurrent(access) && restored
+        }
     }
+
+    fun setDownloadLikedSongs(value: Boolean) {
+        val access = accounts.capture() ?: return
+        accounts.use(access) {
+            check(prefs.edit().putBoolean(likedKey(access), value).commit()) {
+                "Could not persist account download consent"
+            }
+            accounts.use(access) { _likedSongs.value = value }
+        }
+    }
+
+    private fun likedKey(access: AccountLocalDataCoordinator.Access) = "$KEY_LIKED:v2:${access.namespace}"
 
     private val _offline = MutableStateFlow(prefs.getBoolean(KEY_OFFLINE, false))
 
@@ -87,10 +105,19 @@ class DownloadSettingsStore(context: Context) {
      */
     val offlineMode: StateFlow<Boolean> = _offline.asStateFlow()
 
-    fun setOfflineMode(value: Boolean) {
+    init {
+        // Admission must see the persisted switch before any collector is scheduled.
+        dev.lelonio.square.data.SpotifyNetworkPolicy.setManual(_offline.value)
+        dev.lelonio.square.playback.OfflineMode.setManual(_offline.value)
+    }
+
+    @Synchronized fun setOfflineMode(value: Boolean) {
         if (value == _offline.value) return
+        dev.lelonio.square.data.SpotifyNetworkPolicy.setManual(value)
+        dev.lelonio.square.playback.OfflineMode.setManual(value)
         _offline.value = value
         prefs.edit().putBoolean(KEY_OFFLINE, value).apply()
+        onOfflineChanged(value)
     }
 
     private companion object {

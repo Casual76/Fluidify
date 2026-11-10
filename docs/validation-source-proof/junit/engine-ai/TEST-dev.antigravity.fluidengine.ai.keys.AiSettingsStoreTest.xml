@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.keys.AiSettingsStoreTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:02.770Z" hostname="PC_FISSO" time="0.006">
+  <properties/>
+  <testcase name="l'ordine salvato accoda i provider che non nomina" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsStoreTest" time="0.0"/>
+  <testcase name="i default dei modelli seguono le decisioni di prodotto, il profondo viene dal catalogo" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsStoreTest" time="0.006"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

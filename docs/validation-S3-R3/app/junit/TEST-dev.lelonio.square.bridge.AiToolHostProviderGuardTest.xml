@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.bridge.AiToolHostProviderGuardTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-07T20:44:50.658Z" hostname="PC_FISSO" time="0.248">
+  <properties/>
+  <testcase name="la regola di serie confronta il chiamante con noi, e si fida solo di SIGNATURE_MATCH" classname="dev.lelonio.square.bridge.AiToolHostProviderGuardTest" time="0.101"/>
+  <testcase name="senza contesto non si fida di nessuno" classname="dev.lelonio.square.bridge.AiToolHostProviderGuardTest" time="0.022"/>
+  <testcase name="un chiamante fidato passa, e il cancello sceglie per uid" classname="dev.lelonio.square.bridge.AiToolHostProviderGuardTest" time="0.022"/>
+  <testcase name="un chiamante con un'altra firma riceve una SecurityException, su ogni metodo" classname="dev.lelonio.square.bridge.AiToolHostProviderGuardTest" time="0.018"/>
+  <testcase name="malformed args and missing confirmation have no effects" classname="dev.lelonio.square.bridge.AiToolHostProviderGuardTest" time="0.06"/>
+  <testcase name="una chiamata dello stesso processo passa" classname="dev.lelonio.square.bridge.AiToolHostProviderGuardTest" time="0.017"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

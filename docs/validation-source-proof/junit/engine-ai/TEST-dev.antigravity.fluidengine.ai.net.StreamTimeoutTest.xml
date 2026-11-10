@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.net.StreamTimeoutTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:03.809Z" hostname="PC_FISSO" time="5.165">
+  <properties/>
+  <testcase name="un tool_use_failed non passa dall'auto-riparazione dei campi, anche se ne nomina uno" classname="dev.antigravity.fluidengine.ai.net.StreamTimeoutTest" time="0.007"/>
+  <testcase name="il provider porta il timeout della richiesta fino alla socket, in stream e senza" classname="dev.antigravity.fluidengine.ai.net.StreamTimeoutTest" time="3.439"/>
+  <testcase name="un silenzio piu' lungo del timeout corto ma piu' corto del lungo passa solo col lungo" classname="dev.antigravity.fluidengine.ai.net.StreamTimeoutTest" time="1.719"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

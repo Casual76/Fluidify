@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.tools.SmallPartsTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:20.151Z" hostname="PC_FISSO" time="0.001">
+  <properties/>
+  <testcase name="una riga sola che manca si dice al singolare" classname="dev.antigravity.fluidengine.ai.tools.SmallPartsTest" time="0.0"/>
+  <testcase name="il testo che sta nel tetto non cambia, e nemmeno quello costruito col Builder" classname="dev.antigravity.fluidengine.ai.tools.SmallPartsTest" time="0.001"/>
+  <testcase name="i nomi per Whisper sono venti di serie" classname="dev.antigravity.fluidengine.ai.tools.SmallPartsTest" time="0.0"/>
+  <testcase name="piu' righe che mancano si dicono al plurale col numero" classname="dev.antigravity.fluidengine.ai.tools.SmallPartsTest" time="0.0"/>
+  <testcase name="il suggerimento non supera il tetto di Whisper" classname="dev.antigravity.fluidengine.ai.tools.SmallPartsTest" time="0.0"/>
+  <testcase name="la frase di cosa manca e' una funzione, per chi tronca per conto suo" classname="dev.antigravity.fluidengine.ai.tools.SmallPartsTest" time="0.0"/>
+  <testcase name="il boundary di serie non porta il nome di nessuna app" classname="dev.antigravity.fluidengine.ai.tools.SmallPartsTest" time="0.0"/>
+  <testcase name="il numero di nomi e' un parametro" classname="dev.antigravity.fluidengine.ai.tools.SmallPartsTest" time="0.0"/>
+  <testcase name="i nomi vuoti non contano, e senza nomi resta la frase" classname="dev.antigravity.fluidengine.ai.tools.SmallPartsTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

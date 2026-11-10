@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_removal_title">¿Quitar las descargas?</string>
+    <string name="download_removal_message">¿Quitar la copia descargada de «%1$s» de este dispositivo? Para escucharla sin conexión, tendrás que descargarla de nuevo. Las canciones guardadas en otras colecciones descargadas seguirán disponibles.</string>
+</resources>

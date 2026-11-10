@@ -256,6 +256,7 @@ fn handles(
 
 #[derive(Default)]
 struct Builder {
+    network: crate::network::NetworkLease,
     message_handlers: SubscriberMap<MessageHandler>,
     request_handlers: HandlerMap<Box<dyn RequestHandler>>,
 }
@@ -265,6 +266,7 @@ macro_rules! create_dealer {
         match $builder {
             builder => {
                 let shared = Arc::new(DealerShared {
+                    network: builder.network,
                     message_handlers: Mutex::new(builder.message_handlers),
                     request_handlers: Mutex::new(builder.request_handlers),
                     notify_drop: Semaphore::new(0),
@@ -285,6 +287,7 @@ macro_rules! create_dealer {
 }
 
 impl Builder {
+    pub fn with_network(mut self, network: crate::network::NetworkLease) -> Self { self.network = network; self }
     pub fn new() -> Self {
         Self::default()
     }
@@ -328,6 +331,7 @@ impl Builder {
 }
 
 struct DealerShared {
+    network: crate::network::NetworkLease,
     message_handlers: Mutex<SubscriberMap<MessageHandler>>,
     request_handlers: Mutex<HandlerMap<Box<dyn RequestHandler>>>,
 
@@ -406,6 +410,7 @@ impl DealerShared {
     }
 
     fn dispatch(&self, m: MessageOrRequest, send_tx: &mpsc::UnboundedSender<WsMessage>) {
+        if self.network.check().is_err() { return; }
         match m {
             MessageOrRequest::Message(m) => self.dispatch_message(m),
             MessageOrRequest::Request(r) => self.dispatch_request(r, send_tx),
@@ -513,12 +518,12 @@ async fn connect(
 
     let port = address.port().unwrap_or(default_port);
 
-    let stream = socket::connect(host, port, proxy).await?;
+    let connect = shared.network.transport("dealer.connect", || socket::connect(host, port, proxy))?;
+    let stream = shared.network.run(async { Ok(connect.await?) }).await?;
 
-    let (mut ws_tx, ws_rx) = tokio_tungstenite::client_async_tls(address.as_str(), stream)
-        .await?
-        .0
-        .split();
+    let (mut ws_tx, ws_rx) = shared.network.run(async {
+        Ok(tokio_tungstenite::client_async_tls(address.as_str(), stream).await?)
+    }).await?.0.split();
 
     let (send_tx, mut send_rx) = mpsc::unbounded_channel::<WsMessage>();
 
@@ -530,6 +535,7 @@ async fn connect(
             let result = loop {
                 select! {
                     biased;
+                    () = shared.network.revoked() => { return; },
                     () = shared.closed() => {
                         break Ok(None);
                     }
@@ -540,7 +546,11 @@ async fn connect(
                                 break Ok(close_frame);
                             }
 
-                            if let Err(e) = ws_tx.feed(msg).await  {
+                            if shared.network.check().is_err() { return; }
+                            let send = match shared.network.transport("dealer.send", || ws_tx.feed(msg)) {
+                                Ok(send) => send, Err(_) => return,
+                            };
+                            if let Err(e) = send.await  {
                                 break Err(e);
                             }
                         } else {
@@ -556,6 +566,7 @@ async fn connect(
 
             send_rx.close();
 
+            if shared.network.check().is_err() { return; }
             // I don't trust in tokio_tungstenite's implementation of Sink::close.
             let result = match result {
                 Ok(close_frame) => ws_tx.send(WsMessage::Close(close_frame)).await,
@@ -622,6 +633,7 @@ async fn connect(
             loop {
                 timer.tick().await;
 
+                if shared.network.check().is_err() { break; }
                 pong_received.store(false, atomic::Ordering::Relaxed);
                 if send_tx
                     .send(WsMessage::Ping(bytes::Bytes::default()))
@@ -646,6 +658,8 @@ async fn connect(
         // Exit this task as soon as one our subtasks fails.
         // In both cases the connection is probably lost.
         select! {
+            biased;
+            () = shared.network.revoked() => return,
             () = ping_task => (),
             () = receive_task => ()
         }
@@ -678,10 +692,11 @@ where
         (None, None)
     };
 
-    while !shared.is_closed() {
+    while !shared.is_closed() && shared.network.check().is_ok() {
         match &mut tasks {
             (Some(t0), Some(t1)) => {
                 select! {
+                    () = shared.network.revoked() => break,
                     () = shared.closed() => break,
                     r = t0 => {
                         if let Err(e) = r {
@@ -702,6 +717,7 @@ where
                     () = shared.closed() => {
                         break
                     },
+                    () = shared.network.revoked() => break,
                     e = get_url() => e
                 }?;
 
@@ -722,3 +738,7 @@ where
 
     Ok(())
 }
+
+#[cfg(feature = "offline-contract-tests")]
+#[doc(hidden)]
+pub mod manual_offline_tests;

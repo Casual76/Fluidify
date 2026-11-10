@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.auth.AccountLifecycleTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:14:51.124Z" hostname="PC_FISSO" time="0.085">
+  <properties/>
+  <testcase name="cancellationIsPropagatedAndReleasesOwnership" classname="dev.lelonio.square.auth.AccountLifecycleTest" time="0.075"/>
+  <testcase name="logoutWaitsForNativeStartAndDownloadReturnBeforeShutdownAndNextAccount" classname="dev.lelonio.square.auth.AccountLifecycleTest" time="0.005"/>
+  <testcase name="queuedOldStartAndCallbackStayInvalidAfterNewLogin" classname="dev.lelonio.square.auth.AccountLifecycleTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

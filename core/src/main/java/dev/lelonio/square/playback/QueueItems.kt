@@ -18,6 +18,7 @@ import dev.lelonio.square.ui.EXTRA_PLAY_NEXT
  * Moved out of MainActivity unchanged, so the watch remote can start a playlist
  * on the phone exactly the way the phone's own screens do.
  */
+@androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
 fun CatalogTrack.toQueueItem(
     contextUri: String? = null,
     asContext: Boolean = false,

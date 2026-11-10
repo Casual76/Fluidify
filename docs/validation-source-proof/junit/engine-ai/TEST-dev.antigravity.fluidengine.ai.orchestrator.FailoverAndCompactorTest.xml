@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:19.858Z" hostname="PC_FISSO" time="0.216">
+  <properties/>
+  <testcase name="chiave sbagliata e richiesta bloccata non si mascherano" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" time="0.0"/>
+  <testcase name="il budget di tempo e la riserva finale sono dell'app" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" time="0.0"/>
+  <testcase name="429 senza alternative aspetta il retry-after, al massimo due volte e mai oltre il budget" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" time="0.0"/>
+  <testcase name="il compattatore ripropone gli allegati solo dell'ultima domanda, e li fa cadere per primi" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" time="0.0"/>
+  <testcase name="429 con un provider dopo passa a quello" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" time="0.0"/>
+  <testcase name="i chip si estraggono con id e valore, quelli che l'app non riconosce spariscono e basta" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" time="0.001"/>
+  <testcase name="la conversazione scade dopo dieci minuti di silenzio" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" time="0.0"/>
+  <testcase name="col servizio fissato non si cambia mai provider, si aspetta, si riprova, o si fallisce" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" time="0.0"/>
+  <testcase name="i gruppi aperti si toccano in ordine d'uso" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" time="0.001"/>
+  <testcase name="il cancello delle conferme risponde a chi aspetta, e una scaduta lo lascia libero" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" time="0.213"/>
+  <testcase name="il compattatore tiene le coppie, il traffico tool solo dell'ultima, e taglia dal piu' vecchio" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" time="0.0"/>
+  <testcase name="5xx e rete riprovano una volta, poi passano, poi falliscono" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverAndCompactorTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,6 +1,7 @@
 package dev.lelonio.square.data
 
 import android.content.Context
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -9,56 +10,54 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.builtins.ListSerializer
 import kotlinx.serialization.json.Json
 
-/**
- * What was found by searching and then played, kept locally.
- *
- * Songs rather than the words typed to find them, which is the part worth
- * keeping: half-typed terms and misspellings say nothing a week later, and the
- * song they led to is the thing anyone actually wants back. It also means the
- * list can be tapped — every row is a track, and playing it again is a tap
- * rather than a search run a second time.
- *
- * Local, like [RecentStore], and for the same reason: nothing is sent anywhere
- * and no quota is spent to keep it.
- */
-class SearchHistoryStore(context: Context) {
-
-    private val prefs = context.applicationContext
-        .getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
-
+/** Search plays are local to the verified Spotify account; unowned legacy history is never read. */
+class SearchHistoryStore internal constructor(
+    context: Context,
+    private val accounts: AccountLocalDataCoordinator,
+    private val ioDispatcher: CoroutineDispatcher,
+) {
+    constructor(context: Context, accounts: AccountLocalDataCoordinator) : this(context, accounts, Dispatchers.IO)
+    private val prefs = context.applicationContext.getSharedPreferences(FILE_NAME, Context.MODE_PRIVATE)
     private val json = Json { ignoreUnknownKeys = true }
     private val serializer = ListSerializer(CatalogTrack.serializer())
+    private val mutable = MutableStateFlow<List<CatalogTrack>>(emptyList())
+    val tracks: StateFlow<List<CatalogTrack>> = mutable.asStateFlow()
 
-    private val _tracks = MutableStateFlow(load())
-    val tracks: StateFlow<List<CatalogTrack>> = _tracks.asStateFlow()
-
-    /** Records a play, moving a repeat to the front rather than adding it twice. */
-    suspend fun record(track: CatalogTrack) = withContext(Dispatchers.IO) {
-        save((listOf(track) + _tracks.value.filterNot { it.uri == track.uri }).take(LIMIT))
+    init {
+        accounts.observe { access ->
+            val restored = access?.let { load(it.namespace) }.orEmpty()
+            mutable.value = if (access != null && accounts.isCurrent(access)) restored else emptyList()
+        }
     }
 
-    /** Takes one song out, for a search somebody would rather not keep. */
-    suspend fun remove(uri: String) = withContext(Dispatchers.IO) {
-        save(_tracks.value.filterNot { it.uri == uri })
+    suspend fun record(access: AccountLocalDataCoordinator.Access, track: CatalogTrack) =
+        mutate(access) { (listOf(track) + it.filterNot { old -> old.uri == track.uri }).take(LIMIT) }
+
+    suspend fun remove(access: AccountLocalDataCoordinator.Access, uri: String) =
+        mutate(access) { it.filterNot { track -> track.uri == uri } }
+
+    suspend fun clear(access: AccountLocalDataCoordinator.Access) = mutate(access) { emptyList() }
+
+    private suspend fun mutate(access: AccountLocalDataCoordinator.Access,
+        transform: (List<CatalogTrack>) -> List<CatalogTrack>) = withContext(ioDispatcher) {
+        accounts.use(access) {
+            val next = transform(load(access.namespace))
+            check(prefs.edit().putString(key(access.namespace), json.encodeToString(serializer, next)).commit()) {
+                "Could not persist account search history"
+            }
+            accounts.use(access) { mutable.value = next }
+        }
     }
 
-    suspend fun clear() = withContext(Dispatchers.IO) { save(emptyList()) }
-
-    private fun save(tracks: List<CatalogTrack>) {
-        _tracks.value = tracks
-        prefs.edit().putString(KEY_TRACKS, json.encodeToString(serializer, tracks)).apply()
-    }
-
-    private fun load(): List<CatalogTrack> {
-        val raw = prefs.getString(KEY_TRACKS, null) ?: return emptyList()
+    private fun load(namespace: String): List<CatalogTrack> {
+        val raw = prefs.getString(key(namespace), null) ?: return emptyList()
         return runCatching { json.decodeFromString(serializer, raw) }.getOrDefault(emptyList())
     }
 
+    private fun key(namespace: String) = "tracks:v2:$namespace"
     private companion object {
         const val FILE_NAME = "square_search_history"
-        const val KEY_TRACKS = "tracks"
-
-        /** A screenful and a half; older than that and it is a different day. */
         const val LIMIT = 20
+        // Old "tracks" remains on disk, unassigned. It proves no account ownership.
     }
 }

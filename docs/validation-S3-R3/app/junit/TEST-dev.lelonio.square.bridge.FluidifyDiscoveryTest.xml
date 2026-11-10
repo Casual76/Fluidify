@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.bridge.FluidifyDiscoveryTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-07T20:44:47.595Z" hostname="PC_FISSO" time="3.057">
+  <properties/>
+  <testcase name="packagedHostIsDiscoverableWithoutInitializingAccountsOrPlayback" classname="dev.lelonio.square.bridge.FluidifyDiscoveryTest" time="2.858"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

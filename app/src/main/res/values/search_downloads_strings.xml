@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="search_downloads_scope">In downloads</string>
+    <string name="search_downloads_network_fallback">Online search is unavailable due to a network error. Showing matching downloaded tracks.</string>
+    <string name="search_downloads_empty">No downloaded tracks match “%1$s”. Search covers titles, artists and albums of completed downloads.</string>
+</resources>

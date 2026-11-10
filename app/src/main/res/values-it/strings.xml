@@ -525,4 +525,17 @@
     <string name="watch_update_wifi">L&#8217;orologio scarica la %1$s con il suo Wi-Fi…</string>
     <string name="onboarding_step_of">Passo %1$d di %2$d</string>
     <string name="update_section_title">Aggiornamenti</string>
+    <string name="history_title">Cronologia di ascolto</string>
+    <string name="history_record">Registra gli ascolti su questo telefono</string>
+    <string name="history_retention">La cronologia viene conservata finché non la elimini. Le importazioni Spotify sono osservazioni recenti, non una cronologia mensile completa. La durata degli ascolti remoti è sconosciuta.</string>
+    <string name="history_account">Account Spotify</string>
+    <string name="history_import">Importa gli ascolti recenti da Spotify</string>
+    <string name="history_importing">Importazione…</string>
+    <string name="history_import_result">Ultima importazione</string>
+    <string name="history_import_observed">Osservazioni recenti importate; la copertura mensile resta incompleta.</string>
+    <string name="history_import_empty">Spotify non ha restituito osservazioni recenti.</string>
+    <string name="history_import_error">Importazione non riuscita. La cronologia salvata viene conservata. Verifica account Web API e autorizzazioni.</string>
+    <string name="history_import_partial">Osservazioni recenti importate parzialmente; la copertura è limitata.</string>
+    <string name="history_delete">Elimina la cronologia di questo account</string>
+    <string name="history_delete_confirm">Eliminare tutti gli ascolti e i dati di copertura delle importazioni di %1$s su questo telefono? Questa azione è irreversibile. La registrazione continuerà se abilitata.</string>
 </resources>

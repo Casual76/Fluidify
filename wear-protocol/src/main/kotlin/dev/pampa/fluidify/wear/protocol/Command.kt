@@ -87,6 +87,7 @@ sealed interface Command {
 data class CommandEnvelope(
     val id: Long,
     val command: Command,
+    val accountSession: String? = null,
 )
 
 @Serializable

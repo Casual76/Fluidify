@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.net.SseParserTest" tests="5" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:03.808Z" hostname="PC_FISSO" time="0.0">
+  <properties/>
+  <testcase name="piu' righe data si uniscono con newline e i campi estranei non contano" classname="dev.antigravity.fluidengine.ai.net.SseParserTest" time="0.0"/>
+  <testcase name="flush recupera l'ultimo evento senza riga vuota" classname="dev.antigravity.fluidengine.ai.net.SseParserTest" time="0.0"/>
+  <testcase name="il ritorno carrello finale non entra nel payload" classname="dev.antigravity.fluidengine.ai.net.SseParserTest" time="0.0"/>
+  <testcase name="uno spazio solo dopo i due punti viene tolto, gli altri restano" classname="dev.antigravity.fluidengine.ai.net.SseParserTest" time="0.0"/>
+  <testcase name="un evento arriva alla riga vuota e i commenti si ignorano" classname="dev.antigravity.fluidengine.ai.net.SseParserTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

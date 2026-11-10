@@ -524,4 +524,17 @@
     <string name="watch_update_wifi">O relógio está a transferir a %1$s pelo Wi-Fi…</string>
     <string name="onboarding_step_of">Passo %1$d de %2$d</string>
     <string name="update_section_title">Atualizações</string>
+    <string name="history_title">Histórico de reprodução</string>
+    <string name="history_record">Registar reproduções neste telemóvel</string>
+    <string name="history_retention">O histórico é mantido até ser eliminado. As importações do Spotify são observações recentes, não um histórico mensal completo. A duração das reproduções remotas é desconhecida.</string>
+    <string name="history_account">Conta Spotify</string>
+    <string name="history_import">Importar reproduções recentes do Spotify</string>
+    <string name="history_importing">A importar…</string>
+    <string name="history_import_result">Última importação</string>
+    <string name="history_import_observed">Observações recentes importadas; a cobertura mensal continua incompleta.</string>
+    <string name="history_import_empty">O Spotify não devolveu observações recentes.</string>
+    <string name="history_import_error">A importação falhou. O histórico guardado é mantido. Verifique a conta Web API ligada e as permissões.</string>
+    <string name="history_import_partial">Observações recentes parcialmente importadas; a cobertura é limitada.</string>
+    <string name="history_delete">Eliminar o histórico desta conta</string>
+    <string name="history_delete_confirm">Eliminar todas as reproduções e os dados de cobertura de importações de %1$s neste telemóvel? Esta ação é irreversível. O registo continuará se estiver ativado.</string>
 </resources>

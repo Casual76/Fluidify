@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.bridge.TypedProtocolTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-07T18:57:57.683Z" hostname="PC_FISSO" time="0.005">
+  <properties/>
+  <testcase name="unknownFutureOutcomeCannotBecomeCompleted" classname="dev.antigravity.fluidengine.ai.bridge.TypedProtocolTest" time="0.001"/>
+  <testcase name="newClientNewHostRetainsEvidenceOnRunAndStatus" classname="dev.antigravity.fluidengine.ai.bridge.TypedProtocolTest" time="0.001"/>
+  <testcase name="malformedEnvelopeIsNeverRepairedIntoExecutableArguments" classname="dev.antigravity.fluidengine.ai.bridge.TypedProtocolTest" time="0.0"/>
+  <testcase name="oldHostNegotiationFallbackHasNoExtendedCapabilities" classname="dev.antigravity.fluidengine.ai.bridge.TypedProtocolTest" time="0.0"/>
+  <testcase name="maxCommonVersionAndCapabilitiesAreNegotiated" classname="dev.antigravity.fluidengine.ai.bridge.TypedProtocolTest" time="0.0"/>
+  <testcase name="oldClientNewHostKeepsLegacyCatalogAndEnvelope" classname="dev.antigravity.fluidengine.ai.bridge.TypedProtocolTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

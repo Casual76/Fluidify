@@ -19,6 +19,8 @@ import com.google.common.util.concurrent.ListenableFuture
 import dev.lelonio.square.R
 import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.data.Catalog
+import dev.lelonio.square.data.AccountLocalDataCoordinator.Access
+import dev.lelonio.square.data.AccountRequestCache
 import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.data.toCatalogTrack
 import dev.lelonio.square.nativecore.NativeBridge
@@ -32,6 +34,12 @@ import kotlinx.coroutines.withContext
 import kotlinx.coroutines.guava.future
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+
+/** Account library boundary; the production adapter uses the application's current store. */
+internal interface SessionLikedTracks {
+    suspend fun isLiked(uri: String): Boolean?
+    suspend fun set(uri: String, liked: Boolean)
+}
 
 /**
  * The browse tree Android Auto (and any other `MediaBrowser`) reads.
@@ -52,7 +60,7 @@ import kotlinx.coroutines.sync.withLock
  *   the third song in a playlist means everywhere else.
  */
 @UnstableApi
-class MediaBrowseTree(
+class MediaBrowseTree private constructor(
     context: Context,
     private val scope: CoroutineScope,
     /**
@@ -63,25 +71,76 @@ class MediaBrowseTree(
      * an assistant — and the music on the phone plays through a different
      * player than either streaming service. See PlaybackService.ensurePlayerFor.
      */
-    private val ensurePlayerFor: suspend (String?) -> Unit = {},
+    private val ensurePlayerFor: suspend (String?) -> Unit,
+    private val strings: Context,
+    private val likes: () -> SessionLikedTracks?,
+    private val localAccounts: dev.lelonio.square.data.AccountLocalDataCoordinator? = null,
 ) : MediaLibrarySession.Callback {
 
-    private val app = context.applicationContext as SquareApplication
+    constructor(
+        context: Context,
+        scope: CoroutineScope,
+        ensurePlayerFor: suspend (String?) -> Unit = {},
+    ) : this(context, scope, ensurePlayerFor,
+        (context.applicationContext as SquareApplication).let { it.language.wrap(it) },
+        {
+            val application = context.applicationContext as SquareApplication
+            val access = application.accountLocalData.captureOnline()
+            access?.let { original -> object : SessionLikedTracks {
+                override suspend fun isLiked(uri: String): Boolean? {
+                    application.accountLocalData.requireOnline(original)
+                    val answer = application.likedTracks.isLiked(uri)
+                    application.accountLocalData.requireOnline(original)
+                    return answer
+                }
+                override suspend fun set(uri: String, liked: Boolean) {
+                    application.accountLocalData.requireOnline(original)
+                    application.likedTracks.set(uri, liked)
+                    application.accountLocalData.requireOnline(original)
+                }
+            } }
+        },
+    )
 
-    /**
-     * Resources read in the app's own language.
-     *
-     * A service is not re-created when the language changes and below Android 13
-     * its configuration is the phone's, not the app's — the same reason the
-     * engine asks [SquareApplication.language] rather than its own resources.
-     */
-    private val strings: Context = app.language.wrap(app)
+    /** Same callbacks and dispatch, with a recording account-library sink for host tests. */
+    internal constructor(context: Context, scope: CoroutineScope, likes: SessionLikedTracks) :
+        this(context, scope, {}, context, { likes })
+
+    internal constructor(context: Context, scope: CoroutineScope, likes: SessionLikedTracks,
+        accounts: dev.lelonio.square.data.AccountLocalDataCoordinator) :
+        this(context, scope, {}, context, { likes }, accounts)
+
+    private val app by lazy { context.applicationContext as SquareApplication }
+    private val accounts get() = localAccounts ?: app.accountLocalData
+    private fun <T> accountFuture(block: suspend (Access) -> T): ListenableFuture<T> {
+        val access = accounts.capture() ?: return Futures.immediateFailedFuture(
+            kotlinx.coroutines.CancellationException("No configured Spotify local authority"))
+        val result = com.google.common.util.concurrent.SettableFuture.create<T>()
+        val job = scope.launch {
+            try {
+                accounts.use(access) { Unit }
+                val value = block(access)
+                accounts.use(access) { result.set(value) }
+            } catch (failure: Exception) { result.setException(failure) }
+        }
+        job.invokeOnCompletion { failure -> if (failure != null && !result.isDone) result.setException(failure) }
+        result.addListener({ if (result.isCancelled) job.cancel() },
+            com.google.common.util.concurrent.MoreExecutors.directExecutor())
+        return result
+    }
+    private fun scoped(access: Access, id: String) = "sq/account/${access.requestSession}/$id"
+    private fun unscoped(access: Access, id: String): String {
+        accounts.use(access) { Unit }
+        val prefix = "sq/account/${access.requestSession}/"
+        if (!id.startsWith(prefix)) throw kotlinx.coroutines.CancellationException("Stale browse request")
+        return id.removePrefix(prefix)
+    }
 
     /** Track lists already resolved, keyed by the node they were listed under. */
-    private val trackCache = mutableMapOf<String, List<CatalogTrack>>()
+    private val trackCache by lazy { AccountRequestCache<List<CatalogTrack>>(accounts) }
 
     /** Playlist names, so a queue built from the car is labelled like one built in the app. */
-    private val nodeLabels = mutableMapOf<String, String>()
+    private val nodeLabels by lazy { AccountRequestCache<String>(accounts) }
 
     /** One catalogue read at a time: the car fires children requests in parallel. */
     private val lock = Mutex()
@@ -154,8 +213,12 @@ class MediaBrowseTree(
             .add(SessionCommand(CMD_SHUFFLE, Bundle.EMPTY))
             .add(SessionCommand(CMD_REPEAT, Bundle.EMPTY))
             .add(SessionCommand(CMD_RADIO, Bundle.EMPTY))
-            .add(SessionCommand(CMD_LIKE, Bundle.EMPTY))
-            .add(SessionCommand(CMD_IS_LIKED, Bundle.EMPTY))
+            .apply {
+                if (controller.uid == android.os.Process.myUid()) {
+                    add(SessionCommand(CMD_LIKE, Bundle.EMPTY))
+                    add(SessionCommand(CMD_IS_LIKED, Bundle.EMPTY))
+                }
+            }
             .build()
 
         return MediaSession.ConnectionResult.AcceptedResultBuilder(session)
@@ -175,6 +238,14 @@ class MediaBrowseTree(
         customCommand: SessionCommand,
         args: Bundle,
     ): ListenableFuture<SessionResult> {
+        // Other apps access the account library through the source-proof provider, which
+        // checks account, scope, consent and lease. Media-control trust is not that authority.
+        if ((customCommand.customAction == CMD_LIKE || customCommand.customAction == CMD_IS_LIKED) &&
+            controller.uid != android.os.Process.myUid()) {
+            return Futures.immediateFuture(
+                SessionResult(androidx.media3.session.SessionError.ERROR_PERMISSION_DENIED),
+            )
+        }
         val player = session.player
         when (customCommand.customAction) {
             CMD_SHUFFLE -> player.shuffleModeEnabled = !player.shuffleModeEnabled
@@ -202,7 +273,7 @@ class MediaBrowseTree(
     }
 
     /**
-     * The heart from outside: save or unsave a track in Liked Songs, or ask
+     * The app's library commands: save or unsave a track in Liked Songs, or ask
      * whether it is there. Only Spotify tracks have a heart; anything else
      * answers "not supported" so the caller can say so instead of guessing.
      */
@@ -215,6 +286,8 @@ class MediaBrowseTree(
         if (uri == null || !uri.startsWith("spotify:track:")) {
             return Futures.immediateFuture(SessionResult(androidx.media3.session.SessionError.ERROR_NOT_SUPPORTED))
         }
+        val sink = likes() ?: return Futures.immediateFuture(
+            SessionResult(androidx.media3.session.SessionError.ERROR_PERMISSION_DENIED))
         // Through the process-wide set and the access point, as the app's own heart does. The
         // Web API this used to call refuses the write (see native/src/collection.rs), so the
         // car's heart failed every time it was pressed.
@@ -222,12 +295,12 @@ class MediaBrowseTree(
             runCatching {
                 when (action) {
                     CMD_IS_LIKED -> {
-                        val liked = app.likedTracks.isLiked(uri) ?: false
+                        val liked = sink.isLiked(uri) ?: false
                         SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putBoolean("liked", liked) })
                     }
                     else -> {
                         val liked = !args.getBoolean("remove", false)
-                        app.likedTracks.set(uri, liked)
+                        sink.set(uri, liked)
                         SessionResult(SessionResult.RESULT_SUCCESS, Bundle().apply { putBoolean("liked", liked) })
                     }
                 }
@@ -252,11 +325,17 @@ class MediaBrowseTree(
      * reaches the player without going through a session.
      */
     fun startRadio(player: androidx.media3.common.Player) {
-        scope.launch { startRadioNow(player) }
+        val access = accounts.captureOnline() ?: return
+        scope.launch { startRadioNow(player, access) }
     }
 
     /** [startRadio], waited for: true once the station is loaded and playing, false when there is none. */
     suspend fun startRadioNow(player: androidx.media3.common.Player): Boolean {
+        val access = accounts.captureOnline() ?: return false
+        return startRadioNow(player, access)
+    }
+    private suspend fun startRadioNow(player: androidx.media3.common.Player, access: Access): Boolean {
+        accounts.requireOnline(access)
         val uri = player.currentMediaItem?.mediaId ?: return false
         if (!uri.startsWith("spotify:track:")) return false
         val station = "spotify:station:track:${uri.substringAfterLast(':')}"
@@ -265,7 +344,8 @@ class MediaBrowseTree(
             .getOrDefault(emptyList())
         if (tracks.isEmpty()) return false
         withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
-            player.setMediaItems(tracks.map { queueItem(it, strings.getString(R.string.radio)) })
+            accounts.requireOnline(access)
+            player.setMediaItems(tracks.map { queueItem(access, it, strings.getString(R.string.radio)) })
             player.prepare()
             player.play()
         }
@@ -277,6 +357,8 @@ class MediaBrowseTree(
         browser: MediaSession.ControllerInfo,
         params: LibraryParams?,
     ): ListenableFuture<LibraryResult<MediaItem>> {
+        val access = accounts.capture() ?: return Futures.immediateFailedFuture(
+            kotlinx.coroutines.CancellationException("No configured Spotify local authority"))
         // The phone asking what was playing last, to offer it again.
         //
         // Android keeps a card in the quick settings for the last few things
@@ -286,14 +368,14 @@ class MediaBrowseTree(
         if (params?.isRecent == true) {
             return Futures.immediateFuture(
                 LibraryResult.ofItem(
-                    browsable(ID_RESUME_ROOT, strings.getString(R.string.app_name), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
+                    browsable(access, ID_RESUME_ROOT, strings.getString(R.string.app_name), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
                     params,
                 ),
             )
         }
         return Futures.immediateFuture(
             LibraryResult.ofItem(
-                browsable(ID_ROOT, strings.getString(R.string.app_name), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
+                browsable(access, ID_ROOT, strings.getString(R.string.app_name), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED),
                 params,
             ),
         )
@@ -310,15 +392,15 @@ class MediaBrowseTree(
     override fun onPlaybackResumption(
         mediaSession: MediaSession,
         controller: MediaSession.ControllerInfo,
-    ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
+    ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = accountFuture { access ->
         val saved = resumable()
         if (saved == null) {
             // Nothing was left; the last things played are the next best.
             val recent = app.recentStore.tracks.value
             if (recent.isEmpty()) throw UnsupportedOperationException("nothing to resume")
             ensurePlayerFor(recent.first().uri)
-            return@future MediaSession.MediaItemsWithStartPosition(
-                recent.map { queueItem(it, ID_RECENT) }.toMutableList(),
+            return@accountFuture MediaSession.MediaItemsWithStartPosition(
+                recent.map { queueItem(access, it, ID_RECENT) }.toMutableList(),
                 0,
                 0L,
             )
@@ -367,22 +449,23 @@ class MediaBrowseTree(
         session: MediaLibrarySession,
         browser: MediaSession.ControllerInfo,
         mediaId: String,
-    ): ListenableFuture<LibraryResult<MediaItem>> = scope.future {
+    ): ListenableFuture<LibraryResult<MediaItem>> = accountFuture { access ->
+        val mediaId = unscoped(access, mediaId)
         val item = when {
             mediaId == ID_ROOT ->
-                browsable(ID_ROOT, strings.getString(R.string.app_name), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                browsable(access, ID_ROOT, strings.getString(R.string.app_name), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
             mediaId == ID_PLAYLISTS ->
-                browsable(ID_PLAYLISTS, strings.getString(R.string.playlists), MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS)
+                browsable(access, ID_PLAYLISTS, strings.getString(R.string.playlists), MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS)
             mediaId == ID_RECENT ->
-                browsable(ID_RECENT, strings.getString(R.string.play_again), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                browsable(access, ID_RECENT, strings.getString(R.string.play_again), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
             mediaId == ID_RESUME_ROOT ->
-                browsable(ID_RESUME_ROOT, strings.getString(R.string.app_name), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
+                browsable(access, ID_RESUME_ROOT, strings.getString(R.string.app_name), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED)
             mediaId.startsWith(TRACK_PREFIX) -> {
-                val (parentId, trackUri) = splitTrackId(mediaId) ?: return@future notFound()
-                val track = tracksOf(parentId).firstOrNull { it.uri == trackUri } ?: return@future notFound()
-                playable(parentId, track)
+                val (parentId, trackUri) = splitTrackId(mediaId) ?: return@accountFuture notFound()
+                val track = tracksOf(access, parentId).firstOrNull { it.uri == trackUri } ?: return@accountFuture notFound()
+                playable(access, parentId, track)
             }
-            else -> browsable(mediaId, nodeLabels[mediaId].orEmpty(), MediaMetadata.MEDIA_TYPE_PLAYLIST)
+            else -> browsable(access, mediaId, nodeLabels.get(access, mediaId).orEmpty(), MediaMetadata.MEDIA_TYPE_PLAYLIST)
         }
         LibraryResult.ofItem(item, null)
     }
@@ -394,8 +477,9 @@ class MediaBrowseTree(
         page: Int,
         pageSize: Int,
         params: LibraryParams?,
-    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
-        val children = runCatching { childrenOf(parentId) }
+    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = accountFuture { access ->
+        val parentId = unscoped(access, parentId)
+        val children = runCatching { childrenOf(access, parentId) }
             .onFailure { android.util.Log.w(TAG, "children of $parentId failed: $it") }
             .getOrElse { emptyList() }
 
@@ -406,22 +490,22 @@ class MediaBrowseTree(
         LibraryResult.ofItemList(ImmutableList.copyOf(children.subList(from, to)), params)
     }
 
-    private suspend fun childrenOf(parentId: String): List<MediaItem> = when {
+    private suspend fun childrenOf(access: Access, parentId: String): List<MediaItem> = when {
         parentId == ID_ROOT -> buildList {
             // First, and only when there is something in it. In a car this is
             // the shelf that always works: no engine to wait for, no signal to
             // lose in a tunnel, and the one place the music is certain to be.
             if (app.downloads.owners.value.isNotEmpty()) {
                 add(
-                    browsable(
+                    browsable(access,
                         ID_DOWNLOADS,
                         strings.getString(R.string.downloads),
                         MediaMetadata.MEDIA_TYPE_FOLDER_MIXED,
                     ),
                 )
             }
-            add(browsable(ID_PLAYLISTS, strings.getString(R.string.playlists), MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS))
-            add(browsable(ID_RECENT, strings.getString(R.string.play_again), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED))
+            add(browsable(access, ID_PLAYLISTS, strings.getString(R.string.playlists), MediaMetadata.MEDIA_TYPE_FOLDER_PLAYLISTS))
+            add(browsable(access, ID_RECENT, strings.getString(R.string.play_again), MediaMetadata.MEDIA_TYPE_FOLDER_MIXED))
         }
 
         // Answered entirely from the download index: no engine, no network, no
@@ -430,8 +514,8 @@ class MediaBrowseTree(
             app.downloads.load()
             app.downloads.owners.value.keys.mapNotNull { uri ->
                 val label = app.downloads.labelOf(uri) ?: return@mapNotNull null
-                nodeLabels[uri] = label.name
-                browsable(
+                nodeLabels.put(access, uri, label.name)
+                browsable(access,
                     DOWNLOAD_PREFIX + uri,
                     label.name,
                     MediaMetadata.MEDIA_TYPE_PLAYLIST,
@@ -442,17 +526,15 @@ class MediaBrowseTree(
 
         parentId.startsWith(DOWNLOAD_PREFIX) -> {
             val uri = parentId.removePrefix(DOWNLOAD_PREFIX)
-            app.downloads.owners.value[uri]
-                .orEmpty()
-                .mapNotNull(app.downloads::trackOf)
-                .map { playable(parentId, it) }
+            app.downloads.read(access) { tracksForOwner(uri) }
+                .map { playable(access, parentId, it) }
         }
 
         parentId == ID_PLAYLISTS -> {
-            if (!engineReady()) emptyList() else lock.withLock {
+            if (!engineReady(access)) emptyList() else lock.withLock {
                 Catalog.playlists().map { playlist ->
-                    nodeLabels[playlist.uri] = playlist.name
-                    browsable(
+                    nodeLabels.put(access, playlist.uri, playlist.name)
+                    browsable(access,
                         playlist.uri,
                         playlist.name,
                         MediaMetadata.MEDIA_TYPE_PLAYLIST,
@@ -465,7 +547,7 @@ class MediaBrowseTree(
         // Local, so it answers even with no engine and no network — which is the
         // state the car is in for the first few seconds after it connects.
         parentId == ID_RECENT ->
-            app.recentStore.tracks.value.map { playable(ID_RECENT, it) }
+            app.recentStore.tracks.value.map { playable(access, ID_RECENT, it) }
 
         // The song that was on, for the phone's resumption card; see
         // onGetLibraryRoot. One item: the card shows one, and tapping it
@@ -474,11 +556,11 @@ class MediaBrowseTree(
             val saved = resumable()
             val tracks = saved?.let(::savedInPlayingOrder).orEmpty()
             val current = tracks.getOrNull(saved?.index ?: 0)
-            listOfNotNull(current?.let { playable(ID_RESUME, it) })
+            listOfNotNull(current?.let { playable(access, ID_RESUME, it) })
         }
 
         parentId.startsWith("spotify:") ->
-            tracksOf(parentId).map { playable(parentId, it) }
+            tracksOf(access, parentId).map { playable(access, parentId, it) }
 
         else -> emptyList()
     }
@@ -490,26 +572,24 @@ class MediaBrowseTree(
      * car screen shows a handful of rows at a time and nobody scrolls two
      * thousand of them while driving.
      */
-    private suspend fun tracksOf(parentId: String): List<CatalogTrack> {
+    private suspend fun tracksOf(access: Access, parentId: String): List<CatalogTrack> {
         if (parentId == ID_RECENT) return app.recentStore.tracks.value
         if (parentId == ID_RESUME) return resumable()?.let(::savedInPlayingOrder).orEmpty()
         // Straight from the index, and deliberately before the engine check
         // below: this is the shelf that has to answer in a tunnel.
         if (parentId.startsWith(DOWNLOAD_PREFIX)) {
-            return app.downloads.owners.value[parentId.removePrefix(DOWNLOAD_PREFIX)]
-                .orEmpty()
-                .mapNotNull(app.downloads::trackOf)
+            return app.downloads.read(access) { tracksForOwner(parentId.removePrefix(DOWNLOAD_PREFIX)) }
         }
-        trackCache[parentId]?.let { return it }
-        if (!engineReady()) return emptyList()
+        trackCache.get(access, parentId)?.let { return it }
+        if (!engineReady(access)) return emptyList()
 
         return lock.withLock {
-            trackCache[parentId] ?: runCatching {
+            trackCache.get(access, parentId) ?: runCatching {
                 Catalog.tracks(Catalog.contextTrackUris(parentId).take(TRACK_LIMIT))
             }.getOrElse {
                 android.util.Log.w(TAG, "tracks of $parentId failed: $it")
                 emptyList()
-            }.also { if (it.isNotEmpty()) trackCache[parentId] = it }
+            }.also { if (it.isNotEmpty()) trackCache.put(access, parentId, it) }
         }
     }
 
@@ -520,9 +600,11 @@ class MediaBrowseTree(
         browser: MediaSession.ControllerInfo,
         query: String,
         params: LibraryParams?,
-    ): ListenableFuture<LibraryResult<Void>> = scope.future {
-        val results = search(query)
-        session.notifySearchResultChanged(browser, query, results.size, params)
+    ): ListenableFuture<LibraryResult<Void>> = accountFuture { access ->
+        val results = search(access, query)
+        accounts.use(access) {
+            session.notifySearchResultChanged(browser, query, results.size, params)
+        }
         LibraryResult.ofVoid()
     }
 
@@ -533,9 +615,9 @@ class MediaBrowseTree(
         page: Int,
         pageSize: Int,
         params: LibraryParams?,
-    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = scope.future {
+    ): ListenableFuture<LibraryResult<ImmutableList<MediaItem>>> = accountFuture { access ->
         val node = searchNode(query)
-        val items = search(query).map { playable(node, it) }
+        val items = search(access, query).map { playable(access, node, it) }
         val from = (page * pageSize).coerceAtMost(items.size)
         val to = (from + pageSize).coerceAtMost(items.size)
         LibraryResult.ofItemList(ImmutableList.copyOf(items.subList(from, to)), params)
@@ -547,9 +629,10 @@ class MediaBrowseTree(
      * user's own registered application: without it the car gets nothing rather
      * than an error it has no way to show.
      */
-    private suspend fun search(query: String): List<CatalogTrack> {
+    private suspend fun search(access: Access, query: String): List<CatalogTrack> {
+        accounts.requireOnline(access)
         val node = searchNode(query)
-        trackCache[node]?.let { return it }
+        trackCache.get(access, node)?.let { return it }
 
         val tracks = runCatching {
             app.api.search(query, type = "track", limit = SEARCH_LIMIT)
@@ -559,8 +642,8 @@ class MediaBrowseTree(
             emptyList()
         }
         if (tracks.isNotEmpty()) {
-            trackCache[node] = tracks
-            nodeLabels[node] = strings.getString(R.string.search)
+            trackCache.put(access, node, tracks)
+            nodeLabels.put(access, node, strings.getString(R.string.search))
         }
         return tracks
     }
@@ -585,33 +668,41 @@ class MediaBrowseTree(
         mediaItems: MutableList<MediaItem>,
         startIndex: Int,
         startPositionMs: Long,
-    ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = scope.future {
+    ): ListenableFuture<MediaSession.MediaItemsWithStartPosition> = accountFuture { access ->
+        accounts.use(access) {
+            mediaItems.forEach {
+                if (it.mediaId.startsWith("sq/account/")) unscoped(access, it.mediaId)
+                else if (it.mediaId.startsWith("sq/")) throw kotlinx.coroutines.CancellationException("Unscoped browse ID")
+            }
+        }
         ensurePlayerFor(
             mediaItems.getOrNull(startIndex.coerceAtLeast(0))?.mediaId
                 ?: mediaItems.firstOrNull()?.mediaId,
         )
 
         val single = mediaItems.singleOrNull()
-        val parts = single?.mediaId?.let(::splitTrackId)
-            ?: return@future MediaSession.MediaItemsWithStartPosition(
-                mediaItems.map(::stripBrowseId).toMutableList(),
+        val parts = single?.mediaId?.let { id ->
+            splitTrackId(if (id.startsWith("sq/account/")) unscoped(access, id) else id)
+        }
+            ?: return@accountFuture MediaSession.MediaItemsWithStartPosition(
+                mediaItems.map { stripBrowseId(access, it) }.toMutableList(),
                 startIndex,
                 startPositionMs,
             )
 
         val (parentId, trackUri) = parts
-        val tracks = tracksOf(parentId)
+        val tracks = tracksOf(access, parentId)
         val index = tracks.indexOfFirst { it.uri == trackUri }
         if (index < 0) {
-            return@future MediaSession.MediaItemsWithStartPosition(
-                mediaItems.map(::stripBrowseId).toMutableList(),
+            return@accountFuture MediaSession.MediaItemsWithStartPosition(
+                mediaItems.map { stripBrowseId(access, it) }.toMutableList(),
                 startIndex,
                 startPositionMs,
             )
         }
 
         MediaSession.MediaItemsWithStartPosition(
-            tracks.map { queueItem(it, parentId) }.toMutableList(),
+            tracks.map { queueItem(access, it, parentId) }.toMutableList(),
             index,
             startPositionMs,
         )
@@ -621,16 +712,21 @@ class MediaBrowseTree(
         mediaSession: MediaSession,
         controller: MediaSession.ControllerInfo,
         mediaItems: MutableList<MediaItem>,
-    ): ListenableFuture<MutableList<MediaItem>> =
-        Futures.immediateFuture(mediaItems.map(::stripBrowseId).toMutableList())
+    ): ListenableFuture<MutableList<MediaItem>> = accountFuture { access ->
+        mediaItems.map { stripBrowseId(access, it) }.toMutableList()
+    }
 
     /** Turns a browse id back into the plain Spotify URI [PlayQueue] insists on. */
-    private fun stripBrowseId(item: MediaItem): MediaItem {
-        val uri = splitTrackId(item.mediaId)?.second ?: return item
+    private fun stripBrowseId(access: Access, item: MediaItem): MediaItem {
+        val id = if (item.mediaId.startsWith("sq/account/")) unscoped(access, item.mediaId) else {
+            if (item.mediaId.startsWith("sq/")) throw kotlinx.coroutines.CancellationException("Unscoped browse ID")
+            item.mediaId
+        }
+        val uri = splitTrackId(id)?.second ?: return item
         return item.buildUpon().setMediaId(uri).build()
     }
 
-    private fun queueItem(track: CatalogTrack, parentId: String): MediaItem =
+    private fun queueItem(access: Access, track: CatalogTrack, parentId: String): MediaItem =
         MediaItem.Builder()
             .setMediaId(track.uri)
             .setMediaMetadata(
@@ -646,7 +742,7 @@ class MediaBrowseTree(
                             } else {
                                 putBoolean(EXTRA_CONTEXT_ORDERED, false)
                             }
-                            nodeLabels[parentId]?.let { putString(EXTRA_CONTEXT_LABEL, it) }
+                            nodeLabels.get(access, parentId)?.let { putString(EXTRA_CONTEXT_LABEL, it) }
                         },
                     )
                     .build(),
@@ -656,12 +752,13 @@ class MediaBrowseTree(
     // --- Items --------------------------------------------------------------
 
     private fun browsable(
+        access: Access,
         id: String,
         title: String,
         mediaType: Int,
         artworkUri: Uri? = null,
     ): MediaItem = MediaItem.Builder()
-        .setMediaId(id)
+        .setMediaId(scoped(access, id))
         .setMediaMetadata(
             MediaMetadata.Builder()
                 .setTitle(title)
@@ -673,9 +770,9 @@ class MediaBrowseTree(
         )
         .build()
 
-    private fun playable(parentId: String, track: CatalogTrack): MediaItem =
+    private fun playable(access: Access, parentId: String, track: CatalogTrack): MediaItem =
         MediaItem.Builder()
-            .setMediaId(trackId(parentId, track.uri))
+            .setMediaId(scoped(access, trackId(parentId, track.uri)))
             .setMediaMetadata(metadata(track).build())
             .build()
 
@@ -718,7 +815,8 @@ class MediaBrowseTree(
      * list at that point is indistinguishable from an empty account, and Auto
      * caches what it is told.
      */
-    private suspend fun engineReady(): Boolean {
+    private suspend fun engineReady(access: Access): Boolean {
+        accounts.requireOnline(access)
         repeat(CONNECT_TRIES) {
             if (NativeBridge.isConnected) return true
             delay(CONNECT_POLL_MS)
@@ -735,7 +833,7 @@ class MediaBrowseTree(
         const val CMD_RADIO = "dev.lelonio.square.RADIO"
 
         /**
-         * The heart, for an assistant that has no screen to press it on. Args:
+         * In-process library controls. External assistants use the account-scoped provider. Args:
          * `uri` (defaults to what is playing), `remove` to take it out again.
          * The reply's extras carry `liked` for [CMD_IS_LIKED].
          */

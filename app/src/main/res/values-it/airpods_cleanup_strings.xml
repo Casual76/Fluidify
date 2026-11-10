@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_cleanup_pending">Rimozioni in sospeso: %1$d</string>
+    <string name="airpods_cleanup_retry">Completa la rimozione in sospeso</string>
+    <string name="airpods_cleanup_none">Non ci sono rimozioni in sospeso.</string>
+    <string name="airpods_cleanup_identity">L’associazione precedente non è identificabile con certezza. La rimozione rimane in sospeso.</string>
+    <string name="airpods_cleanup_permission">L’accesso Android non è sufficiente per completare la rimozione.</string>
+    <string name="airpods_cleanup_storage">Impossibile salvare il risultato della rimozione. Rimane in sospeso.</string>
+    <string name="airpods_cleanup_stop">I controlli precedenti non sono stati arrestati. Riprova esplicitamente.</string>
+    <string name="airpods_cleanup_platform">Android non ha completato la rimozione. Riprova esplicitamente.</string>
+</resources>

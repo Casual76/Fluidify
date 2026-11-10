@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.data.SpotifyHistoryImportTest" tests="4" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:14:57.819Z" hostname="PC_FISSO" time="0.176">
+  <properties/>
+  <testcase name="oauthReplacementDuringPageCannotPersistForeignRows" classname="dev.lelonio.square.data.SpotifyHistoryImportTest" time="0.043"/>
+  <testcase name="accountMismatchDoesNotFetchOrImportAndMalformedTimestampIsPartial" classname="dev.lelonio.square.data.SpotifyHistoryImportTest" time="0.043"/>
+  <testcase name="beforePaginationIsBoundedAtFivePagesAndImportsAreIdempotent" classname="dev.lelonio.square.data.SpotifyHistoryImportTest" time="0.046"/>
+  <testcase name="errorOnSecondPagePreservesFirstAndDiffersFromEmpty" classname="dev.lelonio.square.data.SpotifyHistoryImportTest" time="0.04"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

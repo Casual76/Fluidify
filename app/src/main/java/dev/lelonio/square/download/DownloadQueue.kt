@@ -6,10 +6,12 @@ import android.net.Network
 import android.net.NetworkCapabilities
 import dev.lelonio.square.data.DownloadSettingsStore
 import dev.lelonio.square.data.DownloadStore
+import dev.lelonio.square.data.AccountLocalDataCoordinator
+import dev.lelonio.square.data.SpotifyNetworkPolicy
 import dev.lelonio.square.nativecore.NativeBridge
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -44,11 +46,23 @@ import org.json.JSONObject
  *   is the distinction that stops a tunnel from burning five attempts on every
  *   remaining track of a playlist.
  */
-class DownloadQueue(
+class DownloadQueue internal constructor(
     context: Context,
     private val store: DownloadStore,
     private val settings: DownloadSettingsStore,
+    private val scope: CoroutineScope,
+    private val nativeDownload: (String, Int) -> String,
+    nativeCancel: (String) -> Unit,
+    private val accountAllowsDownloads: () -> Boolean,
+    private val linkOverride: (() -> Link)? = null,
+    private val extrasOverride: (suspend (String, String) -> Unit)? = null,
+    private val transferDispatcher: kotlinx.coroutines.CoroutineDispatcher = Dispatchers.IO,
 ) {
+    constructor(context: Context, store: DownloadStore, settings: DownloadSettingsStore) : this(
+        context, store, settings, CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        NativeBridge::downloadTrack, NativeBridge::cancelDownload,
+        { dev.lelonio.square.playback.PlaybackService.accountAllowsDownloads },
+    )
 
     data class Status(
         val running: Boolean = false,
@@ -62,13 +76,25 @@ class DownloadQueue(
 
     private val appContext = context.applicationContext
     private val connectivity = appContext.getSystemService(ConnectivityManager::class.java)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
+    @Volatile private var runningAccess: AccountLocalDataCoordinator.Access? = null
+    @Volatile private var runningPermit: SpotifyNetworkPolicy.Permit? = null
     private val _status = MutableStateFlow(Status())
     val status: StateFlow<Status> = _status.asStateFlow()
 
     private val _link = MutableStateFlow(link())
-    private var pump: Job? = null
+    private val pump = DownloadPump(
+        scope = scope,
+        cancelNative = nativeCancel,
+        canStart = { !settings.offlineMode.value && !SpotifyNetworkPolicy.manual.value &&
+            accountAllowsDownloads() && store.captureOnlineAccess() != null },
+        onStarting = { _status.value = Status(running = true) },
+        onFinished = {
+            releaseWatch()
+            _status.value = Status()
+        },
+        drain = { drain() },
+    )
     private var watching = false
 
     /** Set when the last attempt was turned away by the key limiter. */
@@ -98,62 +124,70 @@ class DownloadQueue(
      * will ask the store again the moment it finishes what it is on.
      */
     fun wake() {
-        if (pump?.isActive == true) return
         // Published before the coroutine is scheduled, not inside it. The
         // foreground service watches this flow and stops itself the moment it
         // reads "not running" — which, with the pump still queued on a
         // dispatcher, is the very first thing it read.
-        _status.value = Status(running = true)
-        pump = scope.launch { drain() }
+        pump.wake()
     }
 
     fun stop() {
-        pump?.cancel()
-        pump = null
-        releaseWatch()
+        pump.stop()
         _status.value = Status()
     }
+
+    /** Waits for actual JNI return; use before NativeBridge.shutdown on logout. */
+    suspend fun stopAndJoin() = pump.stopAndJoin()
 
     // ----------------------------------------------------------------- the pump
 
     private suspend fun drain() = coroutineScope {
+        val permit = runCatching { SpotifyNetworkPolicy.capture() }.getOrNull() ?: return@coroutineScope
+        val access = store.captureOnlineAccess() ?: return@coroutineScope
+        runningPermit = permit
+        store.load()
+        ensureCurrent(access)
+        extrasTried.clear()
+        coversTried.clear()
+        runningAccess = access
         holdWatch()
         // Progress ticks come off the engine's event channel; see DownloadEvents.
         val ticks = launch {
-            DownloadEvents.progress.collect { store.onProgress(it.uri, it.fraction) }
+            DownloadEvents.progress.collect { store.onProgress(access, it.uri, it.fraction) }
         }
         try {
             while (isActive) {
+                ensureCurrent(access)
                 val blocked = allowed()
                 if (blocked != null) {
-                    publish(waiting = blocked)
+                    publish(access, waiting = blocked)
                     awaitAllowed()
                     continue
                 }
 
-                val pending = store.pending()
+                val pending = store.read(access) { pending() }
                 // Covers before everything else, including before the rest of
                 // the extras: they are the one thing whose absence is visible
                 // the moment it happens.
-                if (pending.isEmpty() && backfillCovers()) continue
-                if (pending.isEmpty() && backfillExtras()) continue
+                if (pending.isEmpty() && backfillCovers(access)) continue
+                if (pending.isEmpty() && backfillExtras(access)) continue
                 if (pending.isEmpty()) {
                     // Nothing to do now, but something may be waiting out a
                     // failure. Sleeping until then rather than spinning is the
                     // difference between a queue that idles and one that keeps
                     // the phone awake for a track it cannot have.
-                    val retryAt = store.retryAt() ?: break
+                    val retryAt = store.read(access) { retryAt() } ?: break
                     val wait = retryAt - System.currentTimeMillis()
                     if (wait <= 0) continue
-                    publish(waiting = null)
+                    publish(access, waiting = null)
                     delay(wait.coerceAtMost(MAX_SLEEP_MS))
                     continue
                 }
 
-                publish(waiting = null)
+                publish(access, waiting = null)
                 val batch = pending.take(PARALLEL)
                 val outcomes = batch
-                    .map { uri -> async { attempt(uri) } }
+                    .map { uri -> async { attempt(access, uri) } }
                     .awaitAll()
 
                 // Nothing was wrong with these tracks — the engine was not
@@ -161,7 +195,7 @@ class DownloadQueue(
                 // Without this the pump would find them pending again
                 // immediately and spin at full speed against whatever said no.
                 if (outcomes.all { it == Outcome.NOT_NOW }) {
-                    publish(waiting = Waiting.ENGINE)
+                    publish(access, waiting = Waiting.ENGINE)
                     delay(if (throttled) THROTTLED_WAIT_MS else ENGINE_POLL_MS)
                     throttled = false
                 } else {
@@ -173,8 +207,8 @@ class DownloadQueue(
             }
         } finally {
             ticks.cancel()
-            releaseWatch()
-            _status.value = Status()
+            if (runningAccess === access) runningAccess = null
+            if (runningPermit === permit) runningPermit = null
         }
     }
 
@@ -193,7 +227,7 @@ class DownloadQueue(
      *
      * @return true when it did something, so the caller comes back for more.
      */
-    private suspend fun backfillCovers(): Boolean {
+    private suspend fun backfillCovers(access: AccountLocalDataCoordinator.Access): Boolean {
         val missing = store.files.value.keys.asSequence()
             .filterNot(coversTried::contains)
             .filter { needsExtras(it) }
@@ -202,6 +236,7 @@ class DownloadQueue(
         if (missing.isEmpty()) return false
 
         for (uri in missing) {
+            ensureCurrent(access)
             coversTried += uri
             val cover = runCatching { NativeBridge.downloadState(uri) }
                 .getOrNull()
@@ -234,7 +269,7 @@ class DownloadQueue(
      *
      * @return true when it did something, so the caller comes back for more.
      */
-    private suspend fun backfillExtras(): Boolean {
+    private suspend fun backfillExtras(access: AccountLocalDataCoordinator.Access): Boolean {
         val missing = store.files.value.keys.asSequence()
             .filterNot(extrasTried::contains)
             .filter { needsExtras(it) }
@@ -243,9 +278,10 @@ class DownloadQueue(
         if (missing.isEmpty()) return false
 
         for (uri in missing) {
+            ensureCurrent(access)
             extrasTried += uri
             val sidecar = runCatching { NativeBridge.downloadState(uri) }.getOrNull() ?: continue
-            keepExtras(uri, sidecar)
+            keepExtras(access, uri, sidecar)
             delay(TRACK_GAP_MS)
         }
         return true
@@ -259,15 +295,32 @@ class DownloadQueue(
 
     private enum class Outcome { DONE, FAILED, NOT_NOW }
 
-    private suspend fun attempt(trackUri: String): Outcome {
+    private suspend fun attempt(access: AccountLocalDataCoordinator.Access, trackUri: String): Outcome {
+        ensureCurrent(access)
+        if (allowed() != null) return Outcome.NOT_NOW
         val kbps = settings.quality.value.kbps
         val outcome = runCatching {
-            withContext(Dispatchers.IO) { NativeBridge.downloadTrack(trackUri, kbps) }
+            withContext(transferDispatcher) {
+                try {
+                    pump.transfer(trackUri) {
+                        ensureCurrent(access)
+                        if (allowed() != null) throw DownloadNotAllowed()
+                        val permit = runningPermit ?: throw DownloadNotAllowed()
+                        permit.dispatch { nativeDownload(trackUri, kbps) }
+                    }
+                } finally {
+                    store.clearProgress(access, trackUri)
+                }
+            }
         }
 
+        outcome.exceptionOrNull()?.let { if (it is CancellationException) throw it }
+
+        ensureCurrent(access)
+        if (outcome.exceptionOrNull() is DownloadNotAllowed) return Outcome.NOT_NOW
         outcome.onSuccess { sidecar ->
-            store.onCompleted(trackUri, recordOf(sidecar, kbps))
-            keepExtras(trackUri, sidecar)
+            store.onCompleted(access, trackUri, recordOf(sidecar, kbps))
+            keepExtras(access, trackUri, sidecar)
             return Outcome.DONE
         }
 
@@ -277,10 +330,10 @@ class DownloadQueue(
         // missing is back.
         if (reason.isTransport()) {
             if (reason.isThrottled()) throttled = true
-            store.clearProgress(trackUri)
+            store.clearProgress(access, trackUri)
             return Outcome.NOT_NOW
         }
-        store.onFailed(trackUri, reason.ifEmpty { "download failed" })
+        store.onFailed(access, trackUri, reason.ifEmpty { "download failed" })
         return Outcome.FAILED
     }
 
@@ -296,8 +349,11 @@ class DownloadQueue(
      * answer down on the way past for a track that is downloaded, which this
      * one now is. Only the two binaries have to be fetched by name.
      */
-    private suspend fun keepExtras(trackUri: String, sidecar: String) {
+    private suspend fun keepExtras(access: AccountLocalDataCoordinator.Access, trackUri: String, sidecar: String) {
+        ensureCurrent(access)
+        extrasOverride?.let { it(trackUri, sidecar); return }
         runCatching {
+            ensureCurrent(access)
             // The cover first, and deliberately. It is a few tens of kilobytes
             // and it is the one extra that is missed the moment it is absent —
             // a song playing with a blank tile in the notification. The Canvas
@@ -312,16 +368,21 @@ class DownloadQueue(
                 ?.takeIf { it.isNotBlank() }
                 ?.let { DownloadExtras.keep(it, "art") }
 
+            ensureCurrent(access)
             dev.lelonio.square.data.Catalog.lyrics(trackUri)
+            ensureCurrent(access)
 
             store.trackOf(trackUri)?.artistUri?.let {
                 dev.lelonio.square.data.Catalog.artist(it)
             }
 
+            ensureCurrent(access)
             dev.lelonio.square.data.Catalog.canvas(trackUri).getOrNull()?.let { clip ->
+                ensureCurrent(access)
                 DownloadExtras.keep(clip.url, if (clip.isVideo) "video" else "art")
             }
         }.onFailure {
+            if (it is CancellationException) throw it
             android.util.Log.i("SquareDownloads", "extras for $trackUri: $it")
         }
     }
@@ -372,9 +433,11 @@ class DownloadQueue(
 
     // -------------------------------------------------------------- the link
 
-    private enum class Link { NONE, METERED, UNMETERED }
+    internal enum class Link { NONE, METERED, UNMETERED }
+    private class DownloadNotAllowed : Exception()
 
     private fun link(): Link {
+        linkOverride?.let { return it() }
         val manager = connectivity ?: return Link.NONE
         val capabilities = manager.activeNetwork
             ?.let(manager::getNetworkCapabilities)
@@ -395,7 +458,7 @@ class DownloadQueue(
     }
 
     /** Null when downloading may go ahead, otherwise what it is waiting for. */
-    private fun allowed(): Waiting? = when (_link.value) {
+    private fun allowed(): Waiting? = when (linkOverride?.invoke() ?: _link.value) {
         Link.NONE -> Waiting.NETWORK
         Link.METERED -> if (settings.wifiOnly.value) Waiting.WIFI else null
         Link.UNMETERED -> null
@@ -426,7 +489,17 @@ class DownloadQueue(
         runCatching { connectivity?.unregisterNetworkCallback(networkCallback) }
     }
 
-    private fun publish(waiting: Waiting?) {
+    private fun ensureCurrent(access: AccountLocalDataCoordinator.Access) {
+        if (!store.isOnlineCurrent(access)) throw CancellationException("Spotify download account changed")
+        try {
+            SpotifyNetworkPolicy.checkAllowed()
+            runningPermit?.check()
+        } catch (_: SpotifyNetworkPolicy.Offline) {
+            throw CancellationException("Manual offline revoked this download run")
+        }
+    }
+
+    private fun publish(access: AccountLocalDataCoordinator.Access, waiting: Waiting?) = store.read(access) {
         val wanted = store.owners.value.values.flatten().toSet()
         val files = store.files.value
         _status.value = Status(
@@ -435,6 +508,24 @@ class DownloadQueue(
             total = wanted.size,
             waiting = waiting,
         )
+    }
+
+    init {
+        SpotifyNetworkPolicy.observe { offline ->
+            // Synchronous stop cancels queued children and repeatedly signals active JNI calls.
+            // OFF is resumed through DownloadService, which owns foreground admission.
+            if (offline) stop()
+        }
+        store.observeAccess { current ->
+            val original = runningAccess
+            if (original != null && original !== current) {
+                _status.value = Status()
+                scope.launch {
+                    // Outside the authority monitor: pump wake owns its own lock before admission.
+                    if (!store.isOnlineCurrent(original)) pump.stopIf { runningAccess === original }
+                }
+            }
+        }
     }
 
     private companion object {

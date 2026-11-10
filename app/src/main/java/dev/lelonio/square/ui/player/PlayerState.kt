@@ -316,7 +316,7 @@ fun rememberQueue(player: Player?): State<List<QueueEntry>> {
 }
 
 /**
- * Playback position, polled while playing.
+ * Playback position, observed on discontinuities and polled while playing.
  *
  * Separate from [PlaybackState] so only the seek bar reads it. The engine
  * reports position once a second, which on screen would advance in visible
@@ -325,7 +325,19 @@ fun rememberQueue(player: Player?): State<List<QueueEntry>> {
  */
 @Composable
 fun rememberPositionMs(player: Player?, isPlaying: Boolean): State<Long> {
-    val position = remember { mutableLongStateOf(0L) }
+    val position = remember(player) { mutableLongStateOf(0L) }
+
+    DisposableEffect(player) {
+        if (player == null) return@DisposableEffect onDispose {}
+        var active = true
+        val listener = object : Player.Listener {
+            override fun onEvents(source: Player, events: Player.Events) {
+                if (active && source === player) position.longValue = source.currentPosition.coerceAtLeast(0L)
+            }
+        }
+        player.addListener(listener)
+        onDispose { active = false; player.removeListener(listener) }
+    }
 
     LaunchedEffect(player, isPlaying) {
         if (player == null) {

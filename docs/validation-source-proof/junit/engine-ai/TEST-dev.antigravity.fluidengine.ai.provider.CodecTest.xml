@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.provider.CodecTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:20.080Z" hostname="PC_FISSO" time="0.008">
+  <properties/>
+  <testcase name="lo stream OpenAI ricompone tool call a frammenti e tiene uso e ragione" classname="dev.antigravity.fluidengine.ai.provider.CodecTest" time="0.001"/>
+  <testcase name="lo schema per Gemini perde le chiavi che non capisce" classname="dev.antigravity.fluidengine.ai.provider.CodecTest" time="0.0"/>
+  <testcase name="le parti grezze di Gemini si rimandano identiche" classname="dev.antigravity.fluidengine.ai.provider.CodecTest" time="0.001"/>
+  <testcase name="l'uso si somma anche col costo" classname="dev.antigravity.fluidengine.ai.provider.CodecTest" time="0.0"/>
+  <testcase name="il catalogo Groq separa whisper dai chat e scarta guardie e voci" classname="dev.antigravity.fluidengine.ai.provider.CodecTest" time="0.001"/>
+  <testcase name="il dialetto OpenAI ha ruoli, tool_calls con argomenti stringa e tool con tool_call_id" classname="dev.antigravity.fluidengine.ai.provider.CodecTest" time="0.0"/>
+  <testcase name="il catalogo OpenRouter tiene solo i modelli con tool e riconosce i gratuiti" classname="dev.antigravity.fluidengine.ai.provider.CodecTest" time="0.0"/>
+  <testcase name="argomenti malformati non fanno cadere il giro" classname="dev.antigravity.fluidengine.ai.provider.CodecTest" time="0.003"/>
+  <testcase name="una risposta OpenAI con due tool call parallele" classname="dev.antigravity.fluidengine.ai.provider.CodecTest" time="0.0"/>
+  <testcase name="il dialetto Gemini ha systemInstruction, functionCall con firma e functionResponse fusi in un turno" classname="dev.antigravity.fluidengine.ai.provider.CodecTest" time="0.0"/>
+  <testcase name="una risposta Gemini con functionCall e usage" classname="dev.antigravity.fluidengine.ai.provider.CodecTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,15 @@
+<resources>
+    <string name="airpods_stem_local_choice">Scelta salvata sul telefono</string>
+    <string name="airpods_stem_shared">Pressione prolungata &#183; stato condiviso delle cuffie</string>
+    <string name="airpods_stem_unknown">Intercettazione attuale: sconosciuta. Nessuna lettura corrente dalle cuffie.</string>
+    <string name="airpods_stem_intercepted">Lettura attuale: Fluidify intercetta le pressioni prolungate su entrambi i lati.</string>
+    <string name="airpods_stem_hardware">Lettura attuale: le cuffie gestiscono le pressioni prolungate.</string>
+    <string name="airpods_stem_pending">Ultima richiesta: in attesa di una lettura dalle cuffie. Le modifiche su entrambi i lati sono sospese.</string>
+    <string name="airpods_stem_match">Ultima richiesta: ricevuta una lettura corrispondente dalle cuffie.</string>
+    <string name="airpods_stem_other">Ultima richiesta: le cuffie hanno comunicato una configurazione diversa.</string>
+    <string name="airpods_stem_timeout">Ultima richiesta: nessuna conferma entro 5 secondi. La scelta salvata resta un intento locale.</string>
+    <string name="airpods_stem_failed">Ultima richiesta: invio fallito. La scelta salvata resta un intento locale.</string>
+    <string name="airpods_stem_closed">Ultima richiesta: connessione chiusa prima della conferma.</string>
+    <string name="airpods_stem_no_command">Nessuna richiesta in questa connessione. Le scelte salvate sono intenti locali.</string>
+    <string name="airpods_stem_need_observation">Attendi una lettura corrente dalle cuffie prima di modificare la pressione prolungata.</string>
+</resources>

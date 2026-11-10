@@ -15,6 +15,8 @@ import coil.imageLoader
 import coil.request.ImageRequest
 import coil.size.Scale
 import dev.lelonio.square.playback.PlaybackService
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -59,6 +61,7 @@ class NowPlayingWidget : AppWidgetProvider() {
 
     override fun onDeleted(context: Context, appWidgetIds: IntArray) {
         MediaWidgetUpdater.onDeleted(appWidgetIds)
+        NowPlayingWidgetBridge.onWidgetsDeleted(context)
         super.onDeleted(context, appWidgetIds)
     }
 
@@ -122,32 +125,48 @@ object NowPlayingWidgetBridge {
     @Volatile
     private var last: MediaPlaybackSnapshot? = null
 
+    private val renderLock = Any()
+    private val artworkEpoch = WidgetArtworkEpoch()
+    private var artworkJob: Job? = null
     private val coverLock = Mutex()
+    @Volatile
     private var cachedCover: Pair<String, Bitmap?>? = null
+
+    internal fun onWidgetsDeleted(context: Context) {
+        val remaining = AppWidgetManager.getInstance(context).getAppWidgetIds(ComponentName(context, NowPlayingWidget::class.java))
+        if (remaining.isEmpty()) synchronized(renderLock) {
+            artworkEpoch.next()
+            artworkJob?.cancel()
+            artworkJob = null
+            cachedCover = null
+        }
+    }
 
     /** Called from the service's own player listener. */
     fun push(context: Context, player: Player) {
         val metadata = player.mediaMetadata
         val hasItem = player.currentMediaItem != null
-        val artworkUri = metadata.artworkUri?.toString().orEmpty()
+        val artworkUri = if (hasItem) metadata.artworkUri?.toString().orEmpty() else ""
         val snapshot = MediaPlaybackSnapshot(
             availability = if (hasItem) {
                 MediaPlaybackAvailability.Active
             } else {
                 MediaPlaybackAvailability.NoSession
             },
-            title = metadata.title?.toString().orEmpty(),
-            artist = metadata.artist?.toString().orEmpty(),
+            title = if (hasItem) metadata.title?.toString().orEmpty() else "",
+            artist = if (hasItem) metadata.artist?.toString().orEmpty() else "",
             album = metadata.albumTitle?.toString().orEmpty(),
             mediaId = player.currentMediaItem?.mediaId.orEmpty(),
             sourceLabel = "",
             packageName = context.packageName,
             isPlaying = player.playWhenReady,
-            canPlayPause = hasItem,
-            canSkipNext = player.hasNextMediaItem(),
-            canSkipPrevious = player.hasPreviousMediaItem(),
+            canPlayPause = hasItem && player.isCommandAvailable(Player.COMMAND_PLAY_PAUSE),
+            canSkipNext = hasItem && player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM) && player.hasNextMediaItem(),
+            canSkipPrevious = hasItem && player.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM) && player.hasPreviousMediaItem(),
             artworkUri = artworkUri,
             artworkKey = artworkUri,
+            isBuffering = hasItem && player.playbackState == Player.STATE_BUFFERING,
+            positionKnown = player.currentPosition >= 0L,
             positionMs = player.currentPosition.coerceAtLeast(0L),
             durationMs = player.duration.takeIf { it > 0L } ?: 0L,
             lastPositionUpdateTimeMs = android.os.SystemClock.elapsedRealtime(),
@@ -193,23 +212,31 @@ object NowPlayingWidgetBridge {
 
     /** Redraws from what was last pushed. For a resize, a restore, or a change of theme. */
     fun redraw(context: Context) {
+        if (cachedCover?.second == null) cachedCover = null // explicit refresh retries an artwork failure
         render(context, last ?: MediaPlaybackSnapshot(MediaPlaybackAvailability.NoSession))
     }
 
     private fun render(context: Context, snapshot: MediaPlaybackSnapshot) {
         val app = context.applicationContext
-        scope.launch {
-            val ids = runCatching {
-                AppWidgetManager.getInstance(app).getAppWidgetIds(
-                    ComponentName(app, NowPlayingWidget::class.java),
-                )
-            }.getOrNull()
-            // Nothing on any home screen: there is no card to draw and no cover worth fetching.
-            if (ids == null || ids.isEmpty()) return@launch
-            val withCover = snapshot.copy(artwork = cover(app, snapshot.artworkUri))
-            last = withCover
-            runCatching {
-                MediaWidgetUpdater.update(app, ids, withCover, widgetSettings(app))
+        synchronized(renderLock) {
+            val token = artworkEpoch.next()
+            artworkJob?.cancel()
+            last = snapshot
+            artworkJob = scope.launch {
+                val ids = AppWidgetManager.getInstance(app).getAppWidgetIds(ComponentName(app, NowPlayingWidget::class.java))
+                if (ids.isEmpty()) return@launch
+                // Publish new metadata immediately; never leave the previous cover under a new track.
+                synchronized(renderLock) {
+                    if (!artworkEpoch.isCurrent(token)) return@launch
+                    MediaWidgetUpdater.update(app, ids, snapshot.copy(artwork = snapshot.artwork ?: cachedCover?.takeIf { it.first == snapshot.artworkUri }?.second), widgetSettings(app))
+                }
+                val bitmap = snapshot.artwork ?: cover(app, snapshot.artworkUri)
+                synchronized(renderLock) {
+                    if (!artworkEpoch.isCurrent(token)) return@launch
+                    val withCover = snapshot.copy(artwork = bitmap)
+                    last = withCover
+                    MediaWidgetUpdater.update(app, ids, withCover, widgetSettings(app))
+                }
             }
         }
     }
@@ -225,8 +252,9 @@ object NowPlayingWidgetBridge {
     private suspend fun cover(context: Context, url: String): Bitmap? {
         if (url.isEmpty()) return null
         return coverLock.withLock {
-            cachedCover?.takeIf { it.first == url }?.second
-                ?: fetchCover(context, url).also { cachedCover = url to it }
+            val cached = cachedCover
+            if (cached != null && cached.first == url) return@withLock cached.second
+            fetchCover(context, url).also { cachedCover = url to it }
         }
     }
 
@@ -243,7 +271,10 @@ object NowPlayingWidgetBridge {
                     .build()
                 (context.imageLoader.execute(request).drawable
                     as? android.graphics.drawable.BitmapDrawable)?.bitmap
-            }.getOrNull()
+            }.getOrElse { error ->
+                if (error is CancellationException) throw error
+                null
+            }
         }
 
     /**
@@ -256,7 +287,7 @@ object NowPlayingWidgetBridge {
      */
     fun command(context: Context, action: MediaControlAction, onDone: () -> Unit) {
         val app = context.applicationContext
-        scope.launch {
+        scope.launch(Dispatchers.Main.immediate) {
             try {
                 val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
                 val controller = withTimeoutOrNull(CONNECT_TIMEOUT_MS) {
@@ -267,10 +298,12 @@ object NowPlayingWidgetBridge {
                 try {
                     when (action) {
                         MediaControlAction.TogglePlayPause ->
-                            if (controller.isPlaying) controller.pause() else controller.play()
+                            if (controller.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)) {
+                                if (controller.playWhenReady) controller.pause() else controller.play()
+                            }
 
-                        MediaControlAction.Next -> controller.seekToNextMediaItem()
-                        MediaControlAction.Previous -> controller.seekToPreviousMediaItem()
+                        MediaControlAction.Next -> if (controller.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)) controller.seekToNextMediaItem()
+                        MediaControlAction.Previous -> if (controller.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)) controller.seekToPreviousMediaItem()
                     }
                     // Nothing is written back from here. A controller that has only just connected
                     // does not necessarily have the session's queue yet, so what it would report in

@@ -25,6 +25,7 @@ pub mod file_id;
 pub mod http_client;
 pub mod login5;
 pub mod mercury;
+pub mod network;
 pub mod packet;
 mod proxytunnel;
 pub mod session;
@@ -44,3 +45,7 @@ pub use file_id::FileId;
 pub use session::Session;
 pub use spotify_id::SpotifyId;
 pub use spotify_uri::SpotifyUri;
+
+#[cfg(feature = "offline-contract-tests")]
+#[doc(hidden)]
+pub mod manual_offline_tests;

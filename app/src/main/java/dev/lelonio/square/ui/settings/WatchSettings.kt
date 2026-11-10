@@ -431,7 +431,8 @@ private fun WatchDownloadsRows(app: SquareApplication, watchKnown: Boolean) {
     InfoRow(stringResource(R.string.watch_download_quality), stringResource(R.string.kbps_value, current.qualityKbps))
     listOf(96, 160, 320).forEach { kbps ->
         ChoiceRow(stringResource(R.string.kbps_value, kbps), selected = current.qualityKbps == kbps) {
-            scope.launch { remote.request(DownloadRequest(qualityKbps = kbps)) }
+            val access = remote.capture() ?: return@ChoiceRow
+            scope.launch { remote.request(DownloadRequest(qualityKbps = kbps), access) }
         }
     }
     FluidListDivider()
@@ -440,9 +441,12 @@ private fun WatchDownloadsRows(app: SquareApplication, watchKnown: Boolean) {
         subtitle = stringResource(R.string.watch_transfer_bluetooth_note),
         checked = current.preference == TransferPreference.BLUETOOTH_FIRST,
         onCheckedChange = { bluetooth ->
+            val access = remote.capture()
+            if (access != null)
             scope.launch {
                 remote.request(
                     DownloadRequest(preference = if (bluetooth) TransferPreference.BLUETOOTH_FIRST else TransferPreference.WIFI_FIRST),
+                    access,
                 )
             }
         },

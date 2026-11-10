@@ -6,6 +6,8 @@ import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.android.gms.wearable.ChannelClient
 import com.google.android.gms.wearable.Wearable
+import dev.lelonio.square.data.AccountLocalDataCoordinator.Access
+import dev.lelonio.square.download.AccountNativeTransfer
 import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.nativecore.NativeBridge
 import dev.lelonio.square.playback.PlaybackService
@@ -67,6 +69,8 @@ import dev.lelonio.square.io.WriteWatchdog
 class WatchFileServer(private val app: SquareApplication) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
+    private val transfers = AccountNativeTransfer(scope, app.accountLocalData, NativeBridge::cancelDownload)
+    suspend fun stopAndJoin() = transfers.stopAndJoin()
     private val channels by lazy { Wearable.getChannelClient(app) }
     private val running = AtomicInteger()
 
@@ -77,6 +81,8 @@ class WatchFileServer(private val app: SquareApplication) {
     private val staging: File get() = File(app.cacheDir, "watch-staging")
 
     fun serve(channel: ChannelClient.Channel) {
+        val access = app.accountLocalData.capture()
+        if (access == null) { channels.close(channel); return }
         scope.launch {
             val wrapUp = ChannelWrapUp(channels, channel)
             var answered = false
@@ -84,7 +90,7 @@ class WatchFileServer(private val app: SquareApplication) {
             try {
                 cleanAbandonedStaging()
                 wrapUp.start()
-                answered = transfer(channel)
+                answered = transfer(access, channel)
             } catch (error: Exception) {
                 if (error is CancellationException) throw error
                 Log.i(TAG, "transfer to the watch stopped: ${error.message}")
@@ -100,51 +106,63 @@ class WatchFileServer(private val app: SquareApplication) {
     }
 
     /** True when the watch was given an answer (the file, or the reason there is none) in full. */
-    private suspend fun transfer(channel: ChannelClient.Channel): Boolean {
+    private suspend fun transfer(access: Access, channel: ChannelClient.Channel): Boolean {
         val line = ReadWatchdog(channels.getInputStream(channel).await(), 30_000L) { channels.close(channel) }
             .use { WearChannelIo.readLine(it, MAX_LINE) } ?: return false
         val request = WearCodec.decodeOrNull(FileRequest.serializer(), line.encodeToByteArray()) ?: return false
+        if (app.accountLocalData.captureRequest(request.accountSession) !== access) return false
         // Closing the stream when the answer is written is what tells the watch the file has ended.
-        channels.getOutputStream(channel).await().use { out -> answer(out, channel, request) }
+        val observer = app.accountLocalData.observe { current ->
+            if (current !== access) scope.launch { channels.close(channel).await() }
+        }
+        try { channels.getOutputStream(channel).await().use { out -> answer(access, out, channel, request) } }
+        finally { observer.close() }
         return true
     }
 
-    private suspend fun answer(out: OutputStream, channel: ChannelClient.Channel, request: FileRequest) {
+    private suspend fun answer(access: Access, out: OutputStream, channel: ChannelClient.Channel, request: FileRequest) {
+        app.downloads.load()
+        app.accountLocalData.use(access) { Unit }
         val stageKbps = request.stageKbps
+        if (stageKbps != null) app.accountLocalData.requireOnline(access)
         val stagedRoot = if (stageKbps != null) {
             val key = SpotifyIds.trackHex(request.uri)?.let { "$it-$stageKbps" }
             if (key == null) {
-                header(out, FileHeader(ok = false, error = "track-unavailable"))
+                header(access, out, FileHeader(ok = false, error = "track-unavailable"))
                 return
             }
-            File(staging, key)
+            File(staging, "${access.namespace}/${access.requestSession}/$key")
         } else {
             null
         }
         val sidecar = if (stagedRoot != null && stageKbps != null) {
-            stageOnce(request.uri, stageKbps, stagedRoot).getOrElse {
-                header(out, FileHeader(ok = false, error = if (DownloadFailure.unavailable(it.message)) "track-unavailable" else "temporarily-unavailable"))
+            stageOnce(access, request.uri, stageKbps, stagedRoot).getOrElse {
+                header(access, out, FileHeader(ok = false, error = if (DownloadFailure.unavailable(it.message)) "track-unavailable" else "temporarily-unavailable"))
                 return
             }
         } else {
+            if (!app.downloads.read(access) { isDownloaded(request.uri) }) {
+                header(access, out, FileHeader(ok = false, error = "not-owned"))
+                return
+            }
             catchingNonCancel { NativeBridge.setDownloadRoot(app.downloads.root.absolutePath) }
             catchingNonCancel { NativeBridge.downloadState(request.uri) }.getOrNull()?.takeIf { it != "null" }
         }
         if (sidecar == null) {
-            header(out, FileHeader(ok = false, error = "not on the phone"))
+            header(access, out, FileHeader(ok = false, error = "not on the phone"))
             return
         }
         val audio = audioFile(stagedRoot ?: app.downloads.root, sidecar)
         if (audio == null || !audio.isFile) {
             // A staged file that is not there is not going to be there for the retry either.
             if (stagedRoot != null) cleanUp(stagedRoot)
-            header(out, FileHeader(ok = false, error = "the file is missing"))
+            header(access, out, FileHeader(ok = false, error = "the file is missing"))
             return
         }
         val total = audio.length()
         val actualId = catchingNonCancel { (WearCodec.json.parseToJsonElement(sidecar) as JsonObject)["fileId"]?.jsonPrimitive?.content }.getOrNull()
         val offset = FileResume.offset(request.offset, total, request.fileId, actualId)
-        header(out, FileHeader(ok = true, sidecar = sidecar, totalBytes = total, offset = offset))
+        header(access, out, FileHeader(ok = true, sidecar = sidecar, totalBytes = total, offset = offset))
         // From here the watch is receiving, and a radio that stops taking bytes must not leave this
         // thread blocked in a write for ever: the watchdog closes the channel under it.
         WriteWatchdog(out, WRITE_IDLE_MS, WRITE_DEADLINE_MS) { channels.close(channel) }.use { guarded ->
@@ -153,6 +171,7 @@ class WatchFileServer(private val app: SquareApplication) {
                 val buffer = ByteArray(BUFFER)
                 while (true) {
                     currentCoroutineContext().ensureActive()
+                    app.accountLocalData.use(access) { Unit }
                     val read = file.read(buffer)
                     if (read <= 0) break
                     guarded.write(buffer, 0, read)
@@ -161,7 +180,7 @@ class WatchFileServer(private val app: SquareApplication) {
             guarded.flush()
         }
         // Only a transfer that went all the way: after a cut-off the file is kept for the retry.
-        if (stagedRoot != null) cleanUp(stagedRoot)
+        // Keep completed staging for retry/parallel readers; bounded TTL cleanup handles it.
     }
 
     /**
@@ -169,13 +188,14 @@ class WatchFileServer(private val app: SquareApplication) {
      * when it is complete, fetched now otherwise. A half-made earlier attempt is thrown away, and
      * so is the outcome of one that failed here: nothing incomplete is ever left to be sent.
      */
-    private suspend fun stageOnce(uri: String, kbps: Int, root: File): Result<String> {
-        val lock = stagingLocks.computeIfAbsent(root.name) { Mutex() }
+    private suspend fun stageOnce(access: Access, uri: String, kbps: Int, root: File): Result<String> {
+        val lock = stagingLocks.computeIfAbsent(root.absolutePath) { Mutex() }
         return lock.withLock {
+            app.accountLocalData.requireOnline(access)
             reusableSidecar(root)?.let { return@withLock Result.success(it) }
             root.deleteRecursively()
-            stage(uri, kbps, root)
-                .onSuccess { sidecar -> markFinished(root, sidecar) }
+            stage(access, uri, kbps, root)
+                .onSuccess { sidecar -> app.accountLocalData.use(access) { markFinished(root, sidecar) } }
                 .onFailure { root.deleteRecursively() }
         }
     }
@@ -196,7 +216,8 @@ class WatchFileServer(private val app: SquareApplication) {
     }
 
     /** Fetches the track at the watch's quality into [root], with the phone's engine. */
-    private suspend fun stage(uri: String, kbps: Int, root: File): Result<String> {
+    private suspend fun stage(access: Access, uri: String, kbps: Int, root: File): Result<String> {
+        app.accountLocalData.requireOnline(access)
         if (!app.spotifySignedIn || !app.tokenStore.isLoggedIn || kbps !in setOf(96, 160, 320)) return Result.failure(IllegalStateException("signed-out"))
         var controller: MediaController? = null
         return try {
@@ -216,7 +237,9 @@ class WatchFileServer(private val app: SquareApplication) {
             if (!connected) {
                 Result.failure(IllegalStateException("engine-unavailable"))
             } else {
-                catchingNonCancel { NativeBridge.downloadTrackInto(uri, kbps, root.absolutePath) }
+                catchingNonCancel {
+                    transfers.transfer(access, uri) { NativeBridge.downloadTrackInto(uri, kbps, root.absolutePath) }
+                }
                     .onFailure { Log.i(TAG, "staging failed: ${it.message}") }
             }
         } catch (cancelled: CancellationException) {
@@ -238,7 +261,7 @@ class WatchFileServer(private val app: SquareApplication) {
     private fun cleanAbandonedStaging() {
         val before = System.currentTimeMillis() - ABANDONED_AFTER_MS
         staging.listFiles()?.forEach { entry ->
-            if (stagingLocks[entry.name]?.isLocked == true) return@forEach
+            if (stagingLocks.any { (path, lock) -> path.startsWith(entry.absolutePath) && lock.isLocked }) return@forEach
             val touched = entry.walkTopDown().maxOf { it.lastModified() }
             if (touched < before) entry.deleteRecursively()
         }
@@ -258,8 +281,10 @@ class WatchFileServer(private val app: SquareApplication) {
         (WearCodec.json.parseToJsonElement(sidecar) as JsonObject)["trackId"]?.jsonPrimitive?.content
     }.getOrNull()?.takeIf { it.length == 32 }
 
-    private fun header(out: OutputStream, header: FileHeader) =
-        WearChannelIo.writeLine(out, FileHeader.serializer(), header)
+    private fun header(access: Access, out: OutputStream, header: FileHeader) {
+        app.accountLocalData.use(access) { Unit }
+        WearChannelIo.writeLine(out, FileHeader.serializer(), header.copy(accountSession = access.requestSession))
+    }
 
     private companion object {
         const val TAG = "WatchFileServer"

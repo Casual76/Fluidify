@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.auth.TokenStoreTest" tests="16" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:14:51.240Z" hostname="PC_FISSO" time="0.033">
+  <properties/>
+  <testcase name="lateSuccessCannotOverwriteNewAuthenticationInAnotherInstance" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.014"/>
+  <testcase name="oldInteractiveAuthorizationCannotOverwriteReplacementSession" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.001"/>
+  <testcase name="abandonedAuthorizationCannotSaveAndNewSaveReplacesRefreshToken" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.001"/>
+  <testcase name="clearDuringInteractiveAuthorizationCannotRestoreOrPublishSession" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.001"/>
+  <testcase name="cancelledInteractiveAuthorizationCannotCommitAnUncooperativeAnswer" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.002"/>
+  <testcase name="lateSuccessAfterClearCannotReturnOrRestoreTokens" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.001"/>
+  <testcase name="lateSuccessAfterClientChangeIsRejected" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.001"/>
+  <testcase name="lateExpiredAfterClearIsCancellation" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.001"/>
+  <testcase name="clientChangeDuringInteractiveAuthorizationRejectsOldAnswer" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.001"/>
+  <testcase name="lateExpiredAfterClientChangeCannotClearReplacementTokens" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.002"/>
+  <testcase name="currentInteractiveAuthorizationSavesBeforePublishing" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.001"/>
+  <testcase name="currentExpiredSessionIsCleared" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.001"/>
+  <testcase name="lateExpiredCannotClearNewAuthentication" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.002"/>
+  <testcase name="interactiveAuthorizationChecksClientEvenWithoutInvalidation" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.001"/>
+  <testcase name="concurrentRefreshAcrossInstancesMakesOneRequest" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.001"/>
+  <testcase name="changedClientIsCheckedEvenWithoutExplicitInvalidation" classname="dev.lelonio.square.auth.TokenStoreTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

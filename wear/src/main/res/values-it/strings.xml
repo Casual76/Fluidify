@@ -186,4 +186,8 @@
     <string name="updated_to">Aggiornato a %1$s</string>
     <string name="updated_to_tap">Scopri le novità</string>
     <string name="update_downloading_wifi">Download con il Wi-Fi…</string>
+    <string name="watch_downloads_legacy_note">I vecchi download non hanno un proprietario noto. Puoi conservarli senza attribuirli o assegnarli all’account connesso su questo orologio.</string>
+    <string name="watch_downloads_legacy_assign">Assegna i vecchi download...</string>
+    <string name="watch_downloads_legacy_confirm">Conferma: assegna a %1$s</string>
+    <string name="watch_downloads_legacy_later">Conserva senza attribuire</string>
 </resources>

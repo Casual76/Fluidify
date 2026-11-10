@@ -1,6 +1,7 @@
 package dev.pampa.fluidify.wear.library
 
 import android.content.Context
+import dev.pampa.fluidify.wear.link.PhoneAccountSession.Scope
 import dev.pampa.fluidify.wear.link.PhoneLink
 import dev.pampa.fluidify.wear.protocol.ContextPage
 import dev.pampa.fluidify.wear.protocol.DeviceList
@@ -45,18 +46,22 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
     fun clear() {
         memory.clear()
         fetchedAt.clear()
-        directory.listFiles()?.forEach { it.delete() }
+        // Account namespaces on disk survive logout; a different namespace cannot read them.
     }
 
-    fun peekHome(): LibraryPage? = memory["home"] as? LibraryPage
-    fun peekSection(section: LibrarySection): LibraryPage? = memory["section-$section"] as? LibraryPage
-    fun peekContext(uri: String): ContextPage? = memory["context-${hash(uri)}"] as? ContextPage
+    fun peekHome(): LibraryPage? = peek("home")
+    fun peekSection(section: LibrarySection): LibraryPage? = peek("section-$section")
+    fun peekContext(uri: String): ContextPage? = peek("context-${hash(uri)}")
 
     fun cachedHome(): LibraryPage? = read("home", LibraryPage.serializer())
-    suspend fun home(): Result<LibraryPage> = homeLock.withLock {
+    suspend fun home(): Result<LibraryPage> {
+        val account = link.accountSessions.capture() ?: return Result.failure(IllegalStateException("account-changed"))
+        return homeLock.withLock {
+        if (!link.accountSessions.isCurrent(account)) return@withLock Result.failure(IllegalStateException("account-changed"))
         val cached = peekHome()
-        if (cached != null && System.currentTimeMillis() - (fetchedAt["home"] ?: 0) < HOME_FRESH_MS) Result.success(cached)
+        if (cached != null && System.currentTimeMillis() - (fetchedAt[currentKey("home")] ?: 0) < HOME_FRESH_MS) Result.success(cached)
         else fetch("home", RpcMethod.Home, LibraryPage.serializer())
+        }
     }
 
     fun cachedSection(section: LibrarySection): LibraryPage? = read("section-$section", LibraryPage.serializer())
@@ -89,7 +94,9 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
      * before the next answer from the phone. True when the phone took it.
      */
     suspend fun setPinned(uri: String, pinned: Boolean): Boolean {
+        val account = link.accountSessions.capture() ?: return false
         val ok = link.send(dev.pampa.fluidify.wear.protocol.Command.SetPinned(uri, pinned))?.ok == true
+        if (!link.accountSessions.isCurrent(account)) return false
         if (ok) {
             val home = peekHome() ?: withContext(Dispatchers.IO) { cachedHome() }
             home?.let { page ->
@@ -98,7 +105,7 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
                         shelf.copy(items = shelf.items.map { if (it.uri == uri) it.copy(pinned = pinned) else it })
                     },
                 )
-                withContext(Dispatchers.IO) { write("home", LibraryPage.serializer(), updated) }
+                withContext(Dispatchers.IO) { write(account, "home", LibraryPage.serializer(), updated) }
             }
         }
         return ok
@@ -106,36 +113,53 @@ class PhoneLibrary(context: Context, private val link: PhoneLink) {
 
     /** Puts pages in the cache as if the phone had sent them: for previews and screenshot tests. */
     internal fun seed(home: LibraryPage? = null, contexts: List<ContextPage> = emptyList(), sections: Map<LibrarySection, LibraryPage> = emptyMap()) {
-        home?.let { write("home", LibraryPage.serializer(), it) }
-        sections.forEach { (section, page) -> write("section-$section", LibraryPage.serializer(), page) }
-        contexts.forEach { write("context-${hash(it.uri)}", ContextPage.serializer(), it) }
+        val account = checkNotNull(link.accountSessions.capture()) { "Seed a synthetic account session first" }
+        home?.let { write(account, "home", LibraryPage.serializer(), it) }
+        sections.forEach { (section, page) -> write(account, "section-$section", LibraryPage.serializer(), page) }
+        contexts.forEach { write(account, "context-${hash(it.uri)}", ContextPage.serializer(), it) }
     }
 
     private suspend fun <T> fetch(key: String, method: RpcMethod, serializer: KSerializer<T>): Result<T> {
+        val account = link.accountSessions.capture() ?: return Result.failure(IllegalStateException("account-changed"))
         val result = link.request(method, serializer)
-        result.getOrNull()?.let { value -> withContext(Dispatchers.IO) { write(key, serializer, value) } }
+        if (!link.accountSessions.isCurrent(account)) return Result.failure(IllegalStateException("account-changed"))
+        result.getOrNull()?.let { value -> withContext(Dispatchers.IO) { write(account, key, serializer, value) } }
         return result
     }
 
     @Suppress("UNCHECKED_CAST")
-    private fun <T> read(key: String, serializer: KSerializer<T>): T? {
-        (memory[key] as? T)?.let { return it }
-        return runCatching {
-            val file = File(directory, "$key.json")
-            if (!file.isFile) return null
-            WearCodec.decodeOrNull(serializer, file.readBytes())
-        }.getOrNull()?.also { memory[key] = it as Any }
+    private fun <T> peek(key: String): T? {
+        val account = link.accountSessions.capture() ?: return null
+        return link.accountSessions.use(account) { memory["${account.namespace}:$key"] as? T }
     }
 
-    private fun <T> write(key: String, serializer: KSerializer<T>, value: T) {
-        memory[key] = value as Any
-        fetchedAt[key] = System.currentTimeMillis()
-        runCatching {
-            val part = File(directory, "$key.part")
-            part.writeBytes(WearCodec.encode(serializer, value))
-            part.renameTo(File(directory, "$key.json"))
+    private fun currentKey(key: String): String = link.accountSessions.capture()?.let { "${it.namespace}:$key" } ?: "unavailable"
+
+    @Suppress("UNCHECKED_CAST")
+    private fun <T> read(key: String, serializer: KSerializer<T>): T? {
+        val account = link.accountSessions.capture() ?: return null
+        val cacheKey = "${account.namespace}:$key"
+        return link.accountSessions.use(account) {
+            (memory[cacheKey] as? T) ?: runCatching {
+                val file = File(File(directory, hash(account.namespace)), "$key.json")
+                if (!file.isFile) null else WearCodec.decodeOrNull(serializer, file.readBytes())
+            }.getOrNull()?.also { memory[cacheKey] = it as Any }
         }
     }
+
+    private fun <T> write(account: Scope, key: String, serializer: KSerializer<T>, value: T) =
+        link.accountSessions.use(account) {
+            val cacheKey = "${account.namespace}:$key"
+            val folder = File(directory, hash(account.namespace)).apply { mkdirs() }
+            val atomic = android.util.AtomicFile(File(folder, "$key.json"))
+            val stream = atomic.startWrite()
+            try {
+                stream.write(WearCodec.encode(serializer, value))
+                atomic.finishWrite(stream)
+            } catch (failure: Exception) { atomic.failWrite(stream); throw failure }
+            memory[cacheKey] = value as Any
+            fetchedAt[cacheKey] = System.currentTimeMillis()
+        }
 
     private fun hash(text: String): String =
         MessageDigest.getInstance("SHA-1").digest(text.toByteArray()).take(10).joinToString("") { "%02x".format(it) }

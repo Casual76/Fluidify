@@ -21,10 +21,36 @@ import dev.lelonio.square.nativecore.NativeBridge
  * one thing that matters obvious: a single [TokenStore] instance, so token
  * refreshes really are serialised across the whole process.
  */
-class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost {
+class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost, coil.ImageLoaderFactory {
+    override fun newImageLoader(): coil.ImageLoader = coil.ImageLoader.Builder(this)
+        .okHttpClient { dev.lelonio.square.data.SpotifyMediaClient.create() }
+        .build()
+
+    /** Observation is inert: no Bluetooth/service creation or automatic consent. */
+    val airPodsVisibility = dev.lelonio.square.airpods.runtime.AirPodsAppVisibility()
+
+    /** Optional process host. Installation never grants consent or starts a Bluetooth session. */
+    var airPodsRuntime: dev.lelonio.square.airpods.runtime.android.AirPodsAndroidController? = null
+        private set
 
     override fun onCreate() {
         super.onCreate()
+        // Synchronous bootstrap, before Spotify consumers or application collectors exist.
+        downloadSettings.offlineMode.value
+        airPodsVisibility.attach(this)
+        airPodsRuntime = dev.lelonio.square.airpods.runtime.AirPodsApplicationStartup.install(
+            this,
+            airPodsVisibility.active,
+        ) {
+            dev.lelonio.square.airpods.runtime.media.AndroidAirPodsMediaRuntime(
+                this,
+                local = dev.lelonio.square.playback.PlaybackAirPodsMediaBridge,
+            )
+        }.onFailure {
+            // Optional controls must not prevent the music app from starting. No private data.
+            android.util.Log.w("FluidifyAirPods", "Optional host unavailable: ${it.javaClass.simpleName}")
+        }.getOrNull()
+        dev.lelonio.square.airpods.runtime.android.AirPodsQualificationBootstrap.install(this)
         // Before anything can read or write them. The service used to do this on
         // creation, which is late: the player screen and the media session both
         // exist by then and either can announce a default that would be saved
@@ -41,16 +67,10 @@ class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost {
             downloads.isDownloaded(it)
         }
 
-        // The listener's own offline switch is persisted, so it has to be put
-        // back before anything reads it. Collected rather than read once: it is
-        // the one input to OfflineMode that can change without the service
-        // being involved.
         kotlinx.coroutines.CoroutineScope(
             kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default,
         ).launch {
-            downloadSettings.offlineMode.collect(
-                dev.lelonio.square.playback.OfflineMode::setManual,
-            )
+            listeningHistory.session.collect { accountLocalData.historyChanged() }
         }
 
         // The home screen follows the theme setting, and it has to be told.
@@ -91,10 +111,20 @@ class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost {
         get() = tokenStore.isLoggedIn ||
             dev.lelonio.square.auth.EngineCredentials.exist(this)
     val recentStore: RecentStore by lazy { RecentStore(this) }
+    val listeningHistory by lazy { dev.lelonio.square.data.ListeningRepository(this) }
+    val accountLocalData by lazy {
+        dev.lelonio.square.data.AccountLocalDataCoordinator(
+            listeningHistory,
+            dev.lelonio.square.auth.LocalSpotifyAuthority.forContext(this),
+            { if (dev.lelonio.square.playback.PlaybackService.accountAllowsDownloads)
+                dev.lelonio.square.playback.PlaybackService.mediaAccountEpoch else null },
+            { runCatching { NativeBridge.isConnected }.getOrDefault(false) },
+        )
+    }
 
     /** Songs found by searching and then played; see [SearchHistoryStore]. */
     val searchHistory: dev.lelonio.square.data.SearchHistoryStore by lazy {
-        dev.lelonio.square.data.SearchHistoryStore(this)
+        dev.lelonio.square.data.SearchHistoryStore(this, accountLocalData)
     }
 
     /** Which playlists were opened most recently, for ordering the home page. */
@@ -185,12 +215,23 @@ class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost {
      * at belongs to the engine, which finds it without going through here.
      */
     val downloads: dev.lelonio.square.data.DownloadStore by lazy {
-        dev.lelonio.square.data.DownloadStore(this)
+        dev.lelonio.square.data.DownloadStore(this, accountLocalData)
     }
 
     /** Download quality, Wi-Fi only, the offline switch. */
     val downloadSettings: dev.lelonio.square.data.DownloadSettingsStore by lazy {
-        dev.lelonio.square.data.DownloadSettingsStore(this)
+        dev.lelonio.square.data.DownloadSettingsStore(this, accountLocalData) { offline ->
+            // A callback after the synchronous update also observes a rapid ON -> OFF which
+            // StateFlow collectors can conflate. Resuming still requires normal account admission.
+            if (!offline) kotlinx.coroutines.CoroutineScope(
+                kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default,
+            ).launch {
+                if (!downloadSettings.offlineMode.value && spotifySignedIn) {
+                    dev.lelonio.square.playback.PlaybackService.connect(this@SquareApplication)
+                    dev.lelonio.square.download.DownloadService.start(this@SquareApplication)
+                }
+            }
+        }
     }
 
     /** Works through what [downloads] says is still owed. */

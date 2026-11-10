@@ -61,8 +61,17 @@ class WearApp : Application(), dev.lelonio.square.playback.CoreHost {
      * next account never sees the last one's. Downloads stay; they play again only for the same
      * account.
      */
-    suspend fun accountGone() {
-        playback.signedOut()
+    suspend fun accountGone(expectedPhone: dev.pampa.fluidify.wear.link.PhoneAccountSession.Scope?) {
+        if (link.accountSessions.capture() != expectedPhone) return
+        downloads.authority.revoke()
+        if (link.accountSessions.capture() != expectedPhone) return
+        playback.signedOut {
+            if (link.accountSessions.capture() == expectedPhone) {
+                standalone.engine.stopForAccountChange()
+                standalone.auth.signOutIfCurrent(expectedPhone)
+            }
+        }
+        if (link.accountSessions.capture() != expectedPhone) return
         withContext(Dispatchers.IO) {
             runCatching { library.clear() }
             runCatching { thumbnails.clear() }

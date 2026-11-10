@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_v2_open">Fluidify खोलें</string>
+    <string name="widget_v2_play">चलाएँ</string>
+    <string name="widget_v2_pause">रोकें</string>
+    <string name="widget_v2_playing">चल रहा है</string>
+    <string name="widget_v2_paused">रुका हुआ है</string>
+    <string name="widget_v2_empty">कुछ भी नहीं चल रहा है</string>
+    <string name="widget_v2_loading">लोड हो रहा है</string>
+</resources>

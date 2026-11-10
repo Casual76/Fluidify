@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.orchestrator.FailoverTableTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:20.075Z" hostname="PC_FISSO" time="0.0">
+  <properties/>
+  <testcase name="un modello sparito passa al prossimo, e fissato non cambia mai" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverTableTest" time="0.0"/>
+  <testcase name="il timeout di lettura dipende da cosa si chiede, e si misura sul budget" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverTableTest" time="0.0"/>
+  <testcase name="tool_use_failed riprova una volta, poi passa, e fissato fallisce" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverTableTest" time="0.0"/>
+  <testcase name="una risposta vuota riprova una volta, poi passa, poi PROVIDER, e mai un successo" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverTableTest" time="0.0"/>
+  <testcase name="un 400 generico passa al prossimo, fissato e' PROVIDER, bloccato resta BLOCKED" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverTableTest" time="0.0"/>
+  <testcase name="una richiesta troppo lunga si accorcia una volta, poi passa o fallisce" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverTableTest" time="0.0"/>
+  <testcase name="il perche' di un cambio si legge dall'errore" classname="dev.antigravity.fluidengine.ai.orchestrator.FailoverTableTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_removal_title">Remove downloads?</string>
+    <string name="download_removal_message">Remove the downloaded copy of “%1$s” from this device? Offline listening will require downloading it again. Tracks kept by other downloaded collections remain available.</string>
+</resources>

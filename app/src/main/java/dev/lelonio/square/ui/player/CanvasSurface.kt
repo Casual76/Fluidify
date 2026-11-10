@@ -77,8 +77,12 @@ fun CanvasSurface(
     // moment of motion this costs is silent and lasts one frame.
     var shown by remember(url) { mutableStateOf(false) }
 
+    val sourceOwner = remember(url) { java.util.concurrent.atomic.AtomicBoolean(true) }
     val exoPlayer = remember(url) {
-        ExoPlayer.Builder(context).build().apply {
+        ExoPlayer.Builder(context)
+            .setMediaSourceFactory(androidx.media3.exoplayer.source.DefaultMediaSourceFactory(context)
+                .setDataSourceFactory(dev.lelonio.square.playback.SpotifyMediaDataSource.factory(context, ownerCurrent = { sourceOwner.get() })))
+            .build().apply {
             // Canvases ship with an audio track often enough to matter, and it
             // is not enough to turn it down.
             //
@@ -136,7 +140,7 @@ fun CanvasSurface(
     }
 
     DisposableEffect(exoPlayer) {
-        onDispose { exoPlayer.release() }
+        onDispose { sourceOwner.set(false); exoPlayer.release() }
     }
 
     AndroidView(

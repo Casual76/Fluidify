@@ -3,6 +3,7 @@ package dev.lelonio.square.data
 import dev.lelonio.square.nativecore.NativeBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.ensureActive
 
 /**
  * Track lists read from Spotify's own GraphQL gateway.
@@ -91,7 +92,9 @@ class Gateway(private val keys: PathfinderKeys) {
      */
     suspend fun inLibrary(uris: List<String>): List<Boolean>? {
         if (uris.isEmpty()) return emptyList()
+        if (SpotifyNetworkPolicy.manual.value) return null
         keys.refresh()
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         return runCatching {
             val raw = query(
                 operation = "areEntitiesInLibrary",
@@ -123,12 +126,22 @@ class Gateway(private val keys: PathfinderKeys) {
      * Null when the gateway will not answer, and the Web API is where the
      * caller goes then; see SpotifyBackend.
      */
-    suspend fun search(term: String): String? {
+    suspend fun search(term: String): String? = try {
+        searchOrThrow(term)
+    } catch (error: Throwable) {
+        if (error is kotlinx.coroutines.CancellationException) throw error
+        android.util.Log.i(TAG, "gateway search unavailable: ${error.message}")
+        null
+    }
+
+    /** Search-specific throwing path: callers can retain per-request provenance. */
+    suspend fun searchOrThrow(term: String): String? {
         if (term.isBlank()) return null
+        SpotifyNetworkPolicy.checkAllowed()
         keys.refresh()
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
         val quoted = org.json.JSONObject.quote(term)
-        return runCatching {
-            query(
+        return query(
                 operation = "searchDesktop",
                 hash = keys.search,
                 // Exactly what the web player asks, values included.
@@ -146,9 +159,6 @@ class Gateway(private val keys: PathfinderKeys) {
                     """"includeLocalConcertsField":false,"includeAlbumPreReleases":false,""" +
                     """"includeAuthors":false,"includeEpisodeContentRatingsV2":false}""",
             )
-        }
-            .onFailure { android.util.Log.i(TAG, "gateway search unavailable: ${it.message}") }
-            .getOrNull()
     }
 
     /**
@@ -165,13 +175,19 @@ class Gateway(private val keys: PathfinderKeys) {
         onPage: ((List<CatalogTrack>, Boolean) -> Unit)? = null,
         page: suspend (offset: Int) -> GatewayPage?,
     ): List<CatalogTrack>? {
+        val permit = runCatching { SpotifyNetworkPolicy.capture() }.getOrNull() ?: return null
         keys.refresh()
+        kotlinx.coroutines.currentCoroutineContext().ensureActive()
 
         val loaded = mutableListOf<CatalogTrack>()
         var offset = 0
         while (true) {
+            if (runCatching { permit.check() }.isFailure) return null
             val read = runCatching { page(offset) }
-                .onFailure { android.util.Log.i(TAG, "gateway list unavailable: ${it.message}") }
+                .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    android.util.Log.i(TAG, "gateway list unavailable: ${it.message}")
+                }
                 .getOrNull()
                 ?: return null
 
@@ -188,16 +204,18 @@ class Gateway(private val keys: PathfinderKeys) {
         }
     }
 
-    private suspend fun query(operation: String, hash: String, variables: String): String =
-        withContext(Dispatchers.IO) {
-            NativeBridge.gatewayQuery(
+    private suspend fun query(operation: String, hash: String, variables: String): String {
+        val permit = SpotifyNetworkPolicy.capture()
+        return withContext(Dispatchers.IO) {
+            permit.dispatch { NativeBridge.gatewayQuery(
                 operation,
                 hash,
                 variables,
                 java.util.Locale.getDefault().language,
                 keys.appVersion,
-            )
+            ) }
         }
+    }
 
     private companion object {
         const val TAG = "SquareGateway"

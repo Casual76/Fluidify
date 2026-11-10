@@ -1,0 +1,1063 @@
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\EffectQualityStore.kt:46: Warning: Consider using apply() instead; commit writes its data to persistent storage immediately, whereas apply will handle it in the background [ApplySharedPref]
+        prefs.edit().putString(KEY_QUALITY, quality.key).commit()
+                                                         ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PinnedPlaylistStore.kt:39: Warning: Consider using apply() instead; commit writes its data to persistent storage immediately, whereas apply will handle it in the background [ApplySharedPref]
+        prefs.edit().putString(KEY_PINNED, updated.joinToString(SEPARATOR)).commit()
+                                                                            ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PinnedPlaylistStore.kt:45: Warning: Consider using apply() instead; commit writes its data to persistent storage immediately, whereas apply will handle it in the background [ApplySharedPref]
+        prefs.edit().remove(KEY_PINNED).commit()
+                                        ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\auth\TokenStore.kt:104: Warning: Consider using apply() instead; commit writes its data to persistent storage immediately, whereas apply will handle it in the background [ApplySharedPref]
+                    prefs.edit().clear().commit()
+                                         ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\auth\TokenStore.kt:129: Warning: Consider using apply() instead; commit writes its data to persistent storage immediately, whereas apply will handle it in the background [ApplySharedPref]
+        }.commit()
+          ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WatchUpdateCoordinator.kt:603: Warning: Consider using apply() instead; commit writes its data to persistent storage immediately, whereas apply will handle it in the background [ApplySharedPref]
+                .putString(KEY_OFFER_NOTES, notes).commit()
+                                                   ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\auth\WebApiAccount.kt:62: Warning: Consider using apply() instead; commit writes its data to persistent storage immediately, whereas apply will handle it in the background [ApplySharedPref]
+            prefs.edit().putString(KEY_CLIENT_ID, trimmed.ifEmpty { null }).commit()
+                                                                            ~~~~~~~~
+
+   Explanation for issues of type "ApplySharedPref":
+   Consider using apply() instead of commit on shared preferences. Whereas
+   commit blocks and writes its data to persistent storage immediately, apply
+   will handle it in the background.
+
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\library\PlaylistScreen.kt:1980: Warning: Implicitly using the default locale is a common source of bugs: Use String.format(Locale, ...) instead [DefaultLocale]
+    count >= 1_000_000 -> String.format("%.1fM", count / 1_000_000f)
+                          ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "DefaultLocale":
+   Calling String#toLowerCase() or #toUpperCase() without specifying an
+   explicit locale is a common source of bugs. The reason for that is that
+   those methods will use the current locale on the user's device, and even
+   though the code appears to work correctly when you are developing the app,
+   it will fail in some locales. For example, in the Turkish locale, the
+   uppercase replacement for i is not I.
+
+   If you want the methods to just perform ASCII replacement, for example to
+   convert an enum name, call String#toUpperCase(Locale.ROOT) instead. If you
+   really want to use the current locale, call
+   String#toUpperCase(Locale.getDefault()) instead.
+
+   https://developer.android.com/reference/java/util/Locale.html#default_locale
+
+C:\VibeCoded Projects\Fluidify\app\src\debug\java\dev\lelonio\square\airpods\AirPodsDiagnosticActivity.kt:61: Warning: Field requires API level 31 (current min is 26): android.Manifest.permission#BLUETOOTH_CONNECT [InlinedApi]
+                        if (!permitted) Button(onClick = { requestPermissions(arrayOf(Manifest.permission.BLUETOOTH_CONNECT), 104) }) { Text("Consenti Bluetooth per questa prova") }
+                                                                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\playback\ConnectRouteProvider.kt:132: Warning: Field requires API level 35 (current min is 34): android.media.MediaRoute2Info#TYPE_REMOTE_COMPUTER [InlinedApi]
+        "computer" -> MediaRoute2Info.TYPE_REMOTE_COMPUTER
+                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\playback\ConnectRouteProvider.kt:133: Warning: Field requires API level 35 (current min is 34): android.media.MediaRoute2Info#TYPE_REMOTE_SMARTPHONE [InlinedApi]
+        "smartphone", "tablet" -> MediaRoute2Info.TYPE_REMOTE_SMARTPHONE
+                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\playback\ConnectRouteProvider.kt:136: Warning: Field requires API level 35 (current min is 34): android.media.MediaRoute2Info#TYPE_REMOTE_SMARTWATCH [InlinedApi]
+        "smartwatch" -> MediaRoute2Info.TYPE_REMOTE_SMARTWATCH
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\playback\ConnectRouteProvider.kt:137: Warning: Field requires API level 35 (current min is 34): android.media.MediaRoute2Info#TYPE_REMOTE_GAME_CONSOLE [InlinedApi]
+        "gameconsole" -> MediaRoute2Info.TYPE_REMOTE_GAME_CONSOLE
+                         ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\playback\ConnectRouteProvider.kt:138: Warning: Field requires API level 35 (current min is 34): android.media.MediaRoute2Info#TYPE_REMOTE_CAR [InlinedApi]
+        "automobile" -> MediaRoute2Info.TYPE_REMOTE_CAR
+                        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "InlinedApi":
+   This check scans through all the Android API field references in the
+   application and flags certain constants, such as static final integers and
+   Strings, which were introduced in later versions. These will actually be
+   copied into the class files rather than being referenced, which means that
+   the value is available even when running on older devices. In some cases
+   that's fine, and in other cases it can result in a runtime crash or
+   incorrect behavior. It depends on the context, so consider the code
+   carefully and decide whether it's safe and can be suppressed or whether the
+   code needs to be guarded.
+
+   If you really want to use this API and don't need to support older devices
+   just set the minSdkVersion in your build.gradle or AndroidManifest.xml
+   files.
+
+   If your code is deliberately accessing newer APIs, and you have ensured
+   (e.g. with conditional execution) that this code will only ever be called
+   on a supported platform, then you can annotate your class or method with
+   the @TargetApi annotation specifying the local minimum SDK to apply, such
+   as @TargetApi(11), such that this check considers 11 rather than your
+   manifest file's minimum SDK as the required API level.
+
+C:\VibeCoded Projects\Fluidify\app\build.gradle.kts:83: Warning: Not targeting the latest versions of Android; compatibility modes apply. Consider testing and updating this version. Consult the android.os.Build.VERSION_CODES javadoc for details. [OldTargetApi]
+        targetSdk = 35
+        ~~~~~~~~~~~~~~
+
+   Explanation for issues of type "OldTargetApi":
+   When your application or sdk runs on a version of Android that is more
+   recent than your targetSdkVersion specifies that it has been tested with,
+   various compatibility modes kick in. This ensures that your application
+   continues to work, but it may look out of place. For example, if the
+   targetSdkVersion is less than 14, your app may get an option button in the
+   UI.
+
+   To fix this issue, set the targetSdkVersion to the highest available value.
+   Then test your app to make sure everything works correctly. You may want to
+   consult the compatibility notes to see what changes apply to each version
+   you are adding support for:
+   https://developer.android.com/reference/android/os/Build.VERSION_CODES.html
+   as well as follow this guide:
+   https://developer.android.com/distribute/best-practices/develop/target-sdk.
+   html
+
+   https://developer.android.com/distribute/best-practices/develop/target-sdk.html
+
+C:\VibeCoded Projects\Fluidify\app\src\main\AndroidManifest.xml:55: Warning: Attribute enableOnBackInvokedCallback is only used in API level 33 and higher (current min is 26) [UnusedAttribute]
+        android:enableOnBackInvokedCallback="true"
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\AndroidManifest.xml:58: Warning: Attribute localeConfig is only used in API level 33 and higher (current min is 26) [UnusedAttribute]
+        android:localeConfig="@xml/locales_config"
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\xml\now_playing_widget.xml:15: Warning: Attribute previewLayout is only used in API level 31 and higher (current min is 26) [UnusedAttribute]
+    android:previewLayout="@layout/widget_media_controls"
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\xml\now_playing_widget.xml:21: Warning: Attribute targetCellWidth is only used in API level 31 and higher (current min is 26) [UnusedAttribute]
+    android:targetCellWidth="4"
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\xml\now_playing_widget.xml:22: Warning: Attribute targetCellHeight is only used in API level 31 and higher (current min is 26) [UnusedAttribute]
+    android:targetCellHeight="2"
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UnusedAttribute":
+   This check finds attributes set in XML files that were introduced in a
+   version newer than the oldest version targeted by your application (with
+   the minSdkVersion attribute).
+
+   This is not an error; the application will simply ignore the attribute.
+   However, if the attribute is important to the appearance or functionality
+   of your application, you should consider finding an alternative way to
+   achieve the same result with only available attributes, and then you can
+   optionally create a copy of the layout in a layout-vNN folder which will be
+   used on API NN or higher where you can take advantage of the newer
+   attribute.
+
+   Note: This check does not only apply to attributes. For example, some tags
+   can be unused too, such as the new <tag> element in layouts introduced in
+   API 21.
+
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\LanguageStore.kt:73: Warning: Found dynamic locale changes, but did not find corresponding Play Core library calls for downloading languages and splitting by language is not disabled in the bundle configuration [AppBundleLocaleChanges]
+        configuration.setLocale(locale)
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "AppBundleLocaleChanges":
+   When changing locales at runtime (e.g. to provide an in-app language
+   switcher), the Android App Bundle must be configured to not split by locale
+   or the Play Core library must be used to download additional locales at
+   runtime.
+
+   https://developer.android.com/guide/app-bundle/configure-base#handling_language_changes
+
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\player\CanvasSurface.kt:148: Warning: Avoid passing null as the view root (needed to resolve layout parameters on the inflated layout's root element) [InflateParams]
+                .inflate(R.layout.canvas_surface, null) as PlayerView
+                                                  ~~~~
+
+   Explanation for issues of type "InflateParams":
+   When inflating a layout, avoid passing in null as the parent view, since
+   otherwise any layout parameters on the root of the inflated layout will be
+   ignored.
+
+   https://www.bignerdranch.com/blog/understanding-androids-layoutinflater-inflate/
+
+C:\VibeCoded Projects\Fluidify\app\src\main\AndroidManifest.xml:128: Warning: Consider splitting data tag into multiple tags with individual attributes to avoid confusion [IntentFilterUniqueDataAttributes]
+                <data android:scheme="https" android:host="open.spotify.com" />
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\AndroidManifest.xml:129: Warning: Consider splitting data tag into multiple tags with individual attributes to avoid confusion [IntentFilterUniqueDataAttributes]
+                <data android:scheme="http" android:host="open.spotify.com" />
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\AndroidManifest.xml:130: Warning: Consider splitting data tag into multiple tags with individual attributes to avoid confusion [IntentFilterUniqueDataAttributes]
+                <data android:scheme="https" android:host="link.tospotify.com" />
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "IntentFilterUniqueDataAttributes":
+   <intent-filter> <data> tags should only declare a single unique attribute
+   (i.e. scheme OR host, but not both). This better matches the runtime
+   behavior of intent filters, as they combine all of the declared data
+   attributes into a single matcher which is allowed to handle any combination
+   across attribute types.
+
+   For example, the following two <intent-filter> declarations are the same:
+   <intent-filter>
+       <data android:scheme="http" android:host="example.com" />
+       <data android:scheme="https" android:host="example.org" />
+   </intent-filter>
+
+   <intent-filter>
+       <data android:scheme="http"/>
+       <data android:scheme="https"/>
+       <data android:host="example.com" />
+       <data android:host="example.org" />
+   </intent-filter>
+
+   They both handle all of the following:
+   * http://example.com
+   * https://example.com
+   * http://example.org
+   * https://example.org
+
+   The second one better communicates the combining behavior and is clearer to
+   an external reader that one should not rely on the scheme/host being self
+   contained. It is not obvious in the first that http://example.org is also
+   matched, which can lead to confusion (or incorrect behavior) with a more
+   complex set of schemes/hosts.
+
+   Note that this does not apply to host + port, as those must be declared in
+   the same <data> tag and are only associated with each other.
+
+   https://developer.android.com/guide/components/intents-filters
+
+C:\VibeCoded Projects\Fluidify\app\src\main\AndroidManifest.xml:52: Warning: An activity in this app supports picture-in-picture and the targetSdkVersion is 31 or above; it is therefore strongly recommended to call both setAutoEnterEnabled(true) and setSourceRectHint(...) [PictureInPictureIssue]
+    <application
+     ~~~~~~~~~~~
+
+   Explanation for issues of type "PictureInPictureIssue":
+   Starting in Android 12, the recommended approach for enabling
+   picture-in-picture (PiP) has changed. If your app does not use the new
+   approach, your app's transition animations will be of poor quality compared
+   to other apps. The new approach requires calling setAutoEnterEnabled(true)
+   and setSourceRectHint(...).
+
+   https://developer.android.com/develop/ui/views/picture-in-picture#smoother-transition
+
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:2: Warning: A newer version of com.android.application than 8.13.2 is available: 9.5.1 [AndroidGradlePluginVersion]
+agp = "8.13.2"
+      ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:2: Warning: A newer version of com.android.library than 8.13.2 is available: 9.5.1 [AndroidGradlePluginVersion]
+agp = "8.13.2"
+      ~~~~~~~~
+
+   Explanation for issues of type "AndroidGradlePluginVersion":
+   This detector looks for usage of the Android Gradle Plugin where the
+   version you are using is not the current stable release. Using older
+   versions is fine, and there are cases where you deliberately want to stick
+   with an older version. However, you may simply not be aware that a more
+   recent version is available, and that is what this lint check helps find.
+
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:4: Warning: A newer version of androidx.compose:compose-bom than 2026.06.01 is available: 2026.09.00 [GradleDependency]
+composeBom = "2026.06.01"
+             ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:5: Warning: A newer version of androidx.media3:media3-common than 1.5.1 is available: 1.11.1 [GradleDependency]
+media3 = "1.5.1"
+         ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:5: Warning: A newer version of androidx.media3:media3-exoplayer than 1.5.1 is available: 1.11.1 [GradleDependency]
+media3 = "1.5.1"
+         ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:5: Warning: A newer version of androidx.media3:media3-exoplayer-dash than 1.5.1 is available: 1.11.1 [GradleDependency]
+media3 = "1.5.1"
+         ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:5: Warning: A newer version of androidx.media3:media3-session than 1.5.1 is available: 1.11.1 [GradleDependency]
+media3 = "1.5.1"
+         ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:5: Warning: A newer version of androidx.media3:media3-ui than 1.5.1 is available: 1.11.1 [GradleDependency]
+media3 = "1.5.1"
+         ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:7: Warning: A newer version of androidx.lifecycle:lifecycle-runtime-compose than 2.8.7 is available: 2.11.0 [GradleDependency]
+lifecycle = "2.8.7"
+            ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:7: Warning: A newer version of androidx.lifecycle:lifecycle-viewmodel-compose than 2.8.7 is available: 2.11.0 [GradleDependency]
+lifecycle = "2.8.7"
+            ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:16: Warning: A newer version of androidx.core:core-ktx than 1.15.0 is available: 1.19.1 [GradleDependency]
+androidx-core-ktx = { module = "androidx.core:core-ktx", version = "1.15.0" }
+                                                                   ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:17: Warning: A newer version of androidx.activity:activity-compose than 1.9.3 is available: 1.13.0 [GradleDependency]
+androidx-activity-compose = { module = "androidx.activity:activity-compose", version = "1.9.3" }
+                                                                                       ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:18: Warning: A newer version of androidx.browser:browser than 1.8.0 is available: 1.10.0 [GradleDependency]
+androidx-browser = { module = "androidx.browser:browser", version = "1.8.0" }
+                                                                    ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:19: Warning: A newer version of androidx.security:security-crypto than 1.1.0-alpha06 is available: 1.1.0 [GradleDependency]
+androidx-security-crypto = { module = "androidx.security:security-crypto", version = "1.1.0-alpha06" }
+                                                                                     ~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:45: Warning: A newer version of androidx.work:work-runtime-ktx than 2.11.2 is available: 2.12.0 [GradleDependency]
+androidx-work-runtime = { module = "androidx.work:work-runtime-ktx", version = "2.11.2" }
+                                                                               ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:47: Warning: A newer version of androidx.wear.compose:compose-navigation than 1.6.2 is available: 1.7.1 [GradleDependency]
+wear-compose-navigation = { module = "androidx.wear.compose:compose-navigation", version = "1.6.2" }
+                                                                                           ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:72: Warning: A newer version of androidx.test.ext:junit than 1.2.1 is available: 1.3.0 [GradleDependency]
+androidx-test-ext-junit = { module = "androidx.test.ext:junit", version = "1.2.1" }
+                                                                          ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:80: Warning: A newer version of androidx.palette:palette-ktx than 1.0.0 is available: 1.1.0 [GradleDependency]
+androidx-palette = { module = "androidx.palette:palette-ktx", version = "1.0.0" }
+                                                                        ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:81: Warning: A newer version of androidx.navigation:navigation-compose than 2.9.8 is available: 2.10.2 [GradleDependency]
+androidx-navigation-compose = { module = "androidx.navigation:navigation-compose", version = "2.9.8" }
+                                                                                             ~~~~~~~
+
+   Explanation for issues of type "GradleDependency":
+   This detector looks for usages of libraries where the version you are using
+   is not the current stable release. Using older versions is fine, and there
+   are cases where you deliberately want to stick with an older version.
+   However, you may simply not be aware that a more recent version is
+   available, and that is what this lint check helps find.
+
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:3: Warning: A newer version of org.jetbrains.kotlin.android than 2.3.21 is available: 2.4.21 [NewerVersionAvailable]
+kotlin = "2.3.21"
+         ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:3: Warning: A newer version of org.jetbrains.kotlin.jvm than 2.3.21 is available: 2.4.21 [NewerVersionAvailable]
+kotlin = "2.3.21"
+         ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:3: Warning: A newer version of org.jetbrains.kotlin.plugin.compose than 2.3.21 is available: 2.4.21 [NewerVersionAvailable]
+kotlin = "2.3.21"
+         ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:3: Warning: A newer version of org.jetbrains.kotlin.plugin.serialization than 2.3.21 is available: 2.4.21 [NewerVersionAvailable]
+kotlin = "2.3.21"
+         ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:6: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-android than 1.9.0 is available: 1.11.0 [NewerVersionAvailable]
+coroutines = "1.9.0"
+             ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:6: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-guava than 1.9.0 is available: 1.11.0 [NewerVersionAvailable]
+coroutines = "1.9.0"
+             ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:6: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-play-services than 1.9.0 is available: 1.11.0 [NewerVersionAvailable]
+coroutines = "1.9.0"
+             ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:6: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-coroutines-test than 1.9.0 is available: 1.11.0 [NewerVersionAvailable]
+coroutines = "1.9.0"
+             ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:8: Warning: A newer version of com.squareup.okhttp3:logging-interceptor than 4.12.0 is available: 5.5.1 [NewerVersionAvailable]
+okhttp = "4.12.0"
+         ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:8: Warning: A newer version of com.squareup.okhttp3:okhttp than 4.12.0 is available: 5.5.1 [NewerVersionAvailable]
+okhttp = "4.12.0"
+         ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:9: Warning: A newer version of com.squareup.retrofit2:converter-kotlinx-serialization than 2.11.0 is available: 3.0.0 [NewerVersionAvailable]
+retrofit = "2.11.0"
+           ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:9: Warning: A newer version of com.squareup.retrofit2:retrofit than 2.11.0 is available: 3.0.0 [NewerVersionAvailable]
+retrofit = "2.11.0"
+           ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:10: Warning: A newer version of org.jetbrains.kotlinx:kotlinx-serialization-json than 1.7.3 is available: 1.12.0 [NewerVersionAvailable]
+serialization = "1.7.3"
+                ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:50: Warning: A newer version of org.conscrypt:conscrypt-android than 2.5.3 is available: 2.9.0 [NewerVersionAvailable]
+conscrypt-android = { module = "org.conscrypt:conscrypt-android", version = "2.5.3" }
+                                                                            ~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:51: Warning: A newer version of org.bouncycastle:bcprov-jdk15to18 than 1.78 is available: 1.86 [NewerVersionAvailable]
+bouncycastle-prov = { module = "org.bouncycastle:bcprov-jdk15to18", version = "1.78" }
+                                                                              ~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:75: Warning: A newer version of io.github.takahirom.roborazzi:roborazzi than 1.76.0 is available: 1.77.0 [NewerVersionAvailable]
+roborazzi = { module = "io.github.takahirom.roborazzi:roborazzi", version = "1.76.0" }
+                                                                            ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:76: Warning: A newer version of io.github.takahirom.roborazzi:roborazzi-compose than 1.76.0 is available: 1.77.0 [NewerVersionAvailable]
+roborazzi-compose = { module = "io.github.takahirom.roborazzi:roborazzi-compose", version = "1.76.0" }
+                                                                                            ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:77: Warning: A newer version of io.github.takahirom.roborazzi:roborazzi-junit-rule than 1.76.0 is available: 1.77.0 [NewerVersionAvailable]
+roborazzi-junit-rule = { module = "io.github.takahirom.roborazzi:roborazzi-junit-rule", version = "1.76.0" }
+                                                                                                  ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\gradle\libs.versions.toml:96: Warning: A newer version of io.github.takahirom.roborazzi than 1.76.0 is available: 1.77.0 [NewerVersionAvailable]
+roborazzi = { id = "io.github.takahirom.roborazzi", version = "1.76.0" }
+                                                              ~~~~~~~~
+
+   Explanation for issues of type "NewerVersionAvailable":
+   This detector checks with a central repository to see if there are newer
+   versions available for the dependencies used by this project. This is
+   similar to the GradleDependency check, which checks for newer versions
+   available in the Android SDK tools and libraries, but this works with any
+   MavenCentral dependency, and connects to the library every time, which
+   makes it more flexible but also much slower.
+
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\player\CoverGestures.kt:84: Warning: Using Configuration.screenWidthDp instead of LocalWindowInfo.current.containerSize [ConfigurationScreenWidthHeight from androidx.compose.ui]
+    val screenWidth = with(density) { LocalConfiguration.current.screenWidthDp.dp.toPx() }
+                                      ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\home\HomeScreen.kt:708: Warning: Using Configuration.screenWidthDp instead of LocalWindowInfo.current.containerSize [ConfigurationScreenWidthHeight from androidx.compose.ui]
+                LocalConfiguration.current.screenWidthDp.dp -
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\home\HomeScreen.kt:1044: Warning: Using Configuration.screenWidthDp instead of LocalWindowInfo.current.containerSize [ConfigurationScreenWidthHeight from androidx.compose.ui]
+        val window = androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp
+                     ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\SquareApp.kt:920: Warning: Using Configuration.screenHeightDp instead of LocalWindowInfo.current.containerSize [ConfigurationScreenWidthHeight from androidx.compose.ui]
+        configuration.screenHeightDp < 500
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\SquareApp.kt:1117: Warning: Using Configuration.screenWidthDp instead of LocalWindowInfo.current.containerSize [ConfigurationScreenWidthHeight from androidx.compose.ui]
+                val windowWidth = LocalConfiguration.current.screenWidthDp.dp
+                                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "ConfigurationScreenWidthHeight":
+   Configuration.screenWidthDp and Configuration.screenHeightDp have different
+   insets behaviour depending on target SDK version, and are rounded to the
+   nearest Dp. This means that using these values in composition to size a
+   layout can result in issues, as these values do not accurately represent
+   the actual available window size. Instead it is recommended to use
+   WindowInfo.containerSize which accurately represents the window size.
+
+   Vendor: Jetpack Compose
+   Identifier: androidx.compose.ui
+   Feedback: https://issuetracker.google.com/issues/new?component=612128
+
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\player\AudioLight.kt:130: Warning: Modifier parameter should be the first optional parameter [ModifierParameter from androidx.compose.ui]
+    modifier: Modifier = Modifier,
+    ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\player\PlayerScreen.kt:1747: Warning: Modifier parameter should be the first optional parameter [ModifierParameter from androidx.compose.ui]
+fun VideoSurface(player: Player, attachKey: Any? = null, modifier: Modifier = Modifier) {
+                                                         ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\player\TranslationToggle.kt:54: Warning: Modifier parameter should be the first optional parameter [ModifierParameter from androidx.compose.ui]
+    modifier: Modifier = Modifier,
+    ~~~~~~~~
+
+   Explanation for issues of type "ModifierParameter":
+   The first (or only) Modifier parameter in a Composable function should
+   follow the following rules:
+   - Be named modifier
+   - Have a type of Modifier
+   - Either have no default value, or have a default value of Modifier
+   - If optional, be the first optional parameter in the parameter list
+
+   Vendor: Jetpack Compose
+   Identifier: androidx.compose.ui
+   Feedback: https://issuetracker.google.com/issues/new?component=612128
+
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ProfileReport.kt:28: Warning: Unexpected constant; expected one of: CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE, CompilationStatus.RESULT_CODE_COMPILED_WITH_PROFILE_NON_MATCHING, CompilationStatus.RESULT_CODE_ERROR_CACHE_FILE_EXISTS_BUT_CANNOT_BE_READ, CompilationStatus.RESULT_CODE_ERROR_CANT_WRITE_PROFILE_VERIFICATION_RESULT_CACHE_FILE, CompilationStatus.RESULT_CODE_ERROR_NO_PROFILE_EMBEDDED, CompilationStatus.RESULT_CODE_ERROR_PACKAGE_NAME_DOES_NOT_EXIST, CompilationStatus.RESULT_CODE_ERROR_UNSUPPORTED_API_VERSION, CompilationStatus.RESULT_CODE_NO_PROFILE_INSTALLED, CompilationStatus.RESULT_CODE_PROFILE_ENQUEUED_FOR_COMPILATION [SwitchIntDef]
+                ProfileVerifier.CompilationStatus.RESULT_CODE_NO_PROFILE ->
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "SwitchIntDef":
+   This check warns if a switch statement does not explicitly include all the
+   values declared by the typedef @IntDef declaration.
+
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values-tr\strings.xml:81: Warning: Repeated word "tekrar" in message: possible typo [Typos]
+    <string name="on_repeat">Son zamanlarda tekrar tekrar</string>
+                                            ~~~~~~~~~~~~~
+
+   Explanation for issues of type "Typos":
+   This check looks through the string definitions, and if it finds any words
+   that look like likely misspellings, they are flagged.
+
+C:\VibeCoded Projects\Fluidify\app\build.gradle.kts:95: Warning: Missing x86_64 ABI support for ChromeOS [ChromeOsAbiSupport]
+            abiFilters += shippedAbis
+                          ~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\build.gradle.kts:128: Warning: Missing x86_64 ABI support for ChromeOS [ChromeOsAbiSupport]
+                abiFilters += nativeAbis
+                              ~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\build.gradle.kts:171: Warning: Missing x86_64 ABI support for ChromeOS [ChromeOsAbiSupport]
+                abiFilters += nativeAbis
+                              ~~~~~~~~~~
+
+   Explanation for issues of type "ChromeOsAbiSupport":
+   To properly support ChromeOS, your Android application should have an x86
+   and/or x86_64 binary as part of the build configuration. To fix the issue,
+   ensure your files are properly optimized for ARM; the binary translator
+   will then ensure compatibility with x86. Alternatively, add an abiSplit for
+   x86 within your build.gradle file and create the required x86
+   dependencies.
+
+   https://developer.android.com/ndk/guides/abis
+
+C:\Users\casua\.gradle\caches\9.3.0\transforms\4fa60746d2c08077058993baa283cb09\workspace\transformed\libadb-android-3.0.0\jars\classes.jar: Warning: checkClientTrusted is empty, which could cause insecure network traffic due to trusting arbitrary TLS/SSL certificates presented by peers [TrustAllX509TrustManager]
+C:\Users\casua\.gradle\caches\9.3.0\transforms\4fa60746d2c08077058993baa283cb09\workspace\transformed\libadb-android-3.0.0\jars\classes.jar: Warning: checkServerTrusted is empty, which could cause insecure network traffic due to trusting arbitrary TLS/SSL certificates presented by peers [TrustAllX509TrustManager]
+
+   Explanation for issues of type "TrustAllX509TrustManager":
+   This check looks for X509TrustManager implementations whose
+   checkServerTrusted or checkClientTrusted methods do nothing (thus trusting
+   any certificate chain) which could result in insecure network traffic
+   caused by trusting arbitrary TLS/SSL certificates presented by peers.
+
+   https://goo.gle/TrustAllX509TrustManager
+
+C:\VibeCoded Projects\Fluidify\app\src\main\AndroidManifest.xml:252: Warning: Exported content providers can provide access to potentially sensitive data [ExportedContentProvider]
+        <provider android:name=".bridge.FluidifyToolHost"
+         ~~~~~~~~
+
+   Explanation for issues of type "ExportedContentProvider":
+   Content providers are exported by default and any application on the system
+   can potentially use them to read and write data. If the content provider
+   provides access to sensitive data, it should be protected by specifying
+   export=false in the manifest or by protecting it with a permission that can
+   be granted to other applications.
+
+   https://goo.gle/ExportedContentProvider
+
+C:\VibeCoded Projects\Fluidify\app\src\main\AndroidManifest.xml:168: Warning: Exported service does not require permission [ExportedService]
+        <service
+         ~~~~~~~
+
+   Explanation for issues of type "ExportedService":
+   Exported services (services which either set exported=true or contain an
+   intent-filter and do not specify exported=false) should define a permission
+   that an entity must have in order to launch the service or bind to it.
+   Without this, any application can use this service.
+
+   https://goo.gle/ExportedService
+
+C:\VibeCoded Projects\Fluidify\app\src\main\AndroidManifest.xml:54: Warning: The attribute android:allowBackup is deprecated from Android 12 and higher and may be removed in future versions. Consider adding the attribute android:dataExtractionRules specifying an @xml resource which configures cloud backups and device transfers on Android 12 and higher. [DataExtractionRules]
+        android:allowBackup="false"
+                             ~~~~~
+
+   Explanation for issues of type "DataExtractionRules":
+   Before Android 12, the attributes android:allowBackup and
+   android:fullBackupContent were used to configure all forms of backup,
+   including cloud backups, device-to-device transfers and adb backup.
+
+   In Android 12 and higher, these attributes have been deprecated and will
+   only apply to cloud backups. You should instead use the attribute
+   android:dataExtractionRules, specifying an @xml resource that configures
+   which files to back up, for cloud backups and for device-to-device
+   transfers, separately. If your minSdkVersion supports older versions,
+   you'll still want to specify an android:fullBackupContent resource if the
+   default behavior is not right for your app.
+
+   https://developer.android.com/about/versions/12/backup-restore#xml-changes
+   https://goo.gle/DataExtractionRules
+
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\download\DownloadService.kt:199: Warning: Unnecessary; SDK_INT is always >= 26 [ObsoleteSdkInt]
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
+                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\LanguageStore.kt:79: Warning: Unnecessary; SDK_INT is always >= 26 [ObsoleteSdkInt]
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\settings\SettingsScreen.kt:821: Warning: Unnecessary; SDK_INT is always >= 26 [ObsoleteSdkInt]
+        android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.O &&
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\update\UpdatePrompt.kt:82: Warning: Unnecessary; SDK_INT is never < 26 [ObsoleteSdkInt]
+    Build.VERSION.SDK_INT < Build.VERSION_CODES.O || context.packageManager.canRequestPackageInstalls()
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-anydpi-v26: Warning: This folder configuration (v26) is unnecessary; minSdkVersion is 26. Merge all the resources in this folder into mipmap-anydpi. [ObsoleteSdkInt]
+
+   Explanation for issues of type "ObsoleteSdkInt":
+   This check flags version checks that are not necessary, because the
+   minSdkVersion (or surrounding known API level) is already at least as high
+   as the version checked for.
+
+   Similarly, it also looks for resources in -vNN folders, such as values-v14
+   where the version qualifier is less than or equal to the minSdkVersion,
+   where the contents should be merged into the best folder.
+
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\player\FloatingMiniPlayer.kt:165: Hint: Prefer mutableLongStateOf instead of mutableStateOf [AutoboxingStateCreation from androidx.compose.runtime]
+    var dragStart by remember { mutableStateOf(0L) }
+                                ~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\player\FloatingMiniPlayer.kt:166: Hint: Prefer mutableFloatStateOf instead of mutableStateOf [AutoboxingStateCreation from androidx.compose.runtime]
+    var dragged by remember { mutableStateOf(0f) }
+                              ~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\player\KaraokeDial.kt:79: Hint: Prefer mutableLongStateOf instead of mutableStateOf [AutoboxingStateCreation from androidx.compose.runtime]
+    var lastTouch by remember { mutableStateOf(0L) }
+                                ~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\MainActivity.kt:61: Hint: Prefer mutableIntStateOf instead of mutableStateOf [AutoboxingStateCreation from androidx.compose.runtime]
+    private var openPlayer by mutableStateOf(0)
+                              ~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\player\NowPlayingPanel.kt:163: Hint: Prefer mutableFloatStateOf instead of mutableStateOf [AutoboxingStateCreation from androidx.compose.runtime]
+    reach: State<Float> = remember { mutableStateOf(0f) },
+                                     ~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\SquareApp.kt:1037: Hint: Prefer mutableIntStateOf instead of mutableStateOf [AutoboxingStateCreation from androidx.compose.runtime]
+            var windowHeightPx by remember { mutableStateOf(0) }
+                                             ~~~~~~~~~~~~~~
+
+   Explanation for issues of type "AutoboxingStateCreation":
+   Calling mutableStateOf<T>() when T is either backed by a primitive type on
+   the JVM or is a value class results in a state implementation that requires
+   all state values to be boxed. This usually causes an additional allocation
+   for each state write, and adds some additional work to auto-unbox values
+   when reading the value of the state. Instead, prefer to use a specialized
+   primitive state implementation for Int, Long, Float, and Double when the
+   state does not need to track null values and does not override the default
+   SnapshotMutationPolicy. See mutableIntStateOf(), mutableLongStateOf(),
+   mutableFloatStateOf(), and mutableDoubleStateOf() for more information.
+
+   Vendor: Jetpack Compose
+   Identifier: androidx.compose.runtime
+   Feedback: https://issuetracker.google.com/issues/new?component=612128
+
+C:\VibeCoded Projects\Fluidify\app\src\main\res\layout\widget_media_controls.xml:91: Warning: Nested weights are bad for performance [NestedWeights]
+        android:layout_weight="1"
+        ~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "NestedWeights":
+   Layout weights require a widget to be measured twice. When a LinearLayout
+   with non-zero weights is nested inside another LinearLayout with non-zero
+   weights, then the number of measurements increase exponentially.
+
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\colors.xml:17: Warning: The resource R.color.widget_preview_background appears to be unused [UnusedResources]
+    <color name="widget_preview_background">#FFF3F0F7</color>
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\colors.xml:18: Warning: The resource R.color.widget_preview_card appears to be unused [UnusedResources]
+    <color name="widget_preview_card">#FFE7E2EE</color>
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\colors.xml:19: Warning: The resource R.color.widget_preview_ink appears to be unused [UnusedResources]
+    <color name="widget_preview_ink">#FF1B1B1F</color>
+           ~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\colors.xml:20: Warning: The resource R.color.widget_preview_ink_dim appears to be unused [UnusedResources]
+    <color name="widget_preview_ink_dim">#FF6B6873</color>
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\colors.xml:21: Warning: The resource R.color.widget_preview_accent appears to be unused [UnusedResources]
+    <color name="widget_preview_accent">#FFE9DDFF</color>
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\colors.xml:22: Warning: The resource R.color.widget_preview_on_accent appears to be unused [UnusedResources]
+    <color name="widget_preview_on_accent">#FF25005B</color>
+           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-hdpi\ic_launcher_round.png: Warning: The resource R.mipmap.ic_launcher_round appears to be unused [UnusedResources]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:264: Warning: The resource R.string.update_needs_permission appears to be unused [UnusedResources]
+    <string name="update_needs_permission">Allow installing — tap</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:265: Warning: The resource R.string.update_failed appears to be unused [UnusedResources]
+    <string name="update_failed">Not now — tap to retry</string>
+            ~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:279: Warning: The resource R.string.playlist_name appears to be unused [UnusedResources]
+    <string name="playlist_name">Playlist name</string>
+            ~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:281: Warning: The resource R.string.update_prompt appears to be unused [UnusedResources]
+    <string name="update_prompt">Download and install it now?</string>
+            ~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:282: Warning: The resource R.string.update_prompt_size appears to be unused [UnusedResources]
+    <string name="update_prompt_size">Download and install it now? %1$s.</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:324: Warning: The resource R.string.glass_unsupported appears to be unused [UnusedResources]
+    <string name="glass_unsupported">This phone has no hardware blur, so every surface uses the tinted film.</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:325: Warning: The resource R.string.glass_advanced appears to be unused [UnusedResources]
+    <string name="glass_advanced">Adjust it yourself</string>
+            ~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:326: Warning: The resource R.string.glass_vibrancy appears to be unused [UnusedResources]
+    <string name="glass_vibrancy">Colour</string>
+            ~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:328: Warning: The resource R.string.glass_refraction_depth appears to be unused [UnusedResources]
+    <string name="glass_refraction_depth">Edge depth</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:329: Warning: The resource R.string.glass_refraction_amount appears to be unused [UnusedResources]
+    <string name="glass_refraction_amount">Bend</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:330: Warning: The resource R.string.glass_rim appears to be unused [UnusedResources]
+    <string name="glass_rim">Edge light</string>
+            ~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:331: Warning: The resource R.string.glass_film appears to be unused [UnusedResources]
+    <string name="glass_film">Film</string>
+            ~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:332: Warning: The resource R.string.glass_dispersion appears to be unused [UnusedResources]
+    <string name="glass_dispersion">Colour splitting</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:333: Warning: The resource R.string.glass_dispersion_note appears to be unused [UnusedResources]
+    <string name="glass_dispersion_note">Light breaking into colour at the edges, as thick glass does.</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:334: Warning: The resource R.string.glass_depth appears to be unused [UnusedResources]
+    <string name="glass_depth">Depth</string>
+            ~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:335: Warning: The resource R.string.glass_depth_note appears to be unused [UnusedResources]
+    <string name="glass_depth_note">Makes the surface read as a thicker slab. Costs more than it shows on small controls.</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:336: Warning: The resource R.string.glass_where_bar appears to be unused [UnusedResources]
+    <string name="glass_where_bar">Glass on the bottom bar</string>
+            ~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:337: Warning: The resource R.string.glass_where_mini_player appears to be unused [UnusedResources]
+    <string name="glass_where_mini_player">Glass on the playing bar</string>
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\res\values\strings.xml:339: Warning: The resource R.string.glass_reset appears to be unused [UnusedResources]
+    <string name="glass_reset">Back to the profile</string>
+            ~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UnusedResources":
+   Unused resources make applications larger and slow down builds.
+
+
+   The unused resource check can ignore tests. If you want to include
+   resources that are only referenced from tests, consider packaging them in a
+   test source set instead.
+
+   You can include test sources in the unused resource check by setting the
+   system property lint.unused-resources.include-tests =true, and to exclude
+   them (usually for performance reasons), use
+   lint.unused-resources.exclude-tests =true.
+   ,
+
+   Available options:
+
+   **skip-libraries** (default is true):
+   Whether the unused resource check should skip reporting unused resources in libraries.
+
+   Many libraries will declare resources that are part of the library surface; other modules depending on the library will also reference the resources. To avoid reporting all these resources as unused (in the context of a library), the unused resource check normally skips reporting unused resources in libraries. Instead, run the unused resource check on the consuming app module (along with `checkDependencies=true`).
+
+   However, there are cases where you want to check that all the resources declared in a library are used; in that case, you can disable the skip option.
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UnusedResources">
+           <option name="skip-libraries" value="true" />
+       </issue>
+   </lint>
+   ```
+
+C:\VibeCoded Projects\Fluidify\app\src\main\res\layout\widget_media_controls.xml:60: Warning: This ViewFlipper layout or its FrameLayout parent is possibly unnecessary; transfer the background attribute to the other view [UselessParent]
+        <ViewFlipper
+         ~~~~~~~~~~~
+
+   Explanation for issues of type "UselessParent":
+   A layout with children that has no siblings, is not a scrollview or a root
+   layout, and does not have a background, can be removed and have its
+   children moved directly into the parent for a flatter and more efficient
+   layout hierarchy.
+
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-hdpi\ic_launcher.png: Warning: Launcher icons should not fill every pixel of their square region; see the design guide for details [IconLauncherShape]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-mdpi\ic_launcher.png: Warning: Launcher icons should not fill every pixel of their square region; see the design guide for details [IconLauncherShape]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-xhdpi\ic_launcher.png: Warning: Launcher icons should not fill every pixel of their square region; see the design guide for details [IconLauncherShape]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-xxhdpi\ic_launcher.png: Warning: Launcher icons should not fill every pixel of their square region; see the design guide for details [IconLauncherShape]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-xxxhdpi\ic_launcher.png: Warning: Launcher icons should not fill every pixel of their square region; see the design guide for details [IconLauncherShape]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-hdpi\ic_launcher_round.png: Warning: Launcher icon used as round icon did not have a circular shape [IconLauncherShape]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-mdpi\ic_launcher_round.png: Warning: Launcher icon used as round icon did not have a circular shape [IconLauncherShape]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-xhdpi\ic_launcher_round.png: Warning: Launcher icon used as round icon did not have a circular shape [IconLauncherShape]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-xxhdpi\ic_launcher_round.png: Warning: Launcher icon used as round icon did not have a circular shape [IconLauncherShape]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-xxxhdpi\ic_launcher_round.png: Warning: Launcher icon used as round icon did not have a circular shape [IconLauncherShape]
+
+   Explanation for issues of type "IconLauncherShape":
+   According to the Android Design Guide
+   (https://d.android.com/r/studio-ui/designer/material/iconography) your
+   launcher icons should "use a distinct silhouette", a "three-dimensional,
+   front view, with a slight perspective as if viewed from above, so that
+   users perceive some depth."
+
+   The unique silhouette implies that your launcher icon should not be a
+   filled square.
+
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-hdpi\ic_launcher_round.png: Warning: The following unrelated icon files have identical contents: ic_launcher.png, ic_launcher_round.png [IconDuplicates]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-mdpi\ic_launcher_round.png: Warning: The following unrelated icon files have identical contents: ic_launcher.png, ic_launcher_round.png [IconDuplicates]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-xhdpi\ic_launcher_round.png: Warning: The following unrelated icon files have identical contents: ic_launcher.png, ic_launcher_round.png [IconDuplicates]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-xxhdpi\ic_launcher_round.png: Warning: The following unrelated icon files have identical contents: ic_launcher.png, ic_launcher_round.png [IconDuplicates]
+C:\VibeCoded Projects\Fluidify\app\src\main\res\mipmap-xxxhdpi\ic_launcher_round.png: Warning: The following unrelated icon files have identical contents: ic_launcher.png, ic_launcher_round.png [IconDuplicates]
+
+   Explanation for issues of type "IconDuplicates":
+   If an icon is repeated under different names, you can consolidate and just
+   use one of the icons and delete the others to make your application
+   smaller. However, duplicated icons usually are not intentional and can
+   sometimes point to icons that were accidentally overwritten or accidentally
+   not updated.
+
+C:\VibeCoded Projects\Fluidify\app\src\main\res\layout\widget_media_controls.xml:107: Warning: Avoid using sizes smaller than 11sp: 10sp [SmallSp]
+          android:textSize="10sp"
+          ~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "SmallSp":
+   Avoid using sizes smaller than 11sp.
+
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\airpods\AirPodsPreferences.kt:11: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        set(value) { prefs.edit().putBoolean("enabled", value).apply() }
+                     ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\airpods\AirPodsPreferences.kt:15: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString("verified_address", address).putString("verified_model", identity.modelNumber).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\airpods\AirPodsPreferences.kt:25: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString("second_$address", mode.name).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\airpods\AirPodsPreferences.kt:28: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+    fun recordPlatformProbe(fingerprint: String) { prefs.edit().putString("platform_build", fingerprint).apply() }
+                                                   ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\player\AudioLight.kt:153: Warning: Use the KTX extension function Canvas.withSave instead? [UseKtx]
+            val saved = native.save()
+                        ~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\bridge\BridgeState.kt:49: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        check(prefs.edit().putString(key, value.toString()).commit()) { "operation_persistence_failed" }
+              ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\CrossfadeStore.kt:36: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putInt(KEY_SECONDS, seconds).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\DownloadSettingsStore.kt:48: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_QUALITY, value.key).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\DownloadSettingsStore.kt:66: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putBoolean(KEY_WIFI_ONLY, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\DownloadSettingsStore.kt:77: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putBoolean(KEY_LIKED, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\DownloadSettingsStore.kt:93: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putBoolean(KEY_OFFLINE, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\EffectQualityStore.kt:46: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_QUALITY, quality.key).commit()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\GlassStore.kt:96: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\GlassStore.kt:146: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\GlassStore.kt:159: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putFloat(key, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\GlassStore.kt:164: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putBoolean(key, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\LanguageStore.kt:50: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_LANGUAGE, tag).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\LibraryViewStore.kt:22: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+            prefs.edit().putBoolean(KEY_GRID, value).apply()
+            ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\LibraryViewStore.kt:29: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+            prefs.edit().putString(KEY_ORDER, value).apply()
+            ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\LibraryViewStore.kt:36: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+            prefs.edit().putBoolean(KEY_DESC, value).apply()
+            ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\ListeningRepository.kt:42: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        check(prefs.edit().putString("playback-continuity", java.util.UUID.randomUUID().toString()).commit())
+              ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\ListeningRepository.kt:53: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString("connected-account", account.id).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\ListeningRepository.kt:62: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().remove("connected-account").apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\ListeningRepository.kt:68: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putBoolean("record:${account.id}", enabled).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\MainActivity.kt:149: Warning: Use the KTX extension function Int.toDrawable instead? [UseKtx]
+            android.graphics.drawable.ColorDrawable(
+            ^
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\widget\media\MediaWidgetUpdater.kt:743: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+      .setData(android.net.Uri.parse("fluidify://widget/$widgetId/$action"))
+               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\widget\media\MediaWidgetUpdater.kt:780: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+      ?.setData(android.net.Uri.parse("fluidify://widget/$widgetId/open"))
+                ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\widget\media\MediaWidgetUpdater.kt:1217: Warning: Use the KTX function createBitmap instead? [UseKtx]
+      val output = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\widget\media\MediaWidgetUpdater.kt:1218: Warning: Use the KTX function createBitmap instead? [UseKtx]
+      val layer = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+                  ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\widget\media\MediaWidgetUpdater.kt:1274: Warning: Use the KTX extension function Bitmap.scale instead? [UseKtx]
+    Bitmap.createScaledBitmap(artwork, 96, 96, true)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\widget\media\MediaWidgetUpdater.kt:1301: Warning: Use the KTX extension function Bitmap.get instead? [UseKtx]
+      val c = src.getPixel(x, y)
+              ~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\widget\media\MediaWidgetUpdater.kt:1409: Warning: Use the KTX function createBitmap instead? [UseKtx]
+  val output = Bitmap.createBitmap(320, 320, Bitmap.Config.ARGB_8888)
+               ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\widget\media\MediaWidgetUpdater.kt:1430: Warning: Use the KTX extension function Bitmap.get instead? [UseKtx]
+      hash = hash * 31L + getPixel(x, y)
+                          ~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PathfinderKeys.kt:95: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+                val edit = prefs.edit().putLong(KEY_CHECKED, System.currentTimeMillis())
+                           ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PathfinderKeys.kt:128: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+                    ?.let { prefs.edit().putString(KEY_ARTIST, it).apply() }
+                            ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\PhoneWearBridge.kt:206: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        surfacePrefs.edit().putBoolean(KEY_LOCAL_ONLY, surfaces.phoneMediaLocalOnly).apply()
+        ~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PinnedPlaylistStore.kt:39: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_PINNED, updated.joinToString(SEPARATOR)).commit()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PinnedPlaylistStore.kt:45: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().remove(KEY_PINNED).commit()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PlaybackStore.kt:80: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PlaybackStore.kt:92: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+    fun clear() = prefs.edit().remove(KEY_STATE).apply()
+                  ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\player\PlayerScreen.kt:1658: Warning: Use the KTX extension function Bitmap.get instead? [UseKtx]
+                val pixel = getPixel(x, y)
+                            ~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PlaylistOrderStore.kt:32: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_ORDER, updated.joinToString(SEPARATOR)).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PlaylistOrderStore.kt:37: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().remove(KEY_ORDER).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:53: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_TRACK_SORT, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:63: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putBoolean(KEY_TRACK_DESC, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:75: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_DEVICE_ID, id).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:93: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putBoolean(KEY_ONBOARDED, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:107: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putBoolean(KEY_PLAYER_OPEN, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:120: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putInt(KEY_PANEL_REACH, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:136: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putBoolean(KEY_CANVAS, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:157: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:164: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().remove(KEY_PROFILE_NAME).remove(KEY_PROFILE_AVATAR).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:171: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putLong(KEY_LAST_UPDATE_CHECK, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:183: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_SKIPPED_UPDATE, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:200: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_UPDATE_CHANNEL, value.word).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:218: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putBoolean(KEY_LOCAL_FILES, value).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\PreferencesStore.kt:228: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_THEME, value.key).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\QualityStore.kt:41: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_QUALITY, quality.key).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\RecentContextsStore.kt:49: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY, json.encodeToString(serializer, updated)).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\RecentContextsStore.kt:55: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().remove(KEY).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\RecentStore.kt:42: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\RecentStore.kt:49: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().remove(KEY_TRACKS).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\data\SearchHistoryStore.kt:49: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_TRACKS, json.encodeToString(serializer, tracks)).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\ui\settings\SettingsScreen.kt:470: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+                                    android.net.Uri.parse("package:${context.packageName}"),
+                                    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\auth\SpotifyOAuth.kt:190: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+            val authUri = Uri.parse(AUTHORIZE_URL).buildUpon()
+                          ~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\auth\SpotifyOAuth.kt:213: Warning: Use the KTX extension function String.toUri instead? [UseKtx]
+            val callback = Uri.parse("http://127.0.0.1$target")
+                           ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\auth\TokenStore.kt:104: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+                    prefs.edit().clear().commit()
+                    ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\auth\TokenStore.kt:123: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().apply {
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WatchDownloadsRemote.kt:35: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+            if (!prefs.edit().putString(KEY_PENDING, encoded).commit()) {
+                 ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WatchUpdateCoordinator.kt:186: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        set(value) = prefs.edit().putBoolean(KEY_AUTO, value).apply()
+                     ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WatchUpdateCoordinator.kt:262: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().remove(KEY_CHECKED).remove(KEY_OUTCOME_VERSION).remove(KEY_OUTCOME_AT).remove(KEY_OUTCOME_NOTES).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WatchUpdateCoordinator.kt:285: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+                    prefs.edit().putLong(KEY_CHECKED, now).apply()
+                    ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WatchUpdateCoordinator.kt:456: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_PUSH_JOB, key)
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WatchUpdateCoordinator.kt:472: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(slot, key).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WatchUpdateCoordinator.kt:505: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        if (success) prefs.edit().putLong(KEY_CHECKED, System.currentTimeMillis()).apply()
+                     ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WatchUpdateCoordinator.kt:601: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+            prefs.edit().putString(KEY_OFFER, WearCodec.json.encodeToString(UpdateOffer.serializer(), offer))
+            ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WatchUpdateCoordinator.kt:771: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().remove(KEY_OFFER).remove(KEY_OFFER_AT).remove(KEY_OFFER_NODE).remove(KEY_OFFER_NOTES).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WatchUpdateCoordinator.kt:785: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_OUTCOME_VERSION, version).putLong(KEY_OUTCOME_AT, System.currentTimeMillis())
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WearLibrarySource.kt:115: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs.edit().putString(KEY_MADE, dev.pampa.fluidify.wear.protocol.WearCodec.json.encodeToString(MadeList.serializer(), MadeList(merged.map { MadeItem(it.uri, it.name, it.artworkUrl) }))).apply()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\wear\WearLibrarySource.kt:324: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+            context.getSharedPreferences(MADE_FOR_YOU_PREFS, android.content.Context.MODE_PRIVATE).edit().clear().apply()
+            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\app\src\main\java\dev\lelonio\square\auth\WebApiAccount.kt:62: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+            prefs.edit().putString(KEY_CLIENT_ID, trimmed.ifEmpty { null }).commit()
+            ~~~~~~~~~~~~
+
+   Explanation for issues of type "UseKtx":
+   The Android KTX libraries decorates the Android platform SDK as well as
+   various libraries with more convenient extension functions available from
+   Kotlin, allowing you to use default parameters, named parameters, and
+   more.
+
+   Available options:
+
+   **remove-defaults** (default is true):
+   Whether to skip arguments that match the defaults provided by the extension.
+
+   Extensions often provide default values for some of the parameters. For example:
+   ```kotlin
+   fun Path.readLines(charset: Charset = Charsets.UTF_8): List<String> { return Files.readAllLines(this, charset) }
+   ```
+   This lint check will by default automatically omit parameters that match the default, so if your code was calling
+
+   ```kotlin
+   Files.readAllLines(file, Charset.UTF_8)
+   ```
+   lint would replace this with
+   ```kotlin
+   file.readLines()
+   ```
+   rather than
+
+   ```kotlin
+   file.readLines(Charset.UTF_8
+   ```
+   You can turn this behavior off using this option.
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UseKtx">
+           <option name="remove-defaults" value="true" />
+       </issue>
+   </lint>
+   ```
+
+   **require-present** (default is true):
+   Whether to only offer extensions already available.
+
+   This option lets you only have lint suggest extension replacements if those extensions are already available on the class path (in other words, you're already depending on the library containing the extension method.)
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UseKtx">
+           <option name="require-present" value="true" />
+       </issue>
+   </lint>
+   ```
+
+C:\VibeCoded Projects\Fluidify\app\build.gradle.kts:299: Warning: Use version catalog instead [UseTomlInstead]
+    implementation("com.github.MuntashirAkon.spake2-java:spake2-android:2.2.1")
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "UseTomlInstead":
+   If your project is using a libs.versions.toml file, you should place all
+   Gradle dependencies in the TOML file. This lint check looks for version
+   declarations outside of the TOML file and suggests moving them (and in the
+   IDE, provides a quickfix to performing the operation automatically).
+
+C:\VibeCoded Projects\Fluidify\app\src\main\res\layout\widget_media_controls.xml:198: Warning: Hardcoded string "0:00 / 0:00", should use @string resource [HardcodedText]
+        android:text="0:00 / 0:00"
+        ~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+   Explanation for issues of type "HardcodedText":
+   Hardcoding text attributes directly in layout files is bad for several
+   reasons:
+
+   * When creating configuration variations (for example for landscape or
+   portrait) you have to repeat the actual text (and keep it up to date when
+   making changes)
+
+   * The application cannot be translated to other languages by just adding
+   new translations for existing string resources.
+
+   There are quickfixes to automatically extract this hardcoded string into a
+   resource lookup.
+
+0 errors, 214 warnings, 6 hints

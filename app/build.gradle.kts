@@ -1,6 +1,7 @@
 import java.util.Properties
 
 plugins {
+    alias(libs.plugins.ksp)
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
@@ -80,8 +81,8 @@ android {
         // cpal's Android host is AAudio, which the ndk crate gates at API 26.
         minSdk = 26
         targetSdk = 35
-        versionCode = 24
-        versionName = "2.0.1"
+        versionCode = 26
+        versionName = "2.1.0-beta.2"
 
         // The shipped set, and only that. AGP takes the **union** of this and
         // whatever a build type adds — clearing the build type's own list does
@@ -116,6 +117,12 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
+            // Explicit device-test opt-in: retain installed app data by using its existing key.
+            // The normal debug signing configuration is unchanged.
+            if (providers.gradleProperty("signDebugWithRelease").orNull == "true") {
+                signingConfig = signingConfigs.findByName("release")
+                    ?: error("signDebugWithRelease requires the existing release signing configuration")
+            }
             // The emulator's architecture too; see the note in defaultConfig.
             ndk {
                 abiFilters += nativeAbis
@@ -219,7 +226,11 @@ android {
     }
 }
 
+ksp { arg("room.schemaLocation", "$projectDir/schemas") }
+
 dependencies {
+    implementation(libs.androidx.room.runtime)
+    ksp(libs.androidx.room.compiler)
     implementation(libs.androidx.work.runtime)
     implementation(libs.androidx.core.ktx)
     // Installs baseline-prof.txt on first run, so the code the bar and the
@@ -272,6 +283,7 @@ dependencies {
     // e aggiornamento in-app via Pampa Store.
     implementation(project(":engine-ui"))
     implementation(project(":engine-update"))
+    implementation(project(":engine-ai-bridge"))
 
     // The watch companion: what the two apps say to each other, and the Data Layer that carries it.
     implementation(project(":wear-protocol"))
@@ -279,7 +291,12 @@ dependencies {
     implementation(libs.kotlinx.coroutines.play.services)
     // Installing the watch app from the phone over wireless debugging; see wear/install.
     // Conscrypt for the TLS 1.3 key export that Wear OS's pairing needs.
-    implementation(libs.libadb.android)
+    implementation(libs.libadb.android) {
+        // libadb 3.0.0's old SPAKE2 artifact ships 4 KB-aligned native libraries.
+        exclude(group = "com.github.MuntashirAkon.spake2-java", module = "android")
+    }
+    // Same pairing API, with 16 KB-aligned arm64/x86_64 ELF LOAD segments.
+    implementation("com.github.MuntashirAkon.spake2-java:spake2-android:2.2.1")
     implementation(libs.conscrypt.android)
     // Already libadb's own, at runtime; named here because the phone's key and certificate
     // for the pairing are made with it.

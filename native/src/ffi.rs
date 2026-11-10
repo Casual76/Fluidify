@@ -180,6 +180,60 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeSta
     });
 }
 
+/// Explicit phone API; legacy nativeStart keeps its existing signature and semantics.
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeStartLocal(
+    mut env: JNIEnv, _class: JClass, client_id: JString, device_name: JString,
+    device_id: JString, credentials_dir: JString, cache_dir: JString, language: JString,
+    bitrate_kbps: jint, crossfade_ms: jint, source: JString, revision: jlong,
+    manual: jboolean, listener: JObject,
+) -> jlong {
+    let args: engine::EngineResult<_> = (|| Ok((
+        read_string(&mut env, &client_id)?, read_string(&mut env, &device_name)?,
+        read_string(&mut env, &device_id)?, read_string(&mut env, &credentials_dir)?,
+        read_string(&mut env, &cache_dir)?, read_string(&mut env, &language)?,
+        read_string(&mut env, &source)?,
+        env.new_global_ref(&listener).map_err(|e| e.to_string())?,
+    )))();
+    guard(&mut env, "StartLocal", || {
+        if revision < 0 { return Err("invalid network revision".into()); }
+        let (client, name, device, credentials, cache, language, source, listener) = args?;
+        engine::start_local(&client, &name, &device, &credentials, &cache, &language,
+            bitrate_kbps, crossfade_ms, listener, revision as u64, manual != JNI_FALSE, &source).map(|h| h as jlong)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeApplyNetworkSnapshot(
+    mut env: JNIEnv, _class: JClass, handle: jlong, revision: jlong, manual: jboolean,
+) -> jlong {
+    guard(&mut env, "ApplyNetworkSnapshot", || {
+        if handle <= 0 || revision < 0 { return Err("invalid network owner/revision".into()); }
+        engine::apply_network_snapshot(handle as u64, librespot_core::network::Snapshot {
+            revision: revision as u64, manual: manual != JNI_FALSE,
+        }).map(|r| r as jlong)
+    })
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeEnsureOnline(
+    mut env: JNIEnv, _class: JClass, handle: jlong, revision: jlong, token: JString,
+) {
+    let token = read_string(&mut env, &token);
+    guard(&mut env, "EnsureOnline", || {
+        if handle <= 0 || revision < 0 { return Err("invalid network owner/revision".into()); }
+        engine::ensure_online(handle as u64, revision as u64, &token?)
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeBindDownloadSource(
+    mut env: JNIEnv, _class: JClass, handle: jlong, source: JString,
+) {
+    let source = read_string(&mut env, &source);
+    guard(&mut env, "BindDownloadSource", || engine::bind_download_source(handle as u64, &source?));
+}
+
 #[no_mangle]
 pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeLoadQueue(
     mut env: JNIEnv,
@@ -213,6 +267,50 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeLoa
                 position_ms.max(0) as u32,
                 context,
                 play_as_context == JNI_TRUE,
+            )
+        })
+    });
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeLoadOwnedQueue(
+    mut env: JNIEnv,
+    _class: JClass,
+    uris_json: JString,
+    index: jint,
+    start_playing: jboolean,
+    position_ms: jint,
+    context_uri: JString,
+    play_as_context: jboolean,
+    restore_nonce: JString,
+) {
+    // JSON rather than a jobjectArray: the Kotlin side already serialises track
+    // lists for the catalogue calls, and one decoder is easier to keep correct
+    // than two ways of crossing the same boundary.
+    let nonce = match read_string(&mut env, &restore_nonce) {
+        Ok(value) if value.len() == 36 && value.chars().all(|c| c.is_ascii_hexdigit() || c == '-') => value,
+        _ => { let _ = env.throw_new(EXCEPTION, "invalid restore nonce"); return; }
+    };
+    let context = read_string(&mut env, &context_uri).unwrap_or_default();
+    let raw = match read_string(&mut env, &uris_json) {
+        Ok(value) => value,
+        Err(message) => {
+            let _ = env.throw_new(EXCEPTION, message);
+            return;
+        }
+    };
+    guard(&mut env, "LoadQueue", || {
+        serde_json::from_str::<Vec<String>>(&raw)
+            .map_err(|e| format!("bad queue: {e}"))
+            .and_then(|uris| {
+            engine::load_queue_owned(
+                uris,
+                index.max(0) as u32,
+                start_playing == JNI_TRUE,
+                position_ms.max(0) as u32,
+                context,
+                play_as_context == JNI_TRUE,
+                Some(nonce),
             )
         })
     });
@@ -1074,3 +1172,19 @@ pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeCan
     let uri = read_string(&mut env, &track_uri);
     guard(&mut env, "CancelDownload", || downloads::cancel(&uri?));
 }
+
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativeRetireNetworkOwner(
+    mut env: JNIEnv, _class: JClass, handle: jlong,
+) {
+    guard(&mut env, "RetireNetworkOwner", || engine::retire_network_owner(handle as u64));
+}
+
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativePushNetworkScope(
+    mut env: JNIEnv, _class: JClass, handle: jlong, revision: jlong,
+) { guard(&mut env, "PushNetworkScope", || engine::push_network_scope(handle as u64, revision as u64)); }
+#[no_mangle]
+pub extern "system" fn Java_dev_lelonio_square_nativecore_NativeBridge_nativePopNetworkScope(
+    mut env: JNIEnv, _class: JClass,
+) { guard(&mut env, "PopNetworkScope", engine::pop_network_scope); }

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.orchestrator.FailureKindsTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:20.076Z" hostname="PC_FISSO" time="0.003">
+  <properties/>
+  <testcase name="AssistantFailure of porta la ragione, l'errore e l'attesa in secondi interi" classname="dev.antigravity.fluidengine.ai.orchestrator.FailureKindsTest" time="0.001"/>
+  <testcase name="un AssistantFailure che c'e' gia' non si rifa" classname="dev.antigravity.fluidengine.ai.orchestrator.FailureKindsTest" time="0.0"/>
+  <testcase name="la trascrizione che fallisce per la rete dice rete, non audio incomprensibile" classname="dev.antigravity.fluidengine.ai.orchestrator.FailureKindsTest" time="0.002"/>
+  <testcase name="la tabella dei guasti, con un'altra ragione per quelli che non si sanno leggere" classname="dev.antigravity.fluidengine.ai.orchestrator.FailureKindsTest" time="0.0"/>
+  <testcase name="la tabella dice le stesse cose del failover per lo stesso guasto" classname="dev.antigravity.fluidengine.ai.orchestrator.FailureKindsTest" time="0.0"/>
+  <testcase name="per la trascrizione il resto e' una trascrizione fallita" classname="dev.antigravity.fluidengine.ai.orchestrator.FailureKindsTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -21,6 +21,8 @@ use crate::{convert::i24, player::duration_to_coefficient};
 /// loaded with no connection at all.
 #[derive(Clone)]
 pub struct DownloadedTrack {
+    /// Optional owner/index fence rechecked before a decoded load is published.
+    pub is_current: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
     pub path: PathBuf,
     /// `None` for the rare unencrypted file, matching `AudioDecrypt`'s own
     /// convention that a missing key means "pass the bytes through".
@@ -206,6 +208,8 @@ pub struct PlayerConfig {
     ///
     /// `None`, the default, is upstream behaviour: the load goes out at once.
     pub session_ready: Option<SessionReady>,
+    /// Captured once per load. A denied/revoked remote load is terminal, never retried.
+    pub network_lease: Option<Arc<dyn Fn() -> librespot_core::network::NetworkLease + Send + Sync>>,
 }
 
 impl Default for PlayerConfig {
@@ -228,6 +232,7 @@ impl Default for PlayerConfig {
             crossfade_duration_ms: 0,
             download_lookup: None,
             session_ready: None,
+            network_lease: None,
         }
     }
 }

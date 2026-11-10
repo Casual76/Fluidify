@@ -1,0 +1,7 @@
+<resources>
+    <string name="legacy_downloads_title">Wem gehören diese Downloads?</string>
+    <string name="legacy_downloads_message">Vor der Kontentrennung gespeicherte Downloads befinden sich weiterhin auf diesem Gerät. Vorhandene Dateien und Offline-Sammlungen dem Spotify-Konto %1$s zuordnen?\n\nEs werden keine neuen Downloads oder automatischen Synchronisierungen gestartet. Für ein anderes Konto wähle „Später“ und melde dich dort an.</string>
+    <string name="legacy_downloads_later">Später / anderes Konto</string>
+    <string name="legacy_downloads_assign">Diesem Konto zuordnen</string>
+    <string name="legacy_downloads_failed">Die Downloads konnten nicht zugeordnet werden. Deine Dateien sind sicher; versuche es erneut.</string>
+</resources>

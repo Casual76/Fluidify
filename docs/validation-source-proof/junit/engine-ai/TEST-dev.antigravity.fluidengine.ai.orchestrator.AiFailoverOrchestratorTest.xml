@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:09.055Z" hostname="PC_FISSO" time="3.047">
+  <properties/>
+  <testcase name="lo stato Failed e il Done portano provider, perche' e cambi, con default che non rompono nessuno" classname="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" time="0.001"/>
+  <testcase name="una risposta vuota per fine dei token si riprova con piu' token, poi si cambia, poi si fallisce, mai DONE" classname="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" time="0.004"/>
+  <testcase name="il giro chiede il timeout lungo quando il modello pensa" classname="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" time="0.001"/>
+  <testcase name="troppo lunga anche accorciata passa alla riserva, e fissata fallisce con CONTEXT_TOO_LONG" classname="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" time="0.002"/>
+  <testcase name="col servizio fissato un tool_use_failed che si ripete fallisce con il provider e il perche'" classname="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" time="1.508"/>
+  <testcase name="il modello del router sparito si dice all'app, ma non sposta la domanda" classname="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" time="0.001"/>
+  <testcase name="tool_use_failed si riprova una volta, poi si passa a Gemini e il perche' resta nel log" classname="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" time="1.519"/>
+  <testcase name="una chiamata malformata vuota si riprova identica, e col servizio fissato poi si fallisce" classname="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" time="0.002"/>
+  <testcase name="una richiesta troppo lunga si accorcia una volta, storia a meta' e risultati dei tool piu' corti" classname="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" time="0.005"/>
+  <testcase name="se il modello non puo' avere piu' token, la riprova pensa meno" classname="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" time="0.001"/>
+  <testcase name="col servizio fissato un modello sparito fallisce con MODEL_UNAVAILABLE, e l'app lo sa lo stesso" classname="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" time="0.001"/>
+  <testcase name="un modello sparito si dice all'app, e la domanda passa alla riserva" classname="dev.antigravity.fluidengine.ai.orchestrator.AiFailoverOrchestratorTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

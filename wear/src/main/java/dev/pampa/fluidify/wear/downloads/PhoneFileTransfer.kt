@@ -17,6 +17,8 @@ import kotlinx.serialization.json.jsonPrimitive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.io.DataInputStream
@@ -34,8 +36,15 @@ import java.io.FileOutputStream
  * With [stageKbps] the phone first fetches the track at that quality into a
  * scratch area of its own, for a track it does not have as the watch wants it.
  */
-class PhoneFileTransfer(private val context: Context, private val store: WatchDownloadStore) {
+class PhoneFileTransfer(
+    private val context: Context,
+    private val store: WatchDownloadFiles,
+    private val authority: WatchDownloadAuthority,
+    private val local: WatchDownloadAuthority.Access,
+    private val expectedPhone: dev.pampa.fluidify.wear.link.PhoneAccountSession.Scope?,
+) {
 
+    private val accounts = dev.pampa.fluidify.wear.link.PhoneAccountSession.forContext(context)
     private val channels by lazy { Wearable.getChannelClient(context) }
 
     /**
@@ -49,13 +58,17 @@ class PhoneFileTransfer(private val context: Context, private val store: WatchDo
      * track) is not asked twice.
      */
     suspend fun fetch(nodeId: String, trackUri: String, stageKbps: Int? = null): Result<Unit> {
-        var result = fetchOnce(nodeId, trackUri, stageKbps)
+        val account = expectedPhone ?: return Result.failure(TransferRefused("account-changed"))
+        if (account.namespace != local.namespace || !accounts.isCurrent(account) || !authority.isCurrent(local))
+            return Result.failure(TransferRefused("account-changed"))
+        var result = fetchOnce(account, nodeId, trackUri, stageKbps)
         var attempt = 0
-        while (result.isFailure && TransferRetry.shouldRetry(result.exceptionOrNull(), attempt) && phoneStillThere(nodeId)) {
+        while (accounts.isCurrent(account) && result.isFailure && TransferRetry.shouldRetry(result.exceptionOrNull(), attempt) && phoneStillThere(nodeId)) {
             delay(TransferRetry.backoffMs(attempt))
             attempt++
             Log.i(TAG, "resuming $trackUri, attempt ${attempt + 1}")
-            result = fetchOnce(nodeId, trackUri, stageKbps)
+            if (!accounts.isCurrent(account)) return Result.failure(TransferRefused("account-changed"))
+            result = fetchOnce(account, nodeId, trackUri, stageKbps)
         }
         return result
     }
@@ -64,7 +77,9 @@ class PhoneFileTransfer(private val context: Context, private val store: WatchDo
         Wearable.getNodeClient(context).connectedNodes.await().any { it.id == nodeId }
     }.getOrDefault(false)
 
-    private suspend fun fetchOnce(nodeId: String, trackUri: String, stageKbps: Int?): Result<Unit> = withContext(Dispatchers.IO) {
+    private suspend fun fetchOnce(account: dev.pampa.fluidify.wear.link.PhoneAccountSession.Scope, nodeId: String, trackUri: String, stageKbps: Int?): Result<Unit> = withContext(Dispatchers.IO) {
+        accounts.use(account) { Unit }
+        authority.use(local) { Unit }
         val part = store.partFile(trackUri) ?: return@withContext Result.failure(IllegalArgumentException("not a track"))
         part.parentFile?.mkdirs()
         val identity = store.partIdentityFile(trackUri)!!
@@ -72,8 +87,14 @@ class PhoneFileTransfer(private val context: Context, private val store: WatchDo
         val offset = if (part.isFile && fileId != null) part.length() else 0L
         val channel = runCatching { channels.openChannel(nodeId, WearPaths.DOWNLOAD_FILE).await() }
             .getOrElse { return@withContext Result.failure(it) }
+        val observer = launch {
+            accounts.scope.collect { current -> if (current != account) channels.close(channel).await() }
+        }
+        val localObserver = launch {
+            authority.access.collect { current -> if (current !== local) channels.close(channel).await() }
+        }
         try {
-            val request = WearCodec.encode(FileRequest.serializer(), FileRequest(trackUri, offset, stageKbps, fileId))
+            val request = WearCodec.encode(FileRequest.serializer(), FileRequest(trackUri, offset, stageKbps, fileId, account.session))
             channels.getOutputStream(channel).await().use { out ->
                 out.write(request)
                 out.write('\n'.code)
@@ -87,6 +108,9 @@ class PhoneFileTransfer(private val context: Context, private val store: WatchDo
                     ?: return@withContext Result.failure(IllegalStateException("the phone did not answer"))
                 val header = WearCodec.decodeOrNull(FileHeader.serializer(), headerLine.encodeToByteArray())
                     ?: return@withContext Result.failure(IllegalStateException("unreadable answer"))
+                accounts.use(account) { Unit }
+                authority.use(local) { Unit }
+                if (header.accountSession != account.session) return@withContext Result.failure(TransferRefused("account-changed"))
                 val sidecar = header.sidecar
                 if (!header.ok || sidecar == null) {
                     return@withContext Result.failure(TransferRefused(header.error ?: "refused"))
@@ -98,14 +122,28 @@ class PhoneFileTransfer(private val context: Context, private val store: WatchDo
                 if (resumeFrom != 0L && (resumeFrom != offset || actualId != fileId || resumeFrom >= header.totalBytes)) {
                     return@withContext Result.failure(TransferRefused("invalid resume offset"))
                 }
-                if (resumeFrom == 0L && part.isFile) part.delete()
-                identity.writeText(actualId)
+                accounts.use(account) { authority.use(local) {
+                    if (resumeFrom == 0L && part.isFile) part.delete()
+                    identity.writeText(actualId)
+                } }
                 guarded.timeoutAfterProgress(PROGRESS_WAIT_MS, deadlineMs = DEADLINE_MS)
-                runInterruptible { FileOutputStream(part, resumeFrom > 0).use { out -> input.copyTo(out, BUFFER) } }
+                runInterruptible {
+                    accounts.use(account) { authority.use(local) { FileOutputStream(part, resumeFrom > 0) } }.use { out ->
+                        val buffer = ByteArray(BUFFER)
+                        while (true) {
+                            accounts.use(account) { Unit }
+                            authority.use(local) { Unit }
+                            val count = input.read(buffer)
+                            if (count < 0) break
+                            accounts.use(account) { authority.use(local) { out.write(buffer, 0, count) } }
+                        }
+                    }
+                }
                 if (part.length() != header.totalBytes) {
                     return@withContext Result.failure(IllegalStateException("cut off at ${part.length()} of ${header.totalBytes}"))
                 }
-                if (!store.adopt(trackUri, sidecar)) {
+                accounts.use(account) { Unit }
+                if (!WatchPhoneFileCommit(accounts, account, authority, local, store).adopt(trackUri, header)) {
                     return@withContext Result.failure(IllegalStateException("could not file the track"))
                 }
             }
@@ -115,6 +153,8 @@ class PhoneFileTransfer(private val context: Context, private val store: WatchDo
             Log.i(TAG, "transfer of $trackUri stopped: ${error.message}")
             Result.failure(error)
         } finally {
+            observer.cancel()
+            localObserver.cancel()
             withContext(NonCancellable) { runCatching { channels.close(channel).await() } }
         }
     }

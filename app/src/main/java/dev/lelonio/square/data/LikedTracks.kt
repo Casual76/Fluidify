@@ -1,11 +1,9 @@
 package dev.lelonio.square.data
 
 import dev.lelonio.square.nativecore.NativeBridge
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.withContext
 
 /**
  * Which tracks are in Liked Songs, for the whole process.
@@ -58,7 +56,7 @@ class LikedTracks(private val gateway: Gateway) {
 
     /** Saves or unsaves [uri] in Liked Songs, through the access point. */
     suspend fun set(uri: String, liked: Boolean) {
-        withContext(Dispatchers.IO) { NativeBridge.setLiked(uri, liked) }
+        SpotifyNetworkPolicy.io { NativeBridge.setLiked(uri, liked) }
         synchronized(notSaved) { if (liked) notSaved -= uri else notSaved += uri }
         known.value = if (liked) known.value + uri else known.value - uri
     }

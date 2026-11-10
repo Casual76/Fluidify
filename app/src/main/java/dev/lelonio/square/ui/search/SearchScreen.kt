@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import dev.lelonio.square.R
 import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.data.SearchItem
+import dev.lelonio.square.data.SearchResultScope
 import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.Artwork
 import dev.lelonio.square.ui.components.SwipeToQueue
@@ -96,10 +97,11 @@ fun SearchScreen(
     onTrackMenu: (CatalogTrack) -> Unit,
     onOpenContext: (SearchItem) -> Unit,
 ) {
-    var kind by remember(state.query) { mutableStateOf(Kind.ALL) }
+    var kind by remember(state.query, state.resultScope) { mutableStateOf(Kind.ALL) }
     // A new search answers a new question, so the page goes back to showing all
     // of the answer rather than staying filtered to what the last one was about.
-    val query = state.query
+    // A source change must also release an artist filter before showing downloads.
+    val localResults = state.resultScope != SearchResultScope.ONLINE
 
     val overscroll = rememberFluidEdgeOverscroll()
 
@@ -132,7 +134,20 @@ fun SearchScreen(
         // box asks which of the two is listening. What is left here is the
         // answer, which is what the page was ever for.
 
-        if (!state.results.isEmpty && !state.loading) {
+        if (localResults && state.query.isNotBlank()) {
+            item(contentType = "scope") {
+                SectionTitle(stringResource(R.string.search_downloads_scope))
+            }
+            if (state.resultScope == SearchResultScope.DOWNLOADS_NETWORK_FALLBACK) {
+                item(contentType = "scope-explanation") {
+                    Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
+                        Message(stringResource(R.string.search_downloads_network_fallback))
+                    }
+                }
+            }
+        }
+
+        if (!localResults && !state.results.isEmpty && !state.loading) {
             item(contentType = "chips") {
                 KindRow(kind) { kind = it }
             }
@@ -184,13 +199,18 @@ fun SearchScreen(
             }
 
             state.results.isEmpty -> item(contentType = "status") {
-                StatusBox { Message(stringResource(R.string.no_results_for, state.query)) }
+                StatusBox {
+                    Message(stringResource(
+                        if (localResults) R.string.search_downloads_empty else R.string.no_results_for,
+                        state.query,
+                    ))
+                }
             }
 
             else -> {
                 val all = kind == Kind.ALL
                 val tracks = state.results.tracks
-                    .let { if (all) it.take(TOP_RESULTS) else it }
+                    .let { if (all && !localResults) it.take(TOP_RESULTS) else it }
 
                 if ((all || kind == Kind.TRACKS) && tracks.isNotEmpty()) {
                     item(contentType = "section") { SectionTitle(stringResource(R.string.tracks)) }

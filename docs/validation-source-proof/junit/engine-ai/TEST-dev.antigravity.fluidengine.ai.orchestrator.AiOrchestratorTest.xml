@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" tests="21" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:13.134Z" hostname="PC_FISSO" time="4.151">
+  <properties/>
+  <testcase name="una tool call al giro forzato si ignora e vale il testo" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.006"/>
+  <testcase name="un 429 senza riserve aspetta il retry-after con il conto alla rovescia" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="1.031"/>
+  <testcase name="due giri con chiamate parallele, poi la risposta in streaming, con gli stati in ordine" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.061"/>
+  <testcase name="il tool del modello avanzato porta il resto del giro sul livello profondo" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.015"/>
+  <testcase name="un allegato che il modello non regge passa dalla traduzione dell'app" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.062"/>
+  <testcase name="un 429 su Groq passa a Gemini con la stessa conversazione" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.046"/>
+  <testcase name="un allegato che il modello profondo regge entra come parte e alza il livello" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.047"/>
+  <testcase name="la cancellazione a meta' stream non tocca la conversazione" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.063"/>
+  <testcase name="senza provider la domanda fallisce con NO_KEYS" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.001"/>
+  <testcase name="dopo sei giri di tool si forza la risposta senza strumenti" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.029"/>
+  <testcase name="un flusso che si spezza dopo del testo si rifa' senza stream" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.001"/>
+  <testcase name="col servizio fissato lo stadio 1 che fallisce non fa fallire la domanda" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.015"/>
+  <testcase name="la riserva riparte dalla chat, non dal profondo del provider di prima" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.077"/>
+  <testcase name="il router che dice profondo fa partire il giro sul modello profondo" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.016"/>
+  <testcase name="altri_tool aggiunge un gruppo al giro dopo, ma mai le azioni se sono spente" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.046"/>
+  <testcase name="col servizio fissato un 429 aspetta anche se c'e' una riserva, e non si cambia mai provider" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="1.023"/>
+  <testcase name="il pre-router dell'app salta lo stadio 1, il suggerimento arriva al router" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.03"/>
+  <testcase name="un flusso che si spezza prima di dire qualcosa segue il failover" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="1.519"/>
+  <testcase name="legacy success prose is nonverified in next provider input" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.03"/>
+  <testcase name="su OpenRouter lo stadio 1 si salta e il catalogo parte intero" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.031"/>
+  <testcase name="col servizio fissato un 429 che non passa fallisce con RATE_LIMITED senza toccare la riserva" classname="dev.antigravity.fluidengine.ai.orchestrator.AiOrchestratorTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -107,7 +107,7 @@ impl Login5Manager {
             if message.has_error() {
                 match message.error() {
                     LoginError::TIMEOUT | LoginError::TOO_MANY_ATTEMPTS => {
-                        sleep(LOGIN_TIMEOUT).await
+                        self.session().network().run(async { sleep(LOGIN_TIMEOUT).await; Ok(()) }).await?
                     }
                     others => return Err(Login5Error::FaultyRequest(others).into()),
                 }

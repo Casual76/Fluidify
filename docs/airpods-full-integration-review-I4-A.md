@@ -1,0 +1,79 @@
+﻿# Independent review A — I4 stable
+
+Reviewer: GPT-6.1 Sol, high effort, independent non-author. Phase IMPLEMENTATION, CORRECTIVE4, version I4 stable, maximum four corrective rounds consumed; no reset and no authority for a fifth round. No subdelegation.
+
+Candidate: `C:/VibeCoded Projects/Fluidify/build/review-airpods-full-implementation-I4-stable` (S). Manifest SHA256 `f80a75ca6e754204f2272c0b8c188adff55d5afcfc8c0e9986deb631f36eae66`. Read the separately authorized review-I4-addendum.md before the frozen entry point. Its corrected requirement is used: Start tracking requires current automation opt-in; an admitted active session must remain stoppable after preference revocation.
+
+Software review does not meet the implementation threshold: A1 and A2 remain concrete software gaps. This is not a hardware failure score. Product FALSE and H1/G1 NV remain separate. Compatibility beta 2.1.0-beta.1/code25 and nominal Engine 3.0.5 do not grant AirPods approval, enabled-path APK qualification, Binder/account readiness or a functional Engine update.
+
+| Criterion | Score0-10 | Verification status | Rationale/evidence | Problems/severity |
+|---|---|---|---|---|
+| I1 | 6 | Source reconciliation completed for 143 records; end-to-end coverage incomplete | Individual 35/67/41 annex, actual frozen source ranges, raw 108-file upstream key scan, dynamic long-press writer, native entry/dispatch/encoder/state paths. Manual phone stream control narrowed; long-press outcome presentation missing. | A1 medium; A2 medium. Per-row runtime gaps explicit. |
+| I2 | NV | Partial source inspection | Home gap/visibility, player entry, common binding/settings and picker inspected; no independent geometry, pointer, modal or full signed-out rendering verification. | A2 affects full settings. No aesthetic judgment. |
+| I3 | NV | Partial authorization inspection | Current ticket/writable and tracking selector inspected; archived I4 authorization assertions read. Full lifecycle/CDM/platform branch review not completed here. | No complete independent lifecycle verdict. |
+| I4 | 7 | Protocol/state software review, bounded static and archived fixtures | Read codec, registry, repository; personally compared four tracking literals to pinned builder data; inspected TX vectors, decoder/repository assertions and their XML. Serialization, generations, 5s pending, 10s close, nullable fresh batteries and capability separation present. STEM state is retained internally but omitted from user presentation. | A2 medium. Firmware support/readback NV. |
+| I5 | NV | Partial media/manual review | Manual-volume chain, C5/C6 contract, selected core and coordinator test bodies, head call dispatch inspected. Full pause/duck local renderer and external evidence paths not independently verified end-to-end. | A1 medium. C6 correlation is not local causal ownership. |
+| I6 | NV | Personal XML/log parsing only; artifact lane not fully reviewed | Actual I4 targeted 205 and extended 725 XML parsed separately; logs contain BUILD SUCCESSFUL. Retry1 initialization failure preserved. No personal compiler/test/build execution or full signature/DEX/ELF/mapping inspection. | Packaging evidence cannot qualify runtime or future R8-enabled paths. |
+| I7 | 8 | Bounded source/provenance review | Pinned source inventory and GPL attribution inspected; 41 dispositions reconciled against actual source references and explicit scope. ATT vendor-hook route distinguished from included PPE; no invented privilege exclusion for ordinary calls/audio. No source/package changes or external actions by reviewer. | No new boundary defect established. Complete asset/distribution audit not claimed. |
+| I8 | NV | Partial integrated-source inspection | Shared host, Home/player/settings entry, Tile observer, controller/media dispatch inspected. No full startup/bridge/native/Spotify/Wear preservation execution or source/native equivalence claim. | Integrated host/device behavior remains unverified here. |
+| S1 | NV | Outside substantive focus A | No independent review of secondary playlist/search/offline/history improvements. Other reviewer work is not substituted for my verification. | No numeric score invented. |
+| H1 | NV | Physical work unauthorized/unavailable | No device, ADB, install, UI, radio traffic or physical sessions executed. Three newly authorized independent standalone sessions and later enabled APK remain required. | Mandatory separate product gate; no numerical penalty. |
+
+All code paths below are relative to S. Line ranges in annexes refer to the actual I4 frozen files, not live equivalents. No applicable AGENTS.md found in frozen source or named workspace ancestors. Read agentic-workflow and runtime, Fluid Engine rules and Material3 skill instructions; task restrictions override their build/device guidance. No memory/rollouts, other reviewers, votes/status or live source were consulted.
+
+## A1 — Medium: standalone manual STREAM_MUSIC control depends on a media candidate
+
+Trigger: otherwise admitted/setup-complete connected AirPods session, phone idle with no local candidate; or only external playback while other-app automation opt-in is OFF. The included manual phone-stream setting cannot operate in those states.
+
+Precise paths:
+
+- `source/app/src/main/java/dev/lelonio/square/airpods/runtime/media/MediaRuntimeCore.kt:102` selects a media candidate; `:193` returns false when none exists and requires accessible(candidate). `:110` makes external accessibility depend on automationsEnabled AND otherAppsEnabled.
+- `source/app/src/main/java/dev/lelonio/square/ui/airpods/host/AirPodsHost.kt:240` enables host.volume only with ready and non-null selected volume; `:282` routes LocalVolume through owner volume. `source/app/src/main/java/dev/lelonio/square/airpods/runtime/android/AirPodsAndroidRuntime.kt:351` calls media.setUserVolume, which reaches that candidate-dependent core.
+- Pinned upstream `source/build/airpods-full-integration/catalog/sources/android/app/src/main/java/me/kavishdevar/librepods/QuickSettingsDialogActivity.kt:447-454` directly writes AudioManager.STREAM_MUSIC from the manual slider. This is an active UI writer, not an enum or cached preference.
+
+Personal executed proof: read-only Python asserts the actual early-return and external opt-in predicates (`personal-static-checks.json`); raw source and upstream callback inspected. Consequence is a static control-flow inference, not an executed Android reproduction. The raw empty-list branch necessarily returns false; no synthetic RX is involved.
+
+Requirement consequence: included host.volume parity is incomplete. Dedicated C6 consent correctly constrains external automation; it does not establish a requirement to remove the separately requested manual phone-stream control. This is not a request to loosen external pause/resume ownership.
+
+Minimal fix: provide a current, admitted manual phone-stream volume read/write port independent of media-session candidate selection, retaining permission/call/session guards and the same stream-domain manual-override invalidation so CA cannot restore an obsolete baseline. Label it phone media volume. Regression: no candidates, idle local, external opt-in OFF, zero/mid/max, integer scaling, unavailable stream and explicit manual change during CA; assert no PLAY/pause or external consent mutation. Existing `MediaRuntimeCoreTest.kt:126-132` tests manual change with a fixture candidate and does not cover no-candidate parity.
+
+## A2 — Medium: long-press saved choice hides STEM command pending/mismatch/timeout
+
+Trigger: observed STEM_CONFIG, select assistant on one side; repository accepts submission, then relevant RX is absent/different or asynchronous write fails. The picker immediately shows saved choice; the command state is absent from that surface.
+
+Precise paths:
+
+- `source/app/src/main/java/dev/lelonio/square/airpods/runtime/android/AirPodsAndroidRuntime.kt:379-393` persists left/right choice, preserves observed low three bits, and rolls back only synchronous submission refusal. Async failure/timeout is not a synchronous refusal.
+- `source/app/src/main/java/dev/lelonio/square/ui/airpods/host/AirPodsHost.kt:263-270` derives gestureAssignments from stored pair settings; `:284-289` submits that choice. Host availability for gesture left/right at `:244` checks observed STEM existence, not pending/outcome presentation.
+- `source/app/src/main/java/dev/lelonio/square/ui/airpods/AirPodsControls.kt:566-590` renders only saved assignment and gesture menu. `:294` filters internalDependency properties, excluding STEM_CONFIG from ordinary PropertyEditor. There is no alternative STEM summary in this picker.
+- `source/app/src/main/java/dev/lelonio/square/airpods/AirPodsRepository.kt:176-202` creates independent pending and 5s NOT_CONFIRMED; `:263-274` resolves matching/different RX. Those states exist internally. Generic runtime diagnostics can report session failure, but do not supply the missing per-command timeout/mismatch presentation.
+
+Personal executed proof: Python source assertions find no pending/outcomes/propertyView/CommandStatusSummary reference in the picker and verify the internal editor filter. Static inference establishes missing rendering; no Compose/Android execution claimed. No frozen test body calling setLongPress was found; generic all19 repository tests explicitly exclude internal dependencies and use synthetic TX-as-RX at one value per property.
+
+Requirement consequence: C2 and I1/I4 require local saved intent to remain distinct from device pending/current RX/unconfirmed state. Persisting the user's choice is legitimate; presenting only that choice leaves the included function's hardware admission outcome hidden. This finding does not assert the saved preference itself must be rolled back on timeout.
+
+Minimal fix: retain saved-choice label, add a separate shared STEM interception status derived from current generation pending/observed/outcome, including mismatch/unconfirmed/send failure and concrete unavailable reason. Block or explain duplicate changes while pending. Regression: observed masks 0..7, each independent side, preserve low bits, synchronous rollback, async failure, 5s timeout, mismatching/matching RX and stale generation. Assert both saved choice and distinct command state in real picker composition; no firmware PASS from injected RX.
+
+## Individually reconciled scope and positive evidence
+
+`143-records.md` contains one row for each included family, preference and other disposition. `143-records-evidence.json` retains actual frozen source ranges, independent exact-key upstream occurrences and relevant archived test classes. Quoted/derived author mapping is only an index; current source was read for the referenced ranges. Automated range reading, key scan or reference membership alone is not semantic or execution proof. The row conclusions are bounded source reconciliation; end-to-end NV/gaps are explicit rather than concealed in the I1 score.
+
+The six short-press keys have active getters/listeners/STEM consumers; they are not unused. All six have missing-key initializers. The dynamic prefKey setter at upstream AirPodsViewModel.kt:739-744 chooses only left/right long-press keys; bounded 108 Kotlin/Java source scan and entry references did not establish a short-press customization editor. New short-press UI is NA under the stated latent disposition, not a privileged API exclusion. Lower observed STEM bits are preserved. Restored/manual values can still influence upstream behavior; physical firmware defaults remain NV.
+
+Protocol specifics inspected: 19 ordinary property specs plus internal STEM; per-property range, Boolean 1/2, CHIME [value,0x50], CALL [0,value], inverted adaptive strength, mode mask >=2 bits and observed Off/capability dependencies; strict malformed padding; unknown/truncated SDUs do not confirm pending; tracking signed little-endian fields and both accepted layouts; INFORMATION eleven positional fields and strict manufacturer/UTF-8; EQ three bands plus enable; battery IDs/status/age. State has nullable deviceAnnounced, separate static modelDeclared and propertyObserved. Writer mutex and sequence/current generation checks protect commands; close does not wait for the writer. Physical packets and full native transport correctness were not verified.
+
+Both tracking start/stop payload pairs personally compared byte-for-byte against pinned literal builders: standard start28/stop29 bytes, alternate start27/stop27 bytes including AACP prefix (`tracking-literal-comparison.json`). Repository format-switch test asserts stop(active) before start(new), then error closes/invalidate. I4 authorization test checks shared selector/dispatch OFF and background prerequisites; Stop preference-revocation bypass precedes opt-in checks. Real page fixture tests assert disabled Start and enabled Stop with concrete reasons. These are archived host fixtures, not Android firmware behavior.
+
+Tile source uses one lifecycle collector, cancels old epoch on stop/destroy, updates availability after pending/RX/timeout; click does not acquire. Archived seven observer tests exercise real repository/selector with fake transport. Head call branch checks ordinary permissions/ringing/ambiguity and returns after call handling, preventing media fallthrough. PPE candidate AACP is separate from excluded hearing ATT; EQ and every identity display field remain native included paths.
+
+## Evidence accounting and limits
+
+Personally executed: initial full manifest/member/external-reference SHA256/length verification; read-only Python raw source/reference/key reconciliation; text predicate checks; four tracking literal comparisons; actual XML and raw-log parsing. No Kotlin/Gradle/compiler/checker runner/device/network commands executed. Scratch only was written; the private external screenshot was hashed in place and never copied/published.
+
+Archived parent executions: targeted retry2 XML20 suites/205 cases, extended XML86 suites/725 cases, all zero failures/errors/skips. These overlap and are not 930 distinct tests. Separate typed26 is not added to that overlap; this reviewer did not independently qualify its Binder/auth/runtime effects. Prior core18/Wear150 are historical. Three builds,24 artifact checks,8 Python checker tests,83 bundle files and14 selected debug class_defs remain parent packaging evidence; they were not re-executed or exhaustively independently inspected here.
+
+Retry1 AirPodsI4AvailabilityTest XML has one initialization failure: quickPreferredReasonAndFooterStayReachableAndReasonClears should be void. Retry2 includes three passing cases; runBlocking<Unit> is fixture correction, not a production fix. Preexisting-XML-NOT-EVIDENCE directories were excluded from fresh execution totals. Original failed attempts remain in S. No new expected-negative run is inferred. all19 repository coverage injects encoded TX as RX and first valid values; pinned59 vectors and targeted negative decoder tests add software evidence, not firmware readback or every-range UI execution.
+
+Remaining unverified: complete per-family radio/readback/effects and all models; later enabled minified APK and R8-retained paths; full source/native equivalence; signed Binder/account/runtime readiness; SystemUI/OEM audio profiles/calls and presence; standalone background/local/external media; full real host signed-out/modal/IME/TalkBack/theme/font/decoder behavior and aesthetics; full preservation/S1 audit. No blur-band/clipping observation is presumed an aesthetic PASS.
+
+Final integrity is recorded in `integrity-end.json`: all4404 manifest payloads and the one private external reference rechecked against original manifest; expected manifest hash required. This review grants no global, publication, product or hardware approval and authorizes no additional corrective round.

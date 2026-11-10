@@ -1,0 +1,42 @@
+{
+  "status": "released",
+  "releasedTo": "ROOT",
+  "releasedAtUtc": "2026-11-08T09:22:14.712942+00:00",
+  "allOwnedInvocationsEnded": true,
+  "noFurtherOwnedCompilerWork": true,
+  "javaHome": "C:/Program Files/Android/Android Studio/jbr",
+  "maxWorkers": 1,
+  "noDaemon": true,
+  "nativeTaskExecution": "explicitly excluded",
+  "assignedTests": {
+    "passed": 55,
+    "failed": 0,
+    "Fluidify": 27,
+    "CV": 28
+  },
+  "invocations": [
+    {
+      "name": "Fluidify dry-run",
+      "exitCode": 0
+    },
+    {
+      "name": "Fluidify tests",
+      "exitCode": 0
+    },
+    {
+      "name": "CV tests",
+      "exitCode": 0
+    },
+    {
+      "name": "Fluidify assemble and lint",
+      "exitCode": 1,
+      "reason": "outside-scope AirPods compile errors and existing core lint errors"
+    },
+    {
+      "name": "CV assemble and lint",
+      "exitCode": 0
+    }
+  ],
+  "runtime": "NV",
+  "nextPhaseAcceptance": "NV"
+}

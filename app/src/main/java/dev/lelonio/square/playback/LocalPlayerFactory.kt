@@ -21,7 +21,9 @@ import dev.lelonio.square.data.LocalLibrary
 @OptIn(UnstableApi::class)
 object LocalPlayerFactory {
 
-    fun create(host: PlaybackHost): Player = ExoPlayer.Builder(host.context, renderers(host))
+    fun create(host: PlaybackHost): Player {
+        val renderers = renderers(host)
+        return ExoPlayer.Builder(host.context, renderers)
         .setMediaSourceFactory(
             DefaultMediaSourceFactory(
                 ResolvingDataSource.Factory(
@@ -51,10 +53,11 @@ object LocalPlayerFactory {
                 .setUsage(C.USAGE_MEDIA)
                 .setContentType(C.AUDIO_CONTENT_TYPE_MUSIC)
                 .build(),
-            /* handleAudioFocus = */ true,
+            /* handleAudioFocus = */ false,
         )
         .setLooper(host.looper)
-        .build()
+        .build().let { trackFocus(it, host.context, renderers) }
+    }
 
     /**
      * The sink, with the app's own vocoder in its chain.
@@ -64,8 +67,15 @@ object LocalPlayerFactory {
      * the same amount would sound worse from the phone than from Spotify. See
      * BungeeAudioProcessor.
      */
-    internal fun renderers(host: PlaybackHost) =
-        object : androidx.media3.exoplayer.DefaultRenderersFactory(host.context) {
+    internal fun trackFocus(player: ExoPlayer, context: android.content.Context, renderers: AirPodsRenderersFactory): ExoPlayer =
+        AirPodsFocusedExoPlayer(player, context, renderers.airPodsOutput).also {
+            AirPodsExoOutputs.bind(it, renderers.airPodsOutput)
+        }
+
+    internal fun renderers(host: PlaybackHost) = AirPodsRenderersFactory(host)
+
+    internal class AirPodsRenderersFactory(host: PlaybackHost) : androidx.media3.exoplayer.DefaultRenderersFactory(host.context) {
+            val airPodsOutput = AirPodsExoOutput()
             override fun buildAudioSink(
                 context: android.content.Context,
                 enableFloatOutput: Boolean,
@@ -74,6 +84,10 @@ object LocalPlayerFactory {
                 val light = AudioLightProcessor()
                 val sink = androidx.media3.exoplayer.audio.DefaultAudioSink.Builder(context)
                 .setEnableFloatOutput(enableFloatOutput)
+                .setAudioTrackProvider { config, attributes, sessionId ->
+                    androidx.media3.exoplayer.audio.DefaultAudioSink.AudioTrackProvider.DEFAULT
+                        .getAudioTrack(config, attributes, sessionId).also(airPodsOutput::trackCreated)
+                }
                 // The hardware path applies speed itself, below the processors,
                 // which would leave the vocoder with nothing to do and the
                 // platform doing it after all.
@@ -81,6 +95,14 @@ object LocalPlayerFactory {
                 .setAudioProcessorChain(BungeeProcessorChain(light = light))
                 .build()
                 return object : androidx.media3.exoplayer.audio.ForwardingAudioSink(sink) {
+                    override fun play() { super.play(); airPodsOutput.played() }
+                    override fun pause() { super.pause(); airPodsOutput.paused() }
+                    override fun flush() { airPodsOutput.reset(); super.flush() }
+                    override fun reset() { airPodsOutput.reset(); super.reset() }
+                    override fun setVolume(volume: Float) {
+                        airPodsOutput.focusMultiplier = volume
+                        super.setVolume(volume)
+                    }
                     override fun handleBuffer(buffer: java.nio.ByteBuffer, presentationTimeUs: Long, encodedAccessUnitCount: Int): Boolean {
                         // How long this buffer will wait before it is heard, for the light to show
                         // it at that moment. Only asked with the light on: it is a call into the

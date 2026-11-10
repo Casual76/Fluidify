@@ -1,8 +1,6 @@
 package dev.lelonio.square.data
 
 import dev.lelonio.square.nativecore.NativeBridge
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
@@ -45,7 +43,7 @@ object FriendActivity {
      * Empty is an ordinary answer: an account can follow nobody, and everybody
      * it follows can have their listening set to private.
      */
-    suspend fun friends(): List<FriendListen> = withContext(Dispatchers.IO) {
+    suspend fun friends(): List<FriendListen> = SpotifyNetworkPolicy.io {
         val raw = NativeBridge.friendActivity()
         json.decodeFromString<BuddyList>(raw).friends
             .mapNotNull { friend ->

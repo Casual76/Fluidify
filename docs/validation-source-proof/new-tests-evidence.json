@@ -1,0 +1,387 @@
+[
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.FluidifyToolValidationTest",
+    "test": "sourceProofToolsAreInActualRegistryWithoutWeakeningWriteConfirmation",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.FluidifyToolValidationTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "callerMapSaturationFailsClosedWithoutEvictingRenewableIdentities",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "expirationIsMonotonicAndValidationDoesNotRenew",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "missingOldAndUnknownCapabilityFailBeforeDispatch",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "sameAccountPublicationReplacementRejectsEvenWhenDataEpochIsUnchanged",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "processRecreationRejectsSameNumberGenerationAndOpaqueHandles",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "unknownCallerAndSignedOutStateHaveNoProof",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "sameAccountReauthDataEpochChangeRejectsOldProof",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "sourceCapabilityTravelsOnlyThroughNegotiatedTypedResultEnvelope",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "exactAccountAndFiltersRejectWithoutSelectingAnything",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "queryScopeChangesDoNotRotateAuthorizationOrExpandExistingLeaseScope",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "fragmentIsBoundToLeaseThatActuallyProducedSnapshot",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "opaqueCapabilityAndTypedReceiptContainNoGenerationOrCredentials",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "expiryRenewalKeepsAuthorizationButNeverRevivesOldHandles",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "unknownAndMisclassifiedWritesAreDeniedEvenWithReadMetadata",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "callerCannotReuseAnotherCallersLease",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "observedUnavailableTransitionCannotRestoreAnOldAuthorizationIdentity",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "cieAliasTransitionRejectsOldDataGeneration",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "continuationChangesDoNotExpandScope",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "generationAccountStudentAndPublicationChangesRotateAuthorizationAndRevokeHandles",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "capabilityEvictionDoesNotChangeAuthorizationOrRestoreEvictedHandles",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "recordingRevocationOrDeletionDuringProductionDiscardsLateResult",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "everyReceiptCarriesTheCapabilityAuthorizationIdentity",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "missingLeaseAndUnknownFieldsFailClosed",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "cvRequiresExplicitStudentYearAndSectionAndKeepsThemExact",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "authorizationIsCallerBoundAndStableForEachCallerAcrossRenewal",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "Fluidify",
+    "class": "dev.lelonio.square.bridge.SourceProofRegistryTest",
+    "test": "processRestartRotatesIncarnationAndAuthorizationDespiteIdenticalSourceState",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\Fluidify\\docs\\validation-source-proof\\junit\\app\\TEST-dev.lelonio.square.bridge.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.RegistroSourceProofTest",
+    "test": "actualRegistryDoesNotAdvertiseMutationAsProofRead",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.RegistroSourceProofTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.RegistroSourceProofTest",
+    "test": "actualRegistryRejectsSameAccountReauthWithoutRelyingOnAuthenticationEpoch",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.RegistroSourceProofTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "callerMapSaturationFailsClosedWithoutEvictingRenewableIdentities",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "expirationIsMonotonicAndValidationDoesNotRenew",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "missingOldAndUnknownCapabilityFailBeforeDispatch",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "sameAccountPublicationReplacementRejectsEvenWhenDataEpochIsUnchanged",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "processRecreationRejectsSameNumberGenerationAndOpaqueHandles",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "unknownCallerAndSignedOutStateHaveNoProof",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "sameAccountReauthDataEpochChangeRejectsOldProof",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "sourceCapabilityTravelsOnlyThroughNegotiatedTypedResultEnvelope",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "exactAccountAndFiltersRejectWithoutSelectingAnything",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "queryScopeChangesDoNotRotateAuthorizationOrExpandExistingLeaseScope",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "fragmentIsBoundToLeaseThatActuallyProducedSnapshot",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "opaqueCapabilityAndTypedReceiptContainNoGenerationOrCredentials",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "expiryRenewalKeepsAuthorizationButNeverRevivesOldHandles",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "unknownAndMisclassifiedWritesAreDeniedEvenWithReadMetadata",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "callerCannotReuseAnotherCallersLease",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "observedUnavailableTransitionCannotRestoreAnOldAuthorizationIdentity",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "cieAliasTransitionRejectsOldDataGeneration",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "continuationChangesDoNotExpandScope",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "generationAccountStudentAndPublicationChangesRotateAuthorizationAndRevokeHandles",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "capabilityEvictionDoesNotChangeAuthorizationOrRestoreEvictedHandles",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "recordingRevocationOrDeletionDuringProductionDiscardsLateResult",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "everyReceiptCarriesTheCapabilityAuthorizationIdentity",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "missingLeaseAndUnknownFieldsFailClosed",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "cvRequiresExplicitStudentYearAndSectionAndKeepsThemExact",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "authorizationIsCallerBoundAndStableForEachCallerAcrossRenewal",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  },
+  {
+    "app": "CV",
+    "class": "dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest",
+    "test": "processRestartRotatesIncarnationAndAuthorizationDespiteIdenticalSourceState",
+    "status": "passed",
+    "report": "C:\\VibeCoded Projects\\classeviva-expressive\\docs\\validation-source-proof\\junit\\core-assistant\\TEST-dev.antigravity.classevivaexpressive.core.assistant.pampai.SourceProofRegistryTest.xml"
+  }
+]

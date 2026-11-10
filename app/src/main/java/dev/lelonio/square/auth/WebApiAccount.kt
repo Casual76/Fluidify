@@ -58,9 +58,10 @@ class WebApiAccount(context: Context) {
     fun setClientId(value: String) {
         val trimmed = value.trim()
         if (trimmed == _clientId.value) return
-        tokens.clear()
-        prefs.edit().putString(KEY_CLIENT_ID, trimmed.ifEmpty { null }).apply()
-        _clientId.value = trimmed.ifEmpty { null }
+        tokens.invalidate {
+            prefs.edit().putString(KEY_CLIENT_ID, trimmed.ifEmpty { null }).commit()
+            _clientId.value = trimmed.ifEmpty { null }
+        }
     }
 
     fun disconnect() {

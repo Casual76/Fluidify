@@ -41,6 +41,65 @@ private const val ACTION_TOGGLE = "dev.lelonio.square.PIP_TOGGLE"
 class MainActivity : ComponentActivity() {
 
     private var controller by mutableStateOf<MediaController?>(null)
+    private val airPodsOpening = dev.lelonio.square.airpods.runtime.AirPodsAppOpening()
+
+    private fun android.content.Intent.isOrdinaryAppOpening(): Boolean = when (action) {
+        android.content.Intent.ACTION_MAIN, android.content.Intent.ACTION_VIEW,
+        dev.lelonio.square.playback.ACTION_OPEN_PLAYER,
+        ACTION_SHORTCUT_SEARCH, ACTION_SHORTCUT_LIBRARY, ACTION_SHORTCUT_RESUME,
+        dev.lelonio.square.ui.settings.WatchPageRequest.ACTION -> true
+        else -> false
+    }
+
+    /** Programmatic departures (including ActivityResult permission/settings/export flows)
+     * must never turn their return into a fresh AirPods opening. Invalidate at the source,
+     * before onPause, also fencing a profile callback already queued on another dispatcher. */
+    private fun leavingForActivity() {
+        airPodsOpening.externalActivityLaunched()
+        ((application as dev.lelonio.square.SquareApplication).airPodsVisibility.active as?
+            dev.lelonio.square.airpods.runtime.AirPodsForegroundState)?.invalidateForeground()
+    }
+
+    @Suppress("DEPRECATION")
+    override fun startActivityForResult(intent: android.content.Intent, requestCode: Int, options: Bundle?) {
+        leavingForActivity()
+        super.startActivityForResult(intent, requestCode, options)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun startIntentSenderForResult(intent: android.content.IntentSender, requestCode: Int,
+        fillInIntent: android.content.Intent?, flagsMask: Int, flagsValues: Int, extraFlags: Int, options: Bundle?) {
+        leavingForActivity()
+        super.startIntentSenderForResult(intent, requestCode, fillInIntent, flagsMask, flagsValues, extraFlags, options)
+    }
+
+    @Suppress("DEPRECATION")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: android.content.Intent?) {
+        leavingForActivity()
+        super.onActivityResult(requestCode, resultCode, data)
+    }
+
+    override fun onRequestPermissionsResult(requestCode: Int, permissions: Array<String>, grantResults: IntArray) {
+        leavingForActivity()
+        super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+    }
+
+    override fun onPostResume() {
+        super.onPostResume()
+        if (airPodsOpening.resumed()) lifecycleScope.launch {
+            (application as dev.lelonio.square.SquareApplication).airPodsRuntime?.appOpened()
+        }
+    }
+
+    override fun onPause() {
+        airPodsOpening.paused()
+        super.onPause()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putBoolean(AIRPODS_USER_OPENING, airPodsOpening.saveUserOpening())
+        super.onSaveInstanceState(outState)
+    }
 
     /**
      * Below Android 13 nothing applies the chosen language for us, so every
@@ -113,6 +172,8 @@ class MainActivity : ComponentActivity() {
     @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        airPodsOpening.created(savedInstanceState != null, intent?.isOrdinaryAppOpening() == true,
+            savedInstanceState?.getBoolean(AIRPODS_USER_OPENING) == true)
         // Transparent bars; SquareTheme sets the icon colour, because it is the
         // only place that knows whether the app is currently light or dark.
         enableEdgeToEdge(
@@ -179,6 +240,7 @@ class MainActivity : ComponentActivity() {
      * rather than the picture letterboxed inside a window.
      */
     override fun onUserLeaveHint() {
+        airPodsOpening.userLeaveHint()
         super.onUserLeaveHint()
         val watching = dev.lelonio.square.backend.spotify.SpotifyVideoMode.enabled.value
         if (!watching) return
@@ -284,6 +346,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
+        airPodsOpening.newIntent(intent.isOrdinaryAppOpening())
         setIntent(intent)
         if (intent.opensPlayer()) {
             openPlayer++
@@ -392,6 +455,7 @@ class MainActivity : ComponentActivity() {
     }
 
     override fun onStop() {
+        airPodsOpening.stopped(isChangingConfigurations)
         runCatching { unregisterReceiver(listenRequest) }
         controller?.release()
         controller = null
@@ -444,6 +508,7 @@ class MainActivity : ComponentActivity() {
     }
 
     private companion object {
+        const val AIRPODS_USER_OPENING = "airpods_user_opening"
         /** How long a voice request waits for the session to connect: four seconds. */
         const val CONTROLLER_WAIT_TICKS = 40
         const val CONTROLLER_WAIT_TICK_MS = 100L

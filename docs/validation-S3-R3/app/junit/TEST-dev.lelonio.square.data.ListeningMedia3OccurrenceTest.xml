@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.data.ListeningMedia3OccurrenceTest" tests="1" skipped="0" failures="0" errors="0" timestamp="2026-11-07T20:44:51.497Z" hostname="PC_FISSO" time="0.312">
+  <properties/>
+  <testcase name="automaticMedia3DuplicateUriCallbackDoesNotDoubleCountNativeBoundary" classname="dev.lelonio.square.data.ListeningMedia3OccurrenceTest" time="0.309"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

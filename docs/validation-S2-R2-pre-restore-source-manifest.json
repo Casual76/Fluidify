@@ -1,0 +1,51 @@
+[
+  {
+    "path": "app/src/main/java/dev/lelonio/square/bridge/FluidifyToolHost.kt",
+    "sha256": "410328455958D8C3C483AE01BCC3AE541FD890F630F2A2CFE00D37F7ADC37E40",
+    "S2sha256": "518DF4DF931D93EFF8E195831AEA6C4C9AF9D13806B1750B5D4F035CA9C0D593",
+    "testsExecuted": false,
+    "validation": "Kotlin compilation and scoped regressions passed"
+  },
+  {
+    "path": "app/src/main/java/dev/lelonio/square/bridge/ResultFragments.kt",
+    "sha256": "68183FC334FCE3BB32E251FCF073D2DF522EC7F7AB48AC2EBF4A0FD697C20D7A",
+    "S2sha256": null,
+    "testsExecuted": false,
+    "validation": "Kotlin compilation and scoped regressions passed"
+  },
+  {
+    "path": "core/src/main/java/dev/lelonio/square/playback/PlaybackOccurrence.kt",
+    "sha256": "90CAB393086AF378C0347F00C7E4D0340447FF09CD66D89B29EF3CCAAE07D3D2",
+    "S2sha256": "4F8143EBFC6687FB589CD7CE5A3A623A88C8DADB95D1969A924FA6C538D775D6",
+    "testsExecuted": false,
+    "validation": "Kotlin compilation and scoped regressions passed"
+  },
+  {
+    "path": "core/src/main/java/dev/lelonio/square/playback/LibrespotPlayer.kt",
+    "sha256": "656FD3D08C4994DEE7EBC8CC017D6C676AE1DB62D1FC84000E6932B0F1D11ACE",
+    "S2sha256": "75DC1C7E1C2B4F226CE42554EC70E1524C4FA26E112FDBD8CD0D3969B7D78893",
+    "testsExecuted": false,
+    "validation": "Kotlin compilation and scoped regressions passed"
+  },
+  {
+    "path": "native/src/engine.rs",
+    "sha256": "713AAC39D48A6BDB2CD3560CA61EC541B8DCE2925DB0739D37B81BFF810B63AD",
+    "S2sha256": null,
+    "testsExecuted": false,
+    "validation": "cross-compiled for all 3 Android ABIs"
+  },
+  {
+    "path": "app/src/test/java/dev/lelonio/square/bridge/ResultFragmentsTest.kt",
+    "sha256": "8F82C05160105596A1C57CC77065622A139B174D45990DA42424CC4FEA461409",
+    "S2sha256": null,
+    "testsExecuted": true,
+    "validation": "Kotlin compilation and scoped regressions passed"
+  },
+  {
+    "path": "app/src/test/java/dev/lelonio/square/data/NativeListeningOccurrenceTest.kt",
+    "sha256": "9DF5D055FB58DCFA945178993B7F4BADBD9A4EAB27E988DC09A6BF8A152B0F94",
+    "S2sha256": "5C6DC2330EF06357349BDFFC07BFFC818CE55CED97812EB01FDF8EB9B80C9D74",
+    "testsExecuted": true,
+    "validation": "Kotlin compilation and scoped regressions passed"
+  }
+]

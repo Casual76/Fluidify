@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.orchestrator.AiRouterTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:17.286Z" hostname="PC_FISSO" time="0.002">
+  <properties/>
+  <testcase name="il verdetto gerarchico tiene solo le sottocategorie della categoria scelta o gia' aperte" classname="dev.antigravity.fluidengine.ai.orchestrator.AiRouterTest" time="0.001"/>
+  <testcase name="JSON rotto o vuoto porta al ripiego, che tiene i gruppi gia' aperti" classname="dev.antigravity.fluidengine.ai.orchestrator.AiRouterTest" time="0.001"/>
+  <testcase name="i gruppi ignoti si ignorano, le azioni cadono se spente, il massimo e' quattro" classname="dev.antigravity.fluidengine.ai.orchestrator.AiRouterTest" time="0.0"/>
+  <testcase name="col catalogo gerarchico lo schema chiede categoria e sottocategorie, e il prompt le elenca" classname="dev.antigravity.fluidengine.ai.orchestrator.AiRouterTest" time="0.0"/>
+  <testcase name="lo schema elenca i gruppi e il prompt esclude le azioni spente e nomina l'app" classname="dev.antigravity.fluidengine.ai.orchestrator.AiRouterTest" time="0.0"/>
+  <testcase name="il JSON dei gruppi si legge, anche dentro un blocco di codice, con il livello profondo" classname="dev.antigravity.fluidengine.ai.orchestrator.AiRouterTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,5 +1,8 @@
 package dev.lelonio.square.ui
 
+import dev.lelonio.square.data.AccountEntryMarker
+import dev.lelonio.square.data.accountEntryMarker
+
 import android.app.Application
 import androidx.annotation.StringRes
 import androidx.lifecycle.AndroidViewModel
@@ -7,8 +10,18 @@ import androidx.lifecycle.viewModelScope
 import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.auth.SpotifyOAuth
 import dev.lelonio.square.backend.SearchLabels
+import dev.lelonio.square.data.SearchResultScope
+import dev.lelonio.square.data.findDownloadedTracks
+import dev.lelonio.square.ui.navigation.PlaylistContextCaches
+import dev.lelonio.square.ui.navigation.PlaylistEntries
+import dev.lelonio.square.ui.navigation.PlaylistEntrySelection
+import dev.lelonio.square.ui.navigation.PlaylistReadTicket
+import dev.lelonio.square.ui.requests.AccountAccessTransitions
+import dev.lelonio.square.ui.requests.RequestOwnership
+import dev.lelonio.square.ui.requests.SearchRequestCoordinator
 import dev.lelonio.square.R
 import dev.lelonio.square.data.Catalog
+import dev.lelonio.square.data.SpotifyNetworkPolicy
 import dev.lelonio.square.data.AddTracksRequestDto
 import dev.lelonio.square.data.RemoveTracksRequestDto
 import dev.lelonio.square.data.TrackUriDto
@@ -97,9 +110,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /**
-     * The playlist, album or artist currently open, keyed by its URI.
+     * The playlist, album or artist belonging to one Navigation entry.
      *
-     * One state and one screen for all three: they differ in where the tracks
+     * One state shape and one screen for all three: they differ in where the tracks
      * come from and in a strip of albums the artist has and the other two do
      * not, which is not enough to justify three near-identical screens that
      * would then drift apart.
@@ -175,6 +188,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private var inFlight: Job? = null
     private var playlistJob: Job? = null
+    private val playlistRequests = RequestOwnership()
 
     private val _state = MutableStateFlow<UiState>(
         if (container.spotifySignedIn) UiState.Connecting else UiState.LoggedOut,
@@ -428,13 +442,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // no application of the listener's: the answer arrives as a cluster
         // update and redraws the list by the usual road.
         viewModelScope.launch(Dispatchers.IO) {
-            runCatching { NativeBridge.refreshCluster() }
+            runCatching { SpotifyNetworkPolicy.capture().dispatch { NativeBridge.refreshCluster() } }
                 .onFailure { android.util.Log.d(TAG, "cluster not refreshed: ${describe(it)}") }
         }
         if (!container.webApi.isReady) {
-            _devices.value = _devices.value.copy(
-                loading = false,
-                error = string(R.string.needs_your_app),
+            _devices.value = dev.lelonio.square.ui.player.runConnectRefreshFailure(
+                _devices.value, string(R.string.needs_your_app),
             )
             return
         }
@@ -470,10 +483,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     )
                 }
                 .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
                     android.util.Log.e(TAG, "devices failed: ${chain(it)}", it)
-                    _devices.value = _devices.value.copy(
-                        loading = false,
-                        error = describe(it),
+                    _devices.value = dev.lelonio.square.ui.player.runConnectRefreshFailure(
+                        _devices.value, describe(it),
                     )
                 }
         }
@@ -542,11 +555,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // PlaybackService.adoptRemoteQueue.
         val started = withContext(Dispatchers.IO) {
             runCatching {
-                NativeBridge.resumeHere(
+                SpotifyNetworkPolicy.capture().dispatch { NativeBridge.resumeHere(
                     remote.realContext.orEmpty(),
                     remote.uri,
                     remote.positionMs.toInt(),
-                )
+                ) }
             }.onFailure { android.util.Log.w(TAG, "could not resume here: $it") }.isSuccess
         }
         if (started) return@launch
@@ -622,7 +635,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (!dev.lelonio.square.data.RemoteConnect.elsewhereActive.value) {
             val before = NativeBridge.stateAcks
             val republished = withContext(Dispatchers.IO) {
-                runCatching { NativeBridge.publishContext(positionMs.toInt()) }
+                runCatching { SpotifyNetworkPolicy.capture().dispatch { NativeBridge.publishContext(positionMs.toInt()) } }
                     .onFailure { android.util.Log.w(TAG, "context not republished: $it") }
                     .getOrDefault(false)
             }
@@ -760,17 +773,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     // Both through the access point, for the same reason the
                     // playlist write is; see native/src/collection.rs.
                     unsaving -> withContext(Dispatchers.IO) {
-                        NativeBridge.setLiked(trackUri, false)
+                        SpotifyNetworkPolicy.capture().dispatch { NativeBridge.setLiked(trackUri, false) }
                     }
                     toLibrary -> withContext(Dispatchers.IO) {
-                        NativeBridge.setLiked(trackUri, true)
+                        SpotifyNetworkPolicy.capture().dispatch { NativeBridge.setLiked(trackUri, true) }
                     }
                     // Through the access point, not the Web API, which cannot
                     // do this at all: the listener's own registered application
                     // is refused it outright and the shared client id is out of
                     // quota. See native/src/playlists.rs for the measurements.
                     else -> withContext(Dispatchers.IO) {
-                        NativeBridge.addToPlaylist(playlist.uri, trackUri)
+                        SpotifyNetworkPolicy.capture().dispatch { NativeBridge.addToPlaylist(playlist.uri, trackUri) }
                     }
                 }
             }
@@ -809,8 +822,109 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    private val _playlist = MutableStateFlow(PlaylistState())
-    val playlist: StateFlow<PlaylistState> = _playlist.asStateFlow()
+    private val playlistEntries = PlaylistEntries()
+    private val _playlist get() = playlistEntries.activeState
+    val playlist: StateFlow<PlaylistState> get() = _playlist.asStateFlow()
+    internal val playlistEntryRevision get() = playlistEntries.revision
+    internal fun playlistAuthority() = container.accountLocalData.capture()?.binding?.lineage
+    private val playlistSelection by lazy {
+        PlaylistEntrySelection(playlistEntries, ::playlistAuthority,
+            stopRead = {
+                playlistRequests.invalidate()
+                playlistJob?.cancel()
+                playlistJob = null
+            },
+            changed = { playlistEdits.detailOpened() },
+            reconcile = { playlistEdits.mergeDetailRead(it, 0L) },
+            open = ::openPlaylist,
+        )
+    }
+    internal fun preparePlaylistNavigation(playlist: CatalogPlaylist) = playlistSelection.prepare(playlist)
+    internal fun playlistEntry(id: String, uri: String?) =
+        playlistEntries.entry(id, CatalogPlaylist(uri.orEmpty(), "")).state.asStateFlow()
+    internal fun playlistPageMemory(id: String) = playlistEntries.memory(id)
+    internal fun isCurrentPlaylistEntry(id: String) = playlistEntries.activeId == id
+    internal fun releasePlaylistEntry(id: String) = playlistEntries.release(id)
+    internal fun selectPlaylistEntry(id: String?, uri: String? = null, authority: String? = null) =
+        playlistSelection.select(id, uri, authority)
+    private fun revokePlaylistEntries() = playlistSelection.revoke()
+
+    // The controller consumes receipts directly into the same state the library and detail render.
+    private val playlistEdits by lazy {
+        val accounts = container.accountLocalData
+        dev.lelonio.square.ui.playlist.PlaylistEdits(
+            scope = viewModelScope, accounts = accounts, library = _state, detail = _playlist,
+            currentDetail = { _playlist },
+            service = { error("Network-scoped playlist factory required") },
+            networkService = { access, network ->
+                val backend = container.activeBackend
+                object : dev.lelonio.square.ui.playlist.PlaylistEditService {
+                    private fun permission(): dev.lelonio.square.data.SpotifyNetworkPolicy.Permit =
+                        network.also { it.check() }
+                    private suspend fun writer(): dev.lelonio.square.data.SpotifyApi {
+                        val permit = permission()
+                        return withContext(Dispatchers.IO) {
+                            accounts.requireOnline(access)
+                            check(container.activeBackend === backend) { "Playlist source changed" }
+                            val token = permit.dispatch { NativeBridge.webToken(dev.lelonio.square.data.PLAYLIST_EDIT_SCOPES) }
+                                ?: container.webApi.tokens.validAccessToken(permit)
+                            accounts.requireOnline(access)
+                            permit.check()
+                            dev.lelonio.square.data.playlistWriteApi(token, permit) { accounts.requireOnline(access) }
+                        }
+                    }
+                    override suspend fun create(name: String): CatalogPlaylist {
+                        permission()
+                        accounts.requireOnline(access)
+                        val user = container.api.me()
+                        permission()
+                        accounts.requireOnline(access)
+                        check(user.id == access.account.id) { "Spotify profile belongs to another account" }
+                        val created = writer().createPlaylist(user.id, dev.lelonio.square.data.PlaylistDetailsDto(name))
+                        return CatalogPlaylist(created.uri, created.name, created.images.firstOrNull()?.url)
+                    }
+                    override suspend fun rename(uri: String, name: String) {
+                        accounts.requireOnline(access)
+                        writer().renamePlaylist(uri.substringAfterLast(':'), dev.lelonio.square.data.PlaylistNameDto(name))
+                    }
+                    override suspend fun delete(uri: String) {
+                        accounts.requireOnline(access)
+                        writer().unfollowPlaylist(uri.substringAfterLast(':'))
+                    }
+                    override suspend fun remove(uri: String, trackUri: String, index: Int) {
+                        val permit = permission()
+                        withContext(Dispatchers.IO) {
+                            accounts.requireOnline(access)
+                            permit.dispatch { NativeBridge.removeFromPlaylist(uri, trackUri, index) }
+                        }
+                    }
+                }
+            },
+            invalidate = { uri, access ->
+                playlistEntries.invalidate(uri)
+                contextCache.remove(playlistContextCaches.memoryKey(uri, access))
+                viewModelScope.launch {
+                    try { playlistContextCaches.disk(access).remove(uri, accounts, access) }
+                    catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                    catch (failure: Exception) { android.util.Log.w(TAG, "playlist cache invalidation failed", failure) }
+                }
+            },
+            stopDetailRead = { uri ->
+                if (_playlist.value.uri == uri) {
+                    playlistRequests.invalidate()
+                    playlistJob?.cancel()
+                    _playlist.value = _playlist.value.copy(loading = false, loadingMore = false)
+                }
+            },
+            reloadDetail = { uri ->
+                val page = _playlist.value
+                if (page.uri == uri) openPlaylist(CatalogPlaylist(uri, page.name, page.artworkUrl))
+            },
+            onlineAllowed = { !dev.lelonio.square.playback.OfflineMode.active.value },
+            logFailure = { android.util.Log.e(TAG, "playlist edit unconfirmed: ${chain(it)}", it) },
+        )
+    }
+
 
     /** Search box contents and results. */
     data class SearchState(
@@ -827,62 +941,41 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
          * application that used to be the only way in.
          */
         val needsSetup: Boolean = false,
+        val resultScope: SearchResultScope = SearchResultScope.ONLINE,
     )
 
     private val _search = MutableStateFlow(SearchState())
     val search: StateFlow<SearchState> = _search.asStateFlow()
     private var searchJob: Job? = null
 
-    /**
-     * Runs a search, debounced.
-     *
-     * Firing on every keystroke would spend the Web API quota several times per
-     * word, mostly on prefixes nobody wanted results for.
-     */
+    private var searchAccess: dev.lelonio.square.data.AccountLocalDataCoordinator.Access? = null
+    private val searchRequests = SearchRequestCoordinator(
+        scope = viewModelScope,
+        local = { query -> SearchResults(tracks = findDownloadedTracks(
+            query, container.downloads.files.value.keys, container.downloads::trackOf,
+        )) },
+        publish = publish@{ value ->
+            val access = searchAccess ?: return@publish
+            if (!container.accountLocalData.isCurrent(access)) return@publish
+            container.downloads.read(access) { _search.value = SearchState(
+                query = value.query, loading = value.loading, results = value.results,
+                error = value.error?.let(::describe), needsSetup = value.needsSetup,
+                resultScope = value.resultScope,
+            ) }
+        },
+        debounceMs = SEARCH_DEBOUNCE_MS,
+    )
+
     fun onSearchQuery(query: String) {
+        val access = container.accountLocalData.capture() ?: return
+        searchAccess = access
         val backend = container.activeBackend
-        _search.value = _search.value.copy(query = query)
-        searchJob?.cancel()
-
-        if (query.isBlank()) {
-            _search.value = SearchState(query = query)
-            return
-        }
-
-        searchJob = viewModelScope.launch {
-            delay(SEARCH_DEBOUNCE_MS)
-            _search.value = _search.value.copy(loading = true, error = null)
-            runCatching {
-                backend.search(
-                    query,
-                    SearchLabels(
-                        artist = string(R.string.artist),
-                        album = string(R.string.album),
-                        playlist = string(R.string.playlist),
-                    ),
-                )
-            }
-                .onSuccess { results ->
-                    // The answer to a question nobody is asking any more is
-                    // not shown: a slow search that was replaced while it ran
-                    // would otherwise land on top of the newer one.
-                    currentCoroutineContext().ensureActive()
-                    _search.value = _search.value.copy(
-                        loading = false,
-                        results = results,
-                        needsSetup = backend.searchNeedsSetup,
-                    )
-                }
-                .onFailure {
-                    // A cancelled search is not a failed one. Every keystroke
-                    // cancels the one before it, and runCatching catches that
-                    // like anything else — which put "StandaloneCoroutine was
-                    // cancelled" on the page while the next search was already
-                    // on its way.
-                    if (it is kotlinx.coroutines.CancellationException) throw it
-                    android.util.Log.e(TAG, "search failed: ${chain(it)}", it)
-                    _search.value = _search.value.copy(loading = false, error = describe(it))
-                }
+        searchJob = searchRequests.submit(query, dev.lelonio.square.playback.OfflineMode.active.value ||
+            !container.accountLocalData.isOnlineCurrent(access)) {
+            backend.searchOutcome(query, SearchLabels(
+                artist = string(R.string.artist), album = string(R.string.album),
+                playlist = string(R.string.playlist),
+            ))
         }
     }
 
@@ -952,8 +1045,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _webApi.value = _webApi.value.copy(expired = false)
     }
 
+    private var webApiJob: Job? = null
+    private var webApiAttempt = 0L
+
+    private fun cancelWebApiAuthorization() {
+        webApiAttempt++
+        webApiJob?.cancel()
+        webApiJob = null
+    }
+
     fun onWebApiClientIdChange(value: String) {
-        _webApi.value = _webApi.value.copy(clientId = value, error = null)
+        if (value == _webApi.value.clientId) return
+        cancelWebApiAuthorization()
+        _webApi.value = _webApi.value.copy(clientId = value, connecting = false, error = null)
     }
 
     /**
@@ -963,30 +1067,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * token is only valid for the application it was issued to, so the Web API
      * needs its own even though it is the same Spotify account behind both.
      */
-    fun connectWebApi() = viewModelScope.launch {
-        val clientId = _webApi.value.clientId.trim()
-        if (clientId.isEmpty()) {
-            _webApi.value = _webApi.value.copy(error = string(R.string.enter_client_id))
-            return@launch
-        }
+    fun connectWebApi(): Job {
+        cancelWebApiAuthorization()
+        val attempt = webApiAttempt
+        return viewModelScope.launch {
+            val clientId = _webApi.value.clientId.trim()
+            if (clientId.isEmpty()) {
+                _webApi.value = _webApi.value.copy(error = string(R.string.enter_client_id))
+                return@launch
+            }
 
-        _webApi.value = _webApi.value.copy(connecting = true, error = null, expired = false)
-        container.webApi.setClientId(clientId)
-        runCatching {
-            // Search needs no scope — it reads public catalogue data — but the
-            // home feed's "artisti che ascolti" is the user's own listening,
-            // and that is gated behind `user-top-read`. It is the only
-            // permission asked for, and an account connected before this
-            // existed keeps working: the section simply stays empty until the
-            // application is reconnected.
-            SpotifyOAuth.authorize(
-                getApplication(),
-                clientId = clientId,
-                scopes = SpotifyOAuth.WEB_API_SCOPES,
-            )
-        }
-            .onSuccess {
-                container.webApi.tokens.save(it)
+            _webApi.value = _webApi.value.copy(connecting = true, error = null, expired = false)
+            container.webApi.setClientId(clientId)
+            try {
+                // Only the session that opened the browser may accept its eventual answer.
+                val accepted = container.webApi.tokens.authorizeIfCurrent {
+                    SpotifyOAuth.authorize(
+                        getApplication(),
+                        clientId = clientId,
+                        scopes = SpotifyOAuth.WEB_API_SCOPES,
+                    )
+                }
+                if (!accepted || attempt != webApiAttempt) return@launch
                 _webApi.value = _webApi.value.copy(
                     connecting = false,
                     connected = true,
@@ -997,16 +1099,24 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 loadFeed()
                 // Re-run whatever the user had already typed.
                 _search.value.query.takeIf { q -> q.isNotBlank() }?.let(::onSearchQuery)
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (attempt == webApiAttempt) {
+                    android.util.Log.e(TAG, "web api login failed: ${chain(error)}", error)
+                    _webApi.value = _webApi.value.copy(error = describe(error))
+                }
+            } finally {
+                if (attempt == webApiAttempt) _webApi.value = _webApi.value.copy(connecting = false)
             }
-            .onFailure {
-                android.util.Log.e(TAG, "web api login failed: ${chain(it)}", it)
-                _webApi.value = _webApi.value.copy(connecting = false, error = describe(it))
-            }
+        }.also { webApiJob = it }
     }
 
     fun disconnectWebApi() {
+        cancelWebApiAuthorization()
         container.webApi.disconnect()
-        _webApi.value = _webApi.value.copy(connected = false, error = null)
+        _webApi.value = _webApi.value.copy(connecting = false, connected = false, incomplete = false,
+            expired = false, error = null)
         // Not needsSetup: search comes from Spotify's own gateway now, and
         // giving up the registered application only gives up the fallback.
     }
@@ -1148,7 +1258,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _videoMode.value = false
         if (trackUri == null || !trackUri.startsWith("spotify:track:")) return
         videoLookup = viewModelScope.launch(Dispatchers.IO) {
-            val answer = NativeBridge.trackVideo(trackUri) ?: return@launch
+            val answer = runCatching {
+                SpotifyNetworkPolicy.capture().dispatch { NativeBridge.trackVideo(trackUri) }
+            }.getOrNull() ?: return@launch
             val fileId = runCatching {
                 org.json.JSONObject(answer).optString("fileId").takeIf { it.isNotEmpty() }
             }.getOrNull()
@@ -1177,10 +1289,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * something the YouTube Music backend can play, and offering it would be
      * offering a row that does nothing.
      */
-    val searchHistory: StateFlow<List<CatalogTrack>> =
-        container.searchHistory.tracks.map { tracks ->
-            tracks.filter { container.activeBackend.owns(it.uri) }
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
+    val searchHistory: StateFlow<List<CatalogTrack>> = container.searchHistory.tracks
 
     private val _credits =
         MutableStateFlow<dev.lelonio.square.backend.spotify.SpotifyCredits.Credits?>(null)
@@ -1314,16 +1423,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     /** Called when a search result is played, rather than when a track starts. */
-    fun recordSearchPlay(track: CatalogTrack) = viewModelScope.launch {
-        container.searchHistory.record(track)
+    fun recordSearchPlay(track: CatalogTrack): Job? {
+        val access = container.accountLocalData.capture() ?: return null
+        return viewModelScope.launch { container.searchHistory.record(access, track) }
     }
 
-    fun forgetSearchPlay(uri: String) = viewModelScope.launch {
-        container.searchHistory.remove(uri)
+    fun forgetSearchPlay(uri: String): Job? {
+        val access = container.accountLocalData.capture() ?: return null
+        return viewModelScope.launch { container.searchHistory.remove(access, uri) }
     }
 
-    fun clearSearchHistory() = viewModelScope.launch {
-        container.searchHistory.clear()
+    fun clearSearchHistory(): Job? {
+        val access = container.accountLocalData.capture() ?: return null
+        return viewModelScope.launch { container.searchHistory.clear(access) }
     }
 
     init {
@@ -1344,6 +1456,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
 
+        viewModelScope.launch {
+            dev.lelonio.square.playback.OfflineMode.active.drop(1).collect {
+                onSearchQuery(_search.value.query)
+            }
+        }
+        viewModelScope.launch {
+            combine(container.downloads.files, container.downloads.owners) { _, _ -> Unit }
+                .collect {
+                    searchRequests.refreshLocal()
+                    val ready = _state.value as? UiState.Ready
+                    if (ready != null) _state.value = ready.copy(playlists = withLocalFiles(ready.playlists))
+                }
+        }
+
         // Turning "keep Liked Songs offline" on should download them now, not
         // at the next launch. The first value is dropped because the launch
         // itself already synced; see resumeDownloads.
@@ -1351,7 +1477,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             container.downloadSettings.downloadLikedSongs
                 .drop(1)
                 .collect {
-                    syncLikedSongs()
+                    val access = container.accountLocalData.capture() ?: return@collect
+                    syncLikedSongs(access)
                     if (container.downloads.pending().isNotEmpty()) {
                         DownloadService.start(getApplication())
                     }
@@ -1359,24 +1486,72 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun logIn() = viewModelScope.launch {
-        _state.value = UiState.Loading
-        runCatching { SpotifyOAuth.authorize(getApplication()) }
-            .onSuccess {
-                container.tokenStore.save(it)
-                // The service was created before this session existed, so it has
-                // to be told to authenticate the native engine now.
+    private var loginJob: Job? = null
+    private var accountCleanup: Job? = null
+    private var accountGeneration = 0L
+
+    fun logIn(): Job {
+        val previousContextAccess = container.accountLocalData.capture()
+        container.accountLocalData.revoke()
+        val replacingAccount = PlaybackService.disconnectAccount()
+        searchRequests.invalidate()
+        playlistRequests.invalidate()
+        inFlight?.cancel()
+        loginJob?.cancel()
+        val attempt = ++accountGeneration
+        return viewModelScope.launch {
+            try {
+                accountCleanup?.join()
+                replacingAccount.await()
+                PlaybackService.awaitAccountTeardown()
+                if (attempt != accountGeneration) return@launch
+                container.accountLocalData.revoke()
+                container.downloadQueue.stop()
+                container.listeningHistory.disconnect()
+                contextCache.clear()
+                container.contextCache.clear()
+                previousContextAccess?.let { playlistContextCaches.disk(it).clear() }
+                container.preferences.clearLastProfile()
+                container.recentStore.clear()
+                container.recentContexts.clear()
+                container.pinnedPlaylists.clear()
+                container.playlistOrder.clear()
+                _state.value = UiState.Loading
+                val expected = container.tokenStore.generation
+                val answer = SpotifyOAuth.authorize(getApplication())
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                if (attempt != accountGeneration ||
+                    !container.tokenStore.saveIfCurrent(expected, answer)) return@launch
+                PlaybackService.authenticatedAccount()
                 PlaybackService.connect(getApplication())
                 refresh()
+            } catch (error: kotlinx.coroutines.CancellationException) {
+                throw error
+            } catch (error: Exception) {
+                if (attempt == accountGeneration) {
+                    android.util.Log.e(TAG, "login failed: ${chain(error)}", error)
+                    _state.value = UiState.Failed(describe(error))
+                }
             }
-            .onFailure {
-                android.util.Log.e(TAG, "login failed: ${chain(it)}", it)
-                _state.value = UiState.Failed(describe(it))
-            }
+        }.also { loginJob = it }
     }
 
     fun logOut() {
+        val previousContextAccess = container.accountLocalData.capture()
+        container.accountLocalData.revoke()
+        container.downloadQueue.stop()
+        accountGeneration++
+        searchRequests.invalidate()
+        playlistRequests.invalidate()
+        loginJob?.cancel()
+        cancelWebApiAuthorization()
+        listOf(inFlight, feedJob, searchJob, devicesJob, playlistJob, sessionWatch,
+            creditsJob, artistJob, videoLookup, likedBatch).forEach { it?.cancel() }
+        val teardown = PlaybackService.disconnectAccount()
+        container.listeningHistory.disconnect()
         container.tokenStore.clear()
+        container.webApi.disconnect()
+        _webApi.value = WebApiState(clientId = container.webApi.clientId.value.orEmpty())
         // The engine's own credential too, or the next launch would log itself
         // back in with it and signing out would mean nothing.
         dev.lelonio.square.auth.EngineCredentials.clear(getApplication())
@@ -1386,25 +1561,48 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Somebody else's library must not be sitting in the cache when the
         // next account signs in.
         contextCache.clear()
-        viewModelScope.launch { container.contextCache.clear() }
+        val previousCleanup = accountCleanup
+        accountCleanup = viewModelScope.launch {
+            withContext(kotlinx.coroutines.NonCancellable) {
+                previousCleanup?.join()
+                teardown.await()
+                container.contextCache.clear()
+                previousContextAccess?.let { playlistContextCaches.disk(it).clear() }
+            }
+        }
         // The watch signs out with the phone (its own credential, its playback), and what the
         // watch's Home kept of this account goes too.
         container.recentContexts.clear()
         container.pinnedPlaylists.clear()
-        dev.lelonio.square.wear.WearLibrarySource.forgetAccount(container)
         container.wearBridge.signedOut()
-        _playlist.value = PlaylistState()
+        revokePlaylistEntries()
         _feed.value = FeedState()
+        _search.value = SearchState()
+        _devices.value = DevicesState()
+        _homeShelves.value = emptyList()
+        _inPlaylists.value = emptySet()
+        _savedAlbums.value = emptyList()
+        _followedArtists.value = emptyList()
+        _liked.value = emptySet()
+        likedListTrusted = false
+        likedAsked.clear()
+        creditsFor = null
+        artistFor = null
+        _artistInfo.value = null
+        _videoFileId.value = null
         _state.value = UiState.LoggedOut
     }
 
     /** Starts over on the newly chosen source; see the note in `init`. */
     private fun reload() {
+        searchRequests.invalidate()
+        playlistRequests.invalidate()
+        playlistJob?.cancel()
         inFlight?.cancel()
         feedJob?.cancel()
         searchJob?.cancel()
         contextCache.clear()
-        _playlist.value = PlaylistState()
+        revokePlaylistEntries()
         _feed.value = FeedState()
         _search.value = SearchState()
         _state.value = UiState.Loading
@@ -1423,53 +1621,56 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return launchRefresh().also { inFlight = it }
     }
 
-    private fun launchRefresh() = viewModelScope.launch {
-        if (!container.spotifySignedIn) {
-            _state.value = UiState.LoggedOut
-            return@launch
-        }
-
-        _state.value = UiState.Connecting
-        if (!awaitEngine()) {
-            // A library with no session is not an empty library. Everything
-            // that was downloaded is still here and still playable, and the
-            // shelf for it is the one thing the listener came for.
-            offlineLibrary()?.let {
-                _state.value = it
-                // And come back for the real one when the session turns up. This
-                // is the path that matters most: the handshake losing a race
-                // with a cold start is far the commonest way to get here, and it
-                // is usually over a second or two later.
-                watchForSession()
-                return@launch
+    private fun launchRefresh(): Job {
+        val access = container.accountLocalData.capture()
+        accountEntryMarker(when (access?.origin) {
+            null -> AccountEntryMarker.VM_REFRESH_NONE
+            dev.lelonio.square.data.AccountLocalDataCoordinator.Origin.LOCAL -> AccountEntryMarker.VM_REFRESH_LOCAL
+            dev.lelonio.square.data.AccountLocalDataCoordinator.Origin.ONLINE -> AccountEntryMarker.VM_REFRESH_ONLINE
+        })
+        val attempt = accountGeneration
+        val editVersion = playlistEdits.readVersion()
+        return viewModelScope.launch {
+            if (attempt != accountGeneration) return@launch
+            if (access == null) {
+                _state.value = if (container.spotifySignedIn) UiState.Connecting else UiState.LoggedOut
+                return@launch // SESSION_CONNECTED will publish an independent online capability
             }
-            _state.value = if (container.spotifySignedIn) {
-                UiState.Failed(string(R.string.cannot_connect))
-            } else {
-                UiState.LoggedOut
+            if (dev.lelonio.square.playback.OfflineMode.active.value || !container.accountLocalData.isOnlineCurrent(access)) {
+                accountEntryMarker(AccountEntryMarker.VM_OFFLINE_READ_PENDING)
+                val offline = offlineLibrary(access)
+                currentCoroutineContext().ensureActive()
+                container.downloads.read(access) {
+                    if (offline == null) _state.value = UiState.Failed(string(R.string.cannot_connect))
+                    else playlistEdits.publishLibraryRead(offline, editVersion)
+                }
+                return@launch // no engine wait, username lookup, provider call or consent
             }
-            return@launch
-        }
-
-        _state.value = UiState.Loading
-        runCatching { UiState.Ready(Catalog.username(), playlists()) }
-            .onSuccess {
-                _state.value = it
+            _state.value = UiState.Loading
+            try {
+                val ready = UiState.Ready(access.account.id, playlists())
+                currentCoroutineContext().ensureActive()
+                container.accountLocalData.requireOnline(access)
+                container.downloads.read(access) {
+                    playlistEdits.publishLibraryRead(ready, editVersion)
+                }
                 loadProfile()
                 loadMissingCovers()
-                // Spotify's own shelves, once there is a session to ask with.
                 loadHomeShelves()
                 loadFriends()
                 loadFollowedArtists()
                 loadSavedAlbums()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                currentCoroutineContext().ensureActive()
+                val offline = offlineLibrary(access)
+                currentCoroutineContext().ensureActive()
+                container.downloads.read(access) {
+                    if (offline == null) _state.value = UiState.Failed(describe(failure))
+                    else playlistEdits.publishLibraryRead(offline, editVersion)
+                }
             }
-            .onFailure {
-                android.util.Log.e(TAG, "library load failed: ${chain(it)}", it)
-                // The same fallback: the session came up but the catalogue
-                // could not be read, and the downloads are unaffected by that.
-                _state.value = offlineLibrary() ?: UiState.Failed(describe(it))
-            }
-        watchForSession()
+        }
     }
 
     /** The watcher below, so a second offline load does not start a second one. */
@@ -1520,10 +1721,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Null when there is nothing downloaded, which is the one case where an
      * error really is the honest answer.
      */
-    private suspend fun offlineLibrary(): UiState.Ready? {
+    private suspend fun offlineLibrary(access: dev.lelonio.square.data.AccountLocalDataCoordinator.Access): UiState.Ready? {
         container.downloads.load()
+        return container.downloads.read(access) {
         val owners = container.downloads.owners.value
-        val labelled = owners.keys.mapNotNull { uri ->
+        val labelled = owners.keys.filter { it != DownloadStore.SINGLES }.mapNotNull { uri ->
             container.downloads.labelOf(uri)?.let {
                 CatalogPlaylist(uri = uri, name = it.name, artworkUrl = it.artworkUrl)
             }
@@ -1537,20 +1739,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             )
         }
         val everything = listOfNotNull(shelf) + labelled
-        if (everything.isEmpty()) return null
+        if (everything.isEmpty()) return@read null
 
         android.util.Log.i(TAG, "offline library: ${everything.size} downloaded")
         // The account name is not worth a request that cannot be made — but it
         // is worth remembering, so the header goes on saying who is signed in
         // instead of going blank the moment a handshake is slow.
-        val profile = container.preferences.lastProfile()
+        val profile = container.getSharedPreferences("account_profiles_v1", android.content.Context.MODE_PRIVATE)
+        // The unscoped legacy display profile is retained, but is not evidence of this account.
         // And the phone's own files belong here as much as they do online.
-        return UiState.Ready(
-            displayName = profile?.first.orEmpty(),
+        UiState.Ready(
+            displayName = profile.getString("name:${access.namespace}", null) ?: access.account.id,
             playlists = withLocalFiles(everything),
-            avatarUrl = profile?.second,
+            avatarUrl = profile.getString("avatar:${access.namespace}", null),
             offline = true,
         )
+        }
     }
 
     /**
@@ -1586,7 +1790,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Off by default — see PreferencesStore.showLocalFiles.
      */
     private fun withLocalFiles(playlists: List<CatalogPlaylist>): List<CatalogPlaylist> {
-        val rest = playlists.filterNot { it.uri == LocalLibrary.CONTEXT_URI }
+        val archived = container.downloads.owners.value.keys
+            .filter { it.startsWith("downloads:legacy:") }
+            .mapNotNull { uri -> container.downloads.labelOf(uri)?.let {
+                CatalogPlaylist(uri = uri, name = it.name, artworkUrl = it.artworkUrl)
+            } }
+        val rest = playlists.filterNot { it.uri == LocalLibrary.CONTEXT_URI || it.uri.startsWith("downloads:legacy:") } + archived
         if (!container.preferences.showLocalFiles.value) return rest
         return listOf(
             CatalogPlaylist(
@@ -1648,10 +1857,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** The account's own Spotify id, once the profile has been read. */
     private var meId: String? = null
 
-    private fun loadProfile() = viewModelScope.launch {
+    private fun loadProfile(): Job? {
+        val access = container.accountLocalData.captureOnline() ?: return null
+        return viewModelScope.launch {
         if (!container.webApi.isReady) return@launch
         runCatching { container.api.me() }
             .onSuccess { profile ->
+                container.accountLocalData.requireOnline(access)
+                if (profile.id != access.account.id) return@onSuccess
+                container.downloads.read(access) {
                 // The largest image and not the smallest.
                 //
                 // Spotify returns `images` biggest first, so `last` was the
@@ -1668,7 +1882,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     name ?: (_state.value as? UiState.Ready)?.displayName.orEmpty(),
                     avatar,
                 )
-                val ready = _state.value as? UiState.Ready ?: return@onSuccess
+                val ready = _state.value as? UiState.Ready ?: return@read
                 _state.value = ready.copy(
                     displayName = name ?: ready.displayName,
                     avatarUrl = avatar,
@@ -1677,8 +1891,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 // list mine. The id, not the display name — two accounts can
                 // be called the same thing and only one of them owns it.
                 meId = profile.id
+                check(container.getSharedPreferences("account_profiles_v1", android.content.Context.MODE_PRIVATE).edit()
+                    .putString("name:${access.namespace}", name ?: access.account.id)
+                    .putString("avatar:${access.namespace}", avatar).commit())
+                }
             }
             .onFailure { android.util.Log.w(TAG, "profile unavailable: ${describe(it)}") }
+    }
     }
 
     /** Playlists in the order this device last opened them; see [PlaylistOrderStore]. */
@@ -1755,8 +1974,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * name and a missing picture mean "not known yet", never "gone".
      */
     private fun publishPlaylist(state: PlaylistState) {
-        val current = _playlist.value
-        _playlist.value = if (current.uri != state.uri) {
+        _playlist.value = mergePlaylist(_playlist.value, state)
+    }
+
+    private fun mergePlaylist(current: PlaylistState, state: PlaylistState): PlaylistState =
+        if (current.uri != state.uri) {
             state
         } else {
             state.copy(
@@ -1767,7 +1989,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 mine = state.mine ?: current.mine,
             )
         }
-    }
 
     /**
      * The two things one lookup answers: what the list says, and whose it is.
@@ -1780,7 +2001,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (!container.webApi.isReady || !uri.startsWith("spotify:playlist:")) return null
         val dto = runCatching { container.api.playlist(uri.substringAfterLast(':')) }
             .onFailure { android.util.Log.w(TAG, "no details for $uri: ${describe(it)}") }
-            .getOrNull() ?: return null
+            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull() ?: return null
         val owner = dto.owner?.id
         // Null rather than false when either side is missing: "not yours" hides
         // the actions, and hiding them because a request came back thin is
@@ -1821,7 +2042,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
         }
             .onFailure { android.util.Log.w(TAG, "cannot tell if kept: ${describe(it)}") }
-            .getOrNull()
+            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
     }
 
     /**
@@ -1832,13 +2053,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * waits for one before acknowledging a tap feels broken even when it works.
      */
     fun toggleSaved() = viewModelScope.launch {
-        val page = _playlist.value
+        val target = _playlist
+        val access = container.accountLocalData.captureOnline() ?: return@launch
+        val page = target.value
         val uri = page.uri ?: return@launch
         val was = page.saved ?: return@launch
         val id = uri.substringAfterLast(':')
 
-        _playlist.value = _playlist.value.copy(saved = !was)
+        container.accountLocalData.use(access) { target.value = page.copy(saved = !was) }
         runCatching {
+            container.accountLocalData.requireOnline(access)
             when {
                 uri.startsWith("spotify:album:") ->
                     if (was) container.api.removeAlbums(id) else container.api.saveAlbums(id)
@@ -1850,12 +2074,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .onSuccess {
                 // The library is what this button is about, so it is the library
                 // that has to show the answer.
-                refresh()
+                container.accountLocalData.use(access) { refresh() }
             }
             .onFailure {
-                android.util.Log.e(TAG, "keeping failed: ${chain(it)}", it)
-                if (_playlist.value.uri == uri) {
-                    _playlist.value = _playlist.value.copy(saved = was)
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                container.accountLocalData.use(access) {
+                    android.util.Log.e(TAG, "keeping failed: ${chain(it)}", it)
+                    target.value = target.value.copy(saved = was)
                 }
             }
     }
@@ -1874,7 +2099,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
             }
                 .onFailure { android.util.Log.w(TAG, "no name for $uri: ${describe(it)}") }
-                .getOrNull()
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
                 ?.let { return it }
         }
 
@@ -1930,12 +2155,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val shelves = withContext(Dispatchers.IO) {
             runCatching {
                 SpotifyHome.parse(
-                    NativeBridge.homeFeed(
+                    SpotifyNetworkPolicy.capture().dispatch { NativeBridge.homeFeed(
                         java.util.TimeZone.getDefault().id,
                         java.util.Locale.getDefault().language,
                         keys.home,
                         keys.appVersion,
-                    ),
+                    ) },
                 )
             }
                 .onFailure { android.util.Log.i(TAG, "no personalised home: ${describe(it)}") }
@@ -2046,14 +2271,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     private suspend fun seedMembership() {
         if (membershipSeeded) return
+        val access = container.accountLocalData.capture() ?: return
+        val diskCache = playlistContextCaches.disk(access)
         membershipSeeded = true
 
         val collection = runCatching { withContext(Dispatchers.IO) { NativeBridge.collectionUri() } }
             .getOrNull()
             .orEmpty()
         val liked = collection.takeIf { it.isNotEmpty() }
-            ?.let { contextCache[it] ?: container.contextCache.read(it) }
-        if (liked != null) {
+            ?.let { contextCache[playlistContextCaches.memoryKey(it, access)] ?: playlistContextCaches.read(it, access) }
+        if (liked != null) container.accountLocalData.use(access) {
             _liked.value = _liked.value + liked.tracks.map { it.uri }
             // Never downwards: this run may already have read the list itself,
             // which is fresher than anything on disk.
@@ -2061,10 +2288,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 System.currentTimeMillis() - liked.savedAt < LIKED_TRUSTED_MS
         }
 
-        val inPlaylists = runCatching { container.contextCache.tracksInPlaylists() }
+        val inPlaylists = runCatching { diskCache.tracksInPlaylists() }
             .onFailure { android.util.Log.i(TAG, "no playlists remembered: ${describe(it)}") }
             .getOrDefault(emptySet())
-        if (inPlaylists.isNotEmpty()) _inPlaylists.value = _inPlaylists.value + inPlaylists
+        if (inPlaylists.isNotEmpty()) container.accountLocalData.use(access) {
+            _inPlaylists.value = _inPlaylists.value + inPlaylists
+        }
     }
 
     /**
@@ -2096,6 +2325,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .getOrNull()
     }
 
+    private val playlistContextCaches by lazy { PlaylistContextCaches(getApplication()) }
     private val contextCache =
         object : LinkedHashMap<String, ContextCacheStore.Entry>(0, 0.75f, true) {
             override fun removeEldestEntry(eldest: Map.Entry<String, ContextCacheStore.Entry>) =
@@ -2103,6 +2333,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
 
     fun openPlaylist(playlist: CatalogPlaylist) {
+        playlistEdits.detailOpened()
         // Reopening one counts as opening it, and that is exactly the playlist
         // the home page should keep at the front.
         container.playlistOrder.record(playlist.uri)
@@ -2114,12 +2345,29 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             openLocalFiles(playlist)
             return
         }
+        val access = container.accountLocalData.capture() ?: return
 
         // The songs downloaded on their own. Answered from the index, which is
         // the point of it: this shelf has to open with no connection, and there
         // is no context on Spotify's side that corresponds to it.
+        if (playlist.uri.startsWith("downloads:") && playlist.uri != DownloadStore.SINGLES) {
+            openDownloadedContext(playlist)
+            playlistEntries.completed(playlistEntries.pending())
+            return
+        }
         if (playlist.uri == DownloadStore.SINGLES) {
             openDownloadedSongs(playlist)
+            playlistEntries.completed(playlistEntries.pending())
+            return
+        }
+
+        if (container.downloadSettings.offlineMode.value &&
+            container.downloads.owners.value[playlist.uri] == null) {
+            playlistRequests.invalidate()
+            playlistJob?.cancel()
+            publishPlaylist(PlaylistState(uri = playlist.uri, name = playlist.name,
+                artworkUrl = playlist.artworkUrl, kind = kindOf(playlist.uri), loading = false,
+                error = string(R.string.offline_banner_manual)))
             return
         }
 
@@ -2128,33 +2376,45 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // the request cannot even be attempted, and the whole list is already
         // here — in the order the playlist had when it was downloaded, which is
         // the order it should still be in.
-        if (dev.lelonio.square.playback.OfflineMode.active.value) {
+        if (dev.lelonio.square.playback.OfflineMode.active.value ||
+            !container.accountLocalData.isOnlineCurrent(access)) {
             val wanted = container.downloads.owners.value[playlist.uri]
             if (wanted != null) {
-                openDownloadedContext(playlist, wanted)
+                openDownloadedContext(playlist)
+                playlistEntries.completed(playlistEntries.pending())
                 return
             }
+            return // A local receipt never authorises an online context lookup.
         }
 
         val kind = kindOf(playlist.uri)
+        playlistRequests.invalidate()
         playlistJob?.cancel()
+        val readingEntry = playlistEntries.pending()
+        val ticket = PlaylistReadTicket(playlistRequests.begin(), container.accountLocalData,
+            access, playlistEdits.readVersion(), _playlist,
+            onReady = { playlistEntries.completed(readingEntry) })
         // Reassigned when the picture arrives late; every state published below
         // is built from this, so filling it in one place is what stops a later
         // write from taking the picture back off the screen.
         var base = PlaylistState(
             uri = playlist.uri,
-            name = playlist.name,
+            name = (_state.value as? UiState.Ready)?.playlists?.firstOrNull { it.uri == playlist.uri }?.name
+                ?: playlist.name,
             artworkUrl = playlist.artworkUrl,
             kind = kind,
         )
 
-        val remembered = contextCache[playlist.uri]
+        val cacheKey = playlistContextCaches.memoryKey(playlist.uri, access)
+        val remembered = contextCache[cacheKey]
         publishPlaylist(base.copy(
             tracks = remembered?.tracks.orEmpty(),
             loading = remembered == null,
+            loadingMore = kind == DetailKind.ARTIST,
         ))
 
         playlistJob = viewModelScope.launch {
+            ticket.bind(currentCoroutineContext()[Job])
             // Opened by URI alone, from a tap on the player's text: there was no
             // row to take the picture from. Asked for alongside the track list
             // rather than before it, since the list is what the page is for.
@@ -2166,10 +2426,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // second and vanishes.
             if (base.name.isEmpty()) launch {
                 val name = nameOf(playlist.uri) ?: return@launch
+                ensurePlaylistRequest(ticket)
                 base = base.copy(name = name)
-                if (_playlist.value.uri == playlist.uri) {
-                    _playlist.value = _playlist.value.copy(name = name)
-                }
+                ticket.publishName(name, playlistEdits::mergeDetailRead)
             }
 
             // What the list says about itself, when its source says anything.
@@ -2177,41 +2436,37 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // `base`, so a later publish cannot take it back off the screen.
             if (base.description.isEmpty() && kind == DetailKind.PLAYLIST) launch {
                 val details = detailsOf(playlist.uri) ?: return@launch
+                ensurePlaylistRequest(ticket)
                 val text = details.first
                 val mine = details.second
                 base = base.copy(description = text.orEmpty(), mine = mine)
-                if (_playlist.value.uri == playlist.uri) {
-                    _playlist.value = _playlist.value.copy(
-                        description = text.orEmpty().ifEmpty { _playlist.value.description },
-                        mine = mine,
-                    )
-                }
+                ticket.update { it.copy(description = text.orEmpty().ifEmpty { it.description }, mine = mine) }
             }
 
             // Whether it is already kept, for the button that keeps it.
             if (kind != DetailKind.ARTIST) launch {
                 val kept = savedState(playlist.uri) ?: return@launch
-                if (_playlist.value.uri == playlist.uri) {
-                    _playlist.value = _playlist.value.copy(saved = kept)
-                }
+                ensurePlaylistRequest(ticket)
+                ticket.update { it.copy(saved = kept) }
                 base = base.copy(saved = kept)
             }
 
             if (base.artworkUrl == null) launch {
                 val art = artworkFor(playlist.uri, kind) ?: return@launch
+                ensurePlaylistRequest(ticket)
                 base = base.copy(artworkUrl = art)
-                if (_playlist.value.uri == playlist.uri) {
-                    _playlist.value = _playlist.value.copy(artworkUrl = art)
-                }
+                ticket.update { it.copy(artworkUrl = art) }
             }
 
             // The disk copy, if this run has not opened the playlist yet. Read
             // before anything is asked of the network: the whole point is that a
             // list already known appears at once rather than filling in.
-            val entry = remembered ?: container.contextCache.read(playlist.uri)?.also {
-                contextCache[playlist.uri] = it
+            val entry = remembered ?: playlistContextCaches.read(playlist.uri, access)?.also {
+                ensurePlaylistRequest(ticket)
+                contextCache[cacheKey] = it
                 rememberMembership(playlist.uri, it.tracks)
-                publishPlaylist(base.copy(tracks = it.tracks, loading = false))
+                publishRequestedPlaylist(ticket, base.copy(tracks = it.tracks, loading = false,
+                    loadingMore = kind == DetailKind.ARTIST))
             }
             val cached = entry?.tracks.orEmpty()
 
@@ -2222,10 +2477,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     // around the Web API's paging and the access point's
                     // per-track lookups, neither of which exists here.
                     val tracks = container.activeBackend.tracksOf(playlist.uri)
-                    publishPlaylist(base.copy(tracks = tracks, loading = false))
+                    publishRequestedPlaylist(ticket, base.copy(tracks = tracks, loading = false))
                 } else if (kind == DetailKind.ARTIST) {
-                    val page = loadArtist(playlist.uri)
-                    publishPlaylist(
+                    val page = loadArtist(playlist.uri, ticket)
+                    publishRequestedPlaylist(ticket,
                         base.copy(
                             tracks = page.tracks,
                             albums = page.albums,
@@ -2240,16 +2495,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 } else if (cached.isNotEmpty() && isUnchanged(playlist.uri, entry?.snapshotId)) {
                     // Nothing to do: one small request said the copy on screen
                     // is the current one.
-                    publishPlaylist(base.copy(tracks = cached, loadingMore = false))
+                    publishRequestedPlaylist(ticket, base.copy(tracks = cached, loadingMore = false))
                 } else {
-                    loadContextInto(base, playlist.uri, showProgress = cached.isEmpty())
+                    loadContextInto(base, playlist.uri, showProgress = cached.isEmpty(), ticket = ticket)
                 }
             }
                 .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    currentCoroutineContext().ensureActive()
+                    ensurePlaylistRequest(ticket)
                     android.util.Log.e(TAG, "detail load failed: ${chain(it)}", it)
                     // Only when there is nothing to show. A refresh that fails
                     // over a list already on screen should leave the list.
-                    publishPlaylist(
+                    publishRequestedPlaylist(ticket,
                         if (cached.isEmpty()) base.copy(error = describe(it)) else base.copy(tracks = cached),
                     )
                 }
@@ -2274,46 +2532,58 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * the order the index keeps them in.
      */
     private fun openDownloadedSongs(playlist: CatalogPlaylist) {
+        val access = container.accountLocalData.capture() ?: return
+        playlistRequests.invalidate()
         playlistJob?.cancel()
-        val singles = container.downloads.owners.value[DownloadStore.SINGLES].orEmpty()
+        container.downloads.read(access) {
         publishPlaylist(
             PlaylistState(
                 uri = playlist.uri,
                 name = playlist.name,
                 artworkUrl = playlist.artworkUrl,
                 kind = DetailKind.PLAYLIST,
-                tracks = singles.mapNotNull(container.downloads::trackOf),
-                // Nothing here belongs to an account, so none of what a
-                // playlist page offers applies.
+                tracks = container.downloads.tracksForOwner(DownloadStore.SINGLES),
+                // Local account collection: remote playlist editing does not apply.
                 mine = false,
             ),
         )
+        }
     }
 
     /** A downloaded playlist or album, drawn entirely from the index. */
-    private fun openDownloadedContext(playlist: CatalogPlaylist, wanted: List<String>) {
+    private fun openDownloadedContext(playlist: CatalogPlaylist) {
+        val access = container.accountLocalData.capture() ?: return
+        playlistRequests.invalidate()
         playlistJob?.cancel()
+        container.downloads.read(access) {
+        if (playlist.uri !in owners.value) return@read
         val label = container.downloads.labelOf(playlist.uri)
         publishPlaylist(
             PlaylistState(
                 uri = playlist.uri,
-                name = playlist.name.ifEmpty { label?.name.orEmpty() },
-                artworkUrl = playlist.artworkUrl ?: label?.artworkUrl,
+                name = label?.name ?: playlist.name,
+                artworkUrl = label?.artworkUrl ?: playlist.artworkUrl,
                 kind = when (label?.kind) {
                     DownloadStore.KIND_ALBUM -> DetailKind.ALBUM
                     DownloadStore.KIND_ARTIST -> DetailKind.ARTIST
                     else -> DetailKind.PLAYLIST
                 },
-                tracks = wanted.mapNotNull(container.downloads::trackOf),
+                tracks = container.downloads.tracksForOwner(playlist.uri),
                 // Nothing here can be edited without a connection, and a button
                 // that can only fail is worse than no button.
                 mine = false,
             ),
         )
+        }
     }
 
     private fun openLocalFiles(playlist: CatalogPlaylist) {
+        playlistRequests.invalidate()
         playlistJob?.cancel()
+        val readingEntry = playlistEntries.pending()
+        val ticket = PlaylistReadTicket(playlistRequests.begin(), container.accountLocalData,
+            null, playlistEdits.readVersion(), _playlist,
+            onReady = { playlistEntries.completed(readingEntry) })
         val base = PlaylistState(
             uri = playlist.uri,
             name = playlist.name,
@@ -2327,9 +2597,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         publishPlaylist(base.copy(loading = true))
 
         playlistJob = viewModelScope.launch {
+            ticket.bind(currentCoroutineContext()[Job])
             val granted = LocalLibrary.granted(getApplication())
             val tracks = if (granted) LocalLibrary.tracks(getApplication()) else emptyList()
-            publishPlaylist(
+            publishRequestedPlaylist(ticket,
                 base.copy(
                     tracks = tracks,
                     loading = false,
@@ -2384,7 +2655,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** Keeps [page] on the watch, or stops keeping it. The watch does the fetching. */
     fun toggleWatchDownload(page: PlaylistState) {
         val uri = page.uri ?: return
+        if (_playlist.value !== page) return
         val remote = container.wearBridge.watchDownloads
+        val access = remote.capture() ?: return
         viewModelScope.launch {
             remote.request(
                 dev.pampa.fluidify.wear.protocol.DownloadRequest(
@@ -2393,20 +2666,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     keep = !remote.keeps(uri),
                     artUrl = page.artworkUrl,
                 ),
+                access,
             )
         }
     }
 
     fun toggleDownload(page: PlaylistState) {
         val uri = page.uri ?: return
-        if (page.tracks.isEmpty()) return
+        if (page.tracks.isEmpty() || _playlist.value !== page) return
+        val access = container.accountLocalData.capture() ?: return
         viewModelScope.launch {
+            container.downloads.read(access) { Unit }
             if (container.downloads.owners.value.containsKey(uri)) {
-                removeDownload(uri)
+                container.downloads.read(access) {
+                    if (_playlist.value === page) {
+                        _downloadRemoval.value = DownloadRemoval(access, uri, page.name)
+                    }
+                }
             } else if (page.kind == DetailKind.ARTIST) {
-                askAboutArtist(page)
+                askAboutArtist(page, access)
             } else {
                 container.downloads.setOwner(
+                    access = access,
                     ownerUri = uri,
                     tracks = page.tracks,
                     label = DownloadStore.OwnerLabel(
@@ -2424,6 +2705,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    /** A single confirmation bound to the original local-data authority. Not persisted. */
+    class DownloadRemoval internal constructor(
+        internal val access: dev.lelonio.square.data.AccountLocalDataCoordinator.Access,
+        val ownerUri: String,
+        val name: String,
+    )
+
+    private val _downloadRemoval = MutableStateFlow<DownloadRemoval?>(null)
+    val downloadRemoval: StateFlow<DownloadRemoval?> = _downloadRemoval.asStateFlow()
+
+    fun dismissDownloadRemoval(asked: DownloadRemoval) {
+        _downloadRemoval.compareAndSet(asked, null)
+    }
+
+    fun confirmDownloadRemoval(asked: DownloadRemoval) {
+        // Reference identity prevents an old button from consuming a later prompt.
+        if (!_downloadRemoval.compareAndSet(asked, null)) return
+        if (!container.downloads.isCurrent(asked.access)) return
+        removeDownload(asked.ownerUri, asked.access)
+    }
+
     /**
      * What a whole artist would cost, before anything is fetched.
      *
@@ -2431,6 +2733,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * than to the artist page, which is inside a screen that scrolls away.
      */
     data class ArtistDownload(
+        internal val access: dev.lelonio.square.data.AccountLocalDataCoordinator.Access,
         val uri: String,
         val name: String,
         val artworkUrl: String?,
@@ -2452,6 +2755,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _artistDownload.value = null
         viewModelScope.launch {
             container.downloads.setOwner(
+                access = asked.access,
                 ownerUri = asked.uri,
                 tracks = asked.tracks,
                 label = DownloadStore.OwnerLabel(
@@ -2477,7 +2781,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * exact and does not need to be: it exists to tell four hundred megabytes
      * apart from four, which any honest average does.
      */
-    private suspend fun askAboutArtist(page: PlaylistState) {
+    private suspend fun askAboutArtist(page: PlaylistState, access: dev.lelonio.square.data.AccountLocalDataCoordinator.Access) {
+        container.accountLocalData.requireOnline(access)
         val uri = page.uri ?: return
         val records = (page.albums + page.singles).map { it.uri }.distinct()
 
@@ -2488,47 +2793,63 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         page.tracks.forEach { tracks[it.uri] = it }
 
         for (record in records) {
+            container.downloads.read(access) { Unit }
             val fetched = runCatching { container.activeBackend.tracksOf(record) }
                 .onFailure { android.util.Log.i(TAG, "an album of the artist could not be read: ${it::class.java.simpleName}") }
                 .getOrNull()
                 ?: continue
+            container.downloads.read(access) { Unit }
             fetched.forEach { tracks[it.uri] = it }
         }
 
         if (tracks.isEmpty()) return
-        _artistDownload.value = ArtistDownload(
+        container.downloads.read(access) { _artistDownload.value = ArtistDownload(
+            access = access,
             uri = uri,
             name = page.name,
             artworkUrl = page.artworkUrl,
             tracks = tracks.values.toList(),
             estimate = tracks.size * TYPICAL_TRACK_BYTES,
-        )
+        ) }
     }
 
     /** Gives back the download of a page, from anywhere it can be asked for. */
     fun removeDownload(ownerUri: String) {
+        val access = container.accountLocalData.capture() ?: return
+        removeDownload(ownerUri, access)
+    }
+
+    private fun removeDownload(
+        ownerUri: String,
+        access: dev.lelonio.square.data.AccountLocalDataCoordinator.Access,
+    ) {
         viewModelScope.launch {
-            val inFlight = container.downloads.progress.value.keys
-            container.downloads.removeOwner(ownerUri)
-            // Only what is actually being fetched. Cancelling every track of
-            // the playlist would work — the engine clears the mark before each
-            // download — but it would also be several hundred JNI calls to stop
-            // the one or two that are running.
-            inFlight.forEach { runCatching { NativeBridge.cancelDownload(it) } }
-            sweepOrphans()
+            if (!container.downloads.isCurrent(access)) return@launch
+            container.downloadQueue.stopAndJoin()
+            if (!container.downloads.isCurrent(access)) return@launch
+            container.downloads.removeOwner(access, ownerUri)
+            sweepOrphans(access)
+            if (container.downloads.isCurrent(access) && container.downloads.pending().isNotEmpty()) {
+                DownloadService.start(getApplication())
+            }
         }
     }
 
     /** One song, from the row menu or the player. */
     fun toggleTrackDownload(track: CatalogTrack) {
+        val access = container.accountLocalData.capture() ?: return
         viewModelScope.launch {
+            container.downloads.read(access) { Unit }
             val singles = container.downloads.owners.value[DownloadStore.SINGLES].orEmpty()
             if (singles.contains(track.uri)) {
-                container.downloads.removeSingle(track.uri)
-                runCatching { NativeBridge.cancelDownload(track.uri) }
-                sweepOrphans()
+                container.downloadQueue.stopAndJoin()
+                container.downloads.removeSingle(access, track.uri)
+                sweepOrphans(access)
+                if (container.downloads.isCurrent(access) && container.downloads.pending().isNotEmpty()) {
+                    DownloadService.start(getApplication())
+                }
             } else {
-                container.downloads.addSingle(track)
+                container.downloads.addSingle(access, track)
                 DownloadService.start(getApplication())
             }
         }
@@ -2543,33 +2864,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * phone that nothing in the app can see, which is exactly what happens if
      * the index is pruned without anybody holding the list.
      */
-    private suspend fun sweepOrphans() {
-        container.downloads.pruneOrphans().forEach {
-            runCatching { NativeBridge.removeDownload(it) }
-            dev.lelonio.square.download.DownloadExtras.forget(it)
-        }
-        // And whatever is left in the extras that no surviving track can
-        // explain. Cheap, and the only thing that reaches the Canvas videos of
-        // songs removed by an earlier version — or by a crash between the two
-        // halves of a removal.
-        withContext(Dispatchers.IO) {
-            val tracks = container.downloads.files.value.keys
-            dev.lelonio.square.download.DownloadExtras.sweep(
-                trackUris = tracks,
-                coverUrls = tracks.mapNotNull { container.downloads.trackOf(it)?.artworkUrl },
-            )
+    private suspend fun sweepOrphans(access: dev.lelonio.square.data.AccountLocalDataCoordinator.Access) {
+        container.downloadQueue.stopAndJoin()
+        container.downloads.pruneOrphans(access, NativeBridge::removeDownload)
+        if (container.downloads.isCurrent(access) &&
+            (container.downloads.pending().isNotEmpty() || withContext(Dispatchers.IO) { missingExtras() })) {
+            DownloadService.start(getApplication())
         }
     }
 
     /** Picks the queue back up: after a start, and after the listener retries. */
     fun resumeDownloads(retryFailed: Boolean = false) {
+        val access = container.accountLocalData.capture() ?: return
         viewModelScope.launch {
+            try {
             container.downloads.load()
-            container.downloads.reconcile()
+            container.downloads.reconcile(access)
             // Anything a previous run forgot the owner of but never got round
             // to deleting — an app killed between the two.
-            sweepOrphans()
-            if (retryFailed) container.downloads.retryFailed()
+            sweepOrphans(access)
+            if (retryFailed) container.downloads.retryFailed(access)
             // Something to fetch, or something already fetched that arrived
             // without its cover — a track downloaded by a build of this app
             // that had no extras yet. Both are the queue's work; see
@@ -2577,7 +2891,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             val owed = container.downloads.pending().isNotEmpty() ||
                 withContext(Dispatchers.IO) { missingExtras() }
             if (owed) DownloadService.start(getApplication())
-            syncDownloads()
+            syncDownloads(access)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                android.util.Log.w(TAG, "Account downloads unavailable; files retained", failure)
+            }
         }
     }
 
@@ -2603,10 +2922,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * the copy already on the phone is still perfectly playable, and it will be
      * checked again next time.
      */
-    private suspend fun syncDownloads() {
-        if (dev.lelonio.square.playback.OfflineMode.active.value) return
+    private suspend fun syncDownloads(access: dev.lelonio.square.data.AccountLocalDataCoordinator.Access) {
+        if (!container.accountLocalData.isOnlineCurrent(access)) return
+        if (container.downloadSettings.offlineMode.value) return
 
-        syncLikedSongs()
+        syncLikedSongs(access)
 
         val owners = container.downloads.owners.value.keys
             .filter { it.startsWith("spotify:playlist:") }
@@ -2614,7 +2934,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         var changed = false
         for (uri in owners) {
-            val known = container.downloads.owners.value[uri].orEmpty()
+            val refresh = container.downloads.beginOwnerRefresh(access, uri) ?: continue
             val fresh = runCatching { container.activeBackend.tracksOf(uri) }
                 .onFailure { android.util.Log.i(TAG, "a downloaded playlist could not be synced: ${it::class.java.simpleName}") }
                 .getOrNull()
@@ -2623,15 +2943,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // failed than a playlist somebody emptied, and acting on it would
             // delete the whole download.
             if (fresh.isEmpty()) continue
-            if (fresh.map { it.uri } == known) continue
-
-            android.util.Log.i(TAG, "a downloaded playlist changed: ${known.size} -> ${fresh.size} tracks")
-            container.downloads.setOwner(uri, fresh, container.downloads.labelOf(uri))
-            changed = true
+            if (container.downloads.refreshOwner(refresh, fresh, container.downloads.labelOf(uri)) ==
+                DownloadStore.OwnerRefreshResult.MEMBERSHIP) changed = true
         }
 
         if (changed) {
-            sweepOrphans()
+            sweepOrphans(access)
             if (container.downloads.pending().isNotEmpty()) {
                 DownloadService.start(getApplication())
             }
@@ -2645,32 +2962,37 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * there is no snapshot to compare and no list to open, and the answer
      * changes every time a heart is tapped.
      */
-    private suspend fun syncLikedSongs() {
+    private suspend fun syncLikedSongs(access: dev.lelonio.square.data.AccountLocalDataCoordinator.Access) {
+        container.downloads.read(access) { Unit }
         val wanted = container.downloadSettings.downloadLikedSongs.value
         if (!wanted) {
-            if (container.downloads.owners.value.containsKey(DownloadStore.LIKED)) {
-                container.downloads.removeOwner(DownloadStore.LIKED)
-                sweepOrphans()
-            }
+            val existed = container.downloads.owners.value.containsKey(DownloadStore.LIKED)
+            // Also invalidate an in-flight first refresh while no owner exists yet.
+            container.downloads.removeOwner(access, DownloadStore.LIKED)
+            if (existed) sweepOrphans(access)
             return
         }
+        if (!container.accountLocalData.isOnlineCurrent(access)) return
+        if (container.downloadSettings.offlineMode.value) return
+        val refresh = container.downloads.beginOwnerRefresh(access, DownloadStore.LIKED, allowCreate = true,
+            consent = { container.downloadSettings.downloadLikedSongs.value }) ?: return
         val collection = runCatching { NativeBridge.collectionUri() }
             .getOrNull()
             ?.takeIf { it.isNotEmpty() }
             ?: return
+        container.downloads.read(access) { Unit }
         val tracks = runCatching { container.activeBackend.tracksOf(collection) }
             .onFailure { android.util.Log.i(TAG, "liked songs could not be synced: ${describe(it)}") }
             .getOrNull()
             ?: return
         if (tracks.isEmpty()) return
-        if (tracks.map { it.uri } == container.downloads.owners.value[DownloadStore.LIKED]) return
-
-        container.downloads.setOwner(
-            DownloadStore.LIKED,
+        if (!container.downloadSettings.downloadLikedSongs.value) return
+        val result = container.downloads.refreshOwner(
+            refresh,
             tracks,
             DownloadStore.OwnerLabel(name = string(R.string.liked_songs)),
         )
-        sweepOrphans()
+        if (result == DownloadStore.OwnerRefreshResult.MEMBERSHIP) sweepOrphans(access)
     }
 
     /** Called once the listener has answered the system's permission dialog. */
@@ -2709,7 +3031,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }.firstOrNull()?.url
             }
                 .onFailure { android.util.Log.w(TAG, "no cover for $uri: ${describe(it)}") }
-                .getOrNull()
+                .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
             if (fetched != null) return fetched
         }
 
@@ -2720,7 +3042,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // An album's cover is on every one of its tracks, which is the way in
         // when the user has not registered an application of their own.
         if (kind != DetailKind.ALBUM) return null
-        return contextCache[uri]?.tracks?.firstNotNullOfOrNull { it.artworkUrl }
+        val access = container.accountLocalData.capture() ?: return null
+        return contextCache[playlistContextCaches.memoryKey(uri, access)]?.tracks?.firstNotNullOfOrNull { it.artworkUrl }
     }
 
     /**
@@ -2738,124 +3061,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             container.api.playlistSnapshot(uri.substringAfterLast(':')).snapshotId == snapshotId
         }
             .onFailure { android.util.Log.w(TAG, "snapshot check failed: ${describe(it)}") }
-            .getOrDefault(false)
+            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrDefault(false)
     }
 
-    /**
-     * Removes a track from the playlist currently open.
-     *
-     * Optimistic, unlike adding: the row disappearing *is* the confirmation, and
-     * putting it back is a possible outcome the user can see, whereas a row that
-     * sits there for a round trip before vanishing reads as a tap that missed.
-     *
-     * One occurrence, the one tapped. A playlist can hold the same song twice —
-     * and one of ours did, three times, through a bug of this app's own making —
-     * so "remove that row" is the only instruction that means anything there.
-     */
-    fun removeFromPlaylist(track: CatalogTrack, index: Int = -1) {
-        val uri = _playlist.value.uri ?: return
-        if (!uri.startsWith("spotify:playlist:")) return
+    val playlistEditFeedback get() = playlistEdits.feedback
+    fun dismissPlaylistEditFeedback(id: Long) = playlistEdits.dismiss(id)
+    fun playlistEditDestinationChanged() = playlistEdits.destinationChanged()
 
-        val before = _playlist.value.tracks
-        val at = if (index >= 0 && before.getOrNull(index)?.uri == track.uri) {
-            index
-        } else {
-            before.indexOfFirst { it.uri == track.uri }
-        }
-        if (at < 0) return
+    /** One selected occurrence, confirmed by the service before removing its row. */
+    fun removeFromPlaylist(track: CatalogTrack, index: Int = -1) { playlistEdits.remove(track, index) }
 
-        _playlist.value = _playlist.value.copy(
-            tracks = before.filterIndexed { position, _ -> position != at },
-        )
-        invalidateContext(uri)
-
-        viewModelScope.launch {
-            runCatching {
-                // Through the access point; see native/src/playlists.rs for why
-                // the Web API cannot write to a playlist at all.
-                withContext(Dispatchers.IO) {
-                    NativeBridge.removeFromPlaylist(uri, track.uri, at)
-                }
-            }.onFailure {
-                android.util.Log.e(TAG, "remove from playlist failed: ${chain(it)}", it)
-                // Only if the screen is still showing the same playlist.
-                if (_playlist.value.uri == uri) {
-                    _playlist.value = _playlist.value.copy(tracks = before)
-                }
-            }
-        }
+    /** Capture while building the row menu; a later page/account cannot inherit its selection. */
+    fun playlistRemovalAction(page: PlaylistState, track: CatalogTrack, index: Int): () -> Unit {
+        val remove = playlistEdits.removalAction(page, track, index)
+        return { remove(); Unit }
     }
 
     /** Whether the active source lets the account make and change playlists. */
     val canEditPlaylists: Boolean get() = container.activeBackend.canEditPlaylists
 
-    /**
-     * Makes a playlist and puts it at the top of the library.
-     *
-     * Inserted locally rather than by refetching: the service takes a moment to
-     * list a playlist it has just created, and a new playlist that does not
-     * appear reads as the button having failed.
-     */
-    fun createPlaylist(name: String) = viewModelScope.launch {
-        runCatching { container.activeBackend.createPlaylist(name.trim()) }
-            .onSuccess { created ->
-                val ready = _state.value as? UiState.Ready ?: return@onSuccess
-                _state.value = ready.copy(playlists = listOf(created) + ready.playlists)
-            }
-            .onFailure { android.util.Log.e(TAG, "create playlist failed: ${chain(it)}", it) }
-    }
-
-    fun renamePlaylist(uri: String, name: String) = viewModelScope.launch {
-        val trimmed = name.trim()
-        if (trimmed.isEmpty()) return@launch
-        // Renamed on screen first: this is one field on a row, the failure is
-        // rare, and putting the old name back is all an undo needs to be.
-        val ready = _state.value as? UiState.Ready
-        val before = ready?.playlists
-        if (ready != null) {
-            _state.value = ready.copy(
-                playlists = ready.playlists.map {
-                    if (it.uri == uri) it.copy(name = trimmed) else it
-                },
-            )
-        }
-        if (_playlist.value.uri == uri) {
-            _playlist.value = _playlist.value.copy(name = trimmed)
-        }
-
-        runCatching { container.activeBackend.renamePlaylist(uri, trimmed) }
-            .onFailure {
-                android.util.Log.e(TAG, "rename playlist failed: ${chain(it)}", it)
-                val current = _state.value as? UiState.Ready
-                if (before != null && current != null) {
-                    _state.value = current.copy(playlists = before)
-                }
-            }
-        invalidateContext(uri)
-    }
-
-    fun deletePlaylist(uri: String) = viewModelScope.launch {
-        val ready = _state.value as? UiState.Ready
-        val before = ready?.playlists
-        if (ready != null) {
-            _state.value = ready.copy(playlists = ready.playlists.filterNot { it.uri == uri })
-        }
-
-        runCatching { container.activeBackend.deletePlaylist(uri) }
-            .onFailure {
-                android.util.Log.e(TAG, "delete playlist failed: ${chain(it)}", it)
-                val current = _state.value as? UiState.Ready
-                if (before != null && current != null) {
-                    _state.value = current.copy(playlists = before)
-                }
-            }
-        invalidateContext(uri)
-    }
+    fun createPlaylist(name: String) = playlistEdits.create(name)
+    fun renamePlaylist(uri: String, name: String) = playlistEdits.rename(uri, name)
+    fun deletePlaylist(uri: String) = playlistEdits.delete(uri)
 
     /** Drops a context from both caches so the next open re-reads it. */
     private fun invalidateContext(uri: String) {
-        contextCache.remove(uri)
-        viewModelScope.launch { container.contextCache.remove(uri) }
+        playlistEntries.invalidate(uri)
+        val access = container.accountLocalData.capture() ?: return
+        contextCache.remove(playlistContextCaches.memoryKey(uri, access))
+        viewModelScope.launch { playlistContextCaches.disk(access).remove(uri, container.accountLocalData, access) }
     }
 
     /**
@@ -2875,23 +3109,42 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      *   cached list on screen: a finished list must not be replaced by a
      *   growing one.
      */
-    private suspend fun loadContextInto(base: PlaylistState, uri: String, showProgress: Boolean) {
-        val paged = runCatching { pagedTracks(base, uri, showProgress) }
-            .onFailure { android.util.Log.w(TAG, "paged read failed: ${describe(it)}") }
+    private fun ensurePlaylistRequest(ticket: PlaylistReadTicket) = ticket.ensureCurrent()
+
+    private fun publishRequestedPlaylist(ticket: PlaylistReadTicket, value: PlaylistState) {
+        ticket.update { current -> mergePlaylist(current, playlistEdits.mergeDetailRead(value, ticket.version)) }
+    }
+
+    private suspend fun loadContextInto(base: PlaylistState, uri: String, showProgress: Boolean, ticket: PlaylistReadTicket) {
+        ensurePlaylistRequest(ticket)
+        val access = ticket.access
+        val downloadRefresh = access?.let { container.downloads.beginOwnerRefresh(it, uri) }
+        val paged = runCatching { pagedTracks(base, uri, showProgress, ticket) }
+            .onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                ensurePlaylistRequest(ticket)
+                android.util.Log.w(TAG, "paged read failed: ${describe(it)}")
+            }
             .getOrNull()
 
-        val tracks = paged ?: accessPointTracks(base, uri, showProgress)
+        val tracks = paged ?: accessPointTracks(base, uri, showProgress, ticket)
 
-        publishPlaylist(base.copy(tracks = tracks, loadingMore = false))
+        publishRequestedPlaylist(ticket, base.copy(tracks = tracks, loadingMore = false))
 
         // Stamped with the version it was read from, so the next open can ask
         // one question instead of reading it all again. Without a stamp the
         // entry still saves — it just gets refreshed silently every time.
         val snapshotId = snapshotOf(uri)
-        contextCache[uri] = ContextCacheStore.Entry(tracks, snapshotId)
-        rememberMembership(uri, tracks)
-        container.contextCache.write(uri, tracks, snapshotId)
-        followDownload(uri, tracks)
+        currentCoroutineContext().ensureActive()
+        ensurePlaylistRequest(ticket)
+        val cacheAccess = access ?: return
+        container.accountLocalData.use(cacheAccess) {
+            contextCache[playlistContextCaches.memoryKey(uri, cacheAccess)] = ContextCacheStore.Entry(tracks, snapshotId)
+            rememberMembership(uri, tracks)
+        }
+        playlistContextCaches.disk(cacheAccess).write(uri, tracks, snapshotId)
+        ensurePlaylistRequest(ticket)
+        followDownload(uri, tracks, downloadRefresh)
     }
 
     /**
@@ -2905,14 +3158,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * Does nothing for a playlist nobody asked to keep, which is almost all of
      * them.
      */
-    private suspend fun followDownload(uri: String, tracks: List<CatalogTrack>) {
-        val known = container.downloads.owners.value[uri] ?: return
+    private suspend fun followDownload(uri: String, tracks: List<CatalogTrack>, refresh: DownloadStore.OwnerRefreshToken?) {
+        if (refresh == null) return
+        val access = refresh.access
         if (tracks.isEmpty()) return
-        if (tracks.map { it.uri } == known) return
-
-        android.util.Log.i(TAG, "downloaded playlist changed: ${known.size} -> ${tracks.size}")
-        container.downloads.setOwner(uri, tracks, container.downloads.labelOf(uri))
-        sweepOrphans()
+        if (container.downloads.refreshOwner(refresh, tracks, container.downloads.labelOf(uri)) !=
+            DownloadStore.OwnerRefreshResult.MEMBERSHIP) return
+        sweepOrphans(access)
         if (container.downloads.pending().isNotEmpty()) {
             DownloadService.start(getApplication())
         }
@@ -2923,7 +3175,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         if (!container.webApi.isReady || !uri.startsWith("spotify:playlist:")) return null
         return runCatching {
             container.api.playlistSnapshot(uri.substringAfterLast(':')).snapshotId
-        }.getOrNull()
+        }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
     }
 
     /**
@@ -2943,34 +3195,36 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         base: PlaylistState,
         uri: String,
         showProgress: Boolean,
+        ticket: PlaylistReadTicket,
     ): List<CatalogTrack>? {
         if (uri.endsWith(":collection")) {
-            gatewayTracks(base, showProgress) { offset ->
+            gatewayTracks(base, showProgress, ticket) { offset ->
                 container.gateway.savedTracks(offset)
             }?.let { return it }
             // Nothing else knows this list: the access point refuses the
             // collection as a context, so without the gateway and without a
             // registered application there is no answer to give.
             check(container.webApi.isReady) { string(R.string.liked_songs_failed) }
-            return webApiSavedTracks(base, showProgress)
+            return webApiSavedTracks(base, showProgress, ticket)
         }
 
         if (!uri.startsWith("spotify:playlist:")) return null
-        gatewayTracks(base, showProgress) { offset ->
+        gatewayTracks(base, showProgress, ticket) { offset ->
             container.gateway.playlistTracks(uri, offset)
         }?.let { return it }
         if (!container.webApi.isReady) return null
-        return webApiPlaylistTracks(base, uri, showProgress)
+        return webApiPlaylistTracks(base, uri, showProgress, ticket)
     }
 
     /** The shared gateway reader, with each page published as it lands. */
     private suspend fun gatewayTracks(
         base: PlaylistState,
         showProgress: Boolean,
+        ticket: PlaylistReadTicket,
         page: suspend (offset: Int) -> GatewayPage?,
     ): List<CatalogTrack>? = container.gateway.readAll(
         onPage = if (showProgress) {
-            { tracks, more -> publishPlaylist(base.copy(tracks = tracks, loadingMore = more)) }
+            { tracks, more -> publishRequestedPlaylist(ticket, base.copy(tracks = tracks, loadingMore = more)) }
         } else {
             null
         },
@@ -2982,6 +3236,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         base: PlaylistState,
         uri: String,
         showProgress: Boolean,
+        ticket: PlaylistReadTicket,
     ): List<CatalogTrack> {
         val id = uri.substringAfterLast(':')
         val loaded = mutableListOf<CatalogTrack>()
@@ -2999,7 +3254,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             offset += page.items.size
             if (showProgress) {
-                publishPlaylist(base.copy(
+                publishRequestedPlaylist(ticket, base.copy(
                     tracks = loaded.toList(),
                     loadingMore = offset < page.total,
                 ))
@@ -3012,6 +3267,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     private suspend fun webApiSavedTracks(
         base: PlaylistState,
         showProgress: Boolean,
+        ticket: PlaylistReadTicket,
     ): List<CatalogTrack> {
         val loaded = mutableListOf<CatalogTrack>()
         var offset = 0
@@ -3026,7 +3282,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             offset += page.items.size
             if (showProgress) {
-                publishPlaylist(base.copy(
+                publishRequestedPlaylist(ticket, base.copy(
                     tracks = loaded.toList(),
                     loadingMore = offset < page.total,
                 ))
@@ -3039,6 +3295,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         base: PlaylistState,
         uri: String,
         showProgress: Boolean,
+        ticket: PlaylistReadTicket,
     ): List<CatalogTrack> {
         val uris = Catalog.contextTrackUris(uri)
         if (uris.isEmpty()) return emptyList()
@@ -3048,7 +3305,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         batches.forEachIndexed { index, batch ->
             loaded += Catalog.tracks(batch)
             if (showProgress) {
-                publishPlaylist(base.copy(
+                publishRequestedPlaylist(ticket, base.copy(
                     tracks = loaded.toList(),
                     // Counted in batches, not in tracks: a delisted track
                     // resolves to nothing, so the list is legitimately shorter
@@ -3080,7 +3337,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val genres: List<String>,
     )
 
-    private suspend fun loadArtist(uri: String): ArtistPage {
+    private suspend fun loadArtist(uri: String, ticket: PlaylistReadTicket): ArtistPage {
         if (!container.webApi.isReady) {
             error(string(R.string.artist_needs_app))
         }
@@ -3113,15 +3370,19 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // Not fatal, either of them. The page is worth showing without the
         // number under the name, and an account whose application predates the
         // follow permissions still gets everything else.
-        val artist = runCatching { container.api.artist(id) }.getOrNull()
+        val artist = runCatching { container.api.artist(id) }.onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
         val following = runCatching { container.api.isFollowing(ids = id).firstOrNull() }
             .onFailure { android.util.Log.w(TAG, "cannot tell if followed: ${describe(it)}") }
-            .getOrNull()
+            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrNull()
 
-        if (following != null) {
-            _playlist.value = _playlist.value.let {
-                if (it.uri == uri) it.copy(following = following) else it
-            }
+        currentCoroutineContext().ensureActive()
+        ensurePlaylistRequest(ticket)
+        if (artist != null || following != null) {
+            ticket.update { current -> current.copy(
+                name = current.name.ifEmpty { artist?.name.orEmpty() },
+                artworkUrl = current.artworkUrl ?: artist?.images?.firstOrNull()?.url,
+                following = following ?: current.following,
+            ) }
         }
 
         return ArtistPage(
@@ -3172,7 +3433,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 .take(10)
         }
             .onFailure { android.util.Log.w(TAG, "no playlists for $name: ${describe(it)}") }
-            .getOrDefault(emptyList())
+            .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it }.getOrDefault(emptyList())
     }
 
     /**
@@ -3183,26 +3444,30 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * acknowledging a tap feels broken even when it works.
      */
     fun toggleFollowArtist() = viewModelScope.launch {
-        val page = _playlist.value
+        val target = _playlist
+        val access = container.accountLocalData.captureOnline() ?: return@launch
+        val page = target.value
         val uri = page.uri ?: return@launch
         if (page.kind != DetailKind.ARTIST) return@launch
         val was = page.following ?: false
         val id = uri.substringAfterLast(':')
 
-        _playlist.value = _playlist.value.copy(following = !was)
+        container.accountLocalData.use(access) { target.value = page.copy(following = !was) }
         runCatching {
+            container.accountLocalData.requireOnline(access)
             if (was) container.api.unfollowArtists(ids = id) else container.api.followArtists(ids = id)
         }
-            .onSuccess { loadFollowedArtists() }
+            .onSuccess { container.accountLocalData.use(access) { loadFollowedArtists() } }
             .onFailure {
-                android.util.Log.e(TAG, "follow failed: ${chain(it)}", it)
-                if (_playlist.value.uri == uri) {
-                    _playlist.value = _playlist.value.copy(following = was)
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                container.accountLocalData.use(access) {
+                    android.util.Log.e(TAG, "follow failed: ${chain(it)}", it)
+                    target.value = target.value.copy(following = was)
+                    // Almost always the same cause: an application connected before
+                    // this feature existed, whose token carries no permission to
+                    // follow anybody. Saying so is more use than the error itself.
+                    _webApi.value = _webApi.value.copy(expired = true)
                 }
-                // Almost always the same cause: an application connected before
-                // this feature existed, whose token carries no permission to
-                // follow anybody. Saying so is more use than the error itself.
-                _webApi.value = _webApi.value.copy(expired = true)
             }
     }
 
@@ -3301,6 +3566,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * callback because readiness lives behind a JNI boolean.
      */
     private suspend fun awaitEngine(): Boolean {
+        if (container.downloadSettings.offlineMode.value) return false
         // An engine that came up with no session is not one that is still
         // coming up. Waiting the full timeout and then rebuilding would be two
         // handshakes against the same missing network, and the listener would
@@ -3322,7 +3588,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // failed, so there is no sound to interrupt.
         android.util.Log.i(TAG, "engine did not answer, asking for a new session")
         withContext(Dispatchers.IO) {
-            runCatching { NativeBridge.reconnect(force = true) }
+            runCatching { SpotifyNetworkPolicy.capture().dispatch { NativeBridge.reconnect(force = true) } }
                 .onFailure { android.util.Log.w(TAG, "session not asked for: ${describe(it)}") }
         }
         return pollEngine()
@@ -3330,6 +3596,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun pollEngine(): Boolean = withTimeoutOrNull(ENGINE_TIMEOUT_MS) {
         while (!NativeBridge.isConnected) {
+            if (container.downloadSettings.offlineMode.value) return@withTimeoutOrNull false
             // The service clears the session when Spotify rejects it. Without
             // this check the UI would sit on "connecting" for the full timeout
             // and then report a connection problem, when the real answer is
@@ -3340,7 +3607,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             if (engineIsOffline()) return@withTimeoutOrNull false
             delay(POLL_INTERVAL_MS)
         }
-        true
+        !container.downloadSettings.offlineMode.value
     } ?: false
 
     /**
@@ -3408,6 +3675,125 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .mapNotNull { it.message?.takeIf(String::isNotBlank) }
             .toList()
         return parts.firstOrNull() ?: error::class.java.simpleName
+    }
+
+    private val _legacyDownloadChoice = MutableStateFlow<DownloadStore.LegacyAssignment?>(null)
+    val legacyDownloadChoice = _legacyDownloadChoice.asStateFlow()
+    private val _legacyDownloadError = MutableStateFlow<String?>(null)
+    val legacyDownloadError = _legacyDownloadError.asStateFlow()
+
+    // Observer callbacks can run on the credential watcher thread. Only thread-safe
+    // cancellation and StateFlow projection changes belong here; UI request tickets
+    // are invalidated by the main-thread collector below.
+    private val localDataTransitions = AccountAccessTransitions(container.accountLocalData)
+    private val localDataObservation = localDataTransitions.observe { observed, answered ->
+        accountEntryMarker(when (observed?.origin) {
+            null -> AccountEntryMarker.VM_OBSERVER_NONE
+            dev.lelonio.square.data.AccountLocalDataCoordinator.Origin.LOCAL -> AccountEntryMarker.VM_OBSERVER_LOCAL
+            dev.lelonio.square.data.AccountLocalDataCoordinator.Origin.ONLINE -> AccountEntryMarker.VM_OBSERVER_ONLINE
+        })
+        // A change made on the main thread reaches the collector below before it reaches
+        // this: the StateFlow resumes it inline, so the Home load for this very access is
+        // already running. Cancelling it here left the page on "Connecting" after an online
+        // verification, with nothing to ask again. What the collector started stays; what
+        // the previous access owned is revoked either way.
+        if (!answered) {
+            inFlight?.cancel()
+            _state.value = UiState.Connecting
+            _legacyDownloadChoice.value = null
+            _legacyDownloadError.value = null
+        }
+        listOf(searchJob, playlistJob).forEach { it?.cancel() }
+        _search.value = SearchState()
+        revokePlaylistEntries()
+        _artistDownload.value = null
+        _downloadRemoval.value = null
+    }
+
+    private val manualNetworkObservation = SpotifyNetworkPolicy.observe { offline ->
+        if (offline) listOf(inFlight, searchJob, playlistJob, feedJob, videoLookup, devicesJob)
+            .forEach { it?.cancel() }
+    }
+
+    init {
+        viewModelScope.launch {
+            SpotifyNetworkPolicy.manual.collect { offline ->
+                if (offline) {
+                    playlistRequests.invalidate()
+                    searchRequests.invalidate()
+                    val open = _playlist.value
+                    if (open.uri?.startsWith("spotify:") == true && container.downloads.owners.value[open.uri] == null) {
+                        _playlist.value = open.copy(loading = false, loadingMore = false,
+                            error = string(R.string.offline_banner_manual))
+                    }
+                }
+            }
+        }
+        viewModelScope.launch {
+            localDataTransitions.collect { access ->
+                accountEntryMarker(when (access?.origin) {
+                    null -> AccountEntryMarker.VM_COLLECTOR_NONE
+                    dev.lelonio.square.data.AccountLocalDataCoordinator.Origin.LOCAL -> AccountEntryMarker.VM_COLLECTOR_LOCAL
+                    dev.lelonio.square.data.AccountLocalDataCoordinator.Origin.ONLINE -> AccountEntryMarker.VM_COLLECTOR_ONLINE
+                })
+                searchRequests.invalidate()
+                playlistRequests.invalidate()
+                searchAccess = null
+                contextCache.clear()
+                membershipSeeded = false
+                _search.value = SearchState()
+                _artistDownload.value = null
+                _downloadRemoval.value = null
+                _legacyDownloadChoice.value = null
+                _legacyDownloadError.value = null
+                inFlight?.cancel()
+                inFlight = null
+                if (access != null) {
+                    resumeDownloads()
+                    askLegacyDownloads()
+                    refresh()
+                } else {
+                    _state.value = if (container.spotifySignedIn) UiState.Connecting else UiState.LoggedOut
+                }
+            }
+        }
+    }
+
+    override fun onCleared() {
+        localDataObservation.close()
+        manualNetworkObservation.close()
+        super.onCleared()
+    }
+
+    fun askLegacyDownloads() {
+        val access = container.accountLocalData.capture() ?: return
+        viewModelScope.launch {
+            try {
+                val choice = container.downloads.beginLegacyAssignment(access)
+                container.downloads.read(access) { _legacyDownloadChoice.value = choice }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (failure: Exception) {
+                android.util.Log.w(TAG, "Legacy assignment unavailable; files retained", failure)
+            }
+        }
+    }
+    fun dismissLegacyDownloads() { _legacyDownloadChoice.value = null; _legacyDownloadError.value = null }
+    fun confirmLegacyDownloads(choice: DownloadStore.LegacyAssignment) {
+        viewModelScope.launch {
+            try {
+                container.downloads.confirmLegacyAssignment(choice)
+                _legacyDownloadChoice.value = null
+                _legacyDownloadError.value = null
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                // A revoked confirmation is discarded; the new account must receive a new choice.
+                throw cancelled
+            } catch (failure: Exception) {
+                if (container.downloads.isCurrent(choice.access)) {
+                    _legacyDownloadError.value = string(R.string.legacy_downloads_failed)
+                }
+            }
+        }
     }
 
     private companion object {

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_removal_title">İndirilenler kaldırılsın mı?</string>
+    <string name="download_removal_message">“%1$s” için indirilen kopya bu cihazdan kaldırılsın mı? Çevrimdışı dinlemek için yeniden indirmeniz gerekir. İndirilen diğer koleksiyonlarda tutulan parçalar kullanılabilir kalır.</string>
+</resources>

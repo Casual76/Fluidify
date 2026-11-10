@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.data.ListeningRepositoryTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-07T20:44:52.220Z" hostname="PC_FISSO" time="0.519">
+  <properties/>
+  <testcase name="reopeningRepositoryKeepsCheckpointWithoutCountingProcessDowntime" classname="dev.lelonio.square.data.ListeningRepositoryTest" time="0.071"/>
+  <testcase name="importBeforeCheckpointReconcilesAndStaleCheckpointCannotRemoveMinutes" classname="dev.lelonio.square.data.ListeningRepositoryTest" time="0.05"/>
+  <testcase name="intervalsSplitAtExactTimeBoundaryAndCheckpointsAreIdempotent" classname="dev.lelonio.square.data.ListeningRepositoryTest" time="0.055"/>
+  <testcase name="bridgeSnapshotRetainsUnknownDurationAndRejectsRevokedAccess" classname="dev.lelonio.square.data.ListeningRepositoryTest" time="0.073"/>
+  <testcase name="logoutSwitchOffAndDeleteRevokeStaleWritersButRetainOtherAccounts" classname="dev.lelonio.square.data.ListeningRepositoryTest" time="0.126"/>
+  <testcase name="equalDurationStaleCheckpointCannotRegressEndOrQualification" classname="dev.lelonio.square.data.ListeningRepositoryTest" time="0.045"/>
+  <testcase name="paginationIsStableAndHalfOpen" classname="dev.lelonio.square.data.ListeningRepositoryTest" time="0.044"/>
+  <testcase name="repeatedImportMatchesEachLocalOccurrenceOnlyOnceAndUnknownDurationStaysNull" classname="dev.lelonio.square.data.ListeningRepositoryTest" time="0.051"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

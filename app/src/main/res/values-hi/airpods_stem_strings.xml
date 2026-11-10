@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_stem_local_choice">इस फ़ोन पर सहेजा गया</string>
+    <string name="airpods_stem_shared">देर तक दबाना &#183; डिवाइस की साझा स्थिति</string>
+    <string name="airpods_stem_unknown">अभी प्रेस को इंटरसेप्ट किया जा रहा है या नहीं: अज्ञात। डिवाइस से कोई मौजूदा रीडिंग नहीं मिली है।</string>
+    <string name="airpods_stem_intercepted">मौजूदा रीडिंग: दोनों ओर देर तक दबाने पर Fluidify प्रेस को इंटरसेप्ट करता है।</string>
+    <string name="airpods_stem_hardware">मौजूदा रीडिंग: देर तक दबाने पर ईयरबड खुद कार्रवाई करते हैं।</string>
+    <string name="airpods_stem_pending">पिछला अनुरोध: डिवाइस की रीडिंग का इंतज़ार है। दोनों ओर बदलाव करना रुका हुआ है।</string>
+    <string name="airpods_stem_match">पिछला अनुरोध: डिवाइस से अनुरोध से मेल खाती रीडिंग मिली।</string>
+    <string name="airpods_stem_other">पिछला अनुरोध: डिवाइस ने अलग सेटिंग बताई।</string>
+    <string name="airpods_stem_timeout">पिछला अनुरोध: 5 सेकंड में पुष्टि नहीं मिली। सहेजा गया विकल्प केवल स्थानीय मंशा बना हुआ है।</string>
+    <string name="airpods_stem_failed">पिछला अनुरोध: भेजने में विफल। सहेजा गया विकल्प केवल स्थानीय मंशा बना हुआ है।</string>
+    <string name="airpods_stem_closed">पिछला अनुरोध: पुष्टि से पहले कनेक्शन बंद हो गया।</string>
+    <string name="airpods_stem_no_command">इस कनेक्शन में कोई अनुरोध नहीं किया गया। सहेजे गए विकल्प केवल स्थानीय मंशा हैं।</string>
+    <string name="airpods_stem_need_observation">देर तक दबाने की सेटिंग बदलने से पहले डिवाइस की मौजूदा रीडिंग का इंतज़ार करें।</string>
+</resources>

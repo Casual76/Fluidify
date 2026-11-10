@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+  <string name="widget_v2_open">Apri Fluidify</string>
+  <string name="widget_v2_play">Riproduci</string>
+  <string name="widget_v2_pause">Pausa</string>
+  <string name="widget_v2_playing">In riproduzione</string>
+  <string name="widget_v2_paused">In pausa</string>
+  <string name="widget_v2_empty">Nessun brano</string>
+  <string name="widget_v2_loading">Caricamento</string>
+</resources>

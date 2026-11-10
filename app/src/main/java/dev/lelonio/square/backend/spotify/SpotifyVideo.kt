@@ -5,8 +5,6 @@ import kotlinx.coroutines.withContext
 import kotlinx.serialization.SerialName
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.json.Json
-import okhttp3.OkHttpClient
-import okhttp3.Request
 
 /**
  * The video a Spotify track has, when it has one.
@@ -27,7 +25,6 @@ object SpotifyVideo {
     /** Where the manifest lives. The access point's own host answers it too. */
     private const val HOST = "https://spclient.wg.spotify.com"
 
-    private val http = OkHttpClient()
 
     private val json = Json { ignoreUnknownKeys = true }
 
@@ -38,22 +35,20 @@ object SpotifyVideo {
      * Spotify client also sends is not asked for here, which was worth
      * checking before building anything on top.
      */
-    suspend fun manifest(fileId: String, accessToken: String): VideoManifest =
-        withContext(Dispatchers.IO) {
-            val request = Request.Builder()
-                .url("$HOST/manifests/v9/json/sources/$fileId/options/supports_drm")
-                .header("authorization", "Bearer $accessToken")
-                .header("accept", "application/json")
-                .build()
+    suspend fun manifest(fileId: String, accessToken: String,
+        permit: dev.lelonio.square.data.SpotifyNetworkPolicy.Permit = dev.lelonio.square.data.SpotifyNetworkPolicy.capture()): VideoManifest =
+        manifestAt("$HOST/manifests/v9/json/sources/$fileId/options/supports_drm", accessToken, permit)
 
-            http.newCall(request).execute().use { response ->
-                val body = response.body?.string().orEmpty()
-                check(response.isSuccessful) {
-                    "manifest ${response.code} for $fileId"
-                }
-                json.decodeFromString<VideoManifest>(body)
+    internal suspend fun manifestAt(url: String, accessToken: String,
+        permit: dev.lelonio.square.data.SpotifyNetworkPolicy.Permit): VideoManifest = withContext(Dispatchers.IO) {
+        permit.dispatch {
+            dev.lelonio.square.io.HttpFetch.open(url, permit,
+                mapOf("authorization" to "Bearer $accessToken", "accept" to "application/json")).use { body ->
+                json.decodeFromString<VideoManifest>(body.input.bufferedReader().readText())
             }
         }
+    }
+
 }
 
 @Serializable

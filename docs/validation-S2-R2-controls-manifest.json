@@ -1,0 +1,62 @@
+[
+  {
+    "path": "app/src/main/java/dev/lelonio/square/ui/settings/SettingsScreen.kt",
+    "sha256": "B5A2D3CBFFAD0CC577CE80987C221315E65AE5B9A02A32740DC16F378250E667",
+    "includedInS2": false
+  },
+  {
+    "path": "app/src/main/res/values/strings.xml",
+    "sha256": "6725C7460C81A6BDEF748CB3AEF04EF0656141312C656D6E31BD621E712CE6E6",
+    "includedInS2": true
+  },
+  {
+    "path": "app/src/main/res/values-de/strings.xml",
+    "sha256": "F7A92355A84F0D640E5434FB317D60233A266191B8B156793C71E0B89C782114",
+    "includedInS2": true
+  },
+  {
+    "path": "app/src/main/res/values-es/strings.xml",
+    "sha256": "0D2F2BB93A711F7F2BC8D6546B9A8629F3019549A6698794A590BA41289A860E",
+    "includedInS2": true
+  },
+  {
+    "path": "app/src/main/res/values-fr/strings.xml",
+    "sha256": "077DCD43F062936D120449282DE13D776B5454F877D8A53EBD3C24C85C54A24F",
+    "includedInS2": true
+  },
+  {
+    "path": "app/src/main/res/values-hi/strings.xml",
+    "sha256": "037741E8FDB2678F791E4E9D87CFA1184CA942D327670A8E26B726F0624CA662",
+    "includedInS2": true
+  },
+  {
+    "path": "app/src/main/res/values-it/strings.xml",
+    "sha256": "EDC69B4EAA42902B16DCA3E118A4FEA0E79E2E303683C0D9601AB2D56D0E4104",
+    "includedInS2": true
+  },
+  {
+    "path": "app/src/main/res/values-pt/strings.xml",
+    "sha256": "4C449E25078DFF3A94407090AE4ACD6F4C7827374255B9BA31C478D745E09B6B",
+    "includedInS2": true
+  },
+  {
+    "path": "app/src/main/res/values-tr/strings.xml",
+    "sha256": "042FD2ED17B137608A23A9215291002AAD92035DF40AB8D506E790A2F5CCAF7D",
+    "includedInS2": true
+  },
+  {
+    "path": "app/src/test/java/dev/lelonio/square/data/ListeningRepositoryTest.kt",
+    "sha256": "7F0F409D5AB031875C7B5BE75C40F8F9ECCDBFE0DFC28C1558DD72B1530DDFB8",
+    "includedInS2": true
+  },
+  {
+    "path": "app/src/test/java/dev/lelonio/square/data/SpotifyHistoryImportTest.kt",
+    "sha256": "F0133EE46A148BDA45B5260D3B1A23DABB8F374ADD792FE34883721A3EE95D3A",
+    "includedInS2": true
+  },
+  {
+    "path": "app/src/test/java/dev/lelonio/square/data/ListeningOccurrenceRestoreTest.kt",
+    "sha256": "FDED36F82E641C9166A6B3289229482E59EEF885954229F95A8B1734B57EE318",
+    "includedInS2": true
+  }
+]

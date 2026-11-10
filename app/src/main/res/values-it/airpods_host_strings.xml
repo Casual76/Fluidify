@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_host_title">AirPods</string>
+    <string name="airpods_host_absent">Il runtime AirPods non è stato installato dall’app. La configurazione non è disponibile.</string>
+    <string name="airpods_host_storage">Impossibile leggere la configurazione AirPods. Nessun comando è autorizzato.</string>
+    <string name="airpods_host_requirements">Richiede coppia selezionata e verificata, permessi attuali e gate di prodotto pertinenti.</string>
+    <string name="airpods_host_information">Le informazioni ricevute sono mostrate in questa pagina. L’aggiornamento separato non è disponibile.</string>
+    <string name="airpods_host_diagnostics">Il runtime conserva un elenco limitato di eventi sanificati durante l’esecuzione, valido per questo processo. Non esiste una registrazione separata.</string>
+    <string name="airpods_host_disconnect">La disconnessione audio automatica richiede accessi non disponibili alle app ordinarie. Usa le impostazioni Bluetooth.</string>
+    <string name="airpods_host_candidate">Dispositivo abbinato %1$d</string>
+    <string name="airpods_host_label_only">Il nome Bluetooth è un’etichetta: verifica esplicitamente il dispositivo selezionato.</string>
+    <string name="airpods_host_stale">Selezione o autorizzazione cambiata. Ripeti l’azione dalla schermata attuale.</string>
+    <string name="airpods_host_rejected">Azione non accettata. Le scritture sul dispositivo richiedono conferma ricevuta.</string>
+    <string name="airpods_host_platform_failure">Azione di sistema fallita o non disponibile. Controlla i permessi e riprova esplicitamente.</string>
+    <string name="airpods_host_tile">Apri i controlli rapidi Android, modifica i riquadri e aggiungi AirPods. Il riquadro usa lo stesso consenso e i controlli di arresto.</string>
+</resources>

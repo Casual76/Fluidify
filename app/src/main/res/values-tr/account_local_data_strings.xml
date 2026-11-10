@@ -1,0 +1,7 @@
+<resources>
+    <string name="legacy_downloads_title">Bu indirmeler kime ait?</string>
+    <string name="legacy_downloads_message">Hesaplar ayrılmadan önce kaydedilen indirmeler hâlâ bu cihazda. Mevcut dosyalar ve çevrimdışı koleksiyonlar %1$s Spotify hesabına atansın mı?\n\nYeni indirme veya otomatik eşitleme başlatılmaz. Başka bir hesap seçmek için Daha sonra seçeneğini seçip o hesapta oturum aç.</string>
+    <string name="legacy_downloads_later">Daha sonra / başka hesap</string>
+    <string name="legacy_downloads_assign">Bu hesaba ata</string>
+    <string name="legacy_downloads_failed">İndirmeler atanamadı. Dosyalarınız güvende; tekrar deneyin.</string>
+</resources>

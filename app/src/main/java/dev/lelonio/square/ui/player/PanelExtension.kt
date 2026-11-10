@@ -11,9 +11,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.State
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
@@ -64,7 +67,14 @@ internal fun PanelExtension(
     onPlayQueueItem: (Int) -> Unit,
     onRemoveQueueItem: (Int) -> Unit,
     onMoveQueueItem: (from: Int, to: Int) -> Unit,
+    interactive: Boolean = true,
 ) {
+    // The hidden panel keeps its picture for the travelling surface, but must not keep keyboard,
+    // accessibility or pointer targets alive underneath an alpha-zero layer.
+    if (!interactive) {
+        PanelExtensionStill(lyrics, positionMs, queue)
+        return
+    }
     val queueState = rememberLazyListState()
     var reordering by remember { mutableStateOf(false) }
     val nudge = with(LocalDensity.current) { QueueNudge.toPx() }
@@ -86,6 +96,9 @@ internal fun PanelExtension(
         animationSpec = FluidMotion.snappy(),
         label = "extensionSplit",
     )
+    // A boolean changes only when the stage disappears, not on every animation frame. Keep the
+    // stage's state alive, but retire all its focus and accessibility targets once it is hidden.
+    val wordsPresent by remember { derivedStateOf { share > 0.001f } }
 
     // And home again by itself, once nobody is asking anything of it.
     //
@@ -108,16 +121,20 @@ internal fun PanelExtension(
     ExtensionSplit(
         share = { share },
         words = {
-            Box(Modifier.fillMaxSize().clipToBounds()) {
-                LyricsStage(
-                    lyrics = lyrics,
-                    loading = lyricsLoading,
-                    positionMs = positionMs,
-                    isPlaying = isPlaying,
-                    onSeek = onSeek,
-                    expandSignal = 0,
-                    modifier = Modifier.fillMaxSize(),
-                )
+            Box(Modifier.fillMaxSize().clipToBounds()
+                .focusProperties { canFocus = wordsPresent }
+                .then(if (!wordsPresent) Modifier.clearAndSetSemantics {} else Modifier)) {
+                CompositionLocalProvider(LocalLyricInteractionEnabled provides wordsPresent) {
+                    LyricsStage(
+                        lyrics = lyrics,
+                        loading = lyricsLoading,
+                        positionMs = positionMs,
+                        isPlaying = isPlaying,
+                        onSeek = onSeek,
+                        expandSignal = 0,
+                        modifier = Modifier.fillMaxSize(),
+                    )
+                }
             }
         },
         heading = { ExtensionHeading(stringResource(R.string.queue)) },

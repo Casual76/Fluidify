@@ -1,5 +1,6 @@
 package dev.lelonio.square.playback
 
+import androidx.media3.common.ForwardingPlayer
 import androidx.media3.common.Player
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
@@ -419,14 +420,21 @@ class AudioReactivePlayer(private val player: Player) : Player.Listener, AutoClo
     override fun onEvents(player: Player, events: Player.Events) =
         refresh(events.contains(Player.EVENT_POSITION_DISCONTINUITY))
 
-    private fun refresh(reset: Boolean) = AudioReactive.source(
-        player.currentMediaItem?.mediaId.orEmpty(),
-        player.isPlaying,
-        player.currentPosition,
-        player.playbackParameters.speed,
-        reset,
-        if (player is LibrespotPlayer) AudioLightSource.NATIVE else AudioLightSource.MEDIA3,
-    )
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
+    private fun refresh(reset: Boolean) {
+        // Session decorators keep command routing, but do not change which sink supplies PCM.
+        // Unwrap only for sink identity; observation stays on the player we were given.
+        var backend = player
+        while (backend is ForwardingPlayer) backend = backend.wrappedPlayer
+        AudioReactive.source(
+            player.currentMediaItem?.mediaId.orEmpty(),
+            player.isPlaying,
+            player.currentPosition,
+            player.playbackParameters.speed,
+            reset,
+            if (backend is LibrespotPlayer) AudioLightSource.NATIVE else AudioLightSource.MEDIA3,
+        )
+    }
 
     override fun close() {
         player.removeListener(this)

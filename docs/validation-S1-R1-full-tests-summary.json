@@ -1,0 +1,286 @@
+{
+  "jdk": "21.0.10",
+  "scope": "full app, before final cancellation guard",
+  "classes": [
+    {
+      "class": "dev.lelonio.square.airpods.AacpCodecTest",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.airpods.AirPodsRepositoryTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.airpods.AirPodsSessionOwnerTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.auth.AccountLifecycleTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.auth.OAuthLoopbackReceiverTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.auth.TokenStoreTest",
+      "tests": 16,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.bridge.AiToolHostProviderGuardTest",
+      "tests": 6,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.bridge.BridgeStateTest",
+      "tests": 9,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.bridge.FluidifyToolValidationTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.data.DownloadIndexPersistenceTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.data.ListeningHistoryTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.data.ListeningMedia3OccurrenceTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.data.ListeningOccurrenceRestoreTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.data.ListeningRecorderTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.data.ListeningRepositoryTest",
+      "tests": 8,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.data.NativeListeningOccurrenceTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.data.SpotifyHistoryImportTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.download.DownloadPumpCancellationTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.playback.AudioLightBudgetTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.playback.AudioLightPolicyTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.playback.AudioLightProcessorTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.screenshots.AudioLightScreenshots",
+      "tests": 11,
+      "failures": 1,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": [
+        "compactMiniPlayer"
+      ]
+    },
+    {
+      "class": "dev.lelonio.square.ui.player.AdaptivePlayerLayoutTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.ui.player.AdaptivePlayerScreenshots",
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.ui.player.ConnectRefreshTest",
+      "tests": 3,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.ui.TabStepTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.ui.theme.SquareMotionPolicyTest",
+      "tests": 2,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.update.UpdateChannelWordsTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.wear.PendingWatchDownloadsTest",
+      "tests": 11,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.wear.WatchHomeTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.wear.WatchUpdateCoordinatorTest",
+      "tests": 7,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.wear.WatchUpdateFailureTest",
+      "tests": 4,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.wear.WearLinkTest",
+      "tests": 5,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    },
+    {
+      "class": "dev.lelonio.square.wear.WriteWatchdogTest",
+      "tests": 1,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0,
+      "failedCases": []
+    }
+  ],
+  "totals": {
+    "tests": 178,
+    "failures": 1,
+    "errors": 0,
+    "skipped": 0
+  }
+}

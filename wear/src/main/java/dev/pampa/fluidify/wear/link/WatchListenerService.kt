@@ -77,8 +77,11 @@ class WatchListenerService : WearableListenerService() {
      * [WearApp.accountGone], which stops playback first, and not straight to the auth.
      */
     private fun onAccount(account: dev.pampa.fluidify.wear.protocol.AccountState) {
+        if (!app.link.accountSessions.accept(account)) return
+        app.downloads.onPhoneAccount(explicit = true)
         val auth = app.standalone.auth
-        if (auth.forgets(account)) app.scope.launch { app.accountGone() } else auth.onAccount(account)
+        val phone = app.link.accountSessions.capture()
+        if (auth.forgets(account)) app.scope.launch { app.accountGone(phone) } else auth.onAccount(account)
     }
 
     override fun onMessageReceived(event: MessageEvent) {
@@ -99,8 +102,12 @@ class WatchListenerService : WearableListenerService() {
                 app.updater.onPhoneHello(event.sourceNodeId)
             }
             WearPaths.DOWNLOAD_PLAN -> WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.DownloadRequest.serializer(), event.data)?.let { request ->
-                app.downloads.onRequest(request)
-                Work.enqueue(BUDGET_MS) { app.downloads.publish(final = true) }
+                val accepted = app.downloads.onRequest(request)
+                Work.enqueue(BUDGET_MS) {
+                    request.requestId?.let { id -> app.link.acknowledgeDownload(event.sourceNodeId,
+                        dev.pampa.fluidify.wear.protocol.DownloadPlanAck(id, request.accountSession, request.accountNamespace, accepted)) }
+                    if (accepted) app.downloads.publish(final = true)
+                }
             }
             // "Continua sull'orologio" from the phone: the watch starts its engine and the
             // phone's music follows through Spotify Connect (see ActivePlayback.moveToWatch).
@@ -110,7 +117,11 @@ class WatchListenerService : WearableListenerService() {
             WearPaths.AUTH_GRANT -> WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AuthGrant.serializer(), event.data)
                 ?.let { app.link.onAuthGrant(it) }
             // The phone signed out: so does the watch, and its own playback stops first.
-            WearPaths.AUTH_LOGOUT -> app.scope.launch { app.accountGone() }
+            WearPaths.AUTH_LOGOUT -> {
+                app.link.accountSessions.clear()
+                app.downloads.authority.revoke()
+                app.scope.launch { app.accountGone(null) }
+            }
         }
     }
 

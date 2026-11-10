@@ -152,19 +152,47 @@ object Catalog {
 
     private val json = Json { ignoreUnknownKeys = true }
 
+    internal var nativeRequest: (String, String) -> String = { operation, argument ->
+        when (operation) {
+            "context" -> NativeBridge.contextTracks(argument)
+            "tracks" -> NativeBridge.tracksMetadata(argument)
+            "lyrics" -> NativeBridge.lyrics(argument)
+            "artist" -> NativeBridge.artist(argument)
+            "canvas" -> NativeBridge.canvas(argument)
+            "playlists" -> NativeBridge.rootlist()
+            "cover" -> NativeBridge.playlistCover(argument)
+            "name" -> NativeBridge.playlistName(argument)
+            else -> error("Unknown catalogue operation: $operation")
+        }
+    }
+
+    private suspend fun <T> read(block: (SpotifyNetworkPolicy.Permit?) -> T): T {
+        // Capture before scheduling IO; ON then OFF must not revive an old queued read.
+        val permit = runCatching { SpotifyNetworkPolicy.capture() }.getOrNull()
+        return withContext(Dispatchers.IO) { block(permit) }
+    }
+
+    private fun request(permit: SpotifyNetworkPolicy.Permit?, operation: String, argument: String = ""): String =
+        (permit ?: throw SpotifyNetworkPolicy.Offline()).dispatch { nativeRequest(operation, argument) }
+
     suspend fun username(): String = withContext(Dispatchers.IO) {
         NativeBridge.username()
     }
 
     /** Track URIs in a playlist, album, or the account's Liked Songs. */
-    suspend fun contextTrackUris(contextUri: String): List<String> = withContext(Dispatchers.IO) {
-        json.decodeFromString<List<String>>(NativeBridge.contextTracks(contextUri))
+    suspend fun contextTrackUris(contextUri: String): List<String> = read { permit ->
+        json.decodeFromString<List<String>>(request(permit, "context", contextUri))
     }
 
-    suspend fun tracks(uris: List<String>): List<CatalogTrack> = withContext(Dispatchers.IO) {
-        if (uris.isEmpty()) return@withContext emptyList()
+    suspend fun tracks(uris: List<String>): List<CatalogTrack> = read { permit -> tracksNow(uris, permit) }
+
+    suspend fun tracks(uris: List<String>, permit: SpotifyNetworkPolicy.Permit): List<CatalogTrack> =
+        withContext(Dispatchers.IO) { tracksNow(uris, permit) }
+
+    private fun tracksNow(uris: List<String>, permit: SpotifyNetworkPolicy.Permit?): List<CatalogTrack> {
+        if (uris.isEmpty()) return emptyList()
         val urisJson = json.encodeToString(ListSerializer(String.serializer()), uris)
-        json.decodeFromString<List<CatalogTrack>>(NativeBridge.tracksMetadata(urisJson))
+        return json.decodeFromString<List<CatalogTrack>>(request(permit, "tracks", urisJson))
     }
 
     /**
@@ -174,19 +202,19 @@ object Catalog {
      * rather than a failure; the native side already turns a missing-lyrics
      * response into a null instead of an error.
      */
-    suspend fun lyrics(trackUri: String): Lyrics? = withContext(Dispatchers.IO) {
+    suspend fun lyrics(trackUri: String): Lyrics? = read { permit ->
         // Kept on the way past for a downloaded track, and read back only when
         // the request cannot be made. See DownloadExtras: online the fresh
         // answer always wins, because lyrics get corrected.
-        val raw = runCatching { NativeBridge.lyrics(trackUri) }
+        val raw = runCatching { request(permit, "lyrics", trackUri) }
             .onSuccess { dev.lelonio.square.download.DownloadExtras.rememberLyrics(trackUri, it) }
             .getOrElse {
                 dev.lelonio.square.download.DownloadExtras.lyrics(trackUri)
-                    ?: return@withContext null
+                    ?: return@read null
             }
-        val root = runCatching { json.parseToJsonElement(raw) }.getOrNull() ?: return@withContext null
-        val body = root as? JsonObject ?: return@withContext null
-        val lyrics = body["lyrics"] as? JsonObject ?: return@withContext null
+        val root = runCatching { json.parseToJsonElement(raw) }.getOrNull() ?: return@read null
+        val body = root as? JsonObject ?: return@read null
+        val lyrics = body["lyrics"] as? JsonObject ?: return@read null
 
         // "LINE_SYNCED" means every line carries a timestamp; anything else is
         // a plain block of text.
@@ -215,9 +243,9 @@ object Catalog {
      * a few weeks and then the whole page would stop, which is a bad trade for
      * one line. What the access point serves is what the player itself reads.
      */
-    suspend fun artist(artistUri: String): Result<ArtistInfo> = withContext(Dispatchers.IO) {
+    suspend fun artist(artistUri: String): Result<ArtistInfo> = read { permit ->
         runCatching {
-            val answer = runCatching { NativeBridge.artist(artistUri) }
+            val answer = runCatching { request(permit, "artist", artistUri) }
                 .onSuccess {
                     dev.lelonio.square.download.DownloadExtras.rememberArtist(artistUri, it)
                 }
@@ -288,7 +316,7 @@ object Catalog {
         "&nbsp;" to " ",
     )
 
-    suspend fun canvas(trackUri: String): Result<CanvasClip?> = withContext(Dispatchers.IO) {
+    suspend fun canvas(trackUri: String): Result<CanvasClip?> = read { permit ->
         // Success-with-null and failure are different answers, and collapsing
         // them into one null is what made a Canvas that failed to arrive look
         // exactly like a track that has none: nothing to retry, because nothing
@@ -296,7 +324,7 @@ object Catalog {
         // retried both would spend three round trips per song asking about a
         // video that does not exist.
         runCatching {
-            val raw = runCatching { NativeBridge.canvas(trackUri) }
+            val raw = runCatching { request(permit, "canvas", trackUri) }
                 .onSuccess {
                     dev.lelonio.square.download.DownloadExtras.rememberCanvas(trackUri, it)
                 }
@@ -308,14 +336,14 @@ object Catalog {
             val url = root["url"]?.jsonPrimitive?.content?.takeIf { it.isNotBlank() }
                 ?: return@runCatching null
             val isVideo = root["isVideo"]?.jsonPrimitive?.content?.toBooleanStrictOrNull() ?: true
+            val local = dev.lelonio.square.download.DownloadExtras
+                .fileOf(url, if (isVideo) "video" else "art")?.toURI()?.toString()
+            if (SpotifyNetworkPolicy.manual.value && local == null) return@runCatching null
             CanvasClip(
                 // The copy kept beside the download, if there is one. Rewritten
                 // here rather than at the player: the URL is what every caller
                 // passes on, and offline the CDN one resolves to nothing.
-                url = dev.lelonio.square.download.DownloadExtras
-                    .fileOf(url, if (isVideo) "video" else "art")
-                    ?.toURI()?.toString()
-                    ?: url,
+                url = local ?: url,
                 isVideo = isVideo,
             )
         }
@@ -331,8 +359,8 @@ object Catalog {
     const val DJ_URI = "spotify:playlist:37i9dQZF1EYkqdzj48dyYq"
 
     /** The account's own playlists. */
-    suspend fun playlists(): List<CatalogPlaylist> = withContext(Dispatchers.IO) {
-        json.decodeFromString<List<CatalogPlaylist>>(NativeBridge.rootlist())
+    suspend fun playlists(): List<CatalogPlaylist> = read { permit ->
+        json.decodeFromString<List<CatalogPlaylist>>(request(permit, "playlists"))
             .filterNot { it.uri == DJ_URI }
     }
 
@@ -344,14 +372,14 @@ object Catalog {
      * the lookup fails: a missing tile falls back to the generated one either
      * way, and a playlist list should not fail over an image.
      */
-    suspend fun playlistCover(uri: String): String? = withContext(Dispatchers.IO) {
-        runCatching { json.decodeFromString<String?>(NativeBridge.playlistCover(uri)) }.getOrNull()
+    suspend fun playlistCover(uri: String): String? = read { permit ->
+        runCatching { json.decodeFromString<String?>(request(permit, "cover", uri)) }.getOrNull()
     }
 
     /** The title of a playlist the account does not follow; see the native side. */
-    suspend fun playlistName(uri: String): String? = withContext(Dispatchers.IO) {
-        runCatching { json.decodeFromString<String?>(NativeBridge.playlistName(uri)) }
-            .onFailure { android.util.Log.w("SquareCatalog", "no name for $uri: $it") }
+    suspend fun playlistName(uri: String): String? = read { permit ->
+        runCatching { json.decodeFromString<String?>(request(permit, "name", uri)) }
+            .onFailure { if (it !is SpotifyNetworkPolicy.Offline) android.util.Log.w("SquareCatalog", "no name for $uri: $it") }
             .getOrNull()
     }
 }

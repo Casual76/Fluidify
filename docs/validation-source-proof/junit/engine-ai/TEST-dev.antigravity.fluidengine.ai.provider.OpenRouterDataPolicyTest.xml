@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.provider.OpenRouterDataPolicyTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:20.098Z" hostname="PC_FISSO" time="0.001">
+  <properties/>
+  <testcase name="senza una scelta esplicita non si dice niente e vale l'account" classname="dev.antigravity.fluidengine.ai.provider.OpenRouterDataPolicyTest" time="0.001"/>
+  <testcase name="il default della sonda e' quello del costruttore, cioe' l'account" classname="dev.antigravity.fluidengine.ai.provider.OpenRouterDataPolicyTest" time="0.0"/>
+  <testcase name="chi la vuole piu' stretta chiede deny" classname="dev.antigravity.fluidengine.ai.provider.OpenRouterDataPolicyTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

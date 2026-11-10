@@ -25,55 +25,46 @@ import dev.pampa.fluidify.wear.protocol.WearPaths
 class WearAuthGranter(private val app: SquareApplication, private val link: WearLink) {
 
     suspend fun onRequest(nodeId: String, request: AuthRequest) {
-        val grant = when {
-            // The second: the engine's credential is still here but the app's own sign-in was
-            // cleared, so no token can be minted — "unavailable" made the watch ask again forever.
-            !app.spotifySignedIn || !app.tokenStore.isLoggedIn -> AuthGrant(request.id, ok = false, error = AuthErrors.SIGNED_OUT)
-            else -> runCatching {
-                val token = app.tokenStore.validAccessToken()
-                AuthGrant(
-                    id = request.id,
-                    ok = true,
-                    accessToken = token,
-                    // The client every token in this app is minted for; the watch's engine
-                    // must log in as the same one or the access point refuses it.
-                    clientId = SpotifyOAuth.CLIENT_ID,
-                    username = runCatching { Catalog.username() }.getOrNull(),
-                    expiresAtEpochMs = System.currentTimeMillis() + TOKEN_LIFETIME_MS,
-                )
-            }.getOrElse { error ->
-                Log.w(TAG, "no token for the watch: ${error.message}")
-                AuthGrant(request.id, ok = false, error = AuthErrors.UNAVAILABLE)
-            }
-        }
-        // A message, never a DataItem: those persist and may travel through the cloud.
+        val access = app.accountLocalData.captureRequest(request.accountSession)
+            ?.takeIf { app.accountLocalData.isOnlineCurrent(it) }
+        val grant = if (access == null) {
+            AuthGrant(request.id, ok = false, error = AuthErrors.UNAVAILABLE)
+        } else try {
+            val token = app.tokenStore.validAccessToken()
+            app.accountLocalData.requireOnline(access)
+            AuthGrant(request.id, ok = true, accessToken = token, clientId = SpotifyOAuth.CLIENT_ID,
+                username = access.account.id, expiresAtEpochMs = System.currentTimeMillis() + TOKEN_LIFETIME_MS,
+                accountSession = access.requestSession)
+        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+        catch (_: Exception) { AuthGrant(request.id, ok = false, error = AuthErrors.UNAVAILABLE) }
+        if (access != null && !app.accountLocalData.isOnlineCurrent(access)) return
         link.send(nodeId, WearPaths.AUTH_GRANT, WearCodec.encode(AuthGrant.serializer(), grant))
     }
 
     /** Who the phone is signed in as, for a watch that was away when it changed. */
-    suspend fun publishAccount(signedIn: Boolean = app.spotifySignedIn) {
-        val account = AccountState(
-            signedIn = signedIn,
-            username = if (signedIn) runCatching { Catalog.username() }.getOrNull() else null,
-            changedAtEpochMs = System.currentTimeMillis(),
-        )
-        if (!link.hasWatch()) return
-        // Written when it changes, not on every hello: the new timestamp alone made each one a
-        // fresh item for the Data Layer to carry.
-        val said = account.signedIn to account.username
-        if (said == lastPublished) return
-        val request = PutDataRequest.create(WearPaths.ACCOUNT)
-            .setData(WearCodec.encode(AccountState.serializer(), account))
-            .setUrgent()
-        if (link.put(request)) lastPublished = said
+    private val publication = kotlinx.coroutines.sync.Mutex()
+    private var lastPublished: Triple<Boolean, String?, String?>? = null
+    suspend fun publishAccount(signedIn: Boolean = app.accountLocalData.capture() != null) {
+        publication.lock()
+        try {
+            val access = app.accountLocalData.capture()
+            if (!signedIn && access != null) return // a delayed A logout cannot sign out B
+            val account = AccountState(access != null, access?.account?.id, System.currentTimeMillis(),
+                localDataSession = access?.requestSession, localDataNamespace = access?.namespace)
+            if (!link.hasWatch()) return
+            if (app.accountLocalData.capture() !== access) return
+            val said = Triple(account.signedIn, account.username, account.localDataSession)
+            if (said == lastPublished) return
+            val request = PutDataRequest.create(WearPaths.ACCOUNT)
+                .setData(WearCodec.encode(AccountState.serializer(), account)).setUrgent()
+            if (link.put(request)) lastPublished = said
+        } finally { publication.unlock() }
     }
 
-    @Volatile private var lastPublished: Pair<Boolean, String?>? = null
-
-    /** The phone signed out: the watch drops its credential now if it can hear, or when it next connects. */
     suspend fun onSignedOut() {
+        if (app.accountLocalData.capture() != null) return
         publishAccount(signedIn = false)
-        link.broadcast(WearPaths.AUTH_LOGOUT, ByteArray(0))
+        if (app.accountLocalData.capture() == null) link.broadcast(WearPaths.AUTH_LOGOUT, ByteArray(0))
     }
 
     private companion object {

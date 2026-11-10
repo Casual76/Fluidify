@@ -72,6 +72,7 @@ import dev.lelonio.square.data.sortedByRecentlyOpened
 import dev.lelonio.square.data.withLocalFilesFirst
 import dev.lelonio.square.data.withPinnedFirst
 import dev.lelonio.square.ui.MainViewModel
+import dev.lelonio.square.ui.transientPhaseSemantics
 import dev.lelonio.square.ui.components.Artwork
 import dev.lelonio.square.ui.components.PlaylistCover
 import dev.lelonio.square.ui.components.GlassButton
@@ -198,6 +199,8 @@ fun LibraryScreen(
      * among the playlists everywhere else.
      */
     downloadedSongs: CatalogPlaylist? = null,
+    /** Optional until the isolated listening-stats design is accepted. */
+    onOpenListeningStats: (() -> Unit)? = null,
 ) {
     when (state) {
         MainViewModel.UiState.LoggedOut -> Centered {
@@ -230,7 +233,11 @@ fun LibraryScreen(
         MainViewModel.UiState.Connecting,
         MainViewModel.UiState.Loading,
         -> Centered {
-            FluidSpinner(size = 36.dp, color = Ink)
+            FluidSpinner(
+                modifier = Modifier.transientPhaseSemantics(state),
+                size = 36.dp, color = Ink,
+            )
+            GlassAction(stringResource(R.string.settings), onOpenSettings)
         }
 
         is MainViewModel.UiState.Failed -> Centered {
@@ -491,6 +498,12 @@ fun LibraryScreen(
                             )
                         }
 
+                        onOpenListeningStats?.let { openStats ->
+                            item(span = { GridItemSpan(maxLineSpan) }, key = "listening-stats") {
+                                dev.lelonio.square.ui.library.stats.ListeningStatsLibraryEntry(openStats)
+                            }
+                        }
+
                         if (artists.isNotEmpty() && shownFilter == Filter.ALL) {
                             item(span = { GridItemSpan(maxLineSpan) }, key = "artists") {
                                 ArtistShelf(artists, onOpenArtist)
@@ -539,6 +552,19 @@ fun LibraryScreen(
                                 onFilter = { filter = it },
                                 sortActions = sortActions,
                             )
+                        }
+
+                        onOpenListeningStats?.let { openStats ->
+                            item(key = "listening-stats") {
+                                // The rows of this layout sit four apart because each brings
+                                // its own inset; a pane does not, and at four it touched the
+                                // chips above and the shelf title below. This gives it the
+                                // eighteen the grid's own spacing already leaves around it.
+                                dev.lelonio.square.ui.library.stats.ListeningStatsLibraryEntry(
+                                    openStats,
+                                    Modifier.padding(top = 8.dp, bottom = 14.dp),
+                                )
+                            }
                         }
 
                         if (artists.isNotEmpty() && shownFilter == Filter.ALL) {

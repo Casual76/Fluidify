@@ -524,4 +524,17 @@
     <string name="watch_update_wifi">La montre télécharge la %1$s en Wi-Fi…</string>
     <string name="onboarding_step_of">Étape %1$d sur %2$d</string>
     <string name="update_section_title">Mises à jour</string>
+    <string name="history_title">Historique d’écoute</string>
+    <string name="history_record">Enregistrer les écoutes sur ce téléphone</string>
+    <string name="history_retention">L’historique est conservé jusqu’à sa suppression. Les imports Spotify sont des observations récentes, pas un historique mensuel complet. La durée des écoutes distantes est inconnue.</string>
+    <string name="history_account">Compte Spotify</string>
+    <string name="history_import">Importer les écoutes Spotify récentes</string>
+    <string name="history_importing">Importation…</string>
+    <string name="history_import_result">Dernier import</string>
+    <string name="history_import_observed">Observations récentes importées ; la couverture mensuelle reste incomplète.</string>
+    <string name="history_import_empty">Spotify n’a renvoyé aucune observation récente.</string>
+    <string name="history_import_error">Échec de l’import. L’historique enregistré est conservé. Vérifiez le compte Web API connecté et les autorisations.</string>
+    <string name="history_import_partial">Observations récentes partiellement importées ; la couverture est limitée.</string>
+    <string name="history_delete">Supprimer l’historique de ce compte</string>
+    <string name="history_delete_confirm">Supprimer toutes les écoutes et les données de couverture des imports de %1$s sur ce téléphone ? Cette action est irréversible. L’enregistrement continuera s’il est activé.</string>
 </resources>

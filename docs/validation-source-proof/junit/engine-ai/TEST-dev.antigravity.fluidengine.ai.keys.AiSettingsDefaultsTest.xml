@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" tests="13" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:02.660Z" hostname="PC_FISSO" time="0.109">
+  <properties/>
+  <testcase name="un file di impostazioni corrotto riparte dai default, e si puo' di nuovo scrivere" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.016"/>
+  <testcase name="leggere i default non scrive niente nel file" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.003"/>
+  <testcase name="lo store si puo' costruire da un DataStore gia' aperto, come prima" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.006"/>
+  <testcase name="AiDataStores apre un file scelto dall'app e ne gestisce la corruzione" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.009"/>
+  <testcase name="un file di chiavi corrotto riparte vuoto, e una chiave si puo' salvare" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.016"/>
+  <testcase name="chi ha spento l'assistente lo ritrova spento dopo una chiave verificata" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.012"/>
+  <testcase name="l'interruttore puo' partire acceso, e spegnerlo e' una scelta" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.007"/>
+  <testcase name="un valore assente vale il default dell'app" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.002"/>
+  <testcase name="gli ordini di partenza dell'app valgono finche' non li cambia l'utente, e nominano sempre tutti i provider" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.007"/>
+  <testcase name="una scelta dell'utente batte il default, anche quando e' il valore di serie" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.017"/>
+  <testcase name="enableIfNeverChosen accende una volta sola" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.005"/>
+  <testcase name="i default di serie sono quelli di sempre" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.001"/>
+  <testcase name="enableIfNeverChosen non conta come scelta quello che il default fa gia' valere" classname="dev.antigravity.fluidengine.ai.keys.AiSettingsDefaultsTest" time="0.006"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

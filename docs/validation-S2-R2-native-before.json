@@ -1,0 +1,17 @@
+[
+  {
+    "path": "core\\src\\main\\jniLibs\\arm64-v8a\\libsquarecore.so",
+    "bytes": 9414992,
+    "sha256": "684ADC9A8BAA4FF3DB8042D221194694ECB77441C005EAC74A6047537D5D376C"
+  },
+  {
+    "path": "core\\src\\main\\jniLibs\\armeabi-v7a\\libsquarecore.so",
+    "bytes": 6489336,
+    "sha256": "BFE295D8DABEAB10938E49171F48CC98919D16837FC21DBE533DB66003E48D96"
+  },
+  {
+    "path": "core\\src\\main\\jniLibs\\x86_64\\libsquarecore.so",
+    "bytes": 10448880,
+    "sha256": "75D2A11E66A8E1C413D98A444ACF51B67BEBEB09B6A8126F4381EF848DB55A7E"
+  }
+]

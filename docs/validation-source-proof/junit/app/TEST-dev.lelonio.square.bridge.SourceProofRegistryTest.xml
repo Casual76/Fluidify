@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.bridge.SourceProofRegistryTest" tests="26" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:14:55.158Z" hostname="PC_FISSO" time="0.069">
+  <properties/>
+  <testcase name="callerMapSaturationFailsClosedWithoutEvictingRenewableIdentities" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.022"/>
+  <testcase name="expirationIsMonotonicAndValidationDoesNotRenew" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.004"/>
+  <testcase name="missingOldAndUnknownCapabilityFailBeforeDispatch" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <testcase name="sameAccountPublicationReplacementRejectsEvenWhenDataEpochIsUnchanged" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.002"/>
+  <testcase name="processRecreationRejectsSameNumberGenerationAndOpaqueHandles" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <testcase name="unknownCallerAndSignedOutStateHaveNoProof" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <testcase name="sameAccountReauthDataEpochChangeRejectsOldProof" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <testcase name="sourceCapabilityTravelsOnlyThroughNegotiatedTypedResultEnvelope" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.008"/>
+  <testcase name="exactAccountAndFiltersRejectWithoutSelectingAnything" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.002"/>
+  <testcase name="queryScopeChangesDoNotRotateAuthorizationOrExpandExistingLeaseScope" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <testcase name="fragmentIsBoundToLeaseThatActuallyProducedSnapshot" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.002"/>
+  <testcase name="opaqueCapabilityAndTypedReceiptContainNoGenerationOrCredentials" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <testcase name="expiryRenewalKeepsAuthorizationButNeverRevivesOldHandles" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <testcase name="unknownAndMisclassifiedWritesAreDeniedEvenWithReadMetadata" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <testcase name="callerCannotReuseAnotherCallersLease" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <testcase name="observedUnavailableTransitionCannotRestoreAnOldAuthorizationIdentity" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <testcase name="cieAliasTransitionRejectsOldDataGeneration" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.002"/>
+  <testcase name="continuationChangesDoNotExpandScope" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.002"/>
+  <testcase name="generationAccountStudentAndPublicationChangesRotateAuthorizationAndRevokeHandles" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.003"/>
+  <testcase name="capabilityEvictionDoesNotChangeAuthorizationOrRestoreEvictedHandles" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.003"/>
+  <testcase name="recordingRevocationOrDeletionDuringProductionDiscardsLateResult" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.002"/>
+  <testcase name="everyReceiptCarriesTheCapabilityAuthorizationIdentity" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <testcase name="missingLeaseAndUnknownFieldsFailClosed" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.002"/>
+  <testcase name="cvRequiresExplicitStudentYearAndSectionAndKeepsThemExact" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.002"/>
+  <testcase name="authorizationIsCallerBoundAndStableForEachCallerAcrossRenewal" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <testcase name="processRestartRotatesIncarnationAndAuthorizationDespiteIdenticalSourceState" classname="dev.lelonio.square.bridge.SourceProofRegistryTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

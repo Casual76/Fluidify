@@ -38,6 +38,7 @@ http = "1.3"
 # The body type librespot's own HTTP client takes.
 bytes = "1"
 serde_json = "1"
+serde = { version = "1", features = ["derive"] }
 futures-util = "0.3"
 
 [target.'cfg(target_os = "android")'.dependencies]
@@ -52,6 +53,7 @@ android_logger = "0.14"
 librespot-core = { path = "vendor/librespot-core" }
 librespot-playback = { path = "vendor/librespot-playback" }
 librespot-connect = { path = "vendor/librespot-connect" }
+librespot-audio = { path = "vendor/librespot-audio" }
 
 [profile.release]
 opt-level = 3
@@ -66,3 +68,6 @@ strip = "symbols"
 # ordinary Java exception (see ffi::guard) and lets a panic on one of
 # librespot's own worker threads kill that task instead of the process.
 panic = "unwind"
+
+[features]
+offline-contract-tests = ["librespot-core/offline-contract-tests", "librespot-audio/offline-contract-tests", "librespot-connect/offline-contract-tests"]

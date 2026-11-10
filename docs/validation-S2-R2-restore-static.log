@@ -1,0 +1,10 @@
+Same R2 owned-restore integration.
+Four unchanged fragment/native boundary regression source hashes preserved against prior validated manifest.
+UTF-8/NUL check PASS for 17 source files.
+Scoped git diff --check PASS.
+Actual production restore, JNI, direct/Connect command nonce and player binding paths traced.
+No credential/config/signing/user-data content inspected.
+FINAL:17 source hashes/UTF-8/NUL/trailing-whitespace PASS; C4 manifest unchanged; Room v1 and recorder unchanged vs S2.
+Native History/reporting section from its documentation marker to local_load is exactly unchanged vs Git HEAD with newline normalization and explicit UTF-8 decoding.
+Engine3.0.5/a055257 unchanged. Cargo.lock/build configuration not edited; no secrets inspected.
+Final scoped diff check including reports/attribution PASS; new APK hash reverified after lint. All owned compiler commands ended.

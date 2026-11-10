@@ -55,3 +55,9 @@
 # classes by reflection in places. Small enough to keep whole.
 -keep class org.conscrypt.OpenSSLProvider { <init>(...); }
 -keep class io.github.muntashirakon.adb.** { *; }
+
+# The optional AirPods JNI entry embeds this Kotlin object's package/class name.
+# Its library is loaded only by explicit AirPods setup, including in minified builds.
+-keepclasseswithmembers,includedescriptorclasses class dev.lelonio.square.airpods.AirPodsSocket {
+    native <methods>;
+}

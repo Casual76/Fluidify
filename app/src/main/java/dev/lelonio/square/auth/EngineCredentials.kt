@@ -28,7 +28,10 @@ object EngineCredentials {
 
     /** Dropped along with the OAuth session, so signing out really signs out. */
     fun clear(context: Context) {
-        dir(context).deleteRecursively()
+        LocalSpotifyAuthority.forContext(context).invalidateBefore {
+            val location = dir(context)
+            check(!location.exists() || location.deleteRecursively()) { "Could not remove native credential" }
+        }
     }
 
     /** Matches the directory the native side keeps the reusable blob in. */

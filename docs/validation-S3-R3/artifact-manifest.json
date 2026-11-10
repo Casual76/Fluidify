@@ -1,0 +1,54 @@
+{
+  "apk": {
+    "path": "C:\\VibeCoded Projects\\Fluidify\\app\\build\\outputs\\apk\\debug\\app-debug.apk",
+    "sha256": "4EFFC0574915CC9DCF7A32F98F4785165C4713407F2FA5C4EDAAA047CAC5E777",
+    "bytes": 80286021
+  },
+  "native": {
+    "arm64-v8a": {
+      "entry": "lib/arm64-v8a/libsquarecore.so",
+      "built": "C:\\VibeCoded Projects\\Fluidify\\core\\src\\main\\jniLibs\\arm64-v8a\\libsquarecore.so",
+      "sha256": "667EA3FA26EA451FABC17AA7A6F851E2019186CC67E401DF5E6D1462FD63B597",
+      "byteMatch": true
+    },
+    "x86_64": {
+      "entry": "lib/x86_64/libsquarecore.so",
+      "built": "C:\\VibeCoded Projects\\Fluidify\\core\\src\\main\\jniLibs\\x86_64\\libsquarecore.so",
+      "sha256": "7ABC31C5BBA24BCE6EA486C35F92631594AA72FA1CA42A82273BC1014B2227AF",
+      "byteMatch": true
+    }
+  },
+  "tests": {
+    "app": {
+      "tests": 65,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "core": {
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    }
+  },
+  "sources": [
+    {
+      "path": "C:\\VibeCoded Projects\\Fluidify\\app\\src\\main\\AndroidManifest.xml",
+      "sha256": "8BB904D25AF12F0184C233C05A75D8B30D4097FD5028DEBF3E84B4B21900300C"
+    },
+    {
+      "path": "C:\\VibeCoded Projects\\Fluidify\\core\\src\\main\\java\\dev\\lelonio\\square\\playback\\LibrespotPlayer.kt",
+      "sha256": "4A6F8F953A9AD1AE87BCDB963745B528AC7CC782C4CBA9DDD4C2124435FE75A7"
+    },
+    {
+      "path": "C:\\VibeCoded Projects\\Fluidify\\app\\src\\test\\java\\dev\\lelonio\\square\\bridge\\FluidifyDiscoveryTest.kt",
+      "sha256": "D5BFF8FB225CD598FC68266FD72B16C958DA3B974CFE210E9774007FC9C3886C"
+    },
+    {
+      "path": "C:\\VibeCoded Projects\\Fluidify\\app\\src\\test\\java\\dev\\lelonio\\square\\data\\OwnedNativeRestoreIntegrationTest.kt",
+      "sha256": "8A83112EBB69A2D9B2D4D18917480EF50EF29FDB0F98097B54DC080490E3C6AE"
+    }
+  ],
+  "limits": "Native bindings were unchanged and not rebuilt in R3; packaged bytes match existing rebuilt R2 outputs. App lint/assemble passed; core lint has known3 errors. Device/Binder/auth/native NV."
+}

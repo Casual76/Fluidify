@@ -522,6 +522,7 @@ fun NowPlayingPanel(
                             trackColor = Ink.copy(alpha = 0.18f),
                             amount = reach01,
                             interactive = interactive && tall,
+                            resetKey = state.mediaId,
                         )
                         Box(Modifier.fillMaxWidth().foldHeight(reach01)) {
                             TimeRow(positionMs, state.durationMs)

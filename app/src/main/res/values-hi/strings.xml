@@ -528,4 +528,17 @@
     <string name="watch_update_wifi">घड़ी अपने वाई-फ़ाई से %1$s डाउनलोड कर रही है…</string>
     <string name="onboarding_step_of">चरण %1$d / %2$d</string>
     <string name="update_section_title">अपडेट</string>
+    <string name="history_title">सुनने का इतिहास</string>
+    <string name="history_record">इस फ़ोन पर सुनने का रिकॉर्ड रखें</string>
+    <string name="history_retention">इतिहास आपके मिटाने तक रखा जाता है। Spotify से आयात हाल के अवलोकन हैं, पूरे महीने का इतिहास नहीं। दूरस्थ सुनने की अवधि अज्ञात है।</string>
+    <string name="history_account">Spotify खाता</string>
+    <string name="history_import">Spotify पर हाल में सुने गए गाने आयात करें</string>
+    <string name="history_importing">आयात हो रहा है…</string>
+    <string name="history_import_result">पिछला आयात</string>
+    <string name="history_import_observed">हाल के अवलोकन आयात किए गए; महीने का कवरेज अधूरा है।</string>
+    <string name="history_import_empty">Spotify से कोई हाल का अवलोकन नहीं मिला।</string>
+    <string name="history_import_error">आयात विफल रहा। सहेजा गया इतिहास सुरक्षित है। जुड़े हुए Web API खाते और अनुमति की जाँच करें।</string>
+    <string name="history_import_partial">हाल के अवलोकन आंशिक रूप से आयात किए गए; कवरेज सीमित है।</string>
+    <string name="history_delete">इस खाते का इतिहास मिटाएँ</string>
+    <string name="history_delete_confirm">इस फ़ोन पर %1$s के सभी सुनने के रिकॉर्ड और आयात कवरेज डेटा मिटाएँ? इसे वापस नहीं किया जा सकता। सक्षम होने पर रिकॉर्डिंग जारी रहेगी।</string>
 </resources>

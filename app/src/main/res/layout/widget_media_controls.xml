@@ -15,6 +15,7 @@
 
     <ImageView
       android:id="@+id/media_widget_background"
+      android:focusable="true"
       android:layout_width="match_parent"
       android:layout_height="match_parent"
       android:contentDescription="@null"
@@ -43,6 +44,45 @@
     android:paddingBottom="14dp">
 
     <LinearLayout
+      android:id="@+id/media_widget_extra_actions"
+      android:layout_width="match_parent"
+      android:layout_height="48dp"
+      android:layout_marginTop="0dp"
+      android:baselineAligned="false"
+      android:gravity="end"
+      android:orientation="horizontal"
+      android:visibility="gone">
+
+      <ImageButton
+        android:id="@+id/media_widget_refresh"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="@drawable/bg_media_control"
+        android:contentDescription="@string/refresh"
+        android:padding="10dp"
+        android:src="@drawable/ic_widget_refresh" />
+
+      <ImageButton
+        android:id="@+id/media_widget_open_media"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:layout_marginStart="14dp"
+        android:layout_marginEnd="14dp"
+        android:background="@drawable/bg_media_control"
+        android:contentDescription="@string/widget_open_app"
+        android:padding="10dp"
+        android:src="@drawable/ic_widget_open_app" />
+
+      <ImageButton
+        android:id="@+id/media_widget_open_pampa"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
+        android:background="@drawable/bg_media_control"
+        android:contentDescription="@string/widget_settings"
+        android:padding="10dp"
+        android:src="@drawable/ic_widget_settings" />
+    </LinearLayout>
+    <LinearLayout
       android:id="@+id/media_widget_track_row"
       android:layout_width="match_parent"
       android:layout_height="0dp"
@@ -55,6 +95,7 @@
         android:id="@+id/media_widget_artwork_frame"
         android:layout_width="106dp"
         android:layout_height="106dp"
+        android:visibility="gone"
         android:background="@drawable/bg_media_artwork">
 
         <ViewFlipper
@@ -87,13 +128,16 @@
         android:id="@+id/media_widget_text_stack"
         android:layout_width="0dp"
         android:layout_height="match_parent"
-        android:layout_marginStart="14dp"
+        android:layout_marginStart="0dp"
         android:layout_weight="1"
-        android:gravity="center_vertical|start"
+        android:gravity="bottom|start"
+        android:paddingBottom="8dp"
         android:orientation="vertical">
 
         <TextView
           android:id="@+id/media_widget_source"
+          android:breakStrategy="simple"
+          android:hyphenationFrequency="none"
           android:layout_width="wrap_content"
           android:layout_height="20dp"
           android:background="@drawable/bg_media_source_pill"
@@ -109,9 +153,11 @@
 
         <TextView
           android:id="@+id/media_widget_title"
-          android:layout_width="match_parent"
+          android:breakStrategy="simple"
+          android:hyphenationFrequency="none"
+          android:layout_width="wrap_content"
           android:layout_height="wrap_content"
-          android:layout_marginTop="6dp"
+          android:layout_marginTop="0dp"
           android:ellipsize="end"
           android:fontFamily="sans-serif-medium"
           android:letterSpacing="-0.02"
@@ -124,7 +170,9 @@
 
         <TextView
           android:id="@+id/media_widget_artist"
-          android:layout_width="match_parent"
+          android:breakStrategy="simple"
+          android:hyphenationFrequency="none"
+          android:layout_width="wrap_content"
           android:layout_height="wrap_content"
           android:layout_marginTop="3dp"
           android:ellipsize="end"
@@ -137,7 +185,9 @@
 
         <TextView
           android:id="@+id/media_widget_permission"
-          android:layout_width="match_parent"
+          android:breakStrategy="simple"
+          android:hyphenationFrequency="none"
+          android:layout_width="wrap_content"
           android:layout_height="wrap_content"
           android:layout_marginTop="4dp"
           android:ellipsize="end"
@@ -151,6 +201,7 @@
 
     <ProgressBar
       android:id="@+id/media_widget_progress"
+      android:importantForAccessibility="no"
       style="?android:attr/progressBarStyleHorizontal"
       android:layout_width="match_parent"
       android:layout_height="4dp"
@@ -172,22 +223,31 @@
       android:orientation="horizontal"
       android:visibility="gone">
 
-      <TextView
-        android:id="@+id/media_widget_status"
+      <FrameLayout
         android:layout_width="0dp"
         android:layout_height="wrap_content"
-        android:layout_weight="1"
-        android:ellipsize="end"
-        android:fontFamily="sans-serif-medium"
-          android:letterSpacing="-0.02"
-        android:includeFontPadding="false"
-        android:maxLines="1"
-        android:text="@string/now_playing"
-        android:textColor="@color/widget_on_surface_variant"
-        android:textSize="12sp" />
+        android:layout_weight="1">
+        <TextView
+          android:id="@+id/media_widget_status"
+          android:breakStrategy="simple"
+          android:hyphenationFrequency="none"
+          android:layout_width="wrap_content"
+          android:layout_height="wrap_content"
+          android:ellipsize="end"
+          android:fontFamily="sans-serif-medium"
+            android:letterSpacing="-0.02"
+          android:includeFontPadding="false"
+          android:maxLines="1"
+          android:text="@string/now_playing"
+          android:textColor="@color/widget_on_surface_variant"
+          android:textSize="12sp" />
+      </FrameLayout>
 
-      <Chronometer
+      <TextView
         android:id="@+id/media_widget_time"
+        android:breakStrategy="simple"
+        android:hyphenationFrequency="none"
+        android:accessibilityLiveRegion="none"
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:ellipsize="end"
@@ -203,14 +263,16 @@
     <LinearLayout
       android:id="@+id/media_widget_controls"
       android:layout_width="match_parent"
-      android:layout_height="54dp"
+      android:layout_height="48dp"
       android:gravity="center"
       android:orientation="horizontal">
 
       <ImageButton
         android:id="@+id/media_widget_previous"
-        android:layout_width="42dp"
-        android:layout_height="42dp"
+        android:enabled="false"
+        android:visibility="gone"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         android:background="@drawable/bg_media_control"
         android:contentDescription="@string/previous"
         android:padding="10dp"
@@ -218,13 +280,14 @@
 
       <FrameLayout
         android:id="@+id/media_widget_play_pause_container"
-        android:layout_width="54dp"
-        android:layout_height="54dp"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         android:layout_marginStart="14dp"
         android:layout_marginEnd="14dp">
 
         <ImageButton
           android:id="@+id/media_widget_play_pause"
+          android:enabled="false"
           android:layout_width="match_parent"
           android:layout_height="match_parent"
           android:background="@drawable/bg_media_control_primary"
@@ -275,52 +338,16 @@
 
       <ImageButton
         android:id="@+id/media_widget_next"
-        android:layout_width="42dp"
-        android:layout_height="42dp"
+        android:enabled="false"
+        android:visibility="gone"
+        android:layout_width="48dp"
+        android:layout_height="48dp"
         android:background="@drawable/bg_media_control"
         android:contentDescription="@string/next"
         android:padding="10dp"
         android:src="@drawable/ic_widget_next" />
     </LinearLayout>
 
-    <LinearLayout
-      android:id="@+id/media_widget_extra_actions"
-      android:layout_width="match_parent"
-      android:layout_height="44dp"
-      android:layout_marginTop="10dp"
-      android:baselineAligned="false"
-      android:gravity="center"
-      android:orientation="horizontal"
-      android:visibility="gone">
 
-      <ImageButton
-        android:id="@+id/media_widget_refresh"
-        android:layout_width="42dp"
-        android:layout_height="42dp"
-        android:background="@drawable/bg_media_control"
-        android:contentDescription="@string/refresh"
-        android:padding="10dp"
-        android:src="@drawable/ic_widget_refresh" />
-
-      <ImageButton
-        android:id="@+id/media_widget_open_media"
-        android:layout_width="42dp"
-        android:layout_height="42dp"
-        android:layout_marginStart="14dp"
-        android:layout_marginEnd="14dp"
-        android:background="@drawable/bg_media_control"
-        android:contentDescription="@string/widget_open_app"
-        android:padding="10dp"
-        android:src="@drawable/ic_widget_open_app" />
-
-      <ImageButton
-        android:id="@+id/media_widget_open_pampa"
-        android:layout_width="42dp"
-        android:layout_height="42dp"
-        android:background="@drawable/bg_media_control"
-        android:contentDescription="@string/widget_settings"
-        android:padding="10dp"
-        android:src="@drawable/ic_widget_settings" />
-    </LinearLayout>
   </LinearLayout>
 </FrameLayout>

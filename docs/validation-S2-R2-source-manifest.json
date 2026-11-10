@@ -1,0 +1,70 @@
+[
+  {
+    "path": "app/src/main/java/dev/lelonio/square/bridge/FluidifyToolHost.kt",
+    "sha256": "410328455958D8C3C483AE01BCC3AE541FD890F630F2A2CFE00D37F7ADC37E40"
+  },
+  {
+    "path": "app/src/main/java/dev/lelonio/square/bridge/ResultFragments.kt",
+    "sha256": "68183FC334FCE3BB32E251FCF073D2DF522EC7F7AB48AC2EBF4A0FD697C20D7A"
+  },
+  {
+    "path": "core/src/main/java/dev/lelonio/square/playback/PlaybackOccurrence.kt",
+    "sha256": "152F4FD9811E8CA9E85CB054349A7CD1ED73181BCB0A5002394D4E9E2F0A207D"
+  },
+  {
+    "path": "core/src/main/java/dev/lelonio/square/playback/LibrespotPlayer.kt",
+    "sha256": "25AE62BDAD48164457DA0D1C4A5E0606BD3F226D24C4F3634214783D3A921C9C"
+  },
+  {
+    "path": "native/src/engine.rs",
+    "sha256": "EC6D4F3E7DAC3B9B8C428FCD9114D0C12CBEB93B7A8FF5978209518AA97FF3D6"
+  },
+  {
+    "path": "app/src/test/java/dev/lelonio/square/bridge/ResultFragmentsTest.kt",
+    "sha256": "8F82C05160105596A1C57CC77065622A139B174D45990DA42424CC4FEA461409"
+  },
+  {
+    "path": "app/src/test/java/dev/lelonio/square/data/NativeListeningOccurrenceTest.kt",
+    "sha256": "9DF5D055FB58DCFA945178993B7F4BADBD9A4EAB27E988DC09A6BF8A152B0F94"
+  },
+  {
+    "path": "core/src/main/java/dev/lelonio/square/nativecore/NativeBridge.kt",
+    "sha256": "BB7E03A85A77A22EAB3331B5129114041C8D527F40EBC26B5C3129F719A50E17"
+  },
+  {
+    "path": "app/src/main/java/dev/lelonio/square/playback/PlaybackService.kt",
+    "sha256": "271360E5EBA72510E77C029CE5C04E35786CB753B0316EE5B41950DA47070196"
+  },
+  {
+    "path": "app/src/main/java/dev/lelonio/square/data/PlaybackStore.kt",
+    "sha256": "17A5112F2DC24CC81CEF6F0B86FDCC53245900AC0387688AC3109DD9ABB7C8A3"
+  },
+  {
+    "path": "native/src/ffi.rs",
+    "sha256": "A4DA1CE731AECAE1F81419C1E3653E02BE4AA97D5507B69BA84477A2FE7A7022"
+  },
+  {
+    "path": "native/vendor/librespot-playback/src/lib.rs",
+    "sha256": "CB376ACF5FB1CDB8006F2518AD4CC2FA84342B7DC89E576E180C7A60BCECC3A6"
+  },
+  {
+    "path": "native/vendor/librespot-playback/src/player.rs",
+    "sha256": "32AF4E541917EB41ADCD15214AEFCED52F528C9E9472E92BC3149784462E2737"
+  },
+  {
+    "path": "native/vendor/librespot-playback/src/owned_load.rs",
+    "sha256": "7A886A2CDA75B827B771741C6DEEDBD7A92E52496ADC58783222D0BE2B93D66B"
+  },
+  {
+    "path": "native/vendor/librespot-connect/src/model.rs",
+    "sha256": "5C1CC6581B78B842E848ED6E3A1E69C61D494CF61E9486441C5E6190F314622D"
+  },
+  {
+    "path": "native/vendor/librespot-connect/src/spirc.rs",
+    "sha256": "11B02498445871EE3E28F1C51D6F6609D27E727D4CDE3CDFE4F3DCD2109B6A86"
+  },
+  {
+    "path": "app/src/test/java/dev/lelonio/square/data/OwnedNativeRestoreIntegrationTest.kt",
+    "sha256": "E7AB76F348AE077471A19FFECD90DD2D2C77C7444A6681F89E6C1BC30C808319"
+  }
+]

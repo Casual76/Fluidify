@@ -65,6 +65,13 @@ interface MusicBackend {
 
     suspend fun search(query: String, labels: SearchLabels): SearchResults
 
+    /** Override for setup/provenance; legacy backends keep their search implementation. */
+    suspend fun searchOutcome(query: String, labels: SearchLabels): SearchOutcome = try {
+        SearchOutcome.Success(search(query, labels))
+    } catch (error: Throwable) {
+        searchFailure(error)
+    }
+
     /**
      * Whether the last search had nowhere to go.
      *

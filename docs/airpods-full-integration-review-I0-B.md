@@ -1,0 +1,43 @@
+**Esito: I0 stabile richiede correzioni nel lifecycle. H1 resta NV e il gate prodotto deve rimanere FALSE.**
+
+Reviewer indipendente B, modello effettivo **GPT-6.1 Sol**, reasoning **high**. Fase **IMPLEMENTAZIONE**, giro **INIZIALE**, versione **I0 stabile**. Nessuna subdelega, modifica, build, installazione o operazione su dispositivi.
+
+Ho verificato SHA256 del manifest `77cfdf2a2e9561a0a4b91802217e77b010a2bcb85c5b87dd8c24b5abf3b659bb`, dimensioni e hash di tutti i **1130 file**, più l’input esterno privato. Nessuna discrepanza. Screenshot osservato senza copiarlo. Lette le skill richieste e le letture obbligatorie; nessun AGENTS applicabile trovato.
+
+| Criterio | Voto | Stato verifica | Motivazione/evidenze | Problemi/gravità |
+|---|---:|---|---|---|
+| I1 — Completezza funzionale | NV | Parziale, approfondimento focus B | Verificati tracking, Tile, chiamate, assistente e operazioni audio nel controller reale. Verificata integrità delle 133 fonti pinned, ma non completata una riconciliazione semantica individuale di tutte le 35 famiglie, 67 preferenze e 41 esclusioni. | Completezza complessiva non certificata da questa review. |
+| I2 — Home/player/quick/full | 8 | Sorgenti e test parent; profondità secondaria | Home misura lo spazio fra marchio e confine avatar/friends; quick condiviso e pagina completa sono collegati. Accesso onboarding senza login presente in `SquareApp.kt:3069`. Test Home controllano geometria e dimensioni dei target, oltre alla visibilità. | Samsung, resa ottica e contrasto dell’intero host settings NV. |
+| I3 — Lifecycle e ownership | 6 | Approfondita, analisi statica | Gate serializzato prima di FGS/factory, marker persistente, soppressione, lease unico diagnostic/product e separazione del permit debug sono concreti. Restano due difetti nel collegamento fra policy e callback Android. | **B1 alta; B2 media.** |
+| I4 — Protocollo/stato/capacità | 8 | Sorgenti e corpi test; profondità secondaria | Pending distinto da RX, generazioni, batterie nullable e temporizzate, candidati derivati dal modello distinti da proprietà osservate. Test con vettori esatti, troncamenti, padding e unknown. Tracking conserva il formato attivo per stop/start. | Conferme fisiche e compatibilità firmware NV. |
+| I5 — Automazioni e controllo manuale | 8 | Sorgenti e test parent, copertura mirata | C6 distingue correlazione esterna da ricevuta locale. Letti test che negano ownership locale con sola correlazione, revocano su override e impediscono PLAY nel cleanup. Il ramo chiamata termina senza cadere nelle azioni media. | Identità atomica della chiamata e override esterni non osservabili restano limiti dichiarati; outcome reale NV. |
+| I6 — Validazione e artefatti | 8 | Controlli propri più artefatti parent | XML verificati: 555 app e 168 core/Wear, zero failure/error/skip. Controllo ELF64 proprio positivo sugli APK. Hash artefatti coerenti. Letti corpi di test lifecycle, ownership, ordinary ports, C6 e protocollo. | Test Android integrati mancanti per B1/B2. R8 con conformance FALSE non certifica i percorsi dopo futura abilitazione. |
+| I7 — Confini/permessi/provenienza | 8 | Sorgenti e provenienza pinned | Manifest companion protetto e versionato; permessi chiamata richiesti da azione visibile. Nessuna esenzione hidden API o takeover nei percorsi esaminati. Engine 3.0.5 e versione 2.0.1(24) conservati. | Accessibilità del metodo riflessivo, enforcement Binder ed esito operativo restano evidenze diverse; disponibilità reale NV. |
+| I8 — Integrazione/preservazione | 7 | Wiring esaminato, regressioni parent | Startup installa il runtime con conformance FALSE; NLS e Tile listening sono inerti. Correzione configure verificata: Main viene usato solo con media port esistente. Le policy isolate non chiudono però i difetti di callback/cleanup. | **B1/B2** impediscono di considerare completa l’integrazione lifecycle. Preservazione dell’intero repository fuori snapshot NV. |
+| H1 — Gate standalone fisico | NV | Non eseguito | Mancano le tre sessioni fisiche autorizzate e i relativi readback/effetti osservati. | Gate obbligatorio aperto; indisponibilità hardware non conteggiata come difetto software. |
+
+**B1 — Alta: l’arrivo tardivo del proxy A2DP perde l’ingresso companion.**
+
+- **Trigger:** processo freddo, consenso e setup già validi, coppia realmente connessa; callback companion prima del completamento asincrono di `getProfileProxy`.
+- **Posizione:** [AndroidPlatform.kt:40](</C:/VibeCoded Projects/Fluidify/build/review-airpods-full-implementation-I0-stable/source/app/src/main/java/dev/lelonio/square/airpods/runtime/android/AndroidPlatform.kt:40>), [AirPodsAndroidRuntime.kt:402](</C:/VibeCoded Projects/Fluidify/build/review-airpods-full-implementation-I0-stable/source/app/src/main/java/dev/lelonio/square/airpods/runtime/android/AirPodsAndroidRuntime.kt:402>).
+- **Prova dal sorgente:** `prepare()` avvia la richiesta asincrona; finché `a2dp` è null, `connected()` restituisce false. Il percorso presence/refresh viene quindi respinto. `onServiceConnected()` assegna soltanto il proxy, senza notificare il controller o rivalutare l’ingresso pendente. Anche il booleano restituito da `getProfileProxy` è ignorato, lasciando `requested=true` se la richiesta viene rifiutata.
+- **Conseguenza:** senza un ulteriore evento Android, la riconnessione background rimane inattiva nonostante i prerequisiti siano soddisfatti. È un controesempio statico sul wiring; non una prova di frequenza OEM.
+- **Fix minimo:** rappresentare il proxy non ancora disponibile come stato distinto dal disconnesso; alla disponibilità, rivalutare una sola volta l’ingresso originale attraverso C3/C4, ricontrollando consenso e associazione. Ripristinare `requested` su richiesta fallita.
+- **Regressione:** callback companion → proxy pendente → proxy disponibile, senza altri broadcast: una sola ammissione. Ripetere con stop/revoca prima del callback: zero FGS/socket.
+
+I test letti coprono callback tardive dell’adattatore **per le richieste audio**, ma non questa disponibilità tardiva di `AndroidBluetoothFacts` nel percorso companion.
+
+**B2 — Media: l’unpair Android non esegue il cleanup completo previsto da C3.**
+
+- **Trigger:** rimozione del bond della coppia selezionata, sia durante una sessione sia mentre non esiste un ticket.
+- **Posizione:** [AirPodsAndroidRuntime.kt:374](</C:/VibeCoded Projects/Fluidify/build/review-airpods-full-implementation-I0-stable/source/app/src/main/java/dev/lelonio/square/airpods/runtime/android/AirPodsAndroidRuntime.kt:374>), confrontata con [forget():261](</C:/VibeCoded Projects/Fluidify/build/review-airpods-full-implementation-I0-stable/source/app/src/main/java/dev/lelonio/square/airpods/runtime/android/AirPodsAndroidRuntime.kt:261>).
+- **Prova dal sorgente:** con ticket, `!bonded` chiama `gate.stop(REVOKED)`, anziché il percorso `UNPAIRED`. Senza ticket, l’ammissione negata per `NOT_BONDED` non entra nei motivi che arrestano l’osservazione. `companion.unpair(address)` è chiamato esclusivamente da `forget()`.
+- **Conseguenza:** il client non garantisce rimozione dell’associazione Fluidify e invalidazione dello stato selezionato/verification quando osserva l’unpair. Il requisito non può dipendere da un eventuale cleanup autonomo del sistema.
+- **Fix minimo:** distinguere perdita del permesso e perdita effettiva del bond; per quest’ultima persistere `UNPAIRED`, chiudere owner/osservazione e disassociare esclusivamente l’associazione propria della coppia.
+- **Regressione:** inviare la transizione bond perso al controller reale, con e senza ticket; verificare selezione rimossa, consenso invalidato, osservazione chiusa, sola associazione Fluidify rimossa e callback vecchie inerti.
+
+`AirPodsStartGateTest` e `CompanionObservationPolicyTest` verificano separatamente gli effetti di `UNPAIRED` e `unpair()`: non verificano che il receiver reale li invochi.
+
+I controlli propri sono stati readonly: integrità, hash Git blob delle **133 fonti pinned**, parsing XML e verifica dei segmenti LOAD ELF64 — **14 librerie debug, 7 minified e 4 Wear**, senza anomalie nel controllo eseguito. Build, firme, ZIP alignment e test JVM/Robolectric restano risultati **parent archiviati**, non esecuzioni mie.
+
+Assistente e chiamate conservano guardie concrete: associazione CDM propria e opt-in per assistente in background; epoch, permessi e ambiguità per nod/shake; nessun fallback media dal ramo ringing. Un metodo presente nei metadata non dimostra l’autorizzazione Binder, e `RequestAccepted` non dimostra connessione audio, apertura dell’assistente o risposta/rifiuto della chiamata. Questi esiti rimangono NV.

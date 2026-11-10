@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_stem_local_choice">Enregistré sur ce téléphone</string>
+    <string name="airpods_stem_shared">Appui long &#183; état partagé de l\'appareil</string>
+    <string name="airpods_stem_unknown">Interception actuelle : inconnue. Aucune lecture actuelle de l\'appareil.</string>
+    <string name="airpods_stem_intercepted">Lecture actuelle : Fluidify intercepte les appuis longs des deux côtés.</string>
+    <string name="airpods_stem_hardware">Lecture actuelle : les écouteurs gèrent les appuis longs.</string>
+    <string name="airpods_stem_pending">Dernière demande : en attente d\'une lecture de l\'appareil. Les modifications des deux côtés sont suspendues.</string>
+    <string name="airpods_stem_match">Dernière demande : une lecture correspondante de l\'appareil a été reçue.</string>
+    <string name="airpods_stem_other">Dernière demande : l\'appareil a signalé un réglage différent.</string>
+    <string name="airpods_stem_timeout">Dernière demande : aucune confirmation dans les 5 secondes. Le choix enregistré reste une intention locale.</string>
+    <string name="airpods_stem_failed">Dernière demande : échec de l\'envoi. Le choix enregistré reste une intention locale.</string>
+    <string name="airpods_stem_closed">Dernière demande : connexion fermée avant la confirmation.</string>
+    <string name="airpods_stem_no_command">Aucune demande dans cette connexion. Les choix enregistrés sont des intentions locales.</string>
+    <string name="airpods_stem_need_observation">Attendez une lecture actuelle de l\'appareil avant de modifier les appuis longs.</string>
+</resources>

@@ -1,0 +1,15 @@
+<resources>
+    <string name="airpods_stem_local_choice">Saved on this phone</string>
+    <string name="airpods_stem_shared">Long press &#183; shared device status</string>
+    <string name="airpods_stem_unknown">Current interception: unknown. No current device reading.</string>
+    <string name="airpods_stem_intercepted">Current reading: Fluidify intercepts long presses on both sides.</string>
+    <string name="airpods_stem_hardware">Current reading: the earbuds handle long presses.</string>
+    <string name="airpods_stem_pending">Last request: waiting for a device reading. Changes on both sides are paused.</string>
+    <string name="airpods_stem_match">Last request: a matching device reading was received.</string>
+    <string name="airpods_stem_other">Last request: the device reported a different setting.</string>
+    <string name="airpods_stem_timeout">Last request: no confirmation within 5 seconds. The saved choice remains local intent.</string>
+    <string name="airpods_stem_failed">Last request: sending failed. The saved choice remains local intent.</string>
+    <string name="airpods_stem_closed">Last request: connection closed before confirmation.</string>
+    <string name="airpods_stem_no_command">No request in this connection. Saved choices are local intent.</string>
+    <string name="airpods_stem_need_observation">Wait for a current device reading before changing long presses.</string>
+</resources>

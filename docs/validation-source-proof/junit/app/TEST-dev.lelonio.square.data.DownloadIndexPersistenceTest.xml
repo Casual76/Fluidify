@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.data.DownloadIndexPersistenceTest" tests="3" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:14:55.236Z" hostname="PC_FISSO" time="0.235">
+  <properties/>
+  <testcase name="failedFinishPreservesPreviousReadableIndex" classname="dev.lelonio.square.data.DownloadIndexPersistenceTest" time="0.151"/>
+  <testcase name="ownerAndCompletionSurviveReversedWriterSchedulingAndReopen" classname="dev.lelonio.square.data.DownloadIndexPersistenceTest" time="0.045"/>
+  <testcase name="stagingWriteFailureDoesNotRemoveValidIndex" classname="dev.lelonio.square.data.DownloadIndexPersistenceTest" time="0.033"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -11,8 +11,22 @@
     <uses-permission android:name="android.permission.WAKE_LOCK" />
     <!-- Required to attach the reverb effect to our own audio session. -->
     <uses-permission android:name="android.permission.MODIFY_AUDIO_SETTINGS" />
+    <!-- Optional AirPods integration: grants are requested only by its explicit setup.
+         Bonded-device selection does not require an app-owned discovery scan. -->
+    <uses-permission android:name="android.permission.BLUETOOTH" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_ADMIN" android:maxSdkVersion="30" />
+    <uses-permission android:name="android.permission.BLUETOOTH_CONNECT" />
+    <!-- Optional incoming-call head gestures; requested only by visible AirPods setup. -->
+    <uses-permission android:name="android.permission.READ_PHONE_STATE" />
+    <uses-permission android:name="android.permission.ANSWER_PHONE_CALLS" />
+    <uses-feature android:name="android.hardware.telephony" android:required="false" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
+    <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
+    <uses-permission android:name="android.permission.REQUEST_OBSERVE_COMPANION_DEVICE_PRESENCE" />
+    <uses-permission android:name="android.permission.REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND" />
+    <!-- Devices without companion setup retain the explicit/manual AirPods path. -->
+    <uses-feature android:name="android.software.companion_device_setup" android:required="false" />
     <!-- Downloads keep running with the app in the background; see DownloadService. -->
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <!-- Required from API 33 for the playback notification to be visible. -->
@@ -58,6 +72,42 @@
         android:localeConfig="@xml/locales_config"
         android:supportsRtl="true"
         android:theme="@style/Theme.Fluidify">
+
+        <service
+            android:name=".airpods.runtime.android.AirPodsControlService"
+            android:exported="false"
+            android:foregroundServiceType="connectedDevice" />
+        <service
+            android:name=".airpods.runtime.android.AirPodsCompanionService"
+            tools:targetApi="31"
+            android:enabled="@bool/airpods_companion_service_enabled"
+            android:exported="true"
+            android:permission="android.permission.BIND_COMPANION_DEVICE_SERVICE">
+            <intent-filter>
+                <action android:name="android.companion.CompanionDeviceService" />
+            </intent-filter>
+        </service>
+        <service
+            android:name=".airpods.runtime.android.AirPodsQuickSettingsTile"
+            android:exported="true"
+            android:icon="@drawable/ic_airpods_service"
+            android:label="@string/airpods_feature_title"
+            android:permission="android.permission.BIND_QUICK_SETTINGS_TILE">
+            <intent-filter>
+                <action android:name="android.service.quicksettings.action.QS_TILE" />
+            </intent-filter>
+        </service>
+
+        <!-- Optional, user-granted media observation. Binding does not start AirPods controls. -->
+        <service
+            android:name=".airpods.runtime.media.AirPodsMediaNotificationListener"
+            android:exported="true"
+            android:label="@string/airpods_feature_title"
+            android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
+            <intent-filter>
+                <action android:name="android.service.notification.NotificationListenerService" />
+            </intent-filter>
+        </service>
 
         <activity
             android:name=".ui.MainActivity"
@@ -249,6 +299,10 @@
             android:name="com.google.android.gms.car.application"
             android:resource="@xml/automotive_app_desc" />
 
+        <provider android:name=".bridge.FluidifyToolHost"
+            android:authorities="${applicationId}.ai.tools" android:exported="true">
+            <meta-data android:name="dev.antigravity.fluidengine.ai.TOOL_HOST" android:value="1" />
+        </provider>
     </application>
 
 </manifest>

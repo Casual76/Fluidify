@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.data.OwnedNativeRestoreIntegrationTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:14:57.118Z" hostname="PC_FISSO" time="0.697">
+  <properties/>
+  <testcase name="ownedImmediateRestoreAlsoUsesExactCommandAcknowledgement" classname="dev.lelonio.square.data.OwnedNativeRestoreIntegrationTest" time="0.137"/>
+  <testcase name="ownedEarlyRestoreHandoverResumesOneFortySecondOccurrence" classname="dev.lelonio.square.data.OwnedNativeRestoreIntegrationTest" time="0.071"/>
+  <testcase name="logoutReloginRejectsLateOwnedAcknowledgement" classname="dev.lelonio.square.data.OwnedNativeRestoreIntegrationTest" time="0.105"/>
+  <testcase name="competingSameUriRequestCannotStealOwnedNonceOrCheckpoint" classname="dev.lelonio.square.data.OwnedNativeRestoreIntegrationTest" time="0.079"/>
+  <testcase name="recordingRevocationRejectsLateOwnedAcknowledgement" classname="dev.lelonio.square.data.OwnedNativeRestoreIntegrationTest" time="0.105"/>
+  <testcase name="unrelatedSameUriTaggedWithAnotherNonceRemainsSeparate" classname="dev.lelonio.square.data.OwnedNativeRestoreIntegrationTest" time="0.064"/>
+  <testcase name="transientRemoteBeforeAcknowledgementRevokesPendingOwnedRestore" classname="dev.lelonio.square.data.OwnedNativeRestoreIntegrationTest" time="0.067"/>
+  <testcase name="remoteInterleavingRevokesPendingOwnedRestore" classname="dev.lelonio.square.data.OwnedNativeRestoreIntegrationTest" time="0.065"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

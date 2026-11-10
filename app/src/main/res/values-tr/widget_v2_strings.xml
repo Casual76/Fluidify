@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="widget_v2_open">Fluidify\'ı aç</string>
+    <string name="widget_v2_play">Oynat</string>
+    <string name="widget_v2_pause">Duraklat</string>
+    <string name="widget_v2_playing">Oynatılıyor</string>
+    <string name="widget_v2_paused">Duraklatıldı</string>
+    <string name="widget_v2_empty">Hiçbir şey çalmıyor</string>
+    <string name="widget_v2_loading">Yükleniyor</string>
+</resources>

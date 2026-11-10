@@ -1,55 +1,53 @@
 package dev.lelonio.square.io
 
+import dev.lelonio.square.data.SpotifyNetworkPolicy
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.io.IOException
+import java.io.InputStream
 import java.net.HttpURLConnection
 import java.net.URL
 
-/**
- * Plain GETs for immutable files on a CDN — covers, Canvas clips, lyrics — with the two limits
- * `URL.openStream()` does not have.
- *
- * A time limit, because a connection that stops answering held its thread for ever (the cover
- * thread, a download's extras) and nothing could interrupt it. A size limit, because the bytes
- * were read in full before anyone checked how many there were.
- */
+/** Immutable media GETs. Disk reads remain available; every remote hop uses the original lease. */
 object HttpFetch {
     private const val CONNECT_TIMEOUT_MS = 10_000
     private const val READ_TIMEOUT_MS = 20_000
+    private const val MAX_REDIRECTS = 5
+    // Compatibility for existing three-argument transfer hooks inside DownloadExtras.
+    // This carries an immutable permit; it never decides network policy or renews a lease.
+    private val operation = ThreadLocal<SpotifyNetworkPolicy.Permit?>()
+    fun <T> withPermit(permit: SpotifyNetworkPolicy.Permit, block: () -> T): T {
+        permit.check()
+        val previous = operation.get()
+        operation.set(permit)
+        try { return block().also { permit.check() } }
+        finally { operation.set(previous) }
+    }
+    private fun permission() = operation.get()?.also { it.check() } ?: SpotifyNetworkPolicy.capture()
 
-    /**
-     * The body, or `null` when it is larger than [maxBytes]. Throws on a network failure.
-     *
-     * A `file://` address is read from the disk. The player's covers are exactly that for every
-     * downloaded track (see DownloadExtras.artworkUri), and `URL.openStream()`, which this
-     * replaced, read them without anyone noticing it was not the network: treated as HTTP, every
-     * downloaded song played with no cover in the player, the notification or the widget.
-     */
-    fun bytes(url: String, maxBytes: Int): ByteArray? {
+    fun bytes(url: String, maxBytes: Int): ByteArray? = bytes(url, maxBytes, null)
+    fun bytes(url: String, maxBytes: Int, permit: SpotifyNetworkPolicy.Permit?, ownerCurrent: () -> Boolean = { true }): ByteArray? {
+        if (!ownerCurrent()) throw IOException("Media owner retired")
         if (url.startsWith("file:")) {
             val file = File(java.net.URI(url))
             return if (file.length() > maxBytes) null else file.readBytes()
         }
-        return fromNetwork(url, maxBytes)
-    }
-
-    private fun fromNetwork(url: String, maxBytes: Int): ByteArray? = open(url).useBody { input ->
-        val out = ByteArrayOutputStream()
-        val buffer = ByteArray(16 * 1024)
-        while (true) {
-            val read = input.read(buffer)
-            if (read < 0) break
-            if (out.size() + read > maxBytes) return@useBody null
-            out.write(buffer, 0, read)
+        val lease = permit ?: permission()
+        return lease.dispatch {
+            open(url, lease, ownerCurrent = ownerCurrent).use { body ->
+                val out = ByteArrayOutputStream()
+                val buffer = ByteArray(16 * 1024)
+                while (true) {
+                    val count = body.input.read(buffer)
+                    if (count < 0) break
+                    if (out.size() + count > maxBytes) return@use null
+                    out.write(buffer, 0, count)
+                }
+                if (!ownerCurrent()) throw IOException("Media owner retired")
+                out.toByteArray()
+            }
         }
-        out.toByteArray()
     }
-
-    /**
-     * Copies the body into [target]. Throws on a network failure or a body over [maxBytes].
-     * A `file://` address is copied from the disk, as [bytes] reads one.
-     */
     fun toFile(url: String, target: File, maxBytes: Long) {
         if (url.startsWith("file:")) {
             val source = File(java.net.URI(url))
@@ -57,36 +55,74 @@ object HttpFetch {
             source.copyTo(target, overwrite = true)
             return
         }
-        fromNetwork(url, target, maxBytes)
-    }
-
-    private fun fromNetwork(url: String, target: File, maxBytes: Long) = open(url).useBody { input ->
-        target.outputStream().use { out ->
-            val buffer = ByteArray(32 * 1024)
-            var total = 0L
-            while (true) {
-                val read = input.read(buffer)
-                if (read < 0) break
-                total += read
-                if (total > maxBytes) throw IOException("larger than $maxBytes bytes")
-                out.write(buffer, 0, read)
+        val lease = permission()
+        lease.dispatch {
+            open(url, lease).use { body ->
+                target.outputStream().use { out ->
+                    val buffer = ByteArray(32 * 1024)
+                    var total = 0L
+                    while (true) {
+                        val count = body.input.read(buffer)
+                        if (count < 0) break
+                        total += count
+                        if (total > maxBytes) throw IOException("larger than $maxBytes bytes")
+                        out.write(buffer, 0, count)
+                    }
+                }
             }
         }
     }
 
-    private fun open(url: String): HttpURLConnection =
-        (URL(url).openConnection() as HttpURLConnection).apply {
-            connectTimeout = CONNECT_TIMEOUT_MS
-            readTimeout = READ_TIMEOUT_MS
-            instanceFollowRedirects = true
-        }
+    class Body internal constructor(val connection: HttpURLConnection, val input: InputStream) : AutoCloseable {
+        override fun close() { try { input.close() } finally { connection.disconnect() } }
+    }
 
-    private inline fun <T> HttpURLConnection.useBody(read: (java.io.InputStream) -> T): T {
-        try {
-            if (responseCode !in 200..299) throw IOException("HTTP $responseCode")
-            return inputStream.use(read)
-        } finally {
-            disconnect()
+    /** Also used by Media3 for segments/ranges and DRM. Automatic redirect/retry loops are absent. */
+    fun open(url: String, permit: SpotifyNetworkPolicy.Permit, headers: Map<String, String> = emptyMap(),
+        method: String = "GET", requestBody: ByteArray? = null, ownerCurrent: () -> Boolean = { true }): Body {
+        var location = URL(url)
+        var verb = method
+        var payload = requestBody
+        var requestHeaders = headers
+        repeat(MAX_REDIRECTS + 1) { hop ->
+            if (!ownerCurrent()) throw IOException("Media owner retired")
+            permit.check()
+            if (location.protocol !in setOf("http", "https")) throw IOException("Unsupported media redirect")
+            val connection = (location.openConnection() as HttpURLConnection).apply {
+                connectTimeout = CONNECT_TIMEOUT_MS
+                readTimeout = READ_TIMEOUT_MS
+                instanceFollowRedirects = false
+                requestMethod = verb
+                requestHeaders.forEach { (key, value) -> setRequestProperty(key, value) }
+            }
+            try {
+                // Admit this request before connecting. An admitted request may drain after revoke.
+                permit.admit { Unit }
+                payload?.let { bytes ->
+                    connection.doOutput = true
+                    connection.outputStream.use { it.write(bytes) }
+                }
+                val status = connection.responseCode
+                if (status in listOf(301, 302, 303, 307, 308)) {
+                    val next = connection.getHeaderField("Location") ?: throw IOException("Redirect without Location")
+                    val redirected = URL(location, next)
+                    if (location.protocol == "https" && redirected.protocol != "https") throw IOException("Insecure media redirect")
+                    if (hop == MAX_REDIRECTS) throw IOException("Too many media redirects")
+                    if (location.host != redirected.host || location.port != redirected.port || location.protocol != redirected.protocol) {
+                        requestHeaders = requestHeaders.filterKeys { !it.equals("Authorization", true) }
+                    }
+                    if (status == 303 || ((status == 301 || status == 302) && verb == "POST")) { verb = "GET"; payload = null }
+                    connection.disconnect()
+                    location = redirected
+                    permit.check() // Same revision for the next hop, including ON -> OFF.
+                } else {
+                    if (status !in 200..299) throw IOException("HTTP $status")
+                    permit.check()
+                    if (!ownerCurrent()) throw IOException("Media owner retired")
+                    return Body(connection, connection.inputStream)
+                }
+            } catch (failure: Throwable) { connection.disconnect(); throw failure }
         }
+        throw IOException("Too many media redirects")
     }
 }

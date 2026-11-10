@@ -84,6 +84,12 @@ object RemoteConnect {
      */
     val queue: StateFlow<RemoteQueue> = _queue.asStateFlow()
 
+    data class Projection(val playback: RemotePlayback?, val queue: RemoteQueue, val permit: SpotifyNetworkPolicy.Permit?)
+    private val _projection = MutableStateFlow(Projection(null, RemoteQueue(), null))
+    val projection = _projection.asStateFlow()
+
+    private val policyBinding = SpotifyNetworkPolicy.observe { manual -> if (manual) clear() }
+
     /**
      * A handover asked for from outside the app's own screens.
      *
@@ -124,12 +130,18 @@ object RemoteConnect {
 
     /** Called on every `cluster` event from the engine. */
     fun refresh() {
+        val permit = runCatching { SpotifyNetworkPolicy.capture() }.getOrNull() ?: return
+        runCatching { permit.dispatch { refreshAdmitted(permit) } }
+    }
+
+    private fun refreshAdmitted(permit: SpotifyNetworkPolicy.Permit) {
         if (ownId.isEmpty()) {
             ownId = NativeBridge.deviceId()
             android.util.Log.i(TAG, "this device is $ownId")
         }
 
-        _devices.value = runCatching { parseDevices(NativeBridge.remoteDevices()) }
+        permit.check()
+        val devices = runCatching { parseDevices(NativeBridge.remoteDevices()) }
             .getOrDefault(emptyList())
 
         val state = runCatching { JSONObject(NativeBridge.remoteState()) }.getOrNull()
@@ -143,11 +155,15 @@ object RemoteConnect {
         // the device it came from until that device lets go. Comparing ids meant
         // the app believed the account and not its own ears.
         val elsewhere = NativeBridge.playbackElsewhere
-        _elsewhere.value = elsewhere
-        _playback.value = playback?.takeIf { elsewhere }
-        _here.value = playback?.takeIf { !elsewhere && active.isNotEmpty() }
-        _queue.value = runCatching { parseQueue(NativeBridge.remoteQueue()) }
-            .getOrDefault(RemoteQueue())
+        val queue = runCatching { parseQueue(NativeBridge.remoteQueue()) }.getOrDefault(RemoteQueue())
+        permit.admit {
+            _devices.value = devices
+            _elsewhere.value = elsewhere
+            _playback.value = playback?.takeIf { elsewhere }
+            _here.value = playback?.takeIf { !elsewhere && active.isNotEmpty() }
+            _queue.value = queue
+            _projection.value = Projection(_playback.value, queue, permit)
+        }
     }
 
     private fun parseQueue(json: String): RemoteQueue {
@@ -181,6 +197,7 @@ object RemoteConnect {
         }
         val current = _queue.value
         _queue.value = current.copy(items = current.items.map { it.filled() })
+        _projection.value = _projection.value.copy(queue = _queue.value)
     }
 
     /** Titles, artists and covers looked up for tracks in the window, by uri. */
@@ -229,6 +246,7 @@ object RemoteConnect {
         known[playback.uri] = playback
         if (_playback.value?.uri != playback.uri) return
         _playback.value = playback
+        _projection.value = _projection.value.copy(playback = playback)
     }
 
     /**
@@ -261,6 +279,7 @@ object RemoteConnect {
         _here.value = null
         _devices.value = emptyList()
         _queue.value = RemoteQueue()
+        _projection.value = Projection(null, RemoteQueue(), null)
     }
 
     private fun parseDevices(json: String): List<RemoteDevice> {
@@ -374,7 +393,7 @@ object RemoteConnect {
             android.util.Log.w(TAG, "no uid for ${item.uri}; cannot edit that queue")
             return
         }
-        runCatching { NativeBridge.remoteQueueEdit(deviceId, "remove", item.uid) }
+        runCatching { SpotifyNetworkPolicy.capture().dispatch { NativeBridge.remoteQueueEdit(deviceId, "remove", item.uid) } }
             .onFailure { android.util.Log.w(TAG, "could not remove ${item.uri}", it) }
     }
 
@@ -392,7 +411,7 @@ object RemoteConnect {
             return
         }
         runCatching {
-            NativeBridge.remoteQueueEdit(deviceId, "move", item.uid, before?.uid.orEmpty())
+            SpotifyNetworkPolicy.capture().dispatch { NativeBridge.remoteQueueEdit(deviceId, "move", item.uid, before?.uid.orEmpty()) }
         }.onFailure { android.util.Log.w(TAG, "could not move ${item.uri}", it) }
     }
 
@@ -408,7 +427,7 @@ object RemoteConnect {
     }
 
     fun setVolume(deviceId: String, volume: Int) {
-        runCatching { NativeBridge.remoteVolume(deviceId, volume) }
+        runCatching { SpotifyNetworkPolicy.capture().dispatch { NativeBridge.remoteVolume(deviceId, volume) } }
             .onFailure { android.util.Log.w(TAG, "volume did not reach $deviceId", it) }
     }
 
@@ -420,12 +439,13 @@ object RemoteConnect {
      * to give it away.
      */
     fun transferTo(deviceId: String): Boolean {
+        val permit = runCatching { SpotifyNetworkPolicy.capture() }.getOrNull() ?: return false
         if (isThisPhone(deviceId)) {
             // Coming back here is not a request to the server. A device cannot
             // address a command to itself: it goes out to the access point and
             // comes back refused, which is why choosing Square in the list did
             // nothing at all.
-            return runCatching { NativeBridge.takeOver() }
+            return runCatching { permit.dispatch { NativeBridge.takeOver() } }
                 .onFailure { android.util.Log.w(TAG, "could not take playback back", it) }
                 .isSuccess
         }
@@ -435,7 +455,7 @@ object RemoteConnect {
         var failure: Throwable? = null
         repeat(TRANSFER_ATTEMPTS) { attempt ->
             if (attempt > 0) Thread.sleep(TRANSFER_RETRY_MS)
-            val outcome = runCatching { NativeBridge.transferTo(deviceId) }
+            val outcome = runCatching { permit.dispatch { NativeBridge.transferTo(deviceId) } }
             if (outcome.isSuccess) return true
             failure = outcome.exceptionOrNull()
         }
@@ -443,6 +463,7 @@ object RemoteConnect {
         // The "transfer" player command, as a last resort for a device the transfer call does not
         // reach. It carries no state: a librespot device (the watch) refuses it with a 400, which
         // used to be the error reported, hiding the real one above.
+        if (runCatching { permit.check() }.isFailure) return false
         return send(
             deviceId,
             """{"command":{"endpoint":"transfer","transfer_options":{"restore_paused":"restore"}}}""",
@@ -467,7 +488,7 @@ object RemoteConnect {
         send(deviceId, """{"command":{"endpoint":"$endpoint"}}""")
 
     private fun send(deviceId: String, body: String): Boolean =
-        runCatching { NativeBridge.remoteCommand(deviceId, body) }
+        runCatching { SpotifyNetworkPolicy.capture().dispatch { NativeBridge.remoteCommand(deviceId, body) } }
             // Not the body: it can carry what is being played, and logs are no place for that.
             .onFailure { android.util.Log.w(TAG, "command failed: ${it.javaClass.simpleName}") }
             .isSuccess

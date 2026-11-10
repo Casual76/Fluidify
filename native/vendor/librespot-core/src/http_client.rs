@@ -14,7 +14,7 @@ use http_body_util::{BodyExt, Full};
 use hyper::{HeaderMap, Request, Response, StatusCode, body::Incoming, header::USER_AGENT};
 use hyper_proxy2::{Intercept, Proxy, ProxyConnector};
 use hyper_util::{
-    client::legacy::{Client, ResponseFuture, connect::HttpConnector},
+    client::legacy::{Client, connect::HttpConnector},
     rt::TokioExecutor,
 };
 use nonzero_ext::nonzero;
@@ -94,7 +94,15 @@ impl From<HttpClientError> for Error {
 
 type HyperClient = Client<ProxyConnector<HttpsConnector<HttpConnector>>, Full<bytes::Bytes>>;
 
+pub type ResponseFuture = std::pin::Pin<Box<dyn std::future::Future<Output = Result<Response<Incoming>, Error>> + Send>>;
+
+/// Optional host transport for deterministic, provider-free boundary tests.
+pub trait HttpTransport: Send + Sync {
+    fn request(&self, request: Request<Bytes>) -> ResponseFuture;
+}
 pub struct HttpClient {
+    transport: Option<std::sync::Arc<dyn HttpTransport>>,
+    network: crate::network::NetworkLease,
     user_agent: HeaderValue,
     proxy_url: Option<Url>,
     hyper_client: OnceLock<HyperClient>,
@@ -105,6 +113,10 @@ pub struct HttpClient {
 
 impl HttpClient {
     pub fn new(proxy_url: Option<&Url>) -> Self {
+        Self::new_with_network(proxy_url, Default::default())
+    }
+
+    pub fn new_with_network(proxy_url: Option<&Url>, network: crate::network::NetworkLease) -> Self {
         let zero_str = String::from("0");
         let os_version = os_version();
 
@@ -137,11 +149,19 @@ impl HttpClient {
         let rate_limiter = RateLimiter::keyed(quota);
 
         Self {
+            transport: None,
+            network,
             user_agent,
             proxy_url: proxy_url.cloned(),
             hyper_client: OnceLock::new(),
             rate_limiter,
         }
+    }
+
+    pub fn with_transport(network: crate::network::NetworkLease, transport: std::sync::Arc<dyn HttpTransport>) -> Self {
+        let mut client = Self::new_with_network(None, network);
+        client.transport = Some(transport);
+        client
     }
 
     fn try_create_hyper_client(proxy_url: Option<&Url>) -> Result<HyperClient, Error> {
@@ -206,7 +226,8 @@ impl HttpClient {
                             "Rate limited by service, retrying in {} seconds...",
                             duration.as_secs()
                         );
-                        tokio::time::sleep(duration).await;
+                        self.network.transport("http.retry.wait", || ())?;
+                        self.network.run(async { tokio::time::sleep(duration).await; Ok(()) }).await?;
                         continue;
                     }
                 }
@@ -256,7 +277,15 @@ impl HttpClient {
             ))
         })?;
 
-        Ok(self.hyper_client().request(req.map(Full::new)))
+        let request: ResponseFuture = self.network.transport("http", || match &self.transport {
+            Some(transport) => transport.request(req),
+            None => {
+                let request = self.hyper_client().request(req.map(Full::new));
+                Box::pin(async move { Ok(request.await?) })
+            }
+        })?;
+        let lease = self.network.clone();
+        Ok(Box::pin(async move { lease.run(request).await }))
     }
 
     pub fn get_retry_after(headers: &HeaderMap<HeaderValue>) -> Option<Duration> {

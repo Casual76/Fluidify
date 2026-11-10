@@ -1,0 +1,160 @@
+{
+  "app": {
+    "xmlCount": 13,
+    "counts": {
+      "tests": 63,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "classes": [
+      {
+        "name": "dev.lelonio.square.bridge.AiToolHostProviderGuardTest",
+        "tests": "6",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:56.713Z"
+      },
+      {
+        "name": "dev.lelonio.square.bridge.BridgeStateTest",
+        "tests": "9",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:56.849Z"
+      },
+      {
+        "name": "dev.lelonio.square.bridge.FluidifyToolValidationTest",
+        "tests": "5",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:56.902Z"
+      },
+      {
+        "name": "dev.lelonio.square.bridge.ResultFragmentsTest",
+        "tests": "4",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:57.070Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.DownloadIndexPersistenceTest",
+        "tests": "3",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:57.277Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.ListeningHistoryTest",
+        "tests": "5",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:57.404Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.ListeningMedia3OccurrenceTest",
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:57.408Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.ListeningOccurrenceRestoreTest",
+        "tests": "4",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:57.496Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.ListeningRecorderTest",
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:57.817Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.ListeningRepositoryTest",
+        "tests": "8",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:57.876Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.NativeListeningOccurrenceTest",
+        "tests": "6",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:58.423Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.OwnedNativeRestoreIntegrationTest",
+        "tests": "7",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:52.492Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.SpotifyHistoryImportTest",
+        "tests": "4",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:44:58.686Z"
+      }
+    ]
+  },
+  "core": {
+    "xmlCount": 4,
+    "counts": {
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "classes": [
+      {
+        "name": "dev.lelonio.square.download.DownloadExtrasArtTest",
+        "tests": "2",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:45:00.369Z"
+      },
+      {
+        "name": "dev.lelonio.square.io.HttpFetchTest",
+        "tests": "2",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:45:00.423Z"
+      },
+      {
+        "name": "dev.lelonio.square.playback.AudioSpectrumTest",
+        "tests": "7",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:45:00.429Z"
+      },
+      {
+        "name": "dev.lelonio.square.playback.PlayQueueTest",
+        "tests": "7",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T19:45:00.553Z"
+      }
+    ]
+  }
+}

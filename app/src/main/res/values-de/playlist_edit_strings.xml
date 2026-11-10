@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_edit_create_unconfirmed">Erstellen von „%1$s“ nicht bestätigt</string>
+    <string name="playlist_edit_rename_unconfirmed">Umbenennen von „%1$s“ nicht bestätigt</string>
+    <string name="playlist_edit_delete_unconfirmed">Löschen von „%1$s“ nicht bestätigt</string>
+    <string name="playlist_edit_remove_unconfirmed">Entfernen von „%1$s“ nicht bestätigt</string>
+    <string name="playlist_edit_check_before_retry">Der Dienst hat die Änderung nicht bestätigt. Lade die Mediathek neu oder öffne die Playlist erneut, um sie vor einem weiteren Versuch zu prüfen.</string>
+    <string name="playlist_edit_unavailable">Playlists können gerade nicht bearbeitet werden. Prüfe die Verbindung und das angemeldete Konto vor einem weiteren Versuch.</string>
+    <string name="playlist_edit_selection_changed">Die Playlist wurde geändert oder wird noch geladen. Öffne das Titelmenü erneut und wähle den Eintrag noch einmal.</string>
+</resources>

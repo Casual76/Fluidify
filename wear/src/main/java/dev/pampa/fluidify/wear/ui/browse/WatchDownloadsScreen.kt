@@ -8,6 +8,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -28,6 +29,7 @@ import dev.pampa.fluidify.wear.protocol.logic.TransferPreference
 import dev.antigravity.fluidengine.wear.components.FluidWearList
 import dev.antigravity.fluidengine.wear.components.noticeItem
 import dev.pampa.fluidify.wear.ui.theme.WearDimens
+import kotlinx.coroutines.launch
 
 /**
  * What the watch keeps, and how it keeps it: the playlists and albums with
@@ -38,6 +40,12 @@ import dev.pampa.fluidify.wear.ui.theme.WearDimens
 fun WatchDownloadsScreen(downloads: WatchDownloads, onOpen: (String, String) -> Unit) {
     val context = LocalContext.current
     val status by downloads.status.collectAsStateWithLifecycle()
+    val account by downloads.authority.access.collectAsStateWithLifecycle()
+    val displayedAccount = account
+    val legacyNote = stringResource(R.string.watch_downloads_legacy_note)
+    val scope = rememberCoroutineScope()
+    var confirmLegacy by remember(account) { mutableStateOf(false) }
+    var legacy by remember(account) { mutableStateOf(downloads.store.hasLegacy()) }
     val emptyText = stringResource(R.string.watch_downloads_empty)
     val unavailableText = context.resources.getQuantityString(R.plurals.unavailable_tracks, status.unavailable, status.unavailable)
     val pausedStorage = stringResource(R.string.paused_storage)
@@ -54,10 +62,31 @@ fun WatchDownloadsScreen(downloads: WatchDownloads, onOpen: (String, String) -> 
         status.waiting > 0 -> stringResource(R.string.two_parts, storageUsed, waitingText)
         else -> storageUsed
     }
-    var quality by remember { mutableIntStateOf(downloads.qualityKbps) }
-    var bluetoothFirst by remember { mutableStateOf(downloads.preference == TransferPreference.BLUETOOTH_FIRST) }
+    var quality by remember(account) { mutableIntStateOf(downloads.qualityKbps) }
+    var bluetoothFirst by remember(account) { mutableStateOf(downloads.preference == TransferPreference.BLUETOOTH_FIRST) }
 
     FluidWearList(title = stringResource(R.string.downloads)) {
+        if (legacy && account != null) {
+            noticeItem(legacyNote)
+            item {
+                FluidWearListRow(
+                    title = if (confirmLegacy) stringResource(R.string.watch_downloads_legacy_confirm, displayedAccount?.canonical.orEmpty())
+                        else stringResource(R.string.watch_downloads_legacy_assign),
+                    onClick = {
+                        if (!confirmLegacy) confirmLegacy = true
+                        else displayedAccount?.let { captured -> scope.launch(downloads.edits) {
+                            if (downloads.authority.isCurrent(captured)) {
+                                downloads.claimLegacy(captured)
+                                legacy = downloads.store.hasLegacy()
+                            }
+                        } }
+                    },
+                )
+            }
+            if (confirmLegacy) item {
+                FluidWearListRow(title = stringResource(R.string.watch_downloads_legacy_later), onClick = { confirmLegacy = false })
+            }
+        }
         if (status.owners.isEmpty()) noticeItem(emptyText)
         if (status.unavailable > 0) noticeItem(unavailableText)
         status.owners.forEach { owner ->
@@ -65,7 +94,7 @@ fun WatchDownloadsScreen(downloads: WatchDownloads, onOpen: (String, String) -> 
                 FluidWearListRow(
                     title = owner.title.ifBlank { owner.uri },
                     subtitle = stringResource(R.string.kept_progress, owner.done, owner.tracks),
-                    onClick = { onOpen(owner.uri, owner.title) },
+                    onClick = { displayedAccount?.let { if (downloads.authority.isCurrent(it)) onOpen(owner.uri, owner.title) } },
                     leading = { Icon(PhosphorIcons.Regular.Playlist, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
                 )
             }
@@ -82,6 +111,8 @@ fun WatchDownloadsScreen(downloads: WatchDownloads, onOpen: (String, String) -> 
                 title = stringResource(R.string.download_quality),
                 subtitle = stringResource(R.string.quality_kbps, quality),
                 onClick = {
+                    val captured = displayedAccount
+                    if (captured != null && downloads.authority.isCurrent(captured)) downloads.authority.use(captured) {
                     // Round the three steps, the phone's own choices. Only what is fetched from now on
                     // has the new quality: what is on the watch already is kept as it is, so there is
                     // nothing to confirm.
@@ -89,6 +120,7 @@ fun WatchDownloadsScreen(downloads: WatchDownloads, onOpen: (String, String) -> 
                     quality = steps[(steps.indexOf(quality) + 1) % steps.size]
                     downloads.qualityKbps = quality
                     downloads.changed(schedule = true)
+                    }
                 },
                 leading = { Icon(PhosphorIcons.Regular.Gauge, contentDescription = null, modifier = Modifier.size(WearDimens.ListIcon)) },
             )
@@ -97,9 +129,12 @@ fun WatchDownloadsScreen(downloads: WatchDownloads, onOpen: (String, String) -> 
             SwitchButton(
                 checked = bluetoothFirst,
                 onCheckedChange = { on ->
+                    val captured = displayedAccount
+                    if (captured != null && downloads.authority.isCurrent(captured)) downloads.authority.use(captured) {
                     bluetoothFirst = on
                     downloads.preference = if (on) TransferPreference.BLUETOOTH_FIRST else TransferPreference.WIFI_FIRST
                     downloads.changed(schedule = false)
+                    }
                 },
                 label = { Text(stringResource(R.string.bluetooth_first)) },
                 secondaryLabel = { Text(stringResource(R.string.bluetooth_first_summary)) },

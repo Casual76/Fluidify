@@ -42,7 +42,7 @@ class PinnedPlaylistStore(context: Context) {
     /** Forgets every pin: the account they belonged to signed out. */
     fun clear() {
         _pinned.value = emptyList()
-        prefs.edit().remove(KEY_PINNED).commit()
+        check(prefs.edit().remove(KEY_PINNED).commit()) { "Could not persist account cache revocation" }
     }
 
     private fun load(): List<String> =

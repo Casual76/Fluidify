@@ -248,7 +248,7 @@ class ActivePlayback(
      * The phone signed out, so the watch does too: its own playback stops, the engine goes, and
      * only then is the credential deleted — under a running engine it could be written back.
      */
-    suspend fun signedOut() {
+    suspend fun signedOut(forgetCredentials: suspend () -> Unit = { standalone().auth.signOut() }) {
         val parts = standalone()
         if (_mode.value == PlaybackMode.WATCH || local.isConnected) {
             moveJob?.cancel()
@@ -257,7 +257,7 @@ class ActivePlayback(
             _mode.value = PlaybackMode.PHONE
             withTimeoutOrNull(SIGN_OUT_WAIT_MS) { parts.engine.status.first { it == EngineStatus.OFF } }
         }
-        withContext(Dispatchers.IO) { parts.auth.signOut() }
+        withContext(Dispatchers.IO) { forgetCredentials() }
     }
 
     override fun transfer(deviceId: String) {
