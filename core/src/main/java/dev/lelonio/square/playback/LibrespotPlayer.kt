@@ -272,10 +272,22 @@ class LibrespotPlayer(
     private var airPodsPlayRxFloor = 0L
     private var airPodsPendingPlay: Pair<Long, String>? = null
     private var airPodsAppliedPlay: Long? = null
+    // Main-thread publication only: a native acknowledgement can correct Media3's position
+    // at the same time as it confirms our PAUSE/PLAY. This is not authority for later ticks.
+    private var airPodsPublishingAcknowledgement: Pair<Long, Boolean>? = null
     private val airPodsCommandObservers = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
     val airPodsPauseReceipt: Long? get() = airPodsAppliedPause
+    fun ownsAirPodsPause(effect: Long): Boolean =
+        airPodsPendingPause?.first == effect || airPodsAppliedPause == effect
     /** Native confirmation of our own PLAY; never inferred from a coincident playing state. */
     val airPodsPlayReceipt: Long? get() = airPodsAppliedPlay
+    /** Only the actual origin-bound command or its native confirmation, until override. */
+    fun ownsAirPodsPlay(effect: Long): Boolean =
+        airPodsPendingPlay?.first == effect || airPodsAppliedPlay == effect
+    /** True only inside publication of the matching native ACK, until any intervening command. */
+    fun isPublishingAirPodsAcknowledgement(effect: Long, wanted: Boolean): Boolean =
+        airPodsPublishingAcknowledgement == (effect to wanted) &&
+            (if (wanted) airPodsAppliedPlay == effect else airPodsAppliedPause == effect)
     fun observeAirPodsCommands(changed: () -> Unit): java.io.Closeable {
         airPodsCommandObservers.add(changed)
         return java.io.Closeable { airPodsCommandObservers.remove(changed) }
@@ -1870,6 +1882,20 @@ class LibrespotPlayer(
             if (rxSequence > airPodsPlayRxFloor) { airPodsPendingPlay = null; airPodsAppliedPlay = null }
         }
 
+        val previousAcknowledgement = airPodsPublishingAcknowledgement
+        airPodsPublishingAcknowledgement = when (type) {
+            "paused" -> airPodsAppliedPause?.let { it to false }
+            "playing" -> airPodsAppliedPlay?.let { it to true }
+            else -> null
+        }
+        try {
+            publishEventState(type, uri, eventPositionMs)
+        } finally {
+            airPodsPublishingAcknowledgement = previousAcknowledgement
+        }
+    }
+
+    private fun publishEventState(type: String, uri: String, eventPositionMs: Long) {
         if (type == "playback_restore_bound") {
             runCatching {
                 val binding = Json.parseToJsonElement(uri).jsonObject

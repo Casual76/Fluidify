@@ -411,7 +411,7 @@
     <string name="widget_add_row">Añadir la fila a la pantalla de inicio</string>
     <string name="widget_add_note">La portada detrás, lo que suena, y los tres botones. Sigue el tema de la aplicación.</string>
     <string name="widget_nothing_playing_hint">Abre Fluidify y pulsa play</string>
-    <string name="library_offline">Se muestra lo descargado. Spotify aún no ha respondido.</string>
+    <string name="library_offline">Se muestra el contenido descargado.</string>
     <string name="library_offline_action">Reintentar</string>
     <string name="library_needs_app">Los artistas que sigues y los álbumes guardados necesitan tu propia aplicación de Spotify conectada.</string>
     <string name="library_needs_app_action">Conectar</string>

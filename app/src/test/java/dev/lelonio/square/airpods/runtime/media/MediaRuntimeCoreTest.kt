@@ -62,6 +62,41 @@ class MediaRuntimeCoreTest {
         val f = Fixture(HostSettings()); f.removal(); f.queue.drain()
         assertTrue(f.env.effects.isEmpty())
     }
+    @Test fun firstRemovalAfterEnablingUsesTheAlreadyObservedLiveBaseline() {
+        for (off in listOf(enabled.copy(automationsEnabled = false), enabled.copy(earPause = false))) {
+            val f = Fixture(off)
+            f.core.ear(EarState.BOTH); f.queue.drain()
+            f.core.configure(enabled); f.queue.drain()
+            assertTrue("Enabling must not replay a sensor action", f.env.effects.isEmpty())
+            f.core.ear(EarState.LEFT); f.queue.drain()
+            assertEquals(listOf(MediaAction.PAUSE), f.env.effects.map { it.first })
+        }
+    }
+    @Test fun reconfigureKeepsOnlySensorHistoryAndCancelsEveryOldEffect() {
+        val f = Fixture()
+        f.core.ear(EarState.BOTH); f.core.ear(EarState.LEFT)
+        f.core.configure(enabled.copy(conversationDuck = true)); f.queue.drain()
+        assertTrue(f.env.effects.isEmpty()) // the queued old PAUSE lost its lease
+        f.core.ear(EarState.LEFT); f.queue.drain()
+        assertTrue(f.env.effects.isEmpty()) // no replay of the last observation
+        f.core.ear(EarState.BOTH); f.core.ear(EarState.LEFT); f.queue.drain()
+        assertEquals(listOf(MediaAction.PAUSE), f.env.effects.map { it.first })
+    }
+    @Test fun aNewSessionMustObserveItsOwnEarBaseline() {
+        val f = Fixture()
+        f.core.ear(EarState.BOTH)
+        f.core.start(AutomationSession("pair", 8), enabled)
+        f.core.ear(EarState.LEFT); f.queue.drain()
+        assertTrue(f.env.effects.isEmpty())
+        f.core.ear(EarState.BOTH); f.core.ear(EarState.LEFT); f.queue.drain()
+        assertEquals(listOf(MediaAction.PAUSE), f.env.effects.map { it.first })
+    }
+    @Test fun unknownWhileDisabledCannotBecomeAUsableBaselineOnEnable() {
+        val f = Fixture(enabled.copy(automationsEnabled = false))
+        f.core.ear(EarState.BOTH); f.core.ear(EarState.UNKNOWN)
+        f.core.configure(enabled); f.core.ear(EarState.LEFT); f.queue.drain()
+        assertTrue(f.env.effects.isEmpty())
+    }
     @Test fun queuedPauseRechecksPermission() {
         val f = Fixture(); f.removal()
         f.env.candidate = f.env.candidate.copy(permitted = false); f.queue.drain()

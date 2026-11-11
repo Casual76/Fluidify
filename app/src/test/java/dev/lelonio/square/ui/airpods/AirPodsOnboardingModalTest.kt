@@ -18,6 +18,8 @@ import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.github.takahirom.roborazzi.RoborazziOptions
+import com.github.takahirom.roborazzi.RoborazziTaskType
 import dev.antigravity.fluidengine.ui.fluid.*
 import dev.lelonio.square.R
 import dev.lelonio.square.airpods.Received
@@ -41,6 +43,7 @@ import org.robolectric.annotation.GraphicsMode
  * Real SquareApp onboarding composite + real AirPodsHostPage/body; only state/action sink are fake.
  * Pointer clicks are intentional: semantics clicks alone can succeed behind an opaque sibling.
  */
+@OptIn(com.github.takahirom.roborazzi.ExperimentalRoborazziApi::class)
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [36], application = Application::class, qualifiers = "w800dp-h1000dp-mdpi")
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
@@ -124,7 +127,10 @@ class AirPodsOnboardingModalTest {
         val dir = java.io.File("build/airpods-full-integration/implementation/corrective-I3-ui/screenshots")
         dir.mkdirs()
         val file = java.io.File(dir, "$name.png")
-        compose.onRoot().captureRoboImage(file.path)
+        check(!file.exists() || file.delete()) { "Cannot remove previous raster: $file" }
+        compose.onRoot().captureRoboImage(file.path,
+            roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record))
+        check(file.isFile) { "Fresh native renderer output missing: $file" }
         return file
     }
 

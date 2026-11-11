@@ -209,13 +209,11 @@ class DownloadStore internal constructor(
     fun <T> read(access: AccountLocalDataCoordinator.Access, block: DownloadStore.() -> T): T =
         accounts.use(access) { block() }
 
-    /** No local authority is a valid empty bootstrap, never a reason to skip online authentication. */
-    fun nativeBindingForBoot(): String = captureAccess()?.let(::nativeBindingJson) ?: "null"
-
     /** Captured under the account monitor; a physical file is readable only through its namespace. */
-    fun nativeBindingJson(access: AccountLocalDataCoordinator.Access): String = read(access) {
+    fun nativeBindingJson(access: AccountLocalDataCoordinator.Access,
+        sourceOwner: String): String = read(access) {
         kotlinx.serialization.json.buildJsonObject {
-            put("owner", kotlinx.serialization.json.JsonPrimitive(access.binding.lineage))
+            put("owner", kotlinx.serialization.json.JsonPrimitive(sourceOwner))
             put("namespace", kotlinx.serialization.json.JsonPrimitive(access.namespace))
             put("root", kotlinx.serialization.json.JsonPrimitive(root.absolutePath))
             put("records", kotlinx.serialization.json.buildJsonObject {

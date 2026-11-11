@@ -125,9 +125,50 @@ class AirPodsUiReuseTest {
     @Test fun withTheGatePassedThereIsNoGateNoticeAndTheReceivedModeIsTheThumb() {
         mount { AirPodsSettingsContent(uiFixture(), {}) }
         compose.onNodeWithTag("airpods-gate").assertDoesNotExist()
-        compose.onNodeWithTag("airpods-summary-state").assertDoesNotExist()
+        compose.onNodeWithTag("airpods-summary-state")
+            .assertTextContains(label(R.string.airpods_feature_connected))
         compose.onNodeWithTag("airpods-mode-2").performScrollTo().assertIsSelected()
         for (mode in listOf(1, 3, 4)) compose.onNodeWithTag("airpods-mode-$mode").assertIsNotSelected()
+    }
+
+    @Test fun aLiveSessionRemainsVisibleWhenAllBatteryReadingsHaveExpired() {
+        mount { AirPodsSettingsContent(uiFixture().copy(nowMs = 301_000), {}) }
+        compose.onNodeWithTag("airpods-summary-state")
+            .assertTextContains(label(R.string.airpods_feature_connected))
+        compose.onAllNodesWithText("80%").assertCountEquals(0)
+        compose.onNode(hasTestTag("airpods-battery-4") and hasAnyDescendant(
+            hasText(label(R.string.airpods_ui_missing))), useUnmergedTree = true).assertExists()
+    }
+
+    @Test fun masterOffDisablesDependentSettingsWithoutDiscardingTheirSavedValues() {
+        val base = uiFixture()
+        val actions = mutableListOf<AirPodsUiAction>()
+        val state = base.copy(pair = base.pair.copy(host = base.pair.host.copy(
+            automationsEnabled = false, earPause = true, earResume = true)),
+            availability = LocalToggle.entries.associate { "local.$it" to UiAvailability(true) })
+        mount { AirPodsSettingsContent(state, actions::add, page = AirPodsSettingsPage.Automations) }
+        for (toggle in listOf(LocalToggle.EAR_PAUSE, LocalToggle.EAR_RESUME)) {
+            compose.onNode(hasText(label(toggleLabels.getValue(toggle))) and isToggleable())
+                .performScrollTo().assertIsOn().assertIsNotEnabled()
+        }
+        compose.onNode(hasText(label(toggleLabels.getValue(LocalToggle.AUTOMATIONS))) and isToggleable())
+            .performScrollTo().assertIsOff().assertIsEnabled().performTouchInput { click() }
+        assertEquals(listOf<AirPodsUiAction>(AirPodsUiAction.Toggle(LocalToggle.AUTOMATIONS, true)), actions)
+    }
+
+    @Test fun existingSeparateConsentsCanStillBeRevokedWhileMasterIsOff() {
+        val base = uiFixture()
+        val actions = mutableListOf<AirPodsUiAction>()
+        val state = base.copy(pair = base.pair.copy(host = base.pair.host.copy(
+            automationsEnabled = false, otherAppsEnabled = true, fluidifyBackgroundEnabled = true)),
+            availability = LocalToggle.entries.associate { "local.$it" to UiAvailability(true) })
+        mount { AirPodsSettingsContent(state, actions::add, page = AirPodsSettingsPage.Automations) }
+        for (toggle in listOf(LocalToggle.OTHER_APPS, LocalToggle.BACKGROUND)) {
+            compose.onNode(hasText(label(toggleLabels.getValue(toggle))) and isToggleable())
+                .performScrollTo().assertIsOn().assertIsEnabled().performTouchInput { click() }
+        }
+        assertEquals(listOf<AirPodsUiAction>(AirPodsUiAction.Toggle(LocalToggle.OTHER_APPS, false),
+            AirPodsUiAction.Toggle(LocalToggle.BACKGROUND, false)), actions)
     }
 
     // ---- charge: received, unknown, stale ---------------------------------------------------

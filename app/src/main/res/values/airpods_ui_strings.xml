@@ -66,7 +66,7 @@
     <string name="airpods_ui_delete">Delete diagnostics</string>
     <string name="airpods_ui_collect">Start diagnostic collection</string>
     <string name="airpods_ui_collect_stop">Stop diagnostic collection</string>
-    <string name="airpods_ui_hearing_excluded">Personalized hearing / ATT controls require the excluded Xposed/vendor hook path. AACP PPE remains included when applicable.</string>
+    <string name="airpods_ui_hearing_excluded">Personalized hearing controls are unavailable. Hearing protection appears when supported by the connected AirPods.</string>
     <string name="airpods_ui_battery">Battery</string>
     <string name="airpods_ui_information">Device information</string>
     <string name="airpods_ui_status">Connection and received state</string>

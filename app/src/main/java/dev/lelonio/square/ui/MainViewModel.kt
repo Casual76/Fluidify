@@ -1,7 +1,5 @@
 package dev.lelonio.square.ui
 
-import dev.lelonio.square.data.AccountEntryMarker
-import dev.lelonio.square.data.accountEntryMarker
 
 import android.app.Application
 import androidx.annotation.StringRes
@@ -1623,11 +1621,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun launchRefresh(): Job {
         val access = container.accountLocalData.capture()
-        accountEntryMarker(when (access?.origin) {
-            null -> AccountEntryMarker.VM_REFRESH_NONE
-            dev.lelonio.square.data.AccountLocalDataCoordinator.Origin.LOCAL -> AccountEntryMarker.VM_REFRESH_LOCAL
-            dev.lelonio.square.data.AccountLocalDataCoordinator.Origin.ONLINE -> AccountEntryMarker.VM_REFRESH_ONLINE
-        })
         val attempt = accountGeneration
         val editVersion = playlistEdits.readVersion()
         return viewModelScope.launch {
@@ -1637,7 +1630,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch // SESSION_CONNECTED will publish an independent online capability
             }
             if (dev.lelonio.square.playback.OfflineMode.active.value || !container.accountLocalData.isOnlineCurrent(access)) {
-                accountEntryMarker(AccountEntryMarker.VM_OFFLINE_READ_PENDING)
                 val offline = offlineLibrary(access)
                 currentCoroutineContext().ensureActive()
                 container.downloads.read(access) {
@@ -3687,11 +3679,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // are invalidated by the main-thread collector below.
     private val localDataTransitions = AccountAccessTransitions(container.accountLocalData)
     private val localDataObservation = localDataTransitions.observe { observed, answered ->
-        accountEntryMarker(when (observed?.origin) {
-            null -> AccountEntryMarker.VM_OBSERVER_NONE
-            dev.lelonio.square.data.AccountLocalDataCoordinator.Origin.LOCAL -> AccountEntryMarker.VM_OBSERVER_LOCAL
-            dev.lelonio.square.data.AccountLocalDataCoordinator.Origin.ONLINE -> AccountEntryMarker.VM_OBSERVER_ONLINE
-        })
         // A change made on the main thread reaches the collector below before it reaches
         // this: the StateFlow resumes it inline, so the Home load for this very access is
         // already running. Cancelling it here left the page on "Connecting" after an online
@@ -3731,11 +3718,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
         viewModelScope.launch {
             localDataTransitions.collect { access ->
-                accountEntryMarker(when (access?.origin) {
-                    null -> AccountEntryMarker.VM_COLLECTOR_NONE
-                    dev.lelonio.square.data.AccountLocalDataCoordinator.Origin.LOCAL -> AccountEntryMarker.VM_COLLECTOR_LOCAL
-                    dev.lelonio.square.data.AccountLocalDataCoordinator.Origin.ONLINE -> AccountEntryMarker.VM_COLLECTOR_ONLINE
-                })
                 searchRequests.invalidate()
                 playlistRequests.invalidate()
                 searchAccess = null

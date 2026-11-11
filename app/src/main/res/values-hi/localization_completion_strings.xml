@@ -248,7 +248,7 @@
     <string name="airpods_ui_delete">जाँच की जानकारी मिटाएँ</string>
     <string name="airpods_ui_collect">जाँच की जानकारी इकट्ठा करना शुरू करें</string>
     <string name="airpods_ui_collect_stop">जाँच की जानकारी इकट्ठा करना बंद करें</string>
-    <string name="airpods_ui_hearing_excluded">व्यक्तिगत श्रवण / ATT कंट्रोल के लिए Xposed या निर्माता के हुक वाला तरीका ज़रूरी है, जो शामिल नहीं है। जहाँ लागू हो, AACP PPE शामिल रहता है।</string>
+    <string name="airpods_ui_hearing_excluded">निजी श्रवण सुविधाएँ उपलब्ध नहीं हैं। जुड़े हुए AirPods में समर्थित होने पर श्रवण सुरक्षा दिखाई देती है।</string>
     <string name="airpods_ui_battery">बैटरी</string>
     <string name="airpods_ui_information">डिवाइस की जानकारी</string>
     <string name="airpods_ui_status">कनेक्शन और डिवाइस से मिली स्थिति</string>

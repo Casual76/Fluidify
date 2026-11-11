@@ -25,6 +25,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.antigravity.fluidengine.ui.fluid.*
 import dev.lelonio.square.ui.theme.SquareTheme
 import com.github.takahirom.roborazzi.captureRoboImage
+import com.github.takahirom.roborazzi.RoborazziOptions
+import com.github.takahirom.roborazzi.RoborazziTaskType
 import java.io.File
 import org.junit.Assert.*
 import org.junit.Rule
@@ -35,6 +37,7 @@ import org.robolectric.annotation.GraphicsMode
 import kotlin.math.max
 import kotlin.math.min
 
+@OptIn(com.github.takahirom.roborazzi.ExperimentalRoborazziApi::class)
 @RunWith(AndroidJUnit4::class)
 @GraphicsMode(GraphicsMode.Mode.NATIVE)
 @Config(sdk = [36], application = Application::class, qualifiers = "w800dp-h1000dp-mdpi")
@@ -66,7 +69,10 @@ class AirPodsReceivedSelectionContrastTest {
     private fun capture(tag: String): PixelMap {
         val output = File("build/airpods-glass/c9-contrast/$captureCase/$tag.png")
         output.parentFile?.mkdirs()
-        compose.onNodeWithTag(tag, useUnmergedTree = true).captureRoboImage(output.path)
+        check(!output.exists() || output.delete()) { "Cannot remove previous raster: $output" }
+        compose.onNodeWithTag(tag, useUnmergedTree = true).captureRoboImage(output.path,
+            roborazziOptions = RoborazziOptions(taskType = RoborazziTaskType.Record))
+        check(output.isFile) { "Fresh native renderer output missing: $output" }
         return requireNotNull(BitmapFactory.decodeFile(output.path)) { "Native renderer output missing: $output" }
             .asImageBitmap().toPixelMap()
     }

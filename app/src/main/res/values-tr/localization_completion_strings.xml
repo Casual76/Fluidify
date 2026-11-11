@@ -248,7 +248,7 @@
     <string name="airpods_ui_delete">Tanılama verilerini sil</string>
     <string name="airpods_ui_collect">Tanılama verisi toplamayı başlat</string>
     <string name="airpods_ui_collect_stop">Tanılama verisi toplamayı durdur</string>
-    <string name="airpods_ui_hearing_excluded">Kişiselleştirilmiş işitme / ATT kontrolleri, kapsam dışı Xposed veya üretici hook entegrasyonu gerektirir. AACP PPE, geçerli olduğunda kapsamda kalır.</string>
+    <string name="airpods_ui_hearing_excluded">Kişiselleştirilmiş işitme özellikleri kullanılamıyor. Bağlı AirPods destekliyorsa işitme koruması gösterilir.</string>
     <string name="airpods_ui_battery">Pil</string>
     <string name="airpods_ui_information">Cihaz bilgileri</string>
     <string name="airpods_ui_status">Bağlantı ve alınan durum</string>

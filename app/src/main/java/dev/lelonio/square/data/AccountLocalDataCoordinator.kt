@@ -47,35 +47,30 @@ class AccountLocalDataCoordinator internal constructor(
 
     /** No offline path calls this function or manufactures HistoryAccess. */
     suspend fun verifyNativeAccount(): Boolean {
-        accountEntryMarker(AccountEntryMarker.VERIFY_SNAPSHOT_PENDING)
         val captured = authority.locked {
             validLocked()
             Triple(historyAccess(), nativeEpoch(), authority.verification())
         }
-        val history = captured.first ?: run { accountEntryMarker(AccountEntryMarker.VERIFY_HISTORY_MISSING); return false }
-        val epoch = captured.second ?: run { accountEntryMarker(AccountEntryMarker.VERIFY_EPOCH_MISSING); return false }
-        val proof = captured.third ?: run { accountEntryMarker(AccountEntryMarker.VERIFY_KEPT_PROOF_MISSING); return false }
-        if (!nativeReady()) { accountEntryMarker(AccountEntryMarker.VERIFY_NATIVE_NOT_READY); return false }
-        accountEntryMarker(AccountEntryMarker.VERIFY_NATIVE_ID_PENDING)
+        val history = captured.first ?: run { return false }
+        val epoch = captured.second ?: run { return false }
+        val proof = captured.third ?: run { return false }
+        if (!nativeReady()) { return false }
         val canonical = nativeUsername()
         return authority.locked {
-            if (!authority.isCurrent(proof)) { accountEntryMarker(AccountEntryMarker.VERIFY_PROOF_STALE); return@locked false }
-            if (!nativeReady()) { accountEntryMarker(AccountEntryMarker.VERIFY_NATIVE_LOST); return@locked false }
-            if (historyAccess() != history) { accountEntryMarker(AccountEntryMarker.VERIFY_HISTORY_STALE); return@locked false }
-            if (nativeEpoch() != epoch) { accountEntryMarker(AccountEntryMarker.VERIFY_EPOCH_STALE); return@locked false }
+            if (!authority.isCurrent(proof)) { return@locked false }
+            if (!nativeReady()) { return@locked false }
+            if (historyAccess() != history) { return@locked false }
+            if (nativeEpoch() != epoch) { return@locked false }
             if (canonical.isBlank() || canonical != history.account.id || canonical != proof.identity.canonical) {
-                accountEntryMarker(AccountEntryMarker.VERIFY_IDENTITY_MISMATCH)
                 authority.invalidate()
                 return@locked false
             }
             val old = validLocked()
             if (old != null && old.origin == Origin.ONLINE && old.history == history && old.epoch == epoch) {
-                accountEntryMarker(AccountEntryMarker.VERIFY_EXISTING_ACCEPTED)
                 return@locked true
             }
-            val binding = authority.confirm(proof, canonical) ?: run { accountEntryMarker(AccountEntryMarker.VERIFY_CONFIRM_REJECTED); return@locked false }
+            val binding = authority.confirm(proof, canonical) ?: run { return@locked false }
             changeLocked(Access(this, binding, Origin.ONLINE, history, epoch))
-            accountEntryMarker(AccountEntryMarker.VERIFY_NEW_ACCEPTED)
             true
         }
     }

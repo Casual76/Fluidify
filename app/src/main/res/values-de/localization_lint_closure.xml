@@ -249,7 +249,7 @@
     <string name="airpods_ui_delete">Diagnosedaten löschen</string>
     <string name="airpods_ui_collect">Diagnoseerfassung starten</string>
     <string name="airpods_ui_collect_stop">Diagnoseerfassung stoppen</string>
-    <string name="airpods_ui_hearing_excluded">Die Steuerung für personalisiertes Hören / ATT erfordert den ausgeschlossenen Zugriff über Xposed- oder Hersteller-Hooks. AACP PPE bleibt enthalten, soweit anwendbar.</string>
+    <string name="airpods_ui_hearing_excluded">Personalisierte Hörfunktionen sind nicht verfügbar. Gehörschutz wird angezeigt, wenn die verbundenen AirPods ihn unterstützen.</string>
     <string name="airpods_ui_battery">Batterie</string>
     <string name="airpods_ui_information">Geräteinformationen</string>
     <string name="airpods_ui_status">Verbindung und empfangener Zustand</string>

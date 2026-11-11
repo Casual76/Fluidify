@@ -520,23 +520,9 @@ fun SettingsScreen(
 
         if (open == SettingsPage.About) item("about") {
             Section(stringResource(R.string.about)) {
-                InfoRow(stringResource(R.string.version), "${BuildConfig.VERSION_NAME} (${BuildConfig.BUILD_TYPE})")
+                InfoRow(stringResource(R.string.version), BuildConfig.VERSION_NAME)
                 FluidListDivider()
                 Licences()
-            }
-        }
-
-        // Internal probe entry only; there is no exported diagnostic activity or release UI.
-        if (BuildConfig.DEBUG && open == SettingsPage.About) item("airpods_diagnostic") {
-            Section("Debug") {
-                ActionRow("Diagnostica AirPods (POC)", destructive = false) {
-                    context.startActivity(
-                        android.content.Intent().setClassName(
-                            context,
-                            "dev.lelonio.square.airpods.AirPodsDiagnosticActivity",
-                        ),
-                    )
-                }
             }
         }
 
@@ -1245,6 +1231,7 @@ private val SCOPES = listOf(
 )
 
 private val LICENCES = listOf(
+    "LibrePods (AirPods UI and images)" to "GPL-3.0-or-later",
     "librespot" to "MIT",
     "Bungee" to "MPL-2.0",
     "Phosphor Icons" to "MIT",

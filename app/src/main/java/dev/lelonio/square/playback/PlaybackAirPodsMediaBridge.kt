@@ -109,13 +109,17 @@ internal class PlaybackAirPodsProvider(
     private var resumeEffect: Long? = null
     private var resumeDeadline = 0L
     private val resumeTimeout = Runnable {
-        if (resumeEffect != null && raw !is LibrespotPlayer && !ownResumeConfirmed()) {
-            revokeTransport(); signal()
+        if (resumeEffect != null) {
+            if (!ownResumeConfirmed()) revokeTransport()
+            // A native PLAY receipt does not prove that the renderer acquired its route.
+            // Re-read at the deadline even if that receipt preceded AudioTrack.start().
+            signal()
         }
     }
     private var ownTransport = false
     private var ownVolume = false
     private var pauseAwaiting = false
+    private var pauseDeadline = 0L
     private val observers = linkedSetOf<() -> Unit>()
     private var closed = false
     private var pair: PairAddress? = null
@@ -130,10 +134,15 @@ internal class PlaybackAirPodsProvider(
         if (invalidateRoute) { evidence.invalidate(); revokeTransport(); revokeVolume() }
         observers.toList().forEach { runCatching { it() } }
     }
-    private fun postRouteChange() { handler.post { signal(true) } }
+    private fun postRouteChange() { handler.post {
+        // AudioTrack also reports routing while our own pause/resume changes its active
+        // state. The callback alone is not a user override. read()/valid() compare the
+        // actual renderer generation/devices and revoke on a changed or unavailable route.
+        signal()
+    } }
     private fun revokeTransport() {
         handler.removeCallbacks(resumeTimeout); resumeDeadline = 0L
-        pauseEffect = null; pauseAwaiting = false; resumeEffect = null; exoOutput?.revoke()
+        pauseEffect = null; pauseAwaiting = false; pauseDeadline = 0L; resumeEffect = null; exoOutput?.revoke()
         transportRevision++
     }
     /** Receipt for exactly our PLAY, while still requested; a coincident state is not one. */
@@ -142,11 +151,17 @@ internal class PlaybackAirPodsProvider(
         return raw.playWhenReady && (if (raw is LibrespotPlayer) raw.airPodsPlayReceipt == id
             else exoOutput?.let { it.ownsPlay(id) && it.playApplied == id } == true)
     }
-    /** Preserve only existing authority while this exact Exo command awaits its sink receipt. */
+    /** Preserve existing historical route proof only while this exact PLAY reaches its sink. */
     private fun ownResumePending(): Boolean {
         val id = resumeEffect ?: return false
-        return raw !is LibrespotPlayer && raw.playWhenReady &&
-            android.os.SystemClock.elapsedRealtime() < resumeDeadline && exoOutput?.ownsPlay(id) == true
+        return raw.playWhenReady && android.os.SystemClock.elapsedRealtime() < resumeDeadline &&
+            (if (raw is LibrespotPlayer) raw.ownsAirPodsPlay(id) else exoOutput?.ownsPlay(id) == true)
+    }
+    /** Native sink stop can precede the matching PAUSED event on the main looper. */
+    private fun ownPauseStoppingRenderer(): Boolean {
+        val id = pauseEffect ?: return false
+        return raw is LibrespotPlayer && pauseAwaiting &&
+            android.os.SystemClock.elapsedRealtime() < pauseDeadline && raw.ownsAirPodsPause(id)
     }
     private fun revokeVolume() { volumeEffect = null; volumeRevision++ }
     private fun streamVolume(): MediaVolume? = runCatching {
@@ -179,10 +194,29 @@ internal class PlaybackAirPodsProvider(
         override fun seekToPreviousMediaItem() { manualTransport(); super.seekToPreviousMediaItem() }
     }
     private val listener = object : Player.Listener {
+        // Media3 batches onEvents after its synchronous position callbacks. Every position
+        // callback in that batch must belong to the exact native ACK; one foreign correction
+        // still revokes, even when it shares a batch with our own acknowledgement.
+        private var ownedPositionAcknowledgements: Boolean? = null
+        override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo,
+            newPosition: Player.PositionInfo, reason: Int) {
+            val wanted = raw.playWhenReady
+            val effect = if (wanted) resumeEffect else pauseEffect
+            val owned = raw is LibrespotPlayer && effect != null &&
+                reason == Player.DISCONTINUITY_REASON_INTERNAL &&
+                oldPosition.mediaItem?.mediaId?.isNotEmpty() == true &&
+                oldPosition.mediaItem?.mediaId == newPosition.mediaItem?.mediaId &&
+                oldPosition.mediaItemIndex == newPosition.mediaItemIndex &&
+                oldPosition.windowUid == newPosition.windowUid &&
+                raw.isPublishingAirPodsAcknowledgement(effect, wanted)
+            ownedPositionAcknowledgements = ownedPositionAcknowledgements != false && owned
+        }
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             if (reason != Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST) signal(true)
         }
         override fun onEvents(player: Player, events: Player.Events) {
+            val ownPosition = ownedPositionAcknowledgements == true
+            ownedPositionAcknowledgements = null
             if (closed) return
             // Controlled pause/resume may consume only their own matching transitions.
             // Position ticks, metadata and generic callbacks never create receipts.
@@ -190,7 +224,7 @@ internal class PlaybackAirPodsProvider(
                 if (!ownTransport && !(pauseAwaiting && !raw.playWhenReady) &&
                     !ownResumeConfirmed() && !ownResumePending()) revokeTransport()
             }
-            if (events.contains(Player.EVENT_POSITION_DISCONTINUITY) || events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) ||
+            if ((events.contains(Player.EVENT_POSITION_DISCONTINUITY) && !ownPosition) || events.contains(Player.EVENT_MEDIA_ITEM_TRANSITION) ||
                 events.contains(Player.EVENT_TIMELINE_CHANGED)) revokeTransport()
             if (events.contains(Player.EVENT_VOLUME_CHANGED)) revokeVolume()
             signal()
@@ -242,7 +276,7 @@ internal class PlaybackAirPodsProvider(
             .getOrDefault(emptySet())
         // Exo may publish PLAYING before its existing AudioTrack resumes. Preserve only the
         // same historical renderer proof during our origin-scoped, bounded pending PLAY.
-        val rendererPlaying = playing && !(ownResumePending() && route?.active == false)
+        val rendererPlaying = playing && !((ownResumePending() || ownPauseStoppingRenderer()) && route?.active == false)
         val routeId = if (!remote && route != null) evidence.read(route, pair, rendererPlaying, devices) else null
         if (lastRouteId != routeId) { revokeTransport(); revokeVolume(); lastRouteId = routeId }
         if (remote) { evidence.invalidate(); revokeTransport(); revokeVolume() }
@@ -292,6 +326,7 @@ internal class PlaybackAirPodsProvider(
                     else {
                         if (!raw.isPlaying) return false
                         pauseEffect = effectId; pauseAwaiting = true; resumeEffect = null
+                        pauseDeadline = android.os.SystemClock.elapsedRealtime() + 2_000L
                         ownTransport = true
                         exoOutput?.controlledCommand = true
                         try {
@@ -310,6 +345,9 @@ internal class PlaybackAirPodsProvider(
                     if (effectId != null) {
                         if (read(pair ?: return false)?.observedPauseEffect == null) return false
                         resumeEffect = effectId
+                        resumeDeadline = android.os.SystemClock.elapsedRealtime() + 2_000L
+                        handler.removeCallbacks(resumeTimeout)
+                        handler.postDelayed(resumeTimeout, 2_000L)
                         ownTransport = true
                         exoOutput?.controlledCommand = true
                         try {
@@ -318,9 +356,6 @@ internal class PlaybackAirPodsProvider(
                             } else {
                                 val sink = exoOutput ?: run { revokeTransport(); return false }
                                 sink.armPlay(effectId)
-                                resumeDeadline = android.os.SystemClock.elapsedRealtime() + 2_000L
-                                handler.removeCallbacks(resumeTimeout)
-                                handler.postDelayed(resumeTimeout, 2_000L)
                                 raw.play()
                                 if (!raw.playWhenReady) { revokeTransport(); return false }
                             }

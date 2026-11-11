@@ -249,7 +249,7 @@
     <string name="airpods_ui_delete">Supprimer les diagnostics</string>
     <string name="airpods_ui_collect">Démarrer la collecte de diagnostics</string>
     <string name="airpods_ui_collect_stop">Arrêter la collecte de diagnostics</string>
-    <string name="airpods_ui_hearing_excluded">Les commandes d’audition personnalisée / ATT nécessitent la voie exclue des hooks Xposed ou du fabricant. AACP PPE reste inclus lorsque cela s’applique.</string>
+    <string name="airpods_ui_hearing_excluded">Les fonctions auditives personnalisées sont indisponibles. La protection auditive apparaît si les AirPods connectés la prennent en charge.</string>
     <string name="airpods_ui_battery">Batterie</string>
     <string name="airpods_ui_information">Informations sur l’appareil</string>
     <string name="airpods_ui_status">Connexion et état reçu</string>

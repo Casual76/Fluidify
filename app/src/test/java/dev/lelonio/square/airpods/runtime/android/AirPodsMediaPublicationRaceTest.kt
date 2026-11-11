@@ -114,6 +114,8 @@ class AirPodsMediaPublicationRaceTest {
         val startCalls = AtomicInteger()
         val visibleCalls = AtomicInteger()
         val stops = AtomicInteger()
+        val received = mutableListOf<Received<AacpEvent>>()
+        val order = mutableListOf<String>()
         @Volatile var revokeThread: Thread? = null
         @Volatile var stopThread: Thread? = null
         @Volatile var startedAfterRevoke = false
@@ -123,12 +125,13 @@ class AirPodsMediaPublicationRaceTest {
         override fun start(session: AutomationSession, pair: PairAddress, settings: HostSettings) {
             if (revokes.get() > 0) startedAfterRevoke = true
             startCalls.incrementAndGet()
+            order += "start"
             starting = true
             try { onStart() } finally { starting = false }
         }
         override fun updateSettings(settings: HostSettings) = Unit
-        override fun setUiVisible(visible: Boolean) { visibleCalls.incrementAndGet() }
-        override fun onEvent(event: Received<AacpEvent>) = Unit
+        override fun setUiVisible(visible: Boolean) { visibleCalls.incrementAndGet(); order += "visibility" }
+        override fun onEvent(event: Received<AacpEvent>) { order += "ear"; received += event }
         override fun setUserVolume(value: Int): Boolean = false
         override fun gesture(action: AirPodsMediaGesture): Boolean = false
         override fun revoke() { if (revokes.getAndIncrement() == 0) revokeThread = Thread.currentThread() }
@@ -200,8 +203,9 @@ class AirPodsMediaPublicationRaceTest {
             ReflectionHelpers.getField<List<AirPodsMediaPort>>(controller, "retiringMedia").toList()
         }
         /** The production step, on main, for the admission [a] (default: the current ticket). */
-        fun publish(a: ConnectionAdmission = requireNotNull(ticket()) { "RIG: nessun ticket" }): Boolean =
-            controller.publishMedia(a, 1L, HostSettings(), session)
+        fun publish(a: ConnectionAdmission = requireNotNull(ticket()) { "RIG: nessun ticket" },
+            baselineEar: Received<AacpEvent>? = null): Boolean =
+            controller.publishMedia(a, 1L, HostSettings(), session, baselineEar)
 
         /** True when another thread can enter the gate monitor right now: nobody is holding it. */
         fun gateFree(): Boolean {
@@ -249,6 +253,23 @@ class AirPodsMediaPublicationRaceTest {
                 ReflectionHelpers.getField<CoroutineScope>(controller, "processScope").cancel()
                 looper.idle()
             }
+        }
+    }
+
+    @Test fun liveBootstrapEarSeedsTheNewPortAfterStartAndVisibility() {
+        Fixture().use { f ->
+            val ear = Received<AacpEvent>(AacpEvent.Ear(dev.lelonio.square.airpods.protocol.EarSample(0, 0)), 1000, 1)
+            assertTrue(f.publish(baselineEar = ear))
+            assertEquals(listOf("start", "visibility", "ear"), f.port.order)
+            assertEquals(listOf(ear), f.port.received)
+        }
+    }
+
+    @Test fun bootstrapEarOfAnotherGenerationIsNeverForwarded() {
+        Fixture().use { f ->
+            val ear = Received<AacpEvent>(AacpEvent.Ear(dev.lelonio.square.airpods.protocol.EarSample(0, 0)), 1000, 2)
+            assertTrue(f.publish(baselineEar = ear))
+            assertTrue(f.port.received.isEmpty())
         }
     }
 

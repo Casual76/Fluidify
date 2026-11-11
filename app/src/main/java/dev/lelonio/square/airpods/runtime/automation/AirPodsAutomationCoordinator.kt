@@ -47,11 +47,13 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
     )
     private var duck: Duck? = null
 
-    /** Equal configuration/session is idempotent. Every real reconfigure resets both baselines. */
+    /** Reconfigure revokes every effect. Only live ear history of the same session survives. */
     @Synchronized fun configure(value: AutomationConfig, generation: Long) {
         val newSession = AutomationSession(value.pairId, generation)
         if (config == value && session == newSession) return
+        val liveEar = ear.takeIf { session == newSession }
         clear()
+        ear = liveEar
         config = value
         session = newSession
     }
@@ -127,7 +129,7 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
             // Media authority and sensor history have different lifetimes. A validated live
             // ear baseline belongs to this Bluetooth session, including before music starts.
             // Keep it for the NEXT physical transition; this read never replays an ear effect.
-            // configure/stop and UNKNOWN/cache ear input still reset that baseline.
+            // Stop/new session and UNKNOWN/cache ear input still reset that baseline.
             conversation = null
             return
         }
@@ -200,9 +202,12 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
     @Synchronized fun onEar(eventSession: AutomationSession, value: EarState, live: Boolean = true,
         expectedInputEpoch: Long = inputEpoch) {
         val c = config ?: return
-        if (expectedInputEpoch != inputEpoch || eventSession != session || !c.enabled || !c.earEnabled) return
+        if (expectedInputEpoch != inputEpoch || eventSession != session) return
         val before = ear
         ear = if (live) value else null
+        // Observation is not permission to act. Retain the first live baseline even while
+        // disabled; enabling never replays it, but the next physical transition can act.
+        if (!c.enabled || !c.earEnabled) return
         if (!live || value == EarState.UNKNOWN || before == null || before == EarState.UNKNOWN) {
             invalidateEarResume()
             return

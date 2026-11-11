@@ -382,6 +382,7 @@ fun SquareApp(
 
     val offlineNow by dev.lelonio.square.playback.OfflineMode.active
         .collectAsStateWithLifecycle()
+    val offlineReason by dev.lelonio.square.playback.OfflineMode.reason.collectAsStateWithLifecycle()
     val artistDownload by viewModel.artistDownload.collectAsStateWithLifecycle()
     val downloadRemoval by viewModel.downloadRemoval.collectAsStateWithLifecycle()
     val legacyDownloadChoice by viewModel.legacyDownloadChoice.collectAsStateWithLifecycle()
@@ -591,7 +592,6 @@ fun SquareApp(
      */
     val panelSurface = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
     val airPodsHost = dev.lelonio.square.ui.airpods.host.rememberAirPodsHostBinding()
-    dev.lelonio.square.ui.airpods.host.AirPodsQualificationIndicator()
     val modalHost = dev.antigravity.fluidengine.ui.fluid.rememberFluidGlassModalHostState()
     val morphMenu = dev.antigravity.fluidengine.ui.fluidphysics.rememberFluidMorphMenuState()
 
@@ -1452,6 +1452,7 @@ fun SquareApp(
                         fluidifyComposable(Routes.LIBRARY) {
                             LibraryScreen(
                                 state = state,
+                                manualOffline = offlineReason == dev.lelonio.square.playback.OfflineMode.Reason.MANUAL,
                                 ground = groundGlass,
                                 contentPadding = listPadding,
                                 onLogIn = viewModel::logIn,

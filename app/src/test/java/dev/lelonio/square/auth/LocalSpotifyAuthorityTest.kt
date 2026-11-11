@@ -202,7 +202,8 @@ class LocalSpotifyAuthorityTest {
         val fixture = AccountLocalDataFixture()
         val store = DownloadStore(accountDataTestContext(), StandardTestDispatcher(testScheduler), ::writeIndex, fixture.accounts)
         store.load()
-        assertEquals("null", store.nativeBindingForBoot())
+        val nativeSource = dev.lelonio.square.playback.NativeDownloadSourceOwner(store)
+        assertEquals("null", nativeSource.binding())
         assertNull(fixture.accounts.capture()) // OAuth identity itself is not a local credential receipt.
         fixture.history = HistoryAccess(HistoryAccount("account-a"), 1)
         fixture.epoch = 1; fixture.nativeId = "account-a"
@@ -210,18 +211,18 @@ class LocalSpotifyAuthorityTest {
         fixture.kept = a
         assertTrue(fixture.accounts.verifyNativeAccount())
         val first = fixture.accounts.capture()!!
-        assertTrue(store.nativeBindingForBoot().contains("owner"))
+        assertTrue(nativeSource.binding().contains("owner"))
         fixture.logout(); fixture.kept = null
-        assertEquals("null", store.nativeBindingForBoot())
+        assertEquals("null", nativeSource.binding())
         fixture.history = HistoryAccess(HistoryAccount("account-b"), 2)
         fixture.epoch = 2; fixture.nativeId = "account-b"; fixture.nativeReady = true
         assertFalse(fixture.accounts.verifyNativeAccount())
         fixture.kept = b
-        assertEquals("null", store.nativeBindingForBoot()) // File observer alone cannot mint authority.
+        assertEquals("null", nativeSource.binding()) // File observer alone cannot mint authority.
         assertTrue(fixture.accounts.verifyNativeAccount())
         assertFalse(fixture.accounts.isCurrent(first))
         assertEquals("account-b", fixture.accounts.capture()?.account?.id)
-        assertTrue(store.nativeBindingForBoot().contains("owner"))
+        assertTrue(nativeSource.binding().contains("owner"))
     }
 
     private fun writeIndex(file: File, text: String) = writeDownloadIndexAtomically(file, text)

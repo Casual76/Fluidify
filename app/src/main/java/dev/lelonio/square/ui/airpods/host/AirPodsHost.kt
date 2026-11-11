@@ -317,8 +317,16 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
             }
             is AirPodsUiAction.Tracking -> o.setTracking(action.enabled)
             is AirPodsUiAction.Setup -> when(action.action) {
-                SetupAction.VERIFY_SELECTED -> o.beginVerification().let { it !is dev.lelonio.square.airpods.runtime.lifecycle.GateResult.Denied }
-                SetupAction.ENABLE, SetupAction.RESUME -> o.enableOrResume().let { it !is dev.lelonio.square.airpods.runtime.lifecycle.GateResult.Denied }
+                SetupAction.VERIFY_SELECTED -> o.beginVerification().let {
+                    if (it is dev.lelonio.square.airpods.runtime.lifecycle.GateResult.Denied) {
+                        actionFailure = admissionFailureMessage(it.reason); false
+                    } else true
+                }
+                SetupAction.ENABLE, SetupAction.RESUME -> o.enableOrResume().let {
+                    if (it is dev.lelonio.square.airpods.runtime.lifecycle.GateResult.Denied) {
+                        actionFailure = admissionFailureMessage(it.reason); false
+                    } else true
+                }
                 SetupAction.CONNECT -> o.requestAudio(AudioOperation.CONNECT).let { it is PlatformResult.RequestAccepted || it is PlatformResult.Queued || it is PlatformResult.SettingsRequired }
                 SetupAction.DISCONNECT -> o.requestAudio(AudioOperation.DISCONNECT).let { it is PlatformResult.RequestAccepted || it is PlatformResult.Queued || it is PlatformResult.SettingsRequired }
                 SetupAction.DISABLE -> o.stopControls(SuppressReason.DISABLED).let { it !is dev.lelonio.square.airpods.runtime.lifecycle.GateResult.Denied }
@@ -344,6 +352,20 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
         }
         failure = if(accepted) null else actionFailure ?: text(R.string.airpods_host_rejected)
         refresh()
+    }
+
+    private fun admissionFailureMessage(reason: dev.lelonio.square.airpods.runtime.lifecycle.GateReason): String {
+        val label = when (reason) {
+            dev.lelonio.square.airpods.runtime.lifecycle.GateReason.NOT_CONNECTED -> R.string.airpods_reason_connection
+            dev.lelonio.square.airpods.runtime.lifecycle.GateReason.PERMISSION_DENIED -> R.string.airpods_reason_bluetooth_permission
+            dev.lelonio.square.airpods.runtime.lifecycle.GateReason.NOT_BONDED,
+            dev.lelonio.square.airpods.runtime.lifecycle.GateReason.SETUP_REQUIRED -> R.string.airpods_reason_setup
+            dev.lelonio.square.airpods.runtime.lifecycle.GateReason.DISABLED -> R.string.airpods_reason_enable
+            dev.lelonio.square.airpods.runtime.lifecycle.GateReason.SUPPRESSED -> R.string.airpods_reason_resume
+            dev.lelonio.square.airpods.runtime.lifecycle.GateReason.STALE_GENERATION -> R.string.airpods_host_stale
+            else -> R.string.airpods_host_platform_failure
+        }
+        return text(label)
     }
 
     private fun cleanupFailureMessage(result: dev.lelonio.square.airpods.runtime.lifecycle.CompanionCleanupResult): String? {

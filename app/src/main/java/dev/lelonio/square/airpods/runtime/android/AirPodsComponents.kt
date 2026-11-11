@@ -66,7 +66,6 @@ class AirPodsControlService : Service() {
 class AirPodsCompanionService : CompanionDeviceService() {
     private fun presence(address: String?, associationId: Int?) {
         AirPodsAndroidRuntime.get()?.presence(address, associationId)
-        AirPodsQualificationBootstrap.presence(address, associationId)
     }
     override fun onDeviceAppeared(address: String) { presence(address, null) }
     override fun onDeviceDisappeared(address: String) { presence(address, null) }

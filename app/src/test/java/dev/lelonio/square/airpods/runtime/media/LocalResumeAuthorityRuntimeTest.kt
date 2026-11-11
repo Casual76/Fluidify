@@ -80,7 +80,7 @@ class LocalResumeAuthorityRuntimeTest {
             onPlaybackActive = {}, onDuckReverb = {}, loadQueueCommand = { _, _, _, _, _, _, _ -> },
             refreshRemoteState = {}, airPodsPauseCommand = { pauses++ },
             airPodsPlayCommand = { plays++ }).apply { shutdownEngineOnRelease = false }
-        val route = AirPodsOutputRoute(1, listOf(AirPodsRoutedDevice(7, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, pair.value)), true)
+        var route = AirPodsOutputRoute(1, listOf(AirPodsRoutedDevice(7, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, pair.value)), true)
         val provider: PlaybackAirPodsProvider
         val env: LocalEnvironment
         val handler = Handler(Looper.getMainLooper())
@@ -110,11 +110,17 @@ class LocalResumeAuthorityRuntimeTest {
             if (ms > 0) shadowOf(Looper.getMainLooper()).idleFor(Duration.ofMillis(ms))
             else shadowOf(Looper.getMainLooper()).idle()
         }
-        fun emit(type: String, track: String = uri) { player.onEvent(type, track, 0); idle() }
+        fun emit(type: String, track: String = uri, positionMs: Long = 0) { player.onEvent(type, track, positionMs); idle() }
         fun volume() = audio.getStreamVolume(AudioManager.STREAM_MUSIC)
         fun conversation(active: Boolean) { core.conversation(active); idle() }
         fun ear(value: EarState) { core.ear(value); idle() }
         fun transportSent() = env.executed.filter { it != MediaAction.SET_VOLUME }
+        fun routingCallback() {
+            PlaybackAirPodsProvider::class.java.getDeclaredMethod("postRouteChange").apply {
+                isAccessible = true
+            }.invoke(provider)
+            idle()
+        }
         /** CA pause+duck owned and confirmed natively, then CA end dispatches our PLAY. */
         fun ownedPauseAndDuckThenResume() {
             conversation(true); idle(50)
@@ -126,7 +132,184 @@ class LocalResumeAuthorityRuntimeTest {
         fun close() { core.stop(); provider.close(); player.release() }
     }
 
+
+    @Test fun nativePausePositionAcknowledgementRetainsItsOwnedEarResume() {
+        val r = Rig(defaults.copy(earPause = true, earResume = true))
+        val events = mutableListOf<String>()
+        r.player.addListener(object : Player.Listener {
+            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo, reason: Int) {
+                events += "position:$reason:${oldPosition.positionMs}->${newPosition.positionMs}"
+            }
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                events += "timeline:$reason"
+            }
+        })
+        try {
+            r.emit("position", positionMs = 42_000)
+            r.ear(EarState.BOTH); r.ear(EarState.LEFT); r.idle(50)
+            assertEquals(1, r.pauses)
+            r.route = r.route.copy(active = false, devices = emptyList())
+            r.routingCallback()
+            events.clear()
+            // Media3 1.11.1 reports an INTERNAL discontinuity at >= 1000 ms. The physical
+            // trace corrected 1010 ms; the old +500 ms probe never exercised that callback.
+            r.emit("paused", positionMs = 43_500)
+            assertTrue("RIG: no INTERNAL correction: $events", events.any {
+                it.startsWith("position:${Player.DISCONTINUITY_REASON_INTERNAL}:") })
+            val observed = r.provider.read(pair)!!
+            assertNotNull("native=${r.player.airPodsPauseReceipt}; route=${observed.routeEvidence}; " +
+                "revision=${observed.transportRevision}; events=$events", observed.observedPauseEffect)
+            r.ear(EarState.BOTH); r.idle(50)
+            assertEquals("events=$events", 1, r.plays)
+        } finally { r.close() }
+    }
+
+    @Test fun nativePauseAtTheLastObservedPositionKeepsItsReceiptControl() {
+        val r = Rig(defaults.copy(earPause = true, earResume = true))
+        try {
+            r.emit("position", positionMs = 42_000)
+            r.ear(EarState.BOTH); r.ear(EarState.LEFT); r.idle(50)
+            assertEquals(1, r.pauses)
+            r.route = r.route.copy(active = false, devices = emptyList())
+            r.routingCallback(); r.emit("paused", positionMs = 42_000)
+            assertNotNull(r.provider.read(pair)!!.observedPauseEffect)
+            r.ear(EarState.BOTH); r.idle(50)
+            assertEquals(1, r.plays)
+        } finally { r.close() }
+    }
+
+    @Test fun nativePlayPositionAcknowledgementRetainsConversationRestoration() {
+        val r = Rig(defaults.copy(conversationDuck = true, conversationPause = true, earResume = false))
+        try {
+            r.ownedPauseAndDuckThenResume()
+            r.route = r.route.copy(active = false, devices = emptyList())
+            r.emit("playing", positionMs = 1_000)
+            r.route = r.route.copy(active = true, devices = listOf(
+                AirPodsRoutedDevice(7, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, pair.value)))
+            r.routingCallback(); r.idle(800)
+            assertEquals("native PLAY receipt=${r.player.airPodsPlayReceipt}", 10, r.volume())
+        } finally { r.close() }
+    }
+
+    @Test fun manualSeekStillRevokesAnOwnedPauseControl() {
+        val r = Rig(defaults.copy(earPause = true, earResume = true))
+        try {
+            r.ear(EarState.BOTH); r.ear(EarState.LEFT); r.idle(50); r.emit("paused")
+            assertNotNull(r.provider.read(pair)!!.observedPauseEffect)
+            r.provider.sessionPlayer.seekTo(20_000); r.idle()
+            assertNull(r.provider.read(pair)!!.observedPauseEffect)
+            r.ear(EarState.BOTH); r.idle(50)
+            assertEquals(0, r.plays)
+        } finally { r.close() }
+    }
+
+    @Test fun unrelatedNativePositionCorrectionStillRevokesAnOwnedPause() {
+        val r = Rig(defaults.copy(earPause = true, earResume = true))
+        try {
+            r.ear(EarState.BOTH); r.ear(EarState.LEFT); r.idle(50); r.emit("paused")
+            assertNotNull(r.provider.read(pair)!!.observedPauseEffect)
+            r.emit("position", positionMs = 20_000)
+            assertNull(r.provider.read(pair)!!.observedPauseEffect)
+            r.ear(EarState.BOTH); r.idle(50)
+            assertEquals(0, r.plays)
+        } finally { r.close() }
+    }
+
+    @Test fun aForeignPositionInTheAcknowledgementBatchCannotBorrowItsOrigin() {
+        val r = Rig(defaults.copy(earPause = true, earResume = true))
+        try {
+            r.emit("position", positionMs = 42_000)
+            r.ear(EarState.BOTH); r.ear(EarState.LEFT); r.idle(50)
+            assertEquals(1, r.pauses)
+            // Both native callbacks are queued before Media3's batched onEvents.
+            r.player.onEvent("paused", uri, 43_500)
+            r.player.onEvent("position", uri, 50_000)
+            r.idle()
+            assertNull(r.provider.read(pair)!!.observedPauseEffect)
+            r.ear(EarState.BOTH); r.idle(50)
+            assertEquals(0, r.plays)
+        } finally { r.close() }
+    }
+
     private val defaults = HostSettings(automationsEnabled = true, fluidifyBackgroundEnabled = true)
+
+    @Test fun ownEarPauseSurvivesTheRenderersPauseRoutingCallback() {
+        val r = Rig(defaults.copy(earPause = true, earResume = true))
+        try {
+            r.ear(EarState.BOTH); r.ear(EarState.LEFT); r.idle(50)
+            assertEquals(1, r.pauses)
+            r.route = r.route.copy(active = false, devices = emptyList())
+            r.routingCallback()
+            r.emit("paused")
+            val paused = r.provider.read(pair)!!
+            assertNotNull("native=${r.player.airPodsPauseReceipt}; route=${paused.routeEvidence}; " +
+                "routed=${paused.routedToPair}; playing=${r.player.isPlaying}; " +
+                "requested=${r.player.playWhenReady}; revision=${paused.transportRevision}", paused.observedPauseEffect)
+            r.ear(EarState.BOTH); r.idle(50)
+            assertEquals(1, r.plays)
+            r.route = r.route.copy(active = true, devices = listOf(
+                AirPodsRoutedDevice(7, AudioDeviceInfo.TYPE_BLUETOOTH_A2DP, pair.value)))
+            r.routingCallback(); r.emit("playing")
+            assertEquals(listOf(MediaAction.PAUSE, MediaAction.PLAY), r.transportSent())
+        } finally { r.close() }
+    }
+
+    @Test fun conversationVolumeRestoresWhenNativePlayingPrecedesRendererStart() {
+        val r = Rig(defaults.copy(conversationDuck = true, conversationPause = true))
+        try {
+            r.conversation(true); r.idle(50); r.emit("paused"); r.idle(800)
+            assertEquals(4, r.volume())
+            r.route = r.route.copy(active = false)
+            r.conversation(false); r.idle(150)
+            assertEquals(1, r.plays)
+            r.emit("playing"); r.routingCallback()
+            assertTrue(r.provider.read(pair)!!.routedToPair)
+            r.route = r.route.copy(active = true)
+            r.routingCallback(); r.idle(800)
+            assertEquals(10, r.volume())
+        } finally { r.close() }
+    }
+
+    @Test fun actualRouteReplacementStillRevokesOwnedEarResume() {
+        for (newGeneration in listOf(false, true)) {
+            val r = Rig(defaults.copy(earPause = true, earResume = true))
+            try {
+                r.ear(EarState.BOTH); r.ear(EarState.LEFT); r.idle(50); r.emit("paused")
+                r.route = if (newGeneration) r.route.copy(generation = 2, active = false)
+                    else r.route.copy(devices = listOf(AirPodsRoutedDevice(8,
+                        AudioDeviceInfo.TYPE_BUILTIN_SPEAKER, null)), active = false)
+                r.routingCallback(); r.ear(EarState.BOTH); r.idle(50)
+                assertEquals(0, r.plays)
+                assertNull(r.provider.read(pair)!!.observedPauseEffect)
+            } finally { r.close() }
+        }
+    }
+
+    @Test fun aStoppedSinkWithoutTheNativePauseReceiptCannotGrantResume() {
+        val r = Rig(defaults.copy(earPause = true, earResume = true))
+        try {
+            r.ear(EarState.BOTH); r.ear(EarState.LEFT); r.idle(50)
+            r.route = r.route.copy(active = false, devices = emptyList())
+            r.routingCallback(); r.idle(2_100)
+            r.ear(EarState.BOTH); r.idle(50)
+            assertEquals(0, r.plays)
+            assertNull(r.provider.read(pair)!!.observedPauseEffect)
+        } finally { r.close() }
+    }
+
+    @Test fun nativePlayingCannotRetainAnInactiveRendererPastTheResumeDeadline() {
+        val r = Rig(defaults.copy(conversationPause = true))
+        try {
+            r.conversation(true); r.idle(50); r.emit("paused")
+            r.route = r.route.copy(active = false, devices = emptyList())
+            r.conversation(false); r.idle(100); r.emit("playing")
+            assertEquals(1, r.plays)
+            assertTrue(r.provider.read(pair)!!.routedToPair)
+            r.idle(2_100)
+            assertFalse(r.provider.read(pair)!!.routedToPair)
+        } finally { r.close() }
+    }
 
     @Test fun conversationPauseResumesWithDefaultEarPreferences() {
         val r = Rig(defaults.copy(conversationPause = true))

@@ -85,7 +85,7 @@ import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.data.SearchItem
 import dev.lelonio.square.data.sortedByRecentlyOpened
 import dev.lelonio.square.ui.MainViewModel
-import dev.lelonio.square.ui.transientPhaseSemantics
+import dev.lelonio.square.ui.loadingSemantics
 import dev.lelonio.square.ui.components.AppIcon
 import dev.lelonio.square.ui.components.AppLockup
 import dev.lelonio.square.ui.components.Artwork
@@ -221,7 +221,7 @@ fun HomeScreen(
         MainViewModel.UiState.Loading,
         -> Centered {
             FluidSpinner(
-                modifier = Modifier.transientPhaseSemantics(state),
+                modifier = Modifier.loadingSemantics(),
                 size = 36.dp, color = Ink,
             )
             GlassAction(stringResource(R.string.settings), onOpenSettings)

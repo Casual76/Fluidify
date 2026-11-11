@@ -50,7 +50,6 @@ class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost, c
             // Optional controls must not prevent the music app from starting. No private data.
             android.util.Log.w("FluidifyAirPods", "Optional host unavailable: ${it.javaClass.simpleName}")
         }.getOrNull()
-        dev.lelonio.square.airpods.runtime.android.AirPodsQualificationBootstrap.install(this)
         // Before anything can read or write them. The service used to do this on
         // creation, which is late: the player screen and the media session both
         // exist by then and either can announce a default that would be saved

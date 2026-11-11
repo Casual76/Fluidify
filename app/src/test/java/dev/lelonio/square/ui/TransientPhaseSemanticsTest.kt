@@ -9,7 +9,8 @@ import androidx.compose.ui.test.assertHasClickAction
 import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.test.onNodeWithText
-import androidx.compose.ui.test.onNodeWithContentDescription
+import androidx.compose.ui.test.hasProgressBarRangeInfo
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
 import androidx.compose.ui.test.performTouchInput
 import androidx.compose.ui.test.click
 import androidx.compose.ui.unit.dp
@@ -99,12 +100,7 @@ class TransientPhaseSemanticsTest {
             }
         }
 
-        val expected = if (state == MainViewModel.UiState.Connecting)
-            "fluidify-phase-connecting" else "fluidify-phase-loading"
-        val other = if (state == MainViewModel.UiState.Connecting)
-            "fluidify-phase-loading" else "fluidify-phase-connecting"
-        compose.onNodeWithContentDescription(expected).assertIsDisplayed()
-        compose.onNodeWithContentDescription(other).assertDoesNotExist()
+        compose.onNode(hasProgressBarRangeInfo(ProgressBarRangeInfo.Indeterminate)).assertIsDisplayed()
         val context = ApplicationProvider.getApplicationContext<Context>()
         compose.onNodeWithText(context.getString(R.string.settings))
             .assertIsDisplayed()

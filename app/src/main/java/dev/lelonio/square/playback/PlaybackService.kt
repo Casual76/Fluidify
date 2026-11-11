@@ -2,8 +2,6 @@
 
 package dev.lelonio.square.playback
 
-import dev.lelonio.square.data.AccountEntryMarker
-import dev.lelonio.square.data.accountEntryMarker
 
 import android.content.Intent
 import androidx.media3.session.MediaLibraryService
@@ -1472,29 +1470,24 @@ class PlaybackService : MediaLibraryService() {
                 android.util.Log.i(TAG, "engine connected")
                 val priorHistorySession = container.listeningHistory.session.value
                 val ticket = accountLifecycle.generation
-                accountEntryMarker(AccountEntryMarker.SERVICE_CONNECTED)
                 scope.launch {
-                    accountEntryMarker(AccountEntryMarker.SERVICE_USERNAME_PENDING)
                     val id = runCatching { dev.lelonio.square.data.Catalog.username() }
-                        .onFailure { accountEntryMarker(AccountEntryMarker.SERVICE_USERNAME_FAILED) }.getOrNull()
-                    if (!accountLifecycle.current(ticket)) { accountEntryMarker(AccountEntryMarker.SERVICE_LIFECYCLE_CHANGED); return@launch }
-                    if (id.isNullOrBlank()) { accountEntryMarker(AccountEntryMarker.SERVICE_USERNAME_EMPTY); return@launch }
-                    if (!container.spotifySignedIn) { accountEntryMarker(AccountEntryMarker.SERVICE_SIGNED_OUT); return@launch }
-                    if (container.listeningHistory.session.value != priorHistorySession) { accountEntryMarker(AccountEntryMarker.SERVICE_HISTORY_CHANGED); return@launch }
+                        .getOrNull()
+                    if (!accountLifecycle.current(ticket)) { return@launch }
+                    if (id.isNullOrBlank()) { return@launch }
+                    if (!container.spotifySignedIn) { return@launch }
+                    if (container.listeningHistory.session.value != priorHistorySession) { return@launch }
                     if (container.accountLocalData.capture()?.account?.id != id) {
                         // Serialize revocation BEFORE HistoryAccess can point at another account.
                         container.accountLocalData.revoke()
-                        accountEntryMarker(AccountEntryMarker.SERVICE_DOWNLOAD_JOIN_PENDING)
                         container.downloadQueue.stopAndJoin()
-                        accountEntryMarker(AccountEntryMarker.SERVICE_WEAR_JOIN_PENDING)
                         container.wearBridge.files.stopAndJoin()
-                        if (!accountLifecycle.current(ticket)) { accountEntryMarker(AccountEntryMarker.SERVICE_LIFECYCLE_CHANGED); return@launch }
-                        if (!container.spotifySignedIn) { accountEntryMarker(AccountEntryMarker.SERVICE_SIGNED_OUT); return@launch }
-                        if (container.listeningHistory.session.value != priorHistorySession) { accountEntryMarker(AccountEntryMarker.SERVICE_HISTORY_CHANGED); return@launch }
+                        if (!accountLifecycle.current(ticket)) { return@launch }
+                        if (!container.spotifySignedIn) { return@launch }
+                        if (container.listeningHistory.session.value != priorHistorySession) { return@launch }
                     }
                     container.listeningHistory.connect(dev.lelonio.square.data.HistoryAccount(id))
                     localDataNativeVerified = true
-                    accountEntryMarker(AccountEntryMarker.SERVICE_VERIFY_PENDING)
                     if (container.accountLocalData.verifyNativeAccount()) {
                         dev.lelonio.square.download.DownloadService.start(this@PlaybackService)
                     }
@@ -1578,7 +1571,8 @@ class PlaybackService : MediaLibraryService() {
                 accountLifecycle.requireCurrent(ticket)
                 // OAuth bootstrap needs no local download authority. A later canonical receipt
                 // can admit the first source for this owner; no unverified file is readable.
-                val source = container.downloads.nativeBindingForBoot()
+                val sourceOwner = NativeDownloadSourceOwner(container.downloads)
+                val source = sourceOwner.binding()
                 // Complete ownership even if cancellation arrives while JNI constructs the player.
                 // Teardown cannot pass the lifecycle owner until this native call really returns.
                 withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
@@ -1610,10 +1604,10 @@ class PlaybackService : MediaLibraryService() {
                 val ownedHandle = nativeHandle
                 nativeSourceJob = scope.launch {
                     kotlinx.coroutines.flow.combine(container.downloads.files,
-                        container.accountLocalData.access) { _, current -> current }.collect { current ->
+                        container.accountLocalData.access) { _, current -> current }.collect {
                         accountLifecycle.runCurrent(ticket) {
                             if (ownedHandle != nativeHandle || !engineUp) return@runCurrent
-                            val binding = current?.let { container.downloads.nativeBindingJson(it) } ?: "null"
+                            val binding = sourceOwner.binding()
                             NativeBridge.bindDownloadSource(ownedHandle, binding)
                         }
                     }

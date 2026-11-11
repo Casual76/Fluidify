@@ -31,6 +31,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.IntrinsicSize
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -57,6 +58,7 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -119,6 +121,7 @@ internal fun AirPodsPicture(resource: Int, modifier: Modifier = Modifier, live: 
  * Called only with a value the device reported in this session and inside the freshness window:
  * there is no default percentage, and no call site that passes one.
  */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun AirPodsBatteryIndicator(
     percent: Int,
@@ -185,10 +188,12 @@ internal fun AirPodsBatteryIndicator(
 
         Spacer(Modifier.height(4.dp))
 
-        Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(2.dp)) {
             if (side != null) SideMark(side)
             Text(
                 stringResource(R.string.airpods_feature_percent, percent),
+                modifier = Modifier.width(IntrinsicSize.Max),
                 style = MaterialTheme.typography.labelLarge,
                 textAlign = TextAlign.Center,
                 maxLines = 1,
@@ -198,13 +203,14 @@ internal fun AirPodsBatteryIndicator(
 }
 
 /** The same footprint as an indicator, for a component that has not reported: no ring, "--". */
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 internal fun AirPodsBatteryUnknown(modifier: Modifier = Modifier, side: String? = null) {
     Column(modifier.padding(4.dp), horizontalAlignment = Alignment.CenterHorizontally) {
         Spacer(Modifier.padding(bottom = 4.dp).size(BatteryRingSize))
         Spacer(Modifier.height(4.dp))
-        Row(Modifier.alpha(0.5f), verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+        FlowRow(Modifier.alpha(0.5f), horizontalArrangement = Arrangement.spacedBy(4.dp, Alignment.CenterHorizontally),
+            verticalArrangement = Arrangement.spacedBy(2.dp)) {
             if (side != null) SideMark(side)
             Text(stringResource(R.string.airpods_ui_missing), style = MaterialTheme.typography.labelLarge,
                 textAlign = TextAlign.Center, maxLines = 1)
@@ -218,7 +224,8 @@ private val BatteryRingSize: Dp = 34.dp
 @Composable
 private fun SideMark(letter: String) {
     val scheme = MaterialTheme.colorScheme
-    Box(Modifier.size(16.dp).background(scheme.inverseSurface, CircleShape), contentAlignment = Alignment.Center) {
+    val size = 16.dp * LocalDensity.current.fontScale.coerceAtLeast(1f)
+    Box(Modifier.size(size).background(scheme.inverseSurface, CircleShape), contentAlignment = Alignment.Center) {
         Text(letter, style = MaterialTheme.typography.labelSmall, fontWeight = FontWeight.Bold,
             color = scheme.inverseOnSurface, maxLines = 1,
             modifier = Modifier.clearAndSetSemantics { })
@@ -240,6 +247,7 @@ internal fun AirPodsBatteryView(s: AirPodsUiState, modifier: Modifier = Modifier
     val right = s.freshBattery(BatteryRight)
     val case = s.freshBattery(BatteryCase)
     val single = earbudsReadAsOne(left, right)
+    val earbudWeight = if (LocalDensity.current.fontScale > 1.3f && !single) 2f else 1f
     val leftLetter = stringResource(R.string.airpods_ui_left_short)
     val rightLetter = stringResource(R.string.airpods_ui_right_short)
     val spoken = listOf(
@@ -257,7 +265,7 @@ internal fun AirPodsBatteryView(s: AirPodsUiState, modifier: Modifier = Modifier
             horizontalArrangement = Arrangement.Center,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally,
+            Column(Modifier.weight(earbudWeight).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
                     AirPodsPicture(choice.artwork.buds, Modifier.fillMaxWidth(), live)
@@ -268,9 +276,9 @@ internal fun AirPodsBatteryView(s: AirPodsUiState, modifier: Modifier = Modifier
                         AirPodsBatteryIndicator(min(left.percent ?: 0, right.percent ?: 0), left.status,
                             Modifier.testTag("airpods-battery-pair"))
                     } else Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.Center) {
-                        BatteryCell(left, leftLetter, Modifier.testTag("airpods-battery-$BatteryLeft"))
+                        BatteryCell(left, leftLetter, Modifier.weight(1f).testTag("airpods-battery-$BatteryLeft"))
                         Spacer(Modifier.width(16.dp))
-                        BatteryCell(right, rightLetter, Modifier.testTag("airpods-battery-$BatteryRight"))
+                        BatteryCell(right, rightLetter, Modifier.weight(1f).testTag("airpods-battery-$BatteryRight"))
                     }
                 }
             }

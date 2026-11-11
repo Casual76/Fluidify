@@ -100,7 +100,6 @@ class MediaRuntimeCore(
         tick?.close(); tick = null
         previous = null
         val s = session ?: return
-        coordinator.stop()
         // earResume is the ear-reinsertion option only; conversationPause carries its own resume.
         coordinator.configure(AutomationConfig(s.pairId, value.automationsEnabled,
             value.earPause, value.earResume, value.conversationDuck || value.conversationPause,

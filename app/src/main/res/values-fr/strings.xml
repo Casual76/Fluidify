@@ -411,7 +411,7 @@
     <string name="widget_add_row">Ajouter la ligne à l&#8217;écran d&#8217;accueil</string>
     <string name="widget_add_note">La pochette derrière, ce qui joue, et les trois boutons. Il suit le thème de l&#8217;application.</string>
     <string name="widget_nothing_playing_hint">Ouvre Fluidify et appuie sur lecture</string>
-    <string name="library_offline">Vous voyez ce qui est téléchargé. Spotify n’a pas encore répondu.</string>
+    <string name="library_offline">Contenu téléchargé affiché.</string>
     <string name="library_offline_action">Réessayer</string>
     <string name="library_needs_app">Les artistes suivis et les albums enregistrés nécessitent votre propre application Spotify connectée.</string>
     <string name="library_needs_app_action">Connecter</string>

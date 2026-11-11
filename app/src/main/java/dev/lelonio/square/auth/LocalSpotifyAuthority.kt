@@ -3,8 +3,6 @@ package dev.lelonio.square.auth
 import android.content.Context
 import android.os.FileObserver
 import dev.lelonio.square.data.writeDownloadIndexAtomically
-import dev.lelonio.square.data.AccountEntryMarker
-import dev.lelonio.square.data.accountEntryMarker
 import java.io.File
 import java.security.MessageDigest
 import java.util.UUID
@@ -65,7 +63,6 @@ class LocalSpotifyAuthority internal constructor(
         val canonical = state.canonical ?: return@locked null
         val actual = credentials()
         if (actual == null || actual.canonical != canonical || actual.fingerprint != state.fingerprint) {
-            accountEntryMarker(AccountEntryMarker.AUTHORITY_BINDING_INVALID)
             invalidateLocked()
             return@locked null
         }
@@ -93,13 +90,11 @@ class LocalSpotifyAuthority internal constructor(
 
     /** Durable tombstone BEFORE any credential/token mutation. Failure prevents that mutation. */
     fun <T> invalidateBefore(change: () -> T): T = locked {
-        accountEntryMarker(AccountEntryMarker.AUTHORITY_INVALIDATE_BEFORE_CHANGE)
         invalidateLocked()
         change()
     }
 
     fun invalidate() = locked {
-        accountEntryMarker(AccountEntryMarker.AUTHORITY_EXPLICIT_INVALIDATE)
         invalidateLocked()
     }
 

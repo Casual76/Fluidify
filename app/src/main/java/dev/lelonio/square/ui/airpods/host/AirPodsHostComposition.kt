@@ -148,19 +148,3 @@ fun AirPodsHostQuick(host: AirPodsHostBinding, openSettings: () -> Unit) {
     AirPodsQuickOverlay(host.binding.state, host.quickVisible, host.dismissQuick,
         host.binding.dispatch, { host.dismissQuick(); openSettings() }, origin = { host.quickOrigin })
 }
-
-/** Root places this once beside rememberAirPodsHostBinding, including onboarding.
- * Independent stop remains reachable when data/stamps/lease are stale or setup is still NV. */
-@Composable
-fun AirPodsQualificationIndicator() {
-    val entry by AirPodsIngressResolver.selection.collectAsState()
-    val current = entry ?: return
-    androidx.compose.ui.window.Popup(alignment = androidx.compose.ui.Alignment.TopCenter) {
-        androidx.compose.material3.Surface(shape = androidx.compose.material3.MaterialTheme.shapes.medium) {
-            Row(Modifier.windowInsetsPadding(WindowInsets.statusBars), verticalAlignment = androidx.compose.ui.Alignment.CenterVertically) {
-                Text("TEST / NV AirPods", style = androidx.compose.material3.MaterialTheme.typography.labelMedium)
-                dev.antigravity.fluidengine.ui.fluid.FluidButton("Arresta TEST", current.stop)
-            }
-        }
-    }
-}

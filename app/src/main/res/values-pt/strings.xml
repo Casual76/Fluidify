@@ -411,7 +411,7 @@
     <string name="widget_add_row">Adicionar a linha ao ecrã inicial</string>
     <string name="widget_add_note">A capa atrás, o que está a tocar, e os três botões. Segue o tema da aplicação.</string>
     <string name="widget_nothing_playing_hint">Abre o Fluidify e carrega em play</string>
-    <string name="library_offline">A mostrar o que está transferido. O Spotify ainda não respondeu.</string>
+    <string name="library_offline">A mostrar o conteúdo transferido.</string>
     <string name="library_offline_action">Tentar de novo</string>
     <string name="library_needs_app">Os artistas que segues e os álbuns guardados precisam da tua própria aplicação Spotify ligada.</string>
     <string name="library_needs_app_action">Ligar</string>

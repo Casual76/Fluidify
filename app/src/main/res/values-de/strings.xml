@@ -402,7 +402,7 @@
     <string name="widget_add_row">Die Zeile zum Startbildschirm hinzufügen</string>
     <string name="widget_add_note">Das Cover dahinter, was läuft, und die drei Tasten. Folgt dem Thema der App.</string>
     <string name="widget_nothing_playing_hint">Fluidify öffnen und Play drücken</string>
-    <string name="library_offline">Angezeigt wird, was heruntergeladen ist. Spotify hat noch nicht geantwortet.</string>
+    <string name="library_offline">Heruntergeladene Inhalte werden angezeigt.</string>
     <string name="library_offline_action">Erneut versuchen</string>
     <string name="library_needs_app">Gefolgte Künstler und gespeicherte Alben brauchen deine eigene verbundene Spotify-Anwendung.</string>
     <string name="library_needs_app_action">Verbinden</string>

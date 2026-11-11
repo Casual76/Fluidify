@@ -30,7 +30,9 @@ class AirPodsApplicationStartupTest {
         assertEquals(0, created.get())
         assertEquals(AacpStage.CLOSED, controller.state.value.stage)
         assertFalse(controller.runtime.value.active)
-        assertFalse(controller.runtime.value.productConformance)
+        // Product availability grants no consent, permission, verification or active session.
+        assertTrue(controller.runtime.value.productConformance)
+        assertFalse(controller.runtime.value.setupVerified)
         assertFalse(controller.store.snapshot().getOrThrow().start.enabled)
         assertEquals(PackageManager.PERMISSION_DENIED, app.checkSelfPermission(Manifest.permission.BLUETOOTH_CONNECT))
         assertEquals(PackageManager.PERMISSION_DENIED, app.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS))

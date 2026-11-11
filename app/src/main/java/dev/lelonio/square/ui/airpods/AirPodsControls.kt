@@ -421,7 +421,7 @@ private fun ColumnScope.MainPage(state: AirPodsUiState, dispatch: (AirPodsUiActi
         verticalArrangement = Arrangement.spacedBy(8.dp)) {
         AirPodsBatteryView(s)
         if (s.testAuthorized) FluidStatusBadge("TEST / NV", tone = FluidTone.Warning)
-        if (!s.controlsReady) StatusLine(stringResource(s.connectionSummary()), s.connectionKind(),
+        StatusLine(stringResource(s.connectionSummary()), s.connectionKind(),
             Modifier.testTag("airpods-summary-state"), style = MaterialTheme.typography.bodyMedium)
         BatteryHistory(s)
     }
@@ -607,7 +607,9 @@ private fun receivedNumber(s: AirPodsUiState, property: CommandProperty): Int? =
         FluidListDivider()
         PaneBlock {
             NumberEditor(stringResource(R.string.airpods_feature_setting_host_ca_volume), state.pair.host.conversationVolumePercent, 10..85,
-                state.allowed("host.ca_volume"), reason = state.availability["host.ca_volume"]?.reason) { dispatch(AirPodsUiAction.ConversationVolume(it)) }
+                state.allowed("host.ca_volume") && state.pair.host.automationsEnabled,
+                reason = if (!state.pair.host.automationsEnabled) stringResource(R.string.airpods_reason_automations_off)
+                    else state.availability["host.ca_volume"]?.reason) { dispatch(AirPodsUiAction.ConversationVolume(it)) }
         }
     }
     // Said once for the group instead of under every switch.
@@ -842,9 +844,18 @@ private fun receivedNumber(s: AirPodsUiState, property: CommandProperty): Int? =
 @Composable private fun LocalToggleRows(state: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit, toggles: List<LocalToggle>) {
     toggles.forEachIndexed { index, toggle ->
         if (index > 0) FluidListDivider()
+        val saved = state.pair.localToggleValue(toggle)
+        val masterOff = !state.pair.host.automationsEnabled
+        val childInactive = masterOff && toggle != LocalToggle.AUTOMATIONS &&
+            (toggle in automationToggles || toggle == LocalToggle.HEAD_GESTURES)
+        // Stored consents must remain revocable without first enabling automation.
+        val revokeConsent = saved && toggle in setOf(LocalToggle.OTHER_APPS, LocalToggle.BACKGROUND)
+        val enabled = state.allowed("local.$toggle") && (!childInactive || revokeConsent)
         val reason = state.availability["local.$toggle"]?.reason
-        FluidToggleRow(stringResource(toggleLabels.getValue(toggle)), state.pair.localToggleValue(toggle),
-            { dispatch(AirPodsUiAction.Toggle(toggle, it)) }, enabled = state.allowed("local.$toggle"),
+            ?: if (childInactive || (masterOff && toggle == LocalToggle.AUTOMATIONS))
+                stringResource(R.string.airpods_reason_automations_off) else null
+        FluidToggleRow(stringResource(toggleLabels.getValue(toggle)), saved,
+            { dispatch(AirPodsUiAction.Toggle(toggle, it)) }, enabled = enabled,
             subtitle = if (toggle == LocalToggle.OTHER_APPS) listOfNotNull(
                 stringResource(R.string.airpods_ui_other_apps_consent), reason).joinToString("\n")
             else reason.orEmpty())
