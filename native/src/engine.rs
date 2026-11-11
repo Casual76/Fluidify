@@ -13,6 +13,7 @@ use librespot_connect::{
 use librespot_core::{
     authentication::Credentials, cache::Cache, config::DeviceType, config::SessionConfig,
     session::Session, spotify_uri::SpotifyUri,
+    network::{NetworkAuthority, NetworkLease, Snapshot as NetworkSnapshot},
 };
 use librespot_playback::{
     config::{AudioFormat, Bitrate, NormalisationMethod, PlayerConfig},
@@ -320,6 +321,10 @@ pub fn store_java_vm(vm: JavaVM) {
 /// inside it aborted the process, and the output belongs to the Android
 /// service, not to any session.
 pub struct Engine {
+    handle: u64,
+    network: NetworkAuthority,
+    online_lease: Option<NetworkLease>,
+    source_identity: Option<(String, String, std::path::PathBuf)>,
     rt: Runtime,
     mixer: Arc<SoftMixer>,
     /// Everything needed to build another session, kept so a reconnection
@@ -347,6 +352,7 @@ impl Engine {
     /// is no device at all. See [`transport`], which then goes straight to the
     /// player.
     fn spirc(&self) -> Result<&Spirc, librespot_core::Error> {
+        self.online_lease.as_ref().ok_or_else(|| librespot_core::Error::cancelled("network not admitted"))?.check()?;
         self.spirc
             .as_ref()
             .ok_or_else(|| librespot_core::Error::unavailable("no connect device"))
@@ -373,10 +379,10 @@ struct Recipe {
 /// because listening history is reported through the session and the pump holds
 /// one for the life of the engine.
 enum Pump {
-    Event(PlayerEvent),
+    Event(PlayerEvent, u64),
     Session(Session),
     /// Something changed on another of the account's devices; see `remote`.
-    Cluster,
+    Cluster(NetworkLease),
     /// Something the app wants said to Kotlin that did not come from the
     /// player — download progress, and whether a session could be made.
     ///
@@ -386,6 +392,7 @@ enum Pump {
     /// reference to keep alive and a second thing to shut down, for messages
     /// that arrive a few times a second at most.
     App {
+        lease: NetworkLease,
         kind: String,
         uri: String,
         value: i64,
@@ -422,7 +429,39 @@ fn with_engine<T>(f: impl FnOnce(&Engine) -> T) -> EngineResult<T> {
 /// Before the first handshake lands this is a session that has never been
 /// connected, and a request on it fails the way it always did offline. The
 /// Kotlin side asks [`is_connected`] before it reads the catalogue.
+thread_local! {
+    // Per JNI caller, never a process-wide current permit which another thread can replace.
+    static NETWORK_SCOPES: std::cell::RefCell<Vec<(u64, u64)>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+pub fn push_network_scope(handle: u64, revision: u64) -> EngineResult<()> {
+    with_engine(|engine| {
+        if engine.handle != handle || engine.network.snapshot().revision != revision {
+            return Err("revoked JNI network scope".into());
+        }
+        engine.online_lease.as_ref().ok_or("network not admitted")?.check().map_err(|e| e.to_string())?;
+        NETWORK_SCOPES.with(|scopes| scopes.borrow_mut().push((handle, revision)));
+        Ok(())
+    })?
+}
+pub fn pop_network_scope() -> EngineResult<()> {
+    NETWORK_SCOPES.with(|scopes| scopes.borrow_mut().pop().map(|_| ()).ok_or("missing JNI scope".into()))
+}
+
 pub fn with_session<T>(f: impl FnOnce(&Session) -> T) -> EngineResult<T> {
+    with_engine(|engine| {
+        let expected = NETWORK_SCOPES.with(|scopes| scopes.borrow().last().copied());
+        if let Some((handle, revision)) = expected {
+            if engine.handle != handle || engine.network.snapshot().revision != revision {
+                return Err("revoked JNI network scope".into());
+            }
+        }
+        engine.session.network().check().map_err(|e| e.to_string())?;
+        Ok(f(&engine.session))
+    })?
+}
+
+/// Identity-only access, never a network permission.
+pub fn with_local_session<T>(f: impl FnOnce(&Session) -> T) -> EngineResult<T> {
     with_engine(|engine| f(&engine.session))
 }
 
@@ -579,7 +618,9 @@ pub fn init_android_context(context: &JObject) -> EngineResult<()> {
 /// handshake landed, the placeholder if it did not, in which case the load
 /// fails the ordinary way and is retried by the player.
 fn session_ready() -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<Session>> + Send>> {
-    Box::pin(async {
+    let lease = online_lease().unwrap_or_else(|_| NetworkLease::denied());
+    Box::pin(async move {
+        if lease.check().is_err() { return None; }
         if !CONNECTED.load(Ordering::SeqCst) {
             if let Some(up) = SESSION_UP.get() {
                 let mut rx = up.subscribe();
@@ -596,6 +637,7 @@ fn session_ready() -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<
                 }
             }
         }
+        if lease.check().is_err() { return None; }
         with_engine(|engine| engine.session.clone()).ok()
     })
 }
@@ -614,7 +656,122 @@ fn session_ready() -> std::pin::Pin<Box<dyn std::future::Future<Output = Option<
 /// meanwhile — so that handshake is made here and its result returned.
 ///
 /// `listener` must implement `dev.lelonio.square.nativecore.NativeEvents`.
+enum EventListener {
+    Jni(GlobalRef),
+    #[cfg(test)]
+    Recording(std::sync::mpsc::Sender<(String, String, i64)>),
+}
+impl EventListener {
+    fn attach(&self) -> Result<(), String> {
+        match self {
+            Self::Jni(_) => {
+                let vm = JAVA_VM.get().ok_or("JNI_OnLoad did not run")?;
+                vm.attach_current_thread_permanently().map(|_| ()).map_err(|e| e.to_string())
+            }
+            #[cfg(test)]
+            Self::Recording(_) => Ok(()),
+        }
+    }
+    fn emit(&self, kind: &str, uri: &str, value: i64) -> Result<(), String> {
+        match self {
+            Self::Jni(listener) => emit(listener, kind, uri, value),
+            #[cfg(test)]
+            Self::Recording(sender) => sender.send((kind.into(), uri.into(), value)).map_err(|e| e.to_string()),
+        }
+    }
+}
+type OutputFactory = Box<dyn FnOnce(u64) -> Box<dyn librespot_playback::audio_backend::Sink> + Send>;
+
+static NEXT_ENGINE_HANDLE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+
+fn online_lease() -> EngineResult<NetworkLease> {
+    with_engine(|engine| {
+        let lease = engine.online_lease.clone().ok_or("Spotify network not admitted")?;
+        lease.check().map_err(|e| e.to_string())?;
+        Ok(lease)
+    })?
+}
+
+pub fn apply_network_snapshot(handle: u64, snapshot: NetworkSnapshot) -> EngineResult<u64> {
+    let mut guard = engine_lock();
+    let engine = guard.as_mut().ok_or("engine not started")?;
+    if engine.handle != handle { return Err("stale engine owner".into()); }
+    let previous = engine.network.snapshot();
+    engine.network.apply(snapshot).map_err(|e| e.to_string())?;
+    if previous != snapshot {
+        engine.online_lease = None;
+        if let Some(old) = engine.spirc.take() { old.set_cluster_listener(None); }
+        DEVICE_GENERATION.fetch_add(1, Ordering::SeqCst);
+        RECONNECTING.store(false, Ordering::SeqCst);
+        device_lost();
+        // No Player command, no pump rebind and no credential/file/queue deletion.
+    }
+    Ok(snapshot.revision)
+}
+
+pub fn ensure_online(handle: u64, revision: u64, token: &str) -> EngineResult<()> {
+    {
+        let mut guard = engine_lock();
+        let engine = guard.as_mut().ok_or("engine not started")?;
+        if engine.handle != handle { return Err("stale engine owner".into()); }
+        if engine.network.snapshot().revision != revision { return Err("revoked network revision".into()); }
+        let lease = engine.network.lease().map_err(|e| e.to_string())?;
+        if !token.is_empty() { engine.recipe.credentials = Some(Credentials::with_access_token(token)); }
+        engine.online_lease = Some(lease);
+    }
+    reconnect(true)
+}
+
+pub fn retire_network_owner(handle: u64) -> EngineResult<()> {
+    let mut guard = engine_lock();
+    let engine = guard.as_mut().ok_or("engine not started")?;
+    if engine.handle != handle { return Err("stale engine owner".into()); }
+    engine.network.close();
+    engine.online_lease = None;
+    if let Some(old) = engine.spirc.take() { old.set_cluster_listener(None); }
+    DEVICE_GENERATION.fetch_add(1, Ordering::SeqCst);
+    device_lost();
+    crate::downloads::retire_source_owner();
+    Ok(())
+}
+
+pub fn bind_download_source(handle: u64, source: &str) -> EngineResult<()> {
+    let mut guard = engine_lock();
+    let engine = guard.as_mut().ok_or("engine not started")?;
+    if engine.handle != handle { return Err("stale engine owner".into()); }
+    if engine.network.is_closed() { return Err("retired engine owner".into()); }
+    if source == "null" { crate::downloads::clear_source(); return Ok(()); }
+    let binding: crate::downloads::SourceBinding = serde_json::from_str(source).map_err(|e| format!("invalid source binding: {e}"))?;
+    let identity = (binding.owner.clone(), binding.namespace.clone(), binding.root.clone());
+    if engine.source_identity.as_ref().is_some_and(|current| current != &identity) {
+        return Err("download source owner changed".into());
+    }
+    crate::downloads::bind_source(binding)?;
+    engine.source_identity = Some(identity);
+    Ok(())
+}
+
+pub fn start_local(
+    client_id: &str, device_name: &str, device_id: &str, credentials_dir: &str,
+    cache_dir: &str, language: &str, bitrate_kbps: i32, crossfade_ms: i32,
+    listener: GlobalRef, revision: u64, manual: bool, source: &str,
+) -> EngineResult<u64> {
+    let source = serde_json::from_str::<Option<crate::downloads::SourceBinding>>(source)
+        .map_err(|e| format!("invalid source binding: {e}"))?;
+    start_impl(client_id, device_name, device_id, "", credentials_dir, cache_dir,
+        language, bitrate_kbps, crossfade_ms, EventListener::Jni(listener), Some(NetworkSnapshot { revision, manual }), None, None, Some(source))
+}
+
 pub fn start(
+    client_id: &str, device_name: &str, device_id: &str, access_token: &str,
+    credentials_dir: &str, cache_dir: &str, language: &str, bitrate_kbps: i32,
+    crossfade_ms: i32, listener: GlobalRef,
+) -> EngineResult<()> {
+    start_impl(client_id, device_name, device_id, access_token, credentials_dir, cache_dir,
+        language, bitrate_kbps, crossfade_ms, EventListener::Jni(listener), None, None, None, None).map(|_| ())
+}
+
+fn start_impl(
     client_id: &str,
     device_name: &str,
     device_id: &str,
@@ -624,13 +781,23 @@ pub fn start(
     language: &str,
     bitrate_kbps: i32,
     crossfade_ms: i32,
-    listener: GlobalRef,
-) -> EngineResult<()> {
+    listener: EventListener,
+    initial: Option<NetworkSnapshot>,
+    output: Option<OutputFactory>,
+    authority: Option<NetworkAuthority>,
+    source: Option<Option<crate::downloads::SourceBinding>>,
+) -> EngineResult<u64> {
+    let legacy = initial.is_none();
+    let network = authority.unwrap_or_else(|| NetworkAuthority::new(initial.unwrap_or(NetworkSnapshot { revision: 0, manual: false })));
     tune_fetching();
 
     let mut guard = engine_lock();
     if guard.is_some() {
         return Err("engine already started".into());
+    }
+    crate::downloads::begin_source_owner();
+    if let Some(source) = source {
+        match source { Some(binding) => crate::downloads::bind_source(binding)?, None => crate::downloads::clear_source() }
     }
 
     let rt = tokio::runtime::Builder::new_multi_thread()
@@ -720,9 +887,10 @@ pub fn start(
         // downloads.rs. Installed unconditionally: the lookup answers "no" for
         // everything until a download root has been set, so there is no order
         // to get right between this and the Kotlin side setting one up.
-        download_lookup: Some(crate::downloads::lookup()),
+        download_lookup: Some(if legacy { crate::downloads::lookup() } else { crate::downloads::scoped_lookup() }),
         // What a streamed load waits for; see session_ready.
         session_ready: Some(Arc::new(session_ready)),
+        network_lease: Some(Arc::new(|| online_lease().unwrap_or_else(|_| NetworkLease::denied()))),
         ..PlayerConfig::default()
     };
 
@@ -766,6 +934,7 @@ pub fn start(
         listener,
         device_name.to_string(),
         cache_dir.to_string(),
+        !legacy,
     );
 
     let up = SESSION_UP.get_or_init(|| tokio::sync::watch::channel(false).0);
@@ -784,19 +953,18 @@ pub fn start(
     // shutdown — but the sink still asks.
     let generation = GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
 
-    // The player, over a session that has not been connected and may never
-    // be. `Session::new` registers tasks of its own the moment it is built,
-    // and off a runtime thread that is a panic, so it is built inside one.
+    // Session construction captures the runtime but opens no transport. The
+    // placeholder is permanently denied, including after future host toggles.
     let (session, player) = {
         let _runtime = rt.enter();
-        let session = new_session(&recipe)?;
-        let player = Player::new(
-            recipe.player_config.clone(),
-            session.clone(),
+        crate::local_player::build(
+            recipe.player_config.clone(), recipe.session_config.clone(), Some(session_cache(&recipe)?),
             mixer.get_soft_volume(),
-            move || Box::new(crate::sink::AndroidSink::new(AudioFormat::S16, generation)),
-        );
-        (session, player)
+            move || match output {
+                Some(build) => build(generation),
+                None => Box::new(crate::sink::AndroidSink::new(AudioFormat::S16, generation)),
+            },
+        )
     };
     spawn_event_forwarder(&rt, player.clone(), events_tx.clone(), generation);
     // Listens are tracked from the first note, whatever the network is doing;
@@ -808,7 +976,13 @@ pub fn start(
     // device with only a token is a login screen waiting for an answer.
     let has_kept = kept_credentials(&recipe).is_some();
 
+    let handle_id = NEXT_ENGINE_HANDLE.fetch_add(1, Ordering::SeqCst) + 1;
+    let initial_lease = if legacy { network.lease().ok() } else { None };
     *guard = Some(Engine {
+        handle: handle_id,
+        source_identity: if legacy { None } else { crate::downloads::source_identity() },
+        network,
+        online_lease: initial_lease,
         rt,
         mixer,
         recipe,
@@ -819,16 +993,18 @@ pub fn start(
     });
     drop(guard);
 
+    if !legacy { return Ok(handle_id); }
     if has_kept {
         log::info!("player ready; connecting in the background");
-        reconnect(true)
+        reconnect(true).map(|_| handle_id)
     } else {
         log::info!("first login; connecting before answering");
         RECONNECTING.store(true, Ordering::SeqCst);
         let handle = runtime_handle()?;
-        let outcome = handle.block_on(connect_attempt());
+        let lease = online_lease()?;
+        let outcome = handle.block_on(connect_attempt(lease));
         match outcome {
-            Ok(()) => Ok(()),
+            Ok(()) => Ok(handle_id),
             Err(e) => {
                 // Nothing to keep: a device that has never been in has
                 // nothing on the phone either, and the caller starts again.
@@ -837,6 +1013,19 @@ pub fn start(
             }
         }
     }
+}
+
+#[cfg(test)]
+pub(crate) fn start_host(
+    directory: &str, initial: NetworkSnapshot,
+    events: std::sync::mpsc::Sender<(String, String, i64)>, output: OutputFactory, authority: NetworkAuthority,
+) -> EngineResult<u64> {
+    start_impl("", "Synthetic host", "synthetic-device", "", directory, directory, "en", 160,
+        0, EventListener::Recording(events), Some(initial), Some(output), Some(authority), None)
+}
+#[cfg(test)]
+pub(crate) fn host_state() -> EngineResult<(Arc<Player>, Vec<String>, u64)> {
+    with_engine(|engine| (engine.player.clone(), QUEUE.lock().unwrap().clone(), GENERATION.load(Ordering::SeqCst)))
 }
 
 /// Where a reusable credential is kept, apart from librespot's own cache.
@@ -878,15 +1067,21 @@ fn kept_credentials(recipe: &Recipe) -> Option<Credentials> {
 ///
 /// Bounded: an audio cache with no limit had grown past a gigabyte on the test
 /// phone.
-fn new_session(recipe: &Recipe) -> EngineResult<Session> {
-    let cache = Cache::new(
+fn session_cache(recipe: &Recipe) -> EngineResult<Cache> {
+    Cache::new(
         Some(std::path::Path::new(&recipe.credentials_dir)),
         None,
         Some(std::path::Path::new(&recipe.cache_dir)),
         Some(AUDIO_CACHE_LIMIT),
     )
-    .map_err(|e| format!("cache failed: {e}"))?;
-    Ok(Session::new(recipe.session_config.clone(), Some(cache)))
+    .map_err(|e| format!("cache failed: {e}"))
+}
+
+fn new_session(recipe: &Recipe, network: NetworkLease) -> EngineResult<Session> {
+    let session = Session::new_with_network(recipe.session_config.clone(), Some(session_cache(recipe)?), network);
+    let kept = kept_cache(recipe)?;
+    session.set_credential_receipt(Arc::new(move |received| { kept.save_credentials(received); Ok(()) }));
+    Ok(session)
 }
 
 /// Makes a session and a Connect device over the engine's player, and installs
@@ -899,51 +1094,74 @@ fn new_session(recipe: &Recipe) -> EngineResult<Session> {
 /// Both sides of the outcome are announced as a `session` event, because the
 /// caller that started this is long gone: it either returned at once or is
 /// blocking on this future with nothing else to do.
-async fn connect_attempt() -> EngineResult<()> {
-    let outcome = match tokio::time::timeout(CONNECT_TIMEOUT, build_device()).await {
-        Ok(outcome) => outcome,
+fn update_attempt<T>(lease: &NetworkLease, update: impl FnOnce() -> T) -> EngineResult<T> {
+    let guard = engine_lock();
+    let engine = guard.as_ref().ok_or("engine not started")?;
+    if !engine.online_lease.as_ref().is_some_and(|current| current.same_lease(lease)) {
+        return Err("stale online attempt".into());
+    }
+    lease.check().map_err(|e| e.to_string())?;
+    Ok(update())
+}
+
+async fn connect_attempt(lease: NetworkLease) -> EngineResult<()> {
+    lease.check().map_err(|e| e.to_string())?;
+    let outcome = match tokio::time::timeout(CONNECT_TIMEOUT, lease.run(async {
+        build_device(lease.clone()).await.map_err(librespot_core::Error::unavailable)
+    })).await {
+        Ok(result) => result.map_err(|e| e.to_string()),
         Err(_) => {
             // Dropping the future does not end the session it was connecting:
             // its dealer task and the cluster watcher live on the runtime, as
             // the same device id, next to the one the retry is about to build.
-            if let Some(session) = IN_FLIGHT.lock().ok().and_then(|mut s| s.take()) {
-                session.shutdown();
+            if let Ok(mut in_flight) = IN_FLIGHT.lock() {
+                if in_flight.as_ref().is_some_and(|session| session.network().same_lease(&lease)) {
+                    if let Some(session) = in_flight.take() { session.shutdown(); }
+                }
             }
             Err("the handshake took too long".to_string())
         }
     };
+    // An old completion must not clear a fresh attempt or emit session failure.
+    lease.check().map_err(|e| e.to_string())?;
     if let Ok(mut in_flight) = IN_FLIGHT.lock() {
-        *in_flight = None;
+        if in_flight.as_ref().is_some_and(|session| session.network().same_lease(&lease)) { *in_flight = None; }
     }
 
     match outcome {
         Ok((session, spirc, spirc_task)) => {
             install_device(session, spirc, spirc_task)?;
-            RECONNECTING.store(false, Ordering::SeqCst);
-            FAILED_ATTEMPTS.store(0, Ordering::SeqCst);
+            lease.check().map_err(|e| e.to_string())?;
+            update_attempt(&lease, || {
+                RECONNECTING.store(false, Ordering::SeqCst);
+                FAILED_ATTEMPTS.store(0, Ordering::SeqCst);
+            })?;
             log::info!("connected");
-            emit_app("session", "", SESSION_CONNECTED);
+            emit_online(&lease, "session", "", SESSION_CONNECTED);
             Ok(())
         }
         Err(e) if e == PREMIUM_REQUIRED => {
-            RECONNECTING.store(false, Ordering::SeqCst);
-            emit_app("session", "", SESSION_PREMIUM_REQUIRED);
+            update_attempt(&lease, || RECONNECTING.store(false, Ordering::SeqCst))?;
+            emit_online(&lease, "session", "", SESSION_PREMIUM_REQUIRED);
             Err(e)
         }
         Err(e) => {
             // Nothing to stream through, and nothing left in flight. Whatever
             // is on the phone plays on; the next attempt is scheduled below,
             // and a network coming back brings one forward.
-            let failures = FAILED_ATTEMPTS.fetch_add(1, Ordering::SeqCst) + 1;
-            let backoff = (FIRST_BACKOFF_MS << (failures - 1).min(5)).min(MAX_BACKOFF_MS);
-            NEXT_ATTEMPT_MS.store(uptime_ms() + backoff, Ordering::SeqCst);
-            RECONNECTING.store(false, Ordering::SeqCst);
+            let backoff = update_attempt(&lease, || {
+                let failures = FAILED_ATTEMPTS.fetch_add(1, Ordering::SeqCst) + 1;
+                let backoff = (FIRST_BACKOFF_MS << (failures - 1).min(5)).min(MAX_BACKOFF_MS);
+                NEXT_ATTEMPT_MS.store(uptime_ms() + backoff, Ordering::SeqCst);
+                RECONNECTING.store(false, Ordering::SeqCst);
+                backoff
+            })?;
             log::warn!("{e}; playing what is on the phone, trying again in {backoff} ms");
-            emit_app("session", "", SESSION_FAILED);
+            emit_online(&lease, "session", "", SESSION_FAILED);
             if let Ok(handle) = runtime_handle() {
                 handle.spawn(async move {
                     tokio::time::sleep(Duration::from_millis(backoff)).await;
-                    let _ = reconnect(false);
+                    if lease.check().is_ok() { let _ = reconnect(false); }
                 });
             }
             Err(e)
@@ -953,7 +1171,8 @@ async fn connect_attempt() -> EngineResult<()> {
 
 /// The handshake itself: a session connected with the credentials this device
 /// has, and a Connect device over the engine's player.
-async fn build_device() -> EngineResult<(Session, Spirc, impl std::future::Future<Output = ()>)> {
+async fn build_device(lease: NetworkLease) -> EngineResult<(Session, Spirc, impl std::future::Future<Output = ()>)> {
+    lease.check().map_err(|e| e.to_string())?;
     let (recipe, mixer, player, events_tx) = with_engine(|engine| {
         (
             Recipe {
@@ -995,9 +1214,10 @@ async fn build_device() -> EngineResult<(Session, Spirc, impl std::future::Futur
         // cache with the handshake's own blob, and what is in the cache is what
         // gets sent as the stored credential when login5 issues the access
         // point's HTTP token.
-        let session = new_session(&recipe)?;
+        lease.check().map_err(|e| e.to_string())?;
+        let session = new_session(&recipe, lease.clone())?;
         if let Some(cache) = session.cache() {
-            cache.save_credentials(&credentials);
+            lease.admit(|| cache.save_credentials(&credentials)).map_err(|e| e.to_string())?;
         }
         if let Ok(mut in_flight) = IN_FLIGHT.lock() {
             *in_flight = Some(session.clone());
@@ -1012,8 +1232,9 @@ async fn build_device() -> EngineResult<(Session, Spirc, impl std::future::Futur
         // a speaker that was already playing and being told nothing until the
         // speaker's track ended.
         let watch_tx = events_tx.clone();
+        let watch_lease = lease.clone();
         crate::remote::watch(&session, move || {
-            let _ = watch_tx.send(Pump::Cluster);
+            let _ = watch_tx.send(Pump::Cluster(watch_lease.clone()));
         });
 
         // No `session.connect` here: `Spirc::new` registers its dealer
@@ -1033,6 +1254,7 @@ async fn build_device() -> EngineResult<(Session, Spirc, impl std::future::Futur
             Ok(pair) => pair,
             Err(e) => {
                 session.shutdown();
+                lease.check().map_err(|e| e.to_string())?;
                 failure = format!("connect failed: {e}");
                 // A kept credential the account no longer honours — the
                 // password changed, the device was removed from the list — is a
@@ -1049,9 +1271,9 @@ async fn build_device() -> EngineResult<(Session, Spirc, impl std::future::Futur
                 if n < last {
                     log::warn!("{failure}, trying the next credential");
                     if credential_refused(&e) {
-                        let _ = std::fs::remove_dir_all(
+                        let _ = lease.admit(|| std::fs::remove_dir_all(
                             std::path::Path::new(&recipe.credentials_dir).join("reusable"),
-                        );
+                        ));
                     }
                     continue;
                 }
@@ -1067,9 +1289,9 @@ async fn build_device() -> EngineResult<(Session, Spirc, impl std::future::Futur
         // actually logged in with.
         if let Some(cache) = session.cache() {
             if let Some(reusable) = cache.credentials() {
-                kept.save_credentials(&reusable);
+                lease.commit_local(|| kept.save_credentials(&reusable)).map_err(|e| e.to_string())?;
             }
-            cache.save_credentials(&credentials);
+            lease.commit_local(|| cache.save_credentials(&credentials)).map_err(|e| e.to_string())?;
         }
 
         // Checked here rather than left to the library. The vendored
@@ -1077,6 +1299,7 @@ async fn build_device() -> EngineResult<(Session, Spirc, impl std::future::Futur
         // took the app's process down and left Android restarting the service
         // in a loop; it now only logs, so the refusal has to be made an error
         // the caller can show.
+        lease.check().map_err(|e| e.to_string())?;
         if let Some(account_type) = session.get_user_attribute("type") {
             if account_type != "premium" {
                 session.shutdown();
@@ -1140,6 +1363,9 @@ fn install_device(
     spirc: Spirc,
     spirc_task: impl std::future::Future<Output = ()> + Send + 'static,
 ) -> EngineResult<()> {
+    session.network().check().map_err(|e| e.to_string())?;
+    let lease = session.network().clone();
+    let listener_lease = lease.clone();
     let generation = DEVICE_GENERATION.fetch_add(1, Ordering::SeqCst) + 1;
 
     // The account's picture of every device, whenever a state update brings
@@ -1147,14 +1373,17 @@ fn install_device(
     // elsewhere; this is for the pushes that are missed.
     let listener_tx = with_engine(|engine| engine.events_tx.clone())?;
     spirc.set_cluster_listener(Some(Arc::new(move |cluster| {
-        STATE_ACKS.fetch_add(1, Ordering::SeqCst);
-        crate::remote::set_cluster(cluster);
-        let _ = listener_tx.send(Pump::Cluster);
+        let _ = listener_lease.admit(|| {
+            STATE_ACKS.fetch_add(1, Ordering::SeqCst);
+            crate::remote::set_cluster(cluster);
+            let _ = listener_tx.send(Pump::Cluster(listener_lease.clone()));
+        });
     })));
 
     let (handle, events_tx) = {
         let mut guard = engine_lock();
         let engine = guard.as_mut().ok_or("engine not started")?;
+        lease.check().map_err(|e| e.to_string())?;
         engine.player.set_session(session.clone());
         // The device that was there is gone, whatever it was doing.
         if let Some(old) = engine.spirc.take() {
@@ -1162,13 +1391,19 @@ fn install_device(
         }
         engine.session = session.clone();
         engine.spirc = Some(spirc);
+        SPIRC_KNOWS.store(false, Ordering::SeqCst);
+        INSTALLED_AT_MS.store(uptime_ms(), Ordering::SeqCst);
+        CONNECTED.store(true, Ordering::SeqCst);
+        if let Some(up) = SESSION_UP.get() { let _ = up.send(true); }
         (engine.rt.handle().clone(), engine.events_tx.clone())
     };
 
     // The event loop runs for the life of the device: it is what answers the
     // dealer, so without it the device appears once and then goes stale.
+    let task_lease = lease.clone();
     handle.spawn(async move {
-        spirc_task.await;
+        let lease = task_lease;
+        tokio::select! { biased; _ = lease.revoked() => return, _ = spirc_task => () }
         if DEVICE_GENERATION.load(Ordering::SeqCst) != generation {
             log::info!("connect device {generation} stopped, already replaced");
             return;
@@ -1194,19 +1429,11 @@ fn install_device(
         } else {
             SHORT_LIVED.store(0, Ordering::SeqCst);
         }
-        let _ = reconnect(false);
+        if lease.check().is_ok() { let _ = reconnect(false); }
     });
 
-    // The pump reports listening history through the session, so it is told
-    // about this one before any of its events can arrive.
-    let _ = events_tx.send(Pump::Session(session));
+    if lease.check().is_ok() { let _ = events_tx.send(Pump::Session(session)); }
 
-    SPIRC_KNOWS.store(false, Ordering::SeqCst);
-    INSTALLED_AT_MS.store(uptime_ms(), Ordering::SeqCst);
-    CONNECTED.store(true, Ordering::SeqCst);
-    if let Some(up) = SESSION_UP.get() {
-        let _ = up.send(true);
-    }
     // What the player is on, if anything, is described to the new device as
     // soon as it is listening; see the forwarder, which tries on every tick.
     let _ = adopt_now();
@@ -1333,7 +1560,7 @@ fn spawn_event_forwarder(
                 }
             }
 
-            if events_tx.send(Pump::Event(event)).is_err() {
+            if events_tx.send(Pump::Event(event, generation)).is_err() {
                 break;
             }
         }
@@ -1403,6 +1630,7 @@ pub fn set_bitrate(bitrate_kbps: i32) -> EngineResult<()> {
 /// listener pressing retry, the engine starting — rather than at the time the
 /// last failure said.
 pub fn reconnect(force: bool) -> EngineResult<()> {
+    let lease = online_lease()?;
     if CONNECTED.load(Ordering::SeqCst) && session_invalid() == Some(false) {
         return Ok(());
     }
@@ -1444,8 +1672,8 @@ pub fn reconnect(force: bool) -> EngineResult<()> {
     device_lost();
 
     log::info!("connecting{}", if force { " now" } else { "" });
-    handle.spawn(async {
-        let _ = connect_attempt().await;
+    handle.spawn(async move {
+        let _ = connect_attempt(lease).await;
     });
     Ok(())
 }
@@ -1473,20 +1701,17 @@ pub fn refresh_cluster() -> EngineResult<()> {
 /// player is current has a forwarder feeding this one channel.
 fn spawn_event_pump(
     events: std::sync::mpsc::Receiver<Pump>,
-    listener: GlobalRef,
+    listener: EventListener,
     device_name: String,
     state_dir: String,
+    managed_network: bool,
 ) {
     std::thread::Builder::new()
         .name("squarecore-events".into())
         .spawn(move || {
-            let vm = match JAVA_VM.get() {
-                Some(vm) => vm,
-                None => return,
-            };
-            // Permanent attach: detached only when this thread exits, by which
-            // point `listener` has already been dropped.
-            if let Err(e) = vm.attach_current_thread_permanently() {
+            // JNI still attaches for the whole owner lifetime. Host recording sinks use
+            // this same pump and factory without requiring a JavaVM.
+            if let Err(e) = listener.attach() {
                 log::error!("event pump could not attach to the JVM: {e}");
                 return;
             }
@@ -1496,26 +1721,34 @@ fn spawn_event_pump(
             // Built on the first session, which arrives before any of its
             // events, and rebound to each one after that.
             let mut history: Option<History> = None;
+            // Measurement-only transport identity: request IDs may restart in a new player.
+            // Keep Spotify History/reporting observation below completely unchanged.
+            let pump_identity = events::random_id();
 
             while let Ok(message) = events.recv() {
-                let event = match message {
-                    Pump::Event(event) => event,
+                let (event, player_generation) = match message {
+                    Pump::Event(event, generation) => (event, generation),
                     // Carries nothing: the Kotlin side reads the state it wants
                     // when it hears there is a new one, rather than having every
                     // field of it pushed through this boundary.
-                    Pump::Cluster => {
-                        if let Err(e) = emit(&listener, "cluster", "", 0) {
+                    Pump::Cluster(lease) => {
+                        if lease.check().is_err() { continue; }
+                        let kind = if managed_network { format!("leased:{}:cluster", lease.revision()) } else { "cluster".into() };
+                        if let Err(e) = listener.emit(&kind, "", 0) {
                             log::warn!("dropping a cluster update: {e}");
                         }
                         continue;
                     }
-                    Pump::App { kind, uri, value } => {
-                        if let Err(e) = emit(&listener, &kind, &uri, value) {
+                    Pump::App { lease, kind, uri, value } => {
+                        if lease.check().is_err() { continue; }
+                        let delivered_kind = if managed_network { format!("leased:{}:{kind}", lease.revision()) } else { kind.clone() };
+                        if let Err(e) = listener.emit(&delivered_kind, &uri, value) {
                             log::warn!("dropping {kind}: {e}");
                         }
                         continue;
                     }
                     Pump::Session(session) => {
+                        if history.is_some() && session.network().check().is_err() { continue; }
                         match history.as_mut() {
                             // The listen in progress survives: the same person
                             // is hearing the same track, and only the socket it
@@ -1532,6 +1765,17 @@ fn spawn_event_pump(
                 }
 
                 let (kind, uri, position_ms) = match event {
+                    PlayerEvent::OwnedLoadBound(binding) => (
+                        "playback_restore_bound",
+                        serde_json::json!({"nonce": binding.nonce, "request":
+                            format!("{}:{}:{}", pump_identity, player_generation, binding.play_request_id)}).to_string(),
+                        0,
+                    ),
+                    PlayerEvent::PlayRequestIdChanged { play_request_id } => (
+                        "playback_request",
+                        format!("{}:{}:{}", pump_identity, player_generation, play_request_id),
+                        0,
+                    ),
                     PlayerEvent::Playing {
                         track_id,
                         position_ms,
@@ -1583,7 +1827,7 @@ fn spawn_event_pump(
                     _ => continue,
                 };
 
-                if let Err(e) = emit(&listener, kind, &uri, position_ms) {
+                if let Err(e) = listener.emit(kind, &uri, position_ms) {
                     log::warn!("dropping event {kind}: {e}");
                 }
             }
@@ -1639,7 +1883,7 @@ impl History {
         // Whatever the last run was in the middle of when it went away, and
         // what it heard offline — sent if this run starts with a connection,
         // otherwise kept for the session that brings one.
-        if CONNECTED.load(Ordering::SeqCst) {
+        if CONNECTED.load(Ordering::SeqCst) && events.allowed() {
             events::pending::flush(&state_dir, &events);
             events::outbox::flush(&state_dir, &events);
         } else {
@@ -1861,9 +2105,7 @@ impl History {
         };
         // No session to send it through: kept until there is one; see
         // events::outbox. Posting it now would only lose it.
-        if CONNECTED.load(Ordering::SeqCst) {
-            self.events.track_transition(&listen);
-        } else {
+        if !CONNECTED.load(Ordering::SeqCst) || !self.events.track_transition(&listen) {
             events::outbox::append(&self.state_dir, &listen);
         }
     }
@@ -1893,11 +2135,13 @@ fn uri_string(uri: &SpotifyUri) -> String {
 /// the engine is between two sessions, or because the pump has already been
 /// torn down — is a ring that does not move for a moment. That is not a reason
 /// to fail the download it belongs to.
-pub fn emit_app(kind: &str, uri: &str, value: i64) {
+pub fn emit_online(lease: &NetworkLease, kind: &str, uri: &str, value: i64) {
+    if lease.check().is_err() { return; }
     let Ok(sender) = with_engine(|engine| engine.events_tx.clone()) else {
         return;
     };
     let _ = sender.send(Pump::App {
+        lease: lease.clone(),
         kind: kind.to_string(),
         uri: uri.to_string(),
         value,
@@ -2018,13 +2262,17 @@ pub const PREMIUM_REQUIRED: &str = "premium account required";
 /// track is most often a file on this phone, and preloading it would decode a
 /// second stream to save four milliseconds.
 fn local_load(uris: &[String], index: u32, play: bool, position_ms: u32) -> EngineResult<()> {
+    local_load_owned(uris, index, play, position_ms, None)
+}
+fn local_load_owned(uris: &[String], index: u32, play: bool, position_ms: u32,
+    restore_nonce: Option<String>) -> EngineResult<()> {
     let uri = uris
         .get(index as usize)
         .ok_or_else(|| "nothing at that index".to_string())?;
     let parsed = SpotifyUri::from_uri(uri).map_err(|e| format!("bad uri {uri}: {e}"))?;
     log::debug!("direct: loading {uri} at {position_ms}ms, play={play}");
     SPIRC_KNOWS.store(false, Ordering::SeqCst);
-    with_engine(|e| e.player.load(parsed, play, position_ms))
+    with_engine(|e| e.player.load_with_restore_nonce(parsed, play, position_ms, restore_nonce))
 }
 
 /// Whether there is no Connect device right now.
@@ -2094,6 +2342,14 @@ pub fn load_queue(
     context_uri: String,
     play_as_context: bool,
 ) -> EngineResult<()> {
+    load_queue_owned(uris, index, start_playing, position_ms, context_uri, play_as_context, None)
+}
+
+/// Explicit app-owned restore nonce travels with this exact command on every dispatch path.
+pub fn load_queue_owned(
+    uris: Vec<String>, index: u32, start_playing: bool, position_ms: u32,
+    context_uri: String, play_as_context: bool, restore_nonce: Option<String>,
+) -> EngineResult<()> {
     if uris.is_empty() {
         return Err("empty queue".into());
     }
@@ -2154,13 +2410,14 @@ pub fn load_queue(
     // The alternative is silence under a finger that asked for a song.
     let listening = with_engine(|e| e.spirc.as_ref().is_some_and(Spirc::is_established))?;
     if !CONNECTED.load(Ordering::SeqCst) || !listening {
-        let result = local_load(&uris, index, start_playing, position_ms);
+        let result = local_load_owned(&uris, index, start_playing, position_ms, restore_nonce.clone());
         let _ = reconnect(false);
         return result;
     }
 
     let options = LoadRequestOptions {
         start_playing,
+        restore_nonce: restore_nonce.clone(),
         seek_to: position_ms,
         playing_track: Some(PlayingTrack::Index(index)),
         ..LoadRequestOptions::default()
@@ -2234,7 +2491,7 @@ pub fn load_queue(
     match sent {
         Ok(()) => {
             SPIRC_KNOWS.store(true, Ordering::SeqCst);
-            watch_load(sequence, uris, index, start_playing, position_ms);
+            watch_load(sequence, uris, index, start_playing, position_ms, restore_nonce);
             Ok(())
         }
         Err(e) => {
@@ -2246,7 +2503,7 @@ pub fn load_queue(
                 *expect = None;
             }
             device_lost();
-            let result = local_load(&uris, index, start_playing, position_ms);
+            let result = local_load_owned(&uris, index, start_playing, position_ms, restore_nonce.clone());
             let _ = reconnect(false);
             result
         }
@@ -2261,10 +2518,12 @@ pub fn load_queue(
 /// things at a player that will not move. This waits [`LOAD_ACK`] for the
 /// player to say it is loading the track, and when it does not, gives the
 /// player the track itself and has the device rebuilt.
-fn watch_load(sequence: u64, uris: Vec<String>, index: u32, play: bool, position_ms: u32) {
+fn watch_load(sequence: u64, uris: Vec<String>, index: u32, play: bool, position_ms: u32, restore_nonce: Option<String>) {
     let Ok(handle) = runtime_handle() else { return };
+    let Ok(lease) = online_lease() else { return; };
     handle.spawn(async move {
-        tokio::time::sleep(LOAD_ACK).await;
+        tokio::select! { biased; _ = lease.revoked() => return, _ = tokio::time::sleep(LOAD_ACK) => () }
+        if lease.check().is_err() { return; }
         let pending = LOAD_EXPECT
             .lock()
             .map(|expect| expect.as_ref().is_some_and(|(seq, _)| *seq == sequence))
@@ -2292,7 +2551,7 @@ fn watch_load(sequence: u64, uris: Vec<String>, index: u32, play: bool, position
             }
         }
         device_lost();
-        if let Err(e) = local_load(&uris, index, play, position_ms) {
+        if let Err(e) = local_load_owned(&uris, index, play, position_ms, restore_nonce) {
             log::error!("direct load failed as well: {e}");
         }
         let _ = reconnect(true);
@@ -2455,8 +2714,10 @@ fn watch_skip(before: String, forward: bool) {
         return;
     }
     let Ok(handle) = runtime_handle() else { return };
+    let Ok(lease) = online_lease() else { return; };
     handle.spawn(async move {
-        tokio::time::sleep(LOAD_ACK).await;
+        tokio::select! { biased; _ = lease.revoked() => return, _ = tokio::time::sleep(LOAD_ACK) => () }
+        if lease.check().is_err() { return; }
         if PLAYBACK_ARMED.load(Ordering::SeqCst) || current_uri() != before {
             return;
         }
@@ -3027,6 +3288,8 @@ fn session_invalid() -> Option<bool> {
 pub fn shutdown() {
     let taken = engine_lock().take();
     if let Some(engine) = taken {
+        engine.network.close();
+        crate::downloads::retire_source_owner();
         // Nothing may report against this player from here on, and the pump is
         // about to go with the sender. A device task ending late says nothing.
         GENERATION.fetch_add(1, Ordering::SeqCst);

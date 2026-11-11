@@ -97,7 +97,7 @@ data class LikedAnswer(
 )
 
 @Serializable
-data class RpcRequest(val id: Long, val method: RpcMethod)
+data class RpcRequest(val id: Long, val method: RpcMethod, val accountSession: String? = null)
 
 @Serializable
 data class RpcResponse(
@@ -105,6 +105,7 @@ data class RpcResponse(
     val ok: Boolean,
     val error: String? = null,
     val payload: JsonElement? = null,
+    val accountSession: String? = null,
 )
 
 /** Larger answers go over a channel instead of a message. */

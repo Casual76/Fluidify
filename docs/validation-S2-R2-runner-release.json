@@ -1,0 +1,37 @@
+{
+  "status": "RUNNER RELEASED",
+  "assignment": "SAME Source2 S2-R2 owned-restore integration follow-up",
+  "releasedAtUtc": "2026-11-07T19:56:32.634722+00:00",
+  "allOwnedCompilerProcessesEnded": true,
+  "nativeBindingTests": {
+    "passed": 3,
+    "failed": 0,
+    "log": "docs/validation-S2-R2-restore-native-tests.log"
+  },
+  "ownedRuns": [
+    {
+      "session": 53205,
+      "exitCode": 1,
+      "result": "integration fixture needed CoreHost Application",
+      "log": "docs/validation-S2-R2-restore-tests.log"
+    },
+    {
+      "session": 90054,
+      "exitCode": 1,
+      "result": "integration fixture needed remote refresh replacement",
+      "log": "docs/validation-S2-R2-restore-tests-final.log"
+    },
+    {
+      "session": 81437,
+      "exitCode": 0,
+      "result": "fresh app63/core18 PASS",
+      "log": "docs/validation-S2-R2-restore-tests-verified.log"
+    },
+    {
+      "session": 95489,
+      "exitCode": 1,
+      "result": "three native ABI builds/assembly/app lint PASS; same3 core lint errors",
+      "log": "docs/validation-S2-R2-restore-native-assemble-lint.log"
+    }
+  ]
+}

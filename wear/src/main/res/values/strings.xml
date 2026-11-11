@@ -186,4 +186,8 @@
     <string name="updated_to">Updated to %1$s</string>
     <string name="updated_to_tap">See what\'s new</string>
     <string name="update_downloading_wifi">Downloading over Wi-Fi…</string>
+    <string name="watch_downloads_legacy_note">Older downloads have no known owner. Keep them stored, or assign them to the account signed in on this watch.</string>
+    <string name="watch_downloads_legacy_assign">Assign older downloads...</string>
+    <string name="watch_downloads_legacy_confirm">Confirm: assign to %1$s</string>
+    <string name="watch_downloads_legacy_later">Keep without assigning</string>
 </resources>

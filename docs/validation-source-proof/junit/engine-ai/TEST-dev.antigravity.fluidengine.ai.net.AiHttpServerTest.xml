@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.net.AiHttpServerTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:03.018Z" hostname="PC_FISSO" time="0.787">
+  <properties/>
+  <testcase name="una risposta 200 non JSON e' un errore di parse" classname="dev.antigravity.fluidengine.ai.net.AiHttpServerTest" time="0.014"/>
+  <testcase name="un server muto in streaming fa scattare il timeout per lettura" classname="dev.antigravity.fluidengine.ai.net.AiHttpServerTest" time="0.516"/>
+  <testcase name="un 429 con Retry-After diventa RateLimited" classname="dev.antigravity.fluidengine.ai.net.AiHttpServerTest" time="0.003"/>
+  <testcase name="lo stream consegna gli eventi uno alla volta e si ferma a DONE" classname="dev.antigravity.fluidengine.ai.net.AiHttpServerTest" time="0.182"/>
+  <testcase name="gli header dello stream arrivano prima del primo evento" classname="dev.antigravity.fluidengine.ai.net.AiHttpServerTest" time="0.003"/>
+  <testcase name="cancellare il flusso chiude la connessione dal lato del server" classname="dev.antigravity.fluidengine.ai.net.AiHttpServerTest" time="0.059"/>
+  <testcase name="il multipart arriva con boundary, campi e file" classname="dev.antigravity.fluidengine.ai.net.AiHttpServerTest" time="0.008"/>
+  <testcase name="postJson manda il corpo e legge JSON e header" classname="dev.antigravity.fluidengine.ai.net.AiHttpServerTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[Exception in thread "pool-2-thread-2" java.lang.InterruptedException: sleep interrupted
+	at java.base/java.lang.Thread.sleep0(Native Method)
+	at java.base/java.lang.Thread.sleep(Unknown Source)
+	at dev.antigravity.fluidengine.ai.net.AiHttpServerTest$un server muto in streaming fa scattare il timeout per lettura$1.invokeSuspend$lambda$0(AiHttpServerTest.kt:116)
+	at dev.antigravity.fluidengine.ai.net.TinyHttpServer.serve(TinyHttpServer.kt:113)
+	at dev.antigravity.fluidengine.ai.net.TinyHttpServer.lambda$0$0(TinyHttpServer.kt:76)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+	at java.base/java.lang.Thread.run(Unknown Source)
+Exception in thread "pool-4-thread-2" java.lang.InterruptedException: sleep interrupted
+	at java.base/java.lang.Thread.sleep0(Native Method)
+	at java.base/java.lang.Thread.sleep(Unknown Source)
+	at dev.antigravity.fluidengine.ai.net.AiHttpServerTest$lo stream consegna gli eventi uno alla volta e si ferma a DONE$1.invokeSuspend$lambda$0(AiHttpServerTest.kt:73)
+	at dev.antigravity.fluidengine.ai.net.TinyHttpServer.serve(TinyHttpServer.kt:113)
+	at dev.antigravity.fluidengine.ai.net.TinyHttpServer.lambda$0$0(TinyHttpServer.kt:76)
+	at java.base/java.util.concurrent.ThreadPoolExecutor.runWorker(Unknown Source)
+	at java.base/java.util.concurrent.ThreadPoolExecutor$Worker.run(Unknown Source)
+	at java.base/java.lang.Thread.run(Unknown Source)
+]]></system-err>
+</testsuite>

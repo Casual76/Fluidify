@@ -24,11 +24,11 @@ const IMAGE_CDN: &str = "https://i.scdn.co/image/";
 
 /// The pseudo-playlist holding "Liked Songs" for the current user.
 pub fn collection_uri() -> EngineResult<String> {
-    with_session(|session| format!("spotify:user:{}:collection", session.username()))
+    crate::engine::with_local_session(|session| format!("spotify:user:{}:collection", session.username()))
 }
 
 pub fn username() -> EngineResult<String> {
-    with_session(|session| session.username())
+    crate::engine::with_local_session(|session| session.username())
 }
 
 /// The account's own playlists, as a JSON array of `{uri, name}`.

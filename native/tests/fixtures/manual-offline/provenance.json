@@ -1,0 +1,9 @@
+{
+  "source": "ffmpeg lavfi sine 440 Hz; synthetic, not a Spotify archive",
+  "ffmpeg": "ffmpeg version 9.0-full_build-www.gyan.dev Copyright (c) 2000-2026 the FFmpeg developers",
+  "sha256": "0bd2f34a3d079e6b60a5649d8d68f5aaf36e8a1949e88924fba1a5961b7e55f6",
+  "bytes": 24599,
+  "key": "00112233445566778899aabbccddeeff",
+  "iv": "72e067fbddcbcf77ebe8bc643f630d93",
+  "durationMs": 1200
+}

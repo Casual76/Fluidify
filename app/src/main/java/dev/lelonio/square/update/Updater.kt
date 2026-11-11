@@ -48,6 +48,8 @@ object FluidifyUpdates {
         )
     }
 
-    /** The installed version as the manifest knows it: a debug build's suffix is not a release's. */
-    val currentVersion: String get() = BuildConfig.VERSION_NAME.substringBefore("-")
+    /** Preserve release-channel identity; only a trailing debug marker is build-local. */
+    val currentVersion: String get() = releaseVersionName(BuildConfig.VERSION_NAME)
+
+    internal fun releaseVersionName(versionName: String): String = versionName.removeSuffix("-debug")
 }

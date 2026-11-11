@@ -106,9 +106,13 @@ class WatchAuth(
 
     /** Forgets the credential. Downloads stay; they play again only for the same account. */
     fun signOut() {
+        dev.pampa.fluidify.wear.downloads.WatchDownloadAuthority.forContext(context).revoke()
         credentialsDir.deleteRecursively()
         prefs.username = null
         _state.value = AuthState.SIGNED_OUT
+    }
+    fun signOutIfCurrent(phone: dev.pampa.fluidify.wear.link.PhoneAccountSession.Scope?) {
+        link.accountSessions.useIfCurrent(phone) { signOut() }
     }
 
     private fun read(): AuthState = when {

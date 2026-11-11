@@ -51,8 +51,32 @@ class DownloadService : android.app.Service() {
     }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        val expected = intent?.getStringExtra(EXTRA_ACCOUNT_SESSION)
+        if (intent != null && container.accountLocalData.captureRequest(expected)?.let {
+                container.accountLocalData.isOnlineCurrent(it)
+            } != true) {
+            // A queued A start/notification cannot wake or stop B. No promotion is owed after stopSelf.
+            if (!foreground) stopSelf(startId)
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
             container.downloadQueue.stop()
+            stop()
+            return START_NOT_STICKY
+        }
+
+        // Do this before foreground promotion, session admission or waking the pump.
+        if (container.downloadSettings.offlineMode.value ||
+            (intent != null && !dev.lelonio.square.data.SpotifyNetworkPolicy.isCurrent(
+                intent.getLongExtra(EXTRA_NETWORK_REVISION, -1L),
+            ))) {
+            stop()
+            return START_NOT_STICKY
+        }
+
+        // A queued start may arrive after logout has invalidated the account.
+        // Stop immediately; it must not revive the native download session.
+        if (!PlaybackService.accountAllowsDownloads || container.accountLocalData.captureOnline() == null) {
             stop()
             return START_NOT_STICKY
         }
@@ -60,7 +84,11 @@ class DownloadService : android.app.Service() {
         // Up front and unconditionally: Android gives a service started into
         // the foreground a few seconds to say so, and the queue's first answer
         // may take longer than that if it has to wait for a session.
-        goForeground(container.downloadQueue.status.value)
+        if (!goForeground(container.downloadQueue.status.value)) {
+            // A denied promotion must not start/revive native work without a foreground owner.
+            try { container.downloadQueue.stop() } finally { stop() }
+            return START_NOT_STICKY
+        }
 
         // The audio comes down the librespot session, so there has to be one.
         // Harmless when there already is: the service guards its own repeated
@@ -100,21 +128,37 @@ class DownloadService : android.app.Service() {
         super.onDestroy()
     }
 
+    override fun onTimeout(startId: Int, fgsType: Int) {
+        // Android's dataSync budget expired. Queue cancellation is non-blocking and
+        // preserves wanted/completed files; stopSelf must not await a native transfer.
+        try { container.downloadQueue.stop() } finally { stop() }
+    }
+
     // --------------------------------------------------------- the notification
 
-    private fun goForeground(status: DownloadQueue.Status) {
-        if (foreground) return
+    private fun goForeground(status: DownloadQueue.Status): Boolean {
+        if (foreground) return true
+        try {
+            ServiceCompat.startForeground(
+                this,
+                NOTIFICATION_ID,
+                build(status),
+                if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+                    ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
+                } else {
+                    0
+                },
+            )
+        } catch (denied: SecurityException) {
+            android.util.Log.w("DownloadService", "Foreground promotion denied", denied)
+            return false
+        } catch (denied: IllegalStateException) {
+            // Includes ForegroundServiceStartNotAllowedException without loading an API31 type.
+            android.util.Log.w("DownloadService", "Foreground promotion unavailable", denied)
+            return false
+        }
         foreground = true
-        ServiceCompat.startForeground(
-            this,
-            NOTIFICATION_ID,
-            build(status),
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
-                ServiceInfo.FOREGROUND_SERVICE_TYPE_DATA_SYNC
-            } else {
-                0
-            },
-        )
+        return true
     }
 
     private fun notify(status: DownloadQueue.Status) {
@@ -132,10 +176,13 @@ class DownloadService : android.app.Service() {
             null -> getString(R.string.download_progress_count, status.done, status.total)
         }
 
+        val notificationSession = container.accountLocalData.capture()?.requestSession
         val stop = PendingIntent.getService(
             this,
             0,
-            Intent(this, DownloadService::class.java).setAction(ACTION_STOP),
+            Intent(this, DownloadService::class.java).setAction(ACTION_STOP)
+                .setData(android.net.Uri.parse("fluidify://download-stop/${notificationSession.orEmpty()}"))
+                .putExtra(EXTRA_ACCOUNT_SESSION, notificationSession),
             PendingIntent.FLAG_IMMUTABLE,
         )
 
@@ -176,6 +223,8 @@ class DownloadService : android.app.Service() {
     companion object {
         private const val CHANNEL_ID = "downloads"
         private const val NOTIFICATION_ID = 42
+        private const val EXTRA_ACCOUNT_SESSION = "local-account-session"
+        private const val EXTRA_NETWORK_REVISION = "spotify-network-revision"
         private const val ACTION_STOP = "dev.lelonio.square.action.STOP_DOWNLOADS"
 
         /**
@@ -186,7 +235,13 @@ class DownloadService : android.app.Service() {
          * wakes its queue, which was going to ask the store again anyway.
          */
         fun start(context: Context) {
+            val app = context.applicationContext as SquareApplication
+            if (app.downloadSettings.offlineMode.value) return
+            if (!PlaybackService.accountAllowsDownloads) return
+            val access = app.accountLocalData.captureOnline() ?: return
             val intent = Intent(context, DownloadService::class.java)
+                .putExtra(EXTRA_ACCOUNT_SESSION, access.requestSession)
+                .putExtra(EXTRA_NETWORK_REVISION, dev.lelonio.square.data.SpotifyNetworkPolicy.revision)
             runCatching {
                 if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                     context.startForegroundService(intent)

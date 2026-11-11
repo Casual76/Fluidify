@@ -16,6 +16,7 @@ import dev.lelonio.square.data.AppThemeMode
  * [AppSettings] keeps its name from the source so the renderer is a diff and not a rewrite.
  */
 data class AppSettings(
+    val amoled: Boolean = false,
     val mediaWidgetTheme: MediaWidgetTheme = MediaWidgetTheme.AdaptiveGlass,
     val mediaWidgetArtworkSize: MediaWidgetArtworkSize = MediaWidgetArtworkSize.Balanced,
     /**
@@ -68,6 +69,7 @@ fun widgetSettings(context: Context): AppSettings {
         (context.applicationContext as SquareApplication).preferences.readThemeMode()
     }.getOrDefault(AppThemeMode.System)
     return AppSettings(
+        amoled = mode == AppThemeMode.Amoled,
         mediaWidgetTheme = when (mode) {
             AppThemeMode.System -> MediaWidgetTheme.AdaptiveGlass
             AppThemeMode.Light -> MediaWidgetTheme.LightGlass

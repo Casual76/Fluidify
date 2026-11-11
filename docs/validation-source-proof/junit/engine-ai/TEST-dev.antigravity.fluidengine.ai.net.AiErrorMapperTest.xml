@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" tests="16" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:02.989Z" hostname="PC_FISSO" time="0.026">
+  <properties/>
+  <testcase name="codice e messaggio del provider per i Dettagli, corti e senza chiavi" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.015"/>
+  <testcase name="il tetto giornaliero dei modelli gratuiti di OpenRouter si riconosce" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.0"/>
+  <testcase name="un 400 che non si sa leggere resta generico, e la moderazione non e' una chiave sbagliata" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.004"/>
+  <testcase name="un errore dentro uno stream aperto si legge come uno HTTP" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.001"/>
+  <testcase name="Groq tool_use_failed e' un campionamento andato male, con il codice nei dettagli" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.0"/>
+  <testcase name="un modello sparito si riconosce nei tre dialetti" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.001"/>
+  <testcase name="il 429 di Groq legge retry-after dall'header e i limiti dagli x-ratelimit" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.003"/>
+  <testcase name="Gemini mette il ritardo in RetryInfo" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.0"/>
+  <testcase name="una richiesta che non ci sta, compreso il 413 per minuto di Groq che non e' un 429" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.001"/>
+  <testcase name="le eccezioni di rete si incartano e le cancellazioni no" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.0"/>
+  <testcase name="400 generico, 404, 5xx e 408 nelle loro categorie" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.0"/>
+  <testcase name="le durate di Groq si sommano" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.001"/>
+  <testcase name="l'errore a valle di OpenRouter si legge in metadata raw" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.0"/>
+  <testcase name="senza header il retry viene dalla frase di Groq" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.0"/>
+  <testcase name="chiave sbagliata in tutte le forme" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.0"/>
+  <testcase name="un reset di OpenRouter in millisecondi epoch diventa secondi da adesso" classname="dev.antigravity.fluidengine.ai.net.AiErrorMapperTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -101,6 +101,7 @@ class PhoneLink(
             if (reachableOnly) CapabilityClient.FILTER_REACHABLE else CapabilityClient.FILTER_ALL).await().nodes
     },
 ) : CommandChannel {
+    val accountSessions = PhoneAccountSession.forContext(context)
     private val capabilities by lazy { Wearable.getCapabilityClient(context) }
     private val messages by lazy { Wearable.getMessageClient(context) }
     private val data by lazy { Wearable.getDataClient(context) }
@@ -267,6 +268,7 @@ class PhoneLink(
     override suspend fun send(command: Command): CommandAck? = send(command, ACK_TIMEOUT_MS)
 
     override suspend fun send(command: Command, timeoutMs: Long): CommandAck? {
+        val account = accountSessions.capture() ?: return null
         val node = nodeId ?: findPhone()?.id ?: run {
             _status.value = LinkStatus.UNREACHABLE
             return null
@@ -277,13 +279,13 @@ class PhoneLink(
         // Whatever ends this call (an answer, a timeout, the caller being cancelled) takes the
         // waiter out: one left behind was kept for good, and an answer arriving late completed it.
         try {
-            val bytes = WearCodec.encode(CommandEnvelope.serializer(), CommandEnvelope(id, command))
+            val bytes = WearCodec.encode(CommandEnvelope.serializer(), CommandEnvelope(id, command, account.session))
             if (!send(node, WearPaths.COMMAND, bytes)) {
                 nodeId = null
                 _status.value = LinkStatus.UNREACHABLE
                 return null
             }
-            return withTimeoutOrNull(timeoutMs) { waiter.await() }
+            return withTimeoutOrNull(timeoutMs) { waiter.await() }?.takeIf { accountSessions.isCurrent(account) }
         } finally {
             pending.remove(id)
         }
@@ -294,13 +296,17 @@ class PhoneLink(
      *
      * A failure says why: unreachable, no answer in time, or the phone's own error.
      */
-    suspend fun <T> request(method: RpcMethod, serializer: KSerializer<T>, timeoutMs: Long = RPC_TIMEOUT_MS): Result<T> {
+    suspend fun <T> request(method: RpcMethod, serializer: KSerializer<T>, timeoutMs: Long = RPC_TIMEOUT_MS,
+        expectedAccount: PhoneAccountSession.Scope? = null): Result<T> {
+        val account = expectedAccount ?: accountSessions.capture() ?: return Result.failure(RpcFailure("account-changed"))
+        if (!accountSessions.isCurrent(account)) return Result.failure(RpcFailure("account-changed"))
         val node = nodeId ?: findPhone()?.id ?: return Result.failure(RpcFailure(AckErrors.UNREACHABLE))
         val id = ids.incrementAndGet()
         val waiter = CompletableDeferred<RpcResponse>()
         rpcPending[id] = waiter
         val response = try {
-            if (!send(node, WearPaths.RPC, WearCodec.encode(RpcRequest.serializer(), RpcRequest(id, method)))) {
+            if (!accountSessions.isCurrent(account)) return Result.failure(RpcFailure("account-changed"))
+            if (!send(node, WearPaths.RPC, WearCodec.encode(RpcRequest.serializer(), RpcRequest(id, method, account.session)))) {
                 nodeId = null
                 _status.value = LinkStatus.UNREACHABLE
                 return Result.failure(RpcFailure(AckErrors.UNREACHABLE))
@@ -310,6 +316,8 @@ class PhoneLink(
             // Also when the screen that asked has gone (the request cancelled): see [send].
             rpcPending.remove(id)
         }
+        if (!accountSessions.isCurrent(account) || response?.accountSession != account.session)
+            return Result.failure(RpcFailure("account-changed"))
         if (response == null) return Result.failure(RpcFailure("timeout"))
         if (!response.ok) return Result.failure(RpcFailure(response.error ?: "error"))
         val payload = response.payload ?: return Result.failure(RpcFailure("empty"))
@@ -325,17 +333,18 @@ class PhoneLink(
         reason: dev.pampa.fluidify.wear.protocol.AuthReason,
         timeoutMs: Long = AUTH_TIMEOUT_MS,
     ): dev.pampa.fluidify.wear.protocol.AuthGrant? {
+        val account = accountSessions.capture() ?: return null
         val node = nodeId ?: findPhone()?.id ?: return null
         val id = ids.incrementAndGet()
         val waiter = CompletableDeferred<dev.pampa.fluidify.wear.protocol.AuthGrant>()
         authPending[id] = waiter
-        val request = dev.pampa.fluidify.wear.protocol.AuthRequest(id, reason)
+        val request = dev.pampa.fluidify.wear.protocol.AuthRequest(id, reason, account.session)
         try {
             if (!send(node, WearPaths.AUTH_REQUEST, WearCodec.encode(dev.pampa.fluidify.wear.protocol.AuthRequest.serializer(), request))) {
                 nodeId = null
                 return null
             }
-            return withTimeoutOrNull(timeoutMs) { waiter.await() }
+            return withTimeoutOrNull(timeoutMs) { waiter.await() }?.takeIf { accountSessions.isCurrent(account) && it.accountSession == account.session }
         } finally {
             authPending.remove(id)
         }
@@ -370,6 +379,12 @@ class PhoneLink(
         state.observeClock(ack.sentAtEpochMs)
         onPhoneHeard()
         pending.remove(ack.id)?.complete(ack)
+    }
+    internal suspend fun acknowledgeDownload(node: String, ack: dev.pampa.fluidify.wear.protocol.DownloadPlanAck) {
+        val account = accountSessions.capture() ?: return
+        if (ack.accountSession != account.session || ack.accountNamespace != account.namespace) return
+        send(node, WearPaths.DOWNLOAD_PLAN,
+            WearCodec.encode(dev.pampa.fluidify.wear.protocol.DownloadPlanAck.serializer(), ack))
     }
 
     /**

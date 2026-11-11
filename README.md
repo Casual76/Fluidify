@@ -1,236 +1,50 @@
-<p align="center">
-  <img src="docs/square.png" width="112" alt="">
-</p>
+﻿<h1 align="center">Fluidify</h1>
+<p align="center">An unofficial Spotify player for Android and Wear OS, built with Fluid Engine.</p>
 
-<h1 align="center">Square</h1>
+Fluidify plays music from Spotify Premium through a native [librespot](https://github.com/librespot-org/librespot) core. It combines your library, Spotify Connect, offline listening and audio effects in an interface built with Fluid Engine. A companion app brings playback controls and independent listening to Wear OS.
 
-<p align="center">
-  An unofficial Android music client for Spotify Premium and YouTube Music,
-  built in Liquid Glass.
-</p>
+> Fluidify is an independent project and is not affiliated with Spotify. It uses an unofficial implementation of Spotify's protocol; availability can change and use may be subject to Spotify's terms. See the [license](LICENSE).
 
-One app over two catalogues. Spotify plays through
-[librespot](https://github.com/librespot-org/librespot), so the official app is
-not needed and is not used: audio is streamed in-process by a native Rust core.
-YouTube Music plays through its own endpoints, where search and playback need no
-account at all. Which one the music comes from is the first question a fresh
-install asks, and it can be changed later in the settings.
+## Features
 
-| Player | Effects | Home |
-| --- | --- | --- |
-| ![The player](docs/screenshots/player.png) | ![The effects panel](docs/screenshots/effects.png) | ![The home page](docs/screenshots/home.png) |
+- **Your Spotify library:** browse playlists, albums, artists and liked songs; search the catalogue and manage the playback queue.
+- **Playback and Connect:** play through the app, transfer playback between Spotify Connect devices, and use Android media controls, Bluetooth and Android Auto.
+- **Offline listening:** download tracks and playlists, keep liked songs offline, choose download quality and restrict downloads to Wi-Fi. Offline mode plays downloaded music without requesting Spotify.
+- **Player:** synchronized lyrics, Spotify Canvas, speed and pitch controls, reverb, presets and crossfade. Listen to local audio files on the phone too.
+- **Fluid interface:** glass surfaces, animated navigation and haptic feedback, with a home-screen playback widget and optional audio-reactive lighting.
+- **Wear OS:** control phone playback, browse and search the library, play independently on the watch, download playlists and albums, and use the tile and complication. See the [device QA checklist](docs/wear-qa-checklist.md).
+- **Languages:** English, Italian, Spanish, French, German, Portuguese, Turkish and Hindi.
 
-## Why use this instead of the official apps
+## Getting started
 
-**It is one app for both.** The same player, the same library, the same
-effects, over Spotify or over YouTube Music. Spotify is your own account, with
-its playlists, its Connect devices and its listening history, and it needs a
-login and a little setup. YouTube Music is the whole catalogue, searchable and
-playable the moment the app opens, with signing in optional and worth it only
-for your own playlists.
+Spotify Premium is required for Spotify playback. Sign in through Spotify when prompted. For search and recommendations, the onboarding guide also asks you to create a Spotify developer application, register the redirect URI shown in Fluidify and enter its Client ID. A Client Secret is not needed.
 
-**It is built in Liquid Glass.** Every control, the tab bar, the player, the
-sheets and the menus, is drawn on one refracting material that bends the artwork
-and the canvas video behind it. Nothing on Spotify for Android looks like this,
-and it is the reason the app exists.
-
-**It can bend the music.** Speed and pitch move independently, there is a real
-reverb on the output, and the three save as presets, so "slowed + reverb" is a
-single tap on any track in the catalogue rather than a file someone else made.
-
-**It is fast.** A skip is sound in about a third of a second, because the engine
-fetches the next track while the current one plays and the app never waits on it
-to move. The playing list is cached rather than rebuilt, so scrolling stays at
-the screen's own frame rate.
-
-> **Read this before you install it.** Both backends talk to services on terms
-> they do not offer: Square re-implements Spotify's protocol, which their Terms
-> of Service forbid, and reads YouTube Music through the private endpoints its
-> own web client uses. It cannot go on the Play Store, the Spotify side needs a
-> Premium account, and using it is at your own risk. There is no warranty of any
-> kind. See the licence.
-
-## What it does
-
-- **Plays two catalogues.** Spotify or YouTube Music, chosen at first launch and
-  changeable in the settings. Home, search, the library and the player all go
-  through whichever one is selected.
-- **Plays your library.** Playlists, albums, artists, liked songs, search. On
-  Spotify through its own access point rather than the public Web API; on
-  YouTube Music anonymously, with an optional Google sign-in that adds the
-  account's own playlists and home shelves.
-- **Is a Connect device** *(Spotify)*. Square appears in the device list of
-  every other Spotify client, and playback can be handed to and taken from it.
-- **Records what you listen to** *(Spotify)*. Listens are reported to the
-  account, filed under the playlist or album they happened in, so Square can be
-  used *instead* of the official client rather than beside it.
-- **Lyrics, canvas, artwork.** Synced lyrics, from the TTML archive at
-  [lossless.wtf](https://lossless.wtf) first — timed to the word, the format
-  Apple Music ships — and from Spotify or [LrcLib](https://lrclib.net) for
-  everything it does not carry; the looping
-  Spotify canvas video on the player; and the covers of the generated playlists
-  in the app's own language.
-- **Watches the video** *(YouTube Music)*. One tap on the player swaps the audio
-  stream for the real video, in place, without losing the queue or the position.
-- **Audio effects.** Speed and pitch independently, plus reverb, with presets:
-  the "slowed + reverb" edit, done properly, on any track.
-- **Android Auto.** Playlists and recently played are browsable in the car, and
-  voice search plays from the catalogue. Auto only lists apps it was installed
-  beside, so a sideloaded build needs "Unknown sources" turned on in Android
-  Auto's developer settings.
-- **Six languages.** English, Italian, Spanish, French, German, Portuguese, and
-  a picker that does not depend on the phone's own language.
-
-## Architecture
-
-```
-┌───────────────────────────────────────────────────────────┐
-│ Compose UI                                                │
-├───────────────────────────────────────────────────────────┤
-│ MediaController ──► MediaSession                          │  notification, lock screen, Bluetooth
-├───────────────────────────────────────────────────────────┤
-│ PlaybackService                                           │  foreground service, owns the player
-├───────────────────────────────────────────────────────────┤
-│ MusicBackend            selected once, swapped on change  │
-├──────────────────────────┬────────────────────────────────┤
-│ SpotifyBackend           │ YouTubeBackend                 │
-│   LibrespotPlayer        │   ExoPlayer                    │
-│     : SimpleBasePlayer   │     + YouTubeStreamResolver    │
-├─────────────────┬────────┼──────────────────┬─────────────┤
-│ Web API (HTTPS) │ JNI ──►│ NewPipeExtractor │ innertube   │
-│ search, top     │ libsq… │ search, streams  │ the account │
-│ tracks, devices │ libre… │ anonymous        │ library     │
-└─────────────────┴────────┴──────────────────┴─────────────┘
-```
-
-`MusicBackend` is the seam: every catalogue read and the `Player` itself come
-from it, so no screen has to know which service is answering. A backend that
-cannot do something, as YouTube Music has no Connect device list, returns the
-empty value rather than throwing, and that is what keeps one UI usable on both.
-
-On the YouTube side the split is by what needs an account, not by preference.
-Search, trending and stream URLs are public and go through NewPipeExtractor,
-which is why the app works before anyone signs in and for anyone who never does.
-The library is the account's own, so it goes through the vendored
-[`innertube/`](innertube/) module with the session cookie attached.
-
-On the Spotify side the catalogue comes from the access point
-(`native/src/catalog.rs`), not from `api.spotify.com`: the Web API meters
-requests per application, and there is no streaming endpoint there at all. The
-Web API is used only where the access point has nothing to offer: search, the
-account's top tracks, the Connect device list and editing playlists. That is why
-Square asks you to register an application of your own.
-
-The player keeps no copy of the engine's state: `LibrespotPlayer` reports only
-what the engine has confirmed by event. That is why the seek bar never runs
-ahead of the audio.
+The phone app requires Android 8.0 or later (API 26). The watch app requires Wear OS on Android API 36 or later. The watch can be installed from the phone app's settings; the installation flow provides instructions for wireless debugging and pairing.
 
 ## Building
 
-Requirements:
-
-- Android Studio with SDK platform 35 and **NDK 28.2.13676358**
-- Rust ≥ 1.86 with the Android targets
-- `cargo-ndk`
+Install Android Studio, Android SDK platform 37, NDK **28.2.13676358**, CMake 3.22 or later, Git, Rust and `cargo-ndk`. Use a JDK compatible with Android Gradle Plugin 8.13.2. The native crate declares Rust 1.81 as its minimum; dependencies may require a newer toolchain.
 
 ```bash
 rustup target add aarch64-linux-android armv7-linux-androideabi x86_64-linux-android
 cargo install cargo-ndk
-sdkmanager --install "ndk;28.2.13676358"
+sdkmanager --install "platforms;android-37" "ndk;28.2.13676358"
+./gradlew :app:assembleDebug :wear:assembleDebug
 ```
 
-Then:
+On Windows use `gradlew.bat` instead of `./gradlew`. The build fetches Bungee for audio processing and cross-compiles the Rust core with `:core:cargoBuild`, placing native libraries in `core/src/main/jniLibs`. By default the core builds ARM64, ARMv7 and x86-64; a phone-only build can narrow this with `-Pfluidify.coreAbis=arm64-v8a,x86_64`. Phone debug builds package ARM64 and x86-64; phone release builds package ARM64.
 
-```bash
-./gradlew :app:assembleDebug
-```
+Release builds use the root `keystore.properties` when present, with `storeFile`, `storePassword`, `keyAlias` and `keyPassword`. Otherwise they use the debug signing key. Keep the properties file and keystore private. Android requires the same signing key to update an existing installation.
 
-The `cargoBuild` task cross-compiles the core and copies the `.so` files into
-`app/src/main/jniLibs`. To iterate faster, cut `nativeAbis` in
-`app/build.gradle.kts` down to `arm64-v8a`.
+## Project structure
 
-### Signing a release build
+- `app/` — phone UI, playback service, downloads, widget and integrations.
+- `core/` — shared native bridge and playback components for phone and watch.
+- `native/` — Rust playback core and vendored librespot components.
+- `wear/` — Wear OS app, independent playback and phone integration.
+- `wear-protocol/` — shared phone–watch communication protocol.
+- `engine/` — Fluid Engine modules; the pinned version and module list are in [`engine.properties`](engine.properties).
 
-The release build is signed with a real key when `keystore.properties` exists
-beside the project, and with the debug key otherwise. The file and the keystore
-are both ignored by git and must stay that way.
+## License
 
-```bash
-keytool -genkey -v -keystore square-release.jks -keyalg RSA \
-        -keysize 2048 -validity 10000 -alias square
-```
-
-```properties
-# keystore.properties, never commit this
-storeFile=square-release.jks
-storePassword=…
-keyAlias=square
-keyPassword=…
-```
-
-## Notes for anyone reading the code
-
-**`librespot-core` is patched.** A local copy under `native/vendor/`, wired in
-with `[patch.crates-io]`. Four changes: the advertised OS is pinned to
-`"linux"` so it agrees with the desktop client id, Mercury gained POST and
-header fields so listening events can be posted, the session carries a language
-so artwork comes back in it, and a non-premium account no longer exits the
-process. All four are explained in
-[native/vendor/README.md](native/vendor/README.md).
-
-**OAuth uses the keymaster client id on a fixed port.** The redirect has to be
-exactly `http://127.0.0.1:5588/login`, the only one registered for that id, and
-the socket must be bound to the IPv4 loopback explicitly: on Android
-`InetAddress.getLoopbackAddress()` answers `::1` and the browser then fails the
-redirect with `ERR_CONNECTION_REFUSED`.
-
-**`MediaSession.Callback` is not optional.** A session never hands a
-controller's `MediaItem`s to the player directly; it asks the app to resolve
-them first, and the default implementation rejects every item without a
-playable URI. Ours carry only a `mediaId`, so without `onAddMediaItems` the call
-vanishes silently.
-
-**Do not rebuild the playlist in `getState()`.** It runs on every
-`invalidateState`, which includes each position update: rebuilding dozens of
-`MediaItemData` twice a second makes enough garbage to be heard as stuttering.
-The list is cached and dropped only when the queue actually changes.
-
-**Keep NewPipeExtractor current.** YouTube breaks extraction deliberately and
-often, and a version a few months stale does not fail loudly: v0.24.6 still
-searched fine while every stream answered "The page needs to be reloaded". If
-YouTube playback stops working and search does not, bump that version first.
-
-**`vergen` is pinned to 9.0.6.** `librespot-core` 0.8.0's build script does not
-compile against 9.1.0, a semver-compatible bump that changed the `Add` trait.
-The pin lives in `native/Cargo.lock`.
-
-**Token refresh is serialised.** `TokenStore.validAccessToken()` takes a mutex
-before refreshing. Spotify rotates refresh tokens, so without it two parallel
-requests around expiry would each refresh and the loser would save a token that
-is already dead. It is the bug behind the random logouts in most other clients.
-
-## Third-party code
-
-| Project | Licence | How it is used |
-| --- | --- | --- |
-| [librespot](https://github.com/librespot-org/librespot) | MIT | The Spotify engine. `librespot-core` is vendored with local patches. |
-| [Metrolist](https://github.com/mostafaalagamy/Metrolist) | GPL-3.0 | Its InnerTube client, vendored as [`innertube/`](innertube/), because it is published nowhere else. Powers the signed-in YouTube Music library. |
-| [NewPipeExtractor](https://github.com/TeamNewPipe/NewPipeExtractor) | GPL-3.0 | Anonymous YouTube Music search and stream URLs. |
-| [lossless.wtf](https://lossless.wtf) | n/a | Synced TTML lyrics, asked first on both backends. |
-| [LrcLib](https://lrclib.net) | n/a | Synced lyrics for the YouTube Music backend, over its open API. |
-| [Bungee](https://github.com/kupix/bungee) | MPL-2.0 | Time stretching, fetched at build time. |
-| [Fluid Engine](https://github.com/Casual76/fluid-engine) | GPL-3.0 | The design system, the pages and the glass, as the `engine/` submodule. It carries code from [LibrePods](https://github.com/librepods-org/librepods) (GPL-3.0: the buttons and the pages) and from [AndroidLiquidGlass](https://github.com/Kyant0/AndroidLiquidGlass) (Apache-2.0: the glass renderer and the catalog controls), each listed in the app under Settings › About. |
-| [Phosphor Icons](https://phosphoricons.com) | MIT | Every icon in the app. |
-| librespot-java | Apache-2.0 | The listening-event format, re-implemented from its `EventService` rather than copied. |
-
-## Licence
-
-GPL-3.0-or-later. See [LICENSE](LICENSE).
-
-The Fluid Engine underneath (from 3.0) contains GPL-3.0 code from LibrePods, so
-every APK of Fluidify — the phone app and the watch app alike — is distributed
-under the GPL-3.0 as well. Whoever receives an APK is entitled to its source:
-it is this repository, public at
-[github.com/Casual76/Fluidify](https://github.com/Casual76/Fluidify), with the
-engine pinned as the `engine/` submodule at the version `engine.properties`
-names. The third-party notices travel inside the app, under Settings › About.
+Fluidify is licensed under the [GNU General Public License v3.0](LICENSE). Third-party components retain their respective licenses.

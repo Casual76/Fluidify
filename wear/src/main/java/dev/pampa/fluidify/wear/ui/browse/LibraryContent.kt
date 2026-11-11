@@ -1,5 +1,7 @@
 package dev.pampa.fluidify.wear.ui.browse
 
+import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -43,18 +45,22 @@ fun <T> rememberPhoneData(
     enabled: Boolean = true,
     fetch: suspend () -> Result<T>,
 ): PhoneData<T> {
-    var state by remember(key) { mutableStateOf(PhoneData(peek(), loading = true, failed = false)) }
-    val attempt = remember(key) { mutableIntStateOf(0) }
-    LaunchedEffect(key, enabled, attempt.intValue) {
+    val sessions = dev.pampa.fluidify.wear.link.PhoneAccountSession.forContext(LocalContext.current)
+    val phoneAccount by sessions.scope.collectAsState()
+    var state by remember(key, phoneAccount) { mutableStateOf(PhoneData(peek(), loading = true, failed = false)) }
+    val attempt = remember(key, phoneAccount) { mutableIntStateOf(0) }
+    LaunchedEffect(key, phoneAccount, enabled, attempt.intValue) {
+        val account = phoneAccount ?: return@LaunchedEffect
         if (!enabled) return@LaunchedEffect
         if (state.value == null) {
-            withContext(Dispatchers.IO) { cached() }?.let { kept -> if (state.value == null) state = state.copy(value = kept) }
+            withContext(Dispatchers.IO) { cached() }?.let { kept -> if (sessions.isCurrent(account) && state.value == null) state = state.copy(value = kept) }
         }
         state = state.copy(loading = true, failed = false)
         val result = fetch()
+        if (!sessions.isCurrent(account)) return@LaunchedEffect
         state = state.copy(value = result.getOrNull() ?: state.value, loading = false, failed = result.isFailure)
     }
-    val retry: () -> Unit = remember(key) { { attempt.intValue++ } }
+    val retry: () -> Unit = remember(key, phoneAccount) { { attempt.intValue++ } }
     return state.copy(retry = retry)
 }
 

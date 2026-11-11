@@ -31,7 +31,7 @@ use crate::{
     mixer::VolumeGetter,
 };
 use futures_util::{
-    StreamExt, TryFutureExt, future, future::FusedFuture,
+    StreamExt, FutureExt, future, future::FusedFuture,
     stream::futures_unordered::FuturesUnordered,
 };
 use librespot_metadata::{audio::UniqueFields, track::Tracks};
@@ -184,6 +184,7 @@ static PLAYER_COUNTER: AtomicUsize = AtomicUsize::new(0);
 
 enum PlayerCommand {
     Load {
+        restore_nonce: Option<String>,
         track_id: SpotifyUri,
         play: bool,
         position_ms: u32,
@@ -229,6 +230,8 @@ enum PlayerCommand {
 
 #[derive(Debug, Clone)]
 pub enum PlayerEvent {
+    // LOCAL PATCH: emitted only by the command carrying this explicit nonce.
+    OwnedLoadBound(crate::owned_load::OwnedLoadBinding),
     // Play request id changed
     PlayRequestIdChanged {
         play_request_id: u64,
@@ -636,10 +639,14 @@ impl Player {
     }
 
     pub fn load(&self, track_id: SpotifyUri, start_playing: bool, position_ms: u32) {
+        self.load_with_restore_nonce(track_id, start_playing, position_ms, None);
+    }
+
+    /// LOCAL PATCH (Fluidify): explicit command correlation, never a next-request promise.
+    pub fn load_with_restore_nonce(&self, track_id: SpotifyUri, start_playing: bool,
+        position_ms: u32, restore_nonce: Option<String>) {
         self.command(PlayerCommand::Load {
-            track_id,
-            play: start_playing,
-            position_ms,
+            restore_nonce, track_id, play: start_playing, position_ms,
         });
     }
 
@@ -782,6 +789,8 @@ impl Drop for Player {
 }
 
 struct PlayerLoadedTrackData {
+    admission: Option<librespot_core::network::NetworkLease>,
+    source_current: Option<Arc<dyn Fn() -> bool + Send + Sync>>,
     decoder: Decoder,
     normalisation_data: NormalisationData,
     stream_loader_controller: StreamLoaderController,
@@ -796,7 +805,7 @@ enum PlayerPreload {
     None,
     Loading {
         track_id: SpotifyUri,
-        loader: Pin<Box<dyn FusedFuture<Output = Result<PlayerLoadedTrackData, ()>> + Send>>,
+        loader: Pin<Box<dyn FusedFuture<Output = Result<PlayerLoadedTrackData, LoadFailure>> + Send>>,
     },
     Ready {
         track_id: SpotifyUri,
@@ -812,7 +821,7 @@ enum PlayerState {
         track_id: SpotifyUri,
         play_request_id: u64,
         start_playback: bool,
-        loader: Pin<Box<dyn FusedFuture<Output = Result<PlayerLoadedTrackData, ()>> + Send>>,
+        loader: Pin<Box<dyn FusedFuture<Output = Result<PlayerLoadedTrackData, LoadFailure>> + Send>>,
     },
     Paused {
         track_id: SpotifyUri,
@@ -969,6 +978,7 @@ impl PlayerState {
                     track_id,
                     play_request_id,
                     loaded_track: PlayerLoadedTrackData {
+                        admission: None, source_current: None,
                         decoder,
                         normalisation_data,
                         stream_loader_controller,
@@ -1071,7 +1081,11 @@ impl PlayerState {
     }
 }
 
+#[derive(Debug)]
+enum LoadFailure { Failed, NetworkDenied }
+
 struct PlayerTrackLoader {
+    network: librespot_core::network::NetworkLease,
     session: Session,
     config: PlayerConfig,
     local_file_lookup: Arc<LocalFileLookup>,
@@ -1157,6 +1171,7 @@ impl PlayerTrackLoader {
                 if let Some(loaded) = self.load_downloaded_track(&track_uri, position_ms) {
                     return Some(loaded);
                 }
+                if self.network.check().is_err() { return None; }
                 self.load_remote_track(track_uri, position_ms).await
             }
             SpotifyUri::Local { .. } => self.load_local_track(track_uri, position_ms).await,
@@ -1302,6 +1317,7 @@ impl PlayerTrackLoader {
         );
 
         Some(PlayerLoadedTrackData {
+            admission: None, source_current: downloaded.is_current,
             decoder,
             normalisation_data: normalisation_data.unwrap_or_else(|| {
                 warn!("Unable to get normalisation data, continuing with defaults.");
@@ -1370,6 +1386,7 @@ impl PlayerTrackLoader {
             None => self.session.clone(),
         };
 
+        if self.network.check().is_err() || session.network().check().is_err() { return None; }
         let began = Instant::now();
         let audio_item = match AudioItem::get_file(&session, track_uri).await {
             Ok(audio) => match self.find_available_alternative(&session, audio).await {
@@ -1659,6 +1676,7 @@ impl PlayerTrackLoader {
 
 
             return Some(PlayerLoadedTrackData {
+                admission: Some(self.network.clone()), source_current: None,
                 decoder,
                 normalisation_data,
                 stream_loader_controller,
@@ -1739,6 +1757,7 @@ impl PlayerTrackLoader {
         info!("Loaded <{name}> from path <{}>", path.display());
 
         Some(PlayerLoadedTrackData {
+            admission: None, source_current: None,
             decoder,
             normalisation_data,
             stream_loader_controller,
@@ -1841,7 +1860,11 @@ impl Future for PlayerInternal {
                             // songs kept being skipped long after the signal
                             // came back. A slow network should mean the music
                             // takes longer to start, not that the queue empties.
-                            if self.load_attempt < MAX_LOAD_ATTEMPTS {
+                            if matches!(e, LoadFailure::NetworkDenied) {
+                                // A policy rejection is neither transient nor global track unavailability.
+                                self.send_event(PlayerEvent::Stopped { play_request_id, track_id: track_id.clone() });
+                                self.state = PlayerState::Stopped;
+                            } else if self.load_attempt < MAX_LOAD_ATTEMPTS {
                                 let backoff = LOAD_RETRY_BACKOFF * (1 << self.load_attempt);
                                 self.load_attempt += 1;
                                 warn!(
@@ -2715,6 +2738,12 @@ impl PlayerInternal {
         loaded_track: PlayerLoadedTrackData,
         start_playback: bool,
     ) {
+        if loaded_track.admission.as_ref().is_some_and(|lease| lease.check().is_err()) ||
+            loaded_track.source_current.as_ref().is_some_and(|current| !current()) {
+            self.send_event(PlayerEvent::Stopped { play_request_id, track_id });
+            self.state = PlayerState::Stopped;
+            return;
+        }
         let audio_item = Box::new(loaded_track.audio_item.clone());
 
         self.send_event(PlayerEvent::TrackChanged { audio_item });
@@ -2794,6 +2823,7 @@ impl PlayerInternal {
         &mut self,
         track_id: SpotifyUri,
         play_request_id_option: Option<u64>,
+        restore_nonce: Option<String>,
         play: bool,
         position_ms: u32,
     ) -> PlayerResult {
@@ -2821,6 +2851,9 @@ impl PlayerInternal {
             }
         }
 
+        if let Some(binding) = crate::owned_load::OwnedLoadBinding::for_command(restore_nonce, play_request_id) {
+            self.send_event(PlayerEvent::OwnedLoadBound(binding));
+        }
         self.send_event(PlayerEvent::PlayRequestIdChanged { play_request_id });
 
         if !self.config.gapless {
@@ -2930,6 +2963,7 @@ impl PlayerInternal {
                 } = old_state
                 {
                     let loaded_track = PlayerLoadedTrackData {
+                        admission: None, source_current: None,
                         decoder,
                         normalisation_data,
                         stream_loader_controller,
@@ -3103,6 +3137,7 @@ impl PlayerInternal {
             return self.handle_command_load(
                 track_id.clone(),
                 Some(play_request_id),
+                None,
                 start_playback,
                 position_ms,
             );
@@ -3161,7 +3196,8 @@ impl PlayerInternal {
                 track_id,
                 play,
                 position_ms,
-            } => self.handle_command_load(track_id, None, play, position_ms)?,
+                restore_nonce,
+            } => self.handle_command_load(track_id, None, restore_nonce, play, position_ms)?,
 
             PlayerCommand::Preload { track_id } => self.handle_command_preload(track_id),
 
@@ -3339,7 +3375,7 @@ impl PlayerInternal {
         &mut self,
         spotify_uri: SpotifyUri,
         position_ms: u32,
-    ) -> impl FusedFuture<Output = Result<PlayerLoadedTrackData, ()>> + Send + 'static {
+    ) -> impl FusedFuture<Output = Result<PlayerLoadedTrackData, LoadFailure>> + Send + 'static {
         self.load_track_after(spotify_uri, position_ms, Duration::ZERO)
     }
 
@@ -3353,7 +3389,7 @@ impl PlayerInternal {
         spotify_uri: SpotifyUri,
         position_ms: u32,
         delay: Duration,
-    ) -> impl FusedFuture<Output = Result<PlayerLoadedTrackData, ()>> + Send + 'static {
+    ) -> impl FusedFuture<Output = Result<PlayerLoadedTrackData, LoadFailure>> + Send + 'static {
         // This method creates a future that returns the loaded stream and associated info.
         // Ideally all work should be done using asynchronous code. However, seek() on the
         // audio stream is implemented in a blocking fashion. Thus, we can't turn it into future
@@ -3361,6 +3397,8 @@ impl PlayerInternal {
         // future to work with.
 
         let loader = PlayerTrackLoader {
+            network: self.config.network_lease.as_ref().map(|capture| capture())
+                .unwrap_or_else(|| self.session.network().clone()),
             session: self.session.clone(),
             config: self.config.clone(),
             local_file_lookup: self.local_file_lookup.clone(),
@@ -3377,9 +3415,12 @@ impl PlayerInternal {
             }
             if !result_tx.is_closed() {
                 let data = handle.block_on(loader.load_track(spotify_uri, position_ms));
-                if let Some(data) = data {
-                    let _ = result_tx.send(data);
-                }
+                let result = match data {
+                    Some(data) => Ok(data),
+                    None if loader.network.check().is_err() => Err(LoadFailure::NetworkDenied),
+                    None => Err(LoadFailure::Failed),
+                };
+                let _ = result_tx.send(result);
             }
 
             let mut load_handles = load_handles_clone.lock().expect(LOAD_HANDLES_POISON_MSG);
@@ -3389,7 +3430,7 @@ impl PlayerInternal {
         let mut load_handles = self.load_handles.lock().expect(LOAD_HANDLES_POISON_MSG);
         load_handles.insert(load_handle.thread().id(), load_handle);
 
-        result_rx.map_err(|_| ())
+        result_rx.map(|result| result.unwrap_or(Err(LoadFailure::Failed)))
     }
 
     fn preload_data_before_playback(&mut self) -> PlayerResult {

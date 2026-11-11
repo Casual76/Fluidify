@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.net.MultipartBodyTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:03.806Z" hostname="PC_FISSO" time="0.001">
+  <properties/>
+  <testcase name="il preludio porta i campi e l'intestazione del file, l'epilogo chiude" classname="dev.antigravity.fluidengine.ai.net.MultipartBodyTest" time="0.001"/>
+  <testcase name="un campo che contiene il boundary viene rifiutato" classname="dev.antigravity.fluidengine.ai.net.MultipartBodyTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

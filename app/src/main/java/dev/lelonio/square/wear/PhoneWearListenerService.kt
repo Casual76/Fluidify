@@ -56,6 +56,7 @@ class PhoneWearListenerService : WearableListenerService() {
 
     override fun onMessageReceived(event: MessageEvent) {
         when (event.path) {
+            WearPaths.DOWNLOAD_PLAN -> bridge.watchDownloads.onPlanAck(event.data)
             WearPaths.AUDIO_LIGHT_SUBSCRIBE -> {
                 val request = WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.AudioLightSubscription.serializer(), event.data) ?: return
                 // Not waited for at all: the watch renews this every two seconds, the subscription
@@ -68,7 +69,7 @@ class PhoneWearListenerService : WearableListenerService() {
             }
             WearPaths.HELLO -> {
                 val hello = WearCodec.decodeOrNull(Hello.serializer(), event.data) ?: return
-                handle { bridge.onHello(event.sourceNodeId, hello) }
+                handleAside { bridge.onHello(event.sourceNodeId, hello) }
             }
             WearPaths.COMMAND -> {
                 val envelope = WearCodec.decodeOrNull(CommandEnvelope.serializer(), event.data)

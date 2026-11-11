@@ -1,16 +1,12 @@
 package dev.lelonio.square.data
 
 import android.content.Context
-import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.CoroutineDispatcher
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
@@ -49,7 +45,15 @@ import java.io.File
  * download interrupted halfway resumes from the `.part` file the engine left.
  * A queue file would have been a second truth to keep in step with this one.
  */
-class DownloadStore(context: Context) {
+class DownloadStore internal constructor(
+    context: Context,
+    private val ioDispatcher: CoroutineDispatcher,
+    private val persistIndex: (File, String) -> Unit,
+    private val accounts: AccountLocalDataCoordinator,
+) {
+    constructor(context: Context, accounts: AccountLocalDataCoordinator) : this(
+        context, Dispatchers.IO, { file, text -> writeDownloadIndexAtomically(file, text) }, accounts,
+    )
 
     /**
      * A file that is actually on disk, as the engine reported it.
@@ -97,13 +101,18 @@ class DownloadStore(context: Context) {
         }
     }
 
+    /** Position, not URI alone, identifies an occurrence (playlists allow repeats). */
+    @Serializable
+    private data class OwnerOccurrence(val uri: String, val addedAt: String? = null)
+
     @Serializable
     private data class Index(
         val version: Int = 1,
         val files: Map<String, FileRecord> = emptyMap(),
         val owners: Map<String, List<String>> = emptyMap(),
         /**
-         * Metadata for every track any owner asked for.
+         * Shared audio metadata for every track any owner asked for. Context
+         * dates live only in ownerOccurrences, never in this URI-keyed map.
          *
          * Kept here rather than read from [ContextCacheStore] because that
          * cache expires after a week and is trimmed to forty contexts, and a
@@ -113,17 +122,43 @@ class DownloadStore(context: Context) {
         val tracks: Map<String, CatalogTrack> = emptyMap(),
         val labels: Map<String, OwnerLabel> = emptyMap(),
         val failures: Map<String, Failure> = emptyMap(),
+        val ownerOccurrences: Map<String, List<OwnerOccurrence>> = emptyMap(),
+        val legacyOwnerUris: Map<String, String> = emptyMap(),
     )
 
-    /** Where the engine keeps the audio. Handed to it once, at startup. */
-    val root: File = File(context.applicationContext.filesDir, DIR_NAME)
+    /** One atomic document owns every namespace and the legacy assignment decision. */
+    @Serializable
+    private data class AccountIndex(
+        val version: Int = 1,
+        val accounts: Map<String, Index> = emptyMap(),
+        // Physical records outlive an individual namespace's last reference. Never projected globally.
+        val assets: Map<String, FileRecord> = emptyMap(),
+        val legacy: Index? = null,
+        val legacyAssignedTo: String? = null,
+    )
 
-    private val indexFile = File(root, INDEX_NAME)
+    data class LegacyStatus(val pending: Boolean = false, val collections: Int = 0, val files: Int = 0)
+    class LegacyAssignment internal constructor(
+        internal val store: DownloadStore,
+        internal val access: AccountLocalDataCoordinator.Access,
+        internal val fingerprint: String,
+    ) {
+        val recipient: String get() = access.account.id
+    }
+
+    /** Where the engine keeps the audio. Handed to it once, at startup. */
+    private val appContext = context.applicationContext
+    val root: File = File(appContext.filesDir, DIR_NAME)
+
+    private val indexFile = File(root, "account-index-v1.json")
+    private val legacyFile = File(root, INDEX_NAME)
+    private var book = AccountIndex()
+    private val _legacy = MutableStateFlow(LegacyStatus())
+    val legacy: StateFlow<LegacyStatus> = _legacy.asStateFlow()
     private val json = Json { ignoreUnknownKeys = true }
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
     private val writeLock = Mutex()
 
-    private val _index = MutableStateFlow(Index())
+    private val _index = MutableStateFlow(Index(version = 2))
     private val _progress = MutableStateFlow<Map<String, Float>>(emptyMap())
 
     /** What is on disk, by track URI. */
@@ -153,30 +188,85 @@ class DownloadStore(context: Context) {
      * several times a second, to mark the dozen on screen, is the version of
      * this that makes a playlist scroll badly.
      */
-    val ownerStates: StateFlow<Map<String, OwnerState>> =
-        combine(_owners, _files, _progress, _failures) { owners, _, _, _ ->
-            owners.keys.associateWith(::ownerState)
-        }.stateIn(scope, SharingStarted.Eagerly, emptyMap())
+    private val _ownerStates = MutableStateFlow<Map<String, OwnerState>>(emptyMap())
+    val ownerStates: StateFlow<Map<String, OwnerState>> = _ownerStates.asStateFlow()
+
+    private val ownerRefreshFences = mutableMapOf<String, Any>()
+
+    init {
+        accounts.observe { access ->
+            ownerRefreshFences.clear()
+            _progress.value = emptyMap()
+            publish(access?.let { book.accounts[it.namespace] } ?: Index(version = 2))
+        }
+    }
+
+    internal fun observeAccess(observer: (AccountLocalDataCoordinator.Access?) -> Unit) = accounts.observe(observer)
+    fun captureAccess(): AccountLocalDataCoordinator.Access? = accounts.capture()
+    fun captureOnlineAccess(): AccountLocalDataCoordinator.Access? = accounts.captureOnline()
+    fun isOnlineCurrent(access: AccountLocalDataCoordinator.Access): Boolean = accounts.isOnlineCurrent(access)
+    fun isCurrent(access: AccountLocalDataCoordinator.Access): Boolean = accounts.isCurrent(access)
+    fun <T> read(access: AccountLocalDataCoordinator.Access, block: DownloadStore.() -> T): T =
+        accounts.use(access) { block() }
+
+    /** Captured under the account monitor; a physical file is readable only through its namespace. */
+    fun nativeBindingJson(access: AccountLocalDataCoordinator.Access,
+        sourceOwner: String): String = read(access) {
+        kotlinx.serialization.json.buildJsonObject {
+            put("owner", kotlinx.serialization.json.JsonPrimitive(sourceOwner))
+            put("namespace", kotlinx.serialization.json.JsonPrimitive(access.namespace))
+            put("root", kotlinx.serialization.json.JsonPrimitive(root.absolutePath))
+            put("records", kotlinx.serialization.json.buildJsonObject {
+                files.value.forEach { (uri, record) ->
+                    put(uri, kotlinx.serialization.json.JsonPrimitive(record.trackId))
+                }
+            })
+        }.toString()
+    }
 
     // ------------------------------------------------------------- lifecycle
 
     /**
      * Reads the index. Safe to call more than once; the second call is a no-op.
      *
-     * A missing or unreadable index is an empty one rather than a failure. The
-     * files on disk are still there and [reconcile] will find them, which is a
-     * better answer than refusing to start because a JSON file got truncated.
+     * Unknown or malformed account data fails closed and keeps every physical file.
+     * It must never reopen the legacy index after a prior assignment.
      */
-    suspend fun load() = withContext(Dispatchers.IO) {
-        if (loaded) return@withContext
-        loaded = true
-        root.mkdirs()
-        val stored = runCatching {
-            if (indexFile.exists()) json.decodeFromString(Index.serializer(), indexFile.readText())
-            else Index()
-        }.getOrElse { Index() }
-        publish(stored)
+    suspend fun load() = withContext(ioDispatcher) {
+        writeLock.withLock {
+            accounts.locked {
+                if (loaded) return@locked
+                root.mkdirs()
+                // Fail closed on malformed account data. Never fall back to the global index:
+                // that could expose a previously assigned legacy collection to another account.
+                book = if (indexFile.exists()) {
+                    json.decodeFromString(AccountIndex.serializer(), indexFile.readText()).also {
+                        check(it.version == 1) { "Unsupported account download index" }
+                    }
+                } else {
+                    val legacy = if (legacyFile.exists()) normalized(
+                        json.decodeFromString(Index.serializer(), legacyFile.readText()),
+                    ) else null
+                    AccountIndex(legacy = legacy, assets = legacy?.files.orEmpty()).also { persist(it) }
+                }
+                loaded = true
+                updateLegacyStatus()
+                publish(accounts.capture()?.let { book.accounts[it.namespace] } ?: Index(version = 2))
+            }
+        }
     }
+
+    private fun normalized(index: Index): Index {
+        check(index.version in 1..2) { "Unsupported legacy download index" }
+        return index.copy(version = 2,
+            tracks = index.tracks.mapValues { (_, track) -> track.copy(addedAt = null) })
+    }
+
+    private suspend fun <T> mutate(access: AccountLocalDataCoordinator.Access, block: () -> T): T =
+        withContext(ioDispatcher) {
+            load()
+            writeLock.withLock { accounts.use(access, block) }
+        }
 
     private var loaded = false
 
@@ -189,21 +279,17 @@ class DownloadStore(context: Context) {
      * the audio and leaves the index, and a crash between the rename and the
      * index write leaves a file nothing claims. Cheap enough to run at startup.
      */
-    suspend fun reconcile() = withContext(Dispatchers.IO) {
+    suspend fun reconcile(access: AccountLocalDataCoordinator.Access) = mutate(access) {
         val current = _index.value
-        val surviving = current.files.filterKeys { uri ->
-            val record = current.files[uri] ?: return@filterKeys false
-            audioFile(record.trackId).exists()
-        }
-        if (surviving.size != current.files.size) {
-            publish(current.copy(files = surviving))
-            save()
-        }
+        val surviving = current.files.filterValues { audioFile(it.trackId).isFile }
+        if (surviving.size != current.files.size) commit(current.copy(files = surviving))
     }
 
     // ------------------------------------------------------------- questions
 
-    fun isDownloaded(trackUri: String): Boolean = _files.value.containsKey(trackUri)
+    fun isDownloaded(trackUri: String): Boolean = accounts.locked {
+        accounts.capture() != null && _files.value.containsKey(trackUri)
+    }
 
     /**
      * How a single row should draw itself.
@@ -213,7 +299,8 @@ class DownloadStore(context: Context) {
      * at all until a download for it exists, so an undownloaded playlist looks
      * exactly as it did before this feature.
      */
-    fun stateOf(trackUri: String): DownloadState = when {
+    fun stateOf(trackUri: String): DownloadState = accounts.locked { when {
+        accounts.capture() == null -> DownloadState.None
         _files.value.containsKey(trackUri) -> DownloadState.Done
         _progress.value.containsKey(trackUri) ->
             DownloadState.Running(_progress.value.getValue(trackUri))
@@ -221,11 +308,12 @@ class DownloadStore(context: Context) {
             DownloadState.Failed(_failures.value.getValue(trackUri).reason)
         isWanted(trackUri) -> DownloadState.Queued
         else -> DownloadState.None
-    }
+    } }
 
     /** Whether any owner still asks for this track. */
-    fun isWanted(trackUri: String): Boolean =
-        _owners.value.values.any { tracks -> tracks.contains(trackUri) }
+    fun isWanted(trackUri: String): Boolean = accounts.locked {
+        accounts.capture() != null && _owners.value.values.any { tracks -> tracks.contains(trackUri) }
+    }
 
     /**
      * How a playlist, album or artist page should draw its button.
@@ -235,6 +323,7 @@ class DownloadStore(context: Context) {
      * the truth about something the app cannot fix.
      */
     fun ownerState(ownerUri: String): OwnerState {
+        if (accounts.capture() == null) return OwnerState.None
         val wanted = _owners.value[ownerUri] ?: return OwnerState.None
         if (wanted.isEmpty()) return OwnerState.None
 
@@ -244,6 +333,7 @@ class DownloadStore(context: Context) {
 
         val done = wanted.count(files::containsKey)
         if (done == wanted.size) return OwnerState.Complete
+        if (ownerUri.startsWith("downloads:legacy:")) return OwnerState.Partial(done, wanted.size)
 
         val running = wanted.filter(progress::containsKey)
         val outstanding = wanted.filterNot(files::containsKey)
@@ -273,10 +363,12 @@ class DownloadStore(context: Context) {
      * launch, and the queue would never report itself finished.
      */
     fun pending(now: Long = System.currentTimeMillis()): List<String> {
+        if (accounts.capture() == null) return emptyList()
         val files = _files.value
         val failures = _failures.value
         val ordered = LinkedHashSet<String>()
-        for (tracks in _owners.value.values) {
+        for ((owner, tracks) in _owners.value) {
+            if (owner.startsWith("downloads:legacy:")) continue // attribution is not ongoing-download consent
             for (uri in tracks) {
                 if (files.containsKey(uri)) continue
                 val failure = failures[uri]
@@ -296,8 +388,9 @@ class DownloadStore(context: Context) {
      * stubborn track in a playlist is not woken every few seconds for it.
      */
     fun retryAt(): Long? {
+        if (accounts.capture() == null) return null
         val files = _files.value
-        val claimed = _owners.value.values.flatten().toSet()
+        val claimed = _owners.value.filterKeys { !it.startsWith("downloads:legacy:") }.values.flatten().toSet()
         return _failures.value
             .filterKeys { it in claimed && !files.containsKey(it) }
             .values
@@ -307,7 +400,8 @@ class DownloadStore(context: Context) {
 
     /** Tracks that will not be tried again unless the listener asks. */
     fun givenUp(): List<String> {
-        val claimed = _owners.value.values.flatten().toSet()
+        if (accounts.capture() == null) return emptyList()
+        val claimed = _owners.value.filterKeys { !it.startsWith("downloads:legacy:") }.values.flatten().toSet()
         val files = _files.value
         return _failures.value
             .filter { (uri, failure) ->
@@ -318,18 +412,111 @@ class DownloadStore(context: Context) {
     }
 
     /** Metadata for a downloaded track, for drawing it with no connection. */
-    fun trackOf(trackUri: String): CatalogTrack? = _index.value.tracks[trackUri]
+    fun trackOf(trackUri: String): CatalogTrack? = accounts.locked {
+        accounts.capture()?.let { _index.value.tracks[trackUri] }
+    }
 
-    fun labelOf(ownerUri: String): OwnerLabel? = _index.value.labels[ownerUri]
+    /**
+     * One immutable index snapshot, in owner order, including repeated and pending
+     * tracks. Context dates never come from the shared audio metadata. Legacy
+     * occurrences without a date stay unknown until this owner is refreshed.
+     */
+    fun tracksForOwner(ownerUri: String): List<CatalogTrack> {
+        if (accounts.capture() == null) return emptyList()
+        val snapshot = _index.value
+        val occurrences = snapshot.ownerOccurrences[ownerUri].orEmpty()
+        return snapshot.owners[ownerUri].orEmpty().mapIndexedNotNull { index, uri ->
+            val track = snapshot.tracks[uri] ?: return@mapIndexedNotNull null
+            val occurrence = occurrences.getOrNull(index)?.takeIf { it.uri == uri }
+            track.copy(addedAt = occurrence?.addedAt)
+        }
+    }
 
-    fun totalBytes(): Long = _files.value.values.sumOf { it.bytes }
+    fun originalLegacyOwner(ownerUri: String): String? = accounts.locked {
+        accounts.capture()?.let { _index.value.legacyOwnerUris[ownerUri] }
+    }
+
+    fun labelOf(ownerUri: String): OwnerLabel? = accounts.locked {
+        accounts.capture()?.let {
+            _index.value.labels[ownerUri] ?: if (ownerUri in _index.value.owners) when (ownerUri) {
+                SINGLES -> OwnerLabel(appContext.getString(dev.lelonio.square.R.string.downloaded_tracks))
+                LIKED -> OwnerLabel(appContext.getString(dev.lelonio.square.R.string.liked_songs))
+                else -> null
+            } else null
+        }
+    }
+
+    fun totalBytes(): Long = accounts.locked {
+        if (accounts.capture() == null) 0L else _files.value.values.sumOf { it.bytes }
+    }
 
     fun bytesOf(ownerUri: String): Long {
+        if (accounts.capture() == null) return 0L
         val files = _files.value
         return _owners.value[ownerUri].orEmpty().sumOf { files[it]?.bytes ?: 0L }
     }
 
     // ------------------------------------------------------------ what to own
+
+    // Process-local fences, protected by writeLock; never persisted. A replacement
+    // invalidates readers even if its URI sequence (and dates) are identical.
+    class OwnerRefreshToken internal constructor(
+        internal val store: DownloadStore,
+        internal val ownerUri: String,
+        internal val fence: Any,
+        internal val access: AccountLocalDataCoordinator.Access,
+        internal val consent: () -> Boolean,
+    )
+
+    enum class OwnerRefreshResult { STALE, UNCHANGED, METADATA, MEMBERSHIP }
+
+    /** Capture BEFORE reading the source. Only liked-song opt-in may create an owner. */
+    suspend fun beginOwnerRefresh(
+        access: AccountLocalDataCoordinator.Access,
+        ownerUri: String,
+        allowCreate: Boolean = false,
+        consent: () -> Boolean = { false },
+    ): OwnerRefreshToken? = mutate(access) {
+        if ((!allowCreate && ownerUri !in _index.value.owners) ||
+            (allowCreate && (ownerUri != LIKED || !consent()))) return@mutate null
+        val requiredConsent = if (allowCreate) consent else ({ true })
+        OwnerRefreshToken(this, ownerUri, ownerRefreshFences.getOrPut(ownerUri) { Any() }, access, requiredConsent)
+    }
+
+    /**
+     * First accepted response wins among reads sharing a fence, including a
+     * no-op response. Explicit replacement/removal always invalidates that fence.
+     * Empty responses retain the existing collection policy and consume nothing.
+     * Dates are compared by owner and position; shared track metadata is untouched.
+     */
+    suspend fun refreshOwner(
+        token: OwnerRefreshToken,
+        tracks: List<CatalogTrack>,
+        label: OwnerLabel?,
+    ): OwnerRefreshResult {
+        if (!accounts.isCurrent(token.access)) return OwnerRefreshResult.STALE
+        return try {
+            mutate(token.access) {
+                val uri = token.ownerUri
+                if (token.store !== this || !token.consent() || ownerRefreshFences[uri] !== token.fence) {
+                    return@mutate OwnerRefreshResult.STALE
+                }
+                if (tracks.isEmpty()) return@mutate OwnerRefreshResult.UNCHANGED
+                val current = _index.value
+                ownerRefreshFences[uri] = Any()
+                if (current.owners[uri] != tracks.map { it.uri }) {
+                    replaceOwnerLocked(uri, tracks, label)
+                    return@mutate OwnerRefreshResult.MEMBERSHIP
+                }
+                val occurrences = tracks.map { OwnerOccurrence(it.uri, it.addedAt) }
+                if (occurrencesFor(current, uri) == occurrences) return@mutate OwnerRefreshResult.UNCHANGED
+                commit(current.copy(ownerOccurrences = current.ownerOccurrences + (uri to occurrences)))
+                OwnerRefreshResult.METADATA
+            }
+        } catch (cancelled: CancellationException) {
+            if (!accounts.isCurrent(token.access)) OwnerRefreshResult.STALE else throw cancelled
+        }
+    }
 
     /**
      * Records that [ownerUri] wants these tracks, replacing whatever it wanted
@@ -341,48 +528,71 @@ class DownloadStore(context: Context) {
      * it.
      */
     suspend fun setOwner(
+        access: AccountLocalDataCoordinator.Access,
         ownerUri: String,
         tracks: List<CatalogTrack>,
         label: OwnerLabel?,
-    ) = writeLock.withLock {
+    ) = mutate(access) {
+        replaceOwnerLocked(ownerUri, tracks, label)
+    }
+
+    private fun reusableFiles(uris: Collection<String>): Map<String, FileRecord> {
+        val shared = book.assets
+        return uris.mapNotNull { uri ->
+            shared[uri]?.takeIf { audioFile(it.trackId).isFile }?.let { uri to it }
+        }.toMap()
+    }
+
+    private fun replaceOwnerLocked(ownerUri: String, tracks: List<CatalogTrack>, label: OwnerLabel?) {
+        ownerRefreshFences[ownerUri] = Any()
         val current = _index.value
-        publish(
+        commit(
             current.copy(
+                files = reusableFiles(tracks.map { it.uri }) + current.files,
                 owners = current.owners + (ownerUri to tracks.map { it.uri }),
-                tracks = current.tracks + tracks.associateBy { it.uri },
+                tracks = current.tracks + tracks.associate { it.uri to it.copy(addedAt = null) },
+                ownerOccurrences = current.ownerOccurrences +
+                    (ownerUri to tracks.map { OwnerOccurrence(it.uri, it.addedAt) }),
                 labels = label?.let { current.labels + (ownerUri to it) } ?: current.labels,
                 // Asking again is the listener saying "try this", so the record
                 // of past failures for these tracks goes.
                 failures = current.failures - tracks.map { it.uri }.toSet(),
             ),
         )
-        save()
     }
 
     /** Adds one track to the loose collection of singles. */
-    suspend fun addSingle(track: CatalogTrack) {
-        val existing = _owners.value[SINGLES].orEmpty()
-        if (existing.contains(track.uri)) return
-        writeLock.withLock {
+    suspend fun addSingle(access: AccountLocalDataCoordinator.Access, track: CatalogTrack) {
+        mutate(access) {
             val current = _index.value
-            publish(
+            val existing = current.owners[SINGLES].orEmpty()
+            if (existing.contains(track.uri)) return@mutate
+            ownerRefreshFences[SINGLES] = Any()
+            commit(
                 current.copy(
+                    files = reusableFiles(listOf(track.uri)) + current.files,
                     owners = current.owners + (SINGLES to existing + track.uri),
-                    tracks = current.tracks + (track.uri to track),
+                    tracks = current.tracks + (track.uri to track.copy(addedAt = null)),
+                    // The source playlist's date is not an addition date in singles.
+                    ownerOccurrences = current.ownerOccurrences + (SINGLES to
+                        (occurrencesFor(current, SINGLES) + OwnerOccurrence(track.uri))),
                     failures = current.failures - track.uri,
                 ),
             )
-            save()
         }
     }
 
-    suspend fun removeSingle(trackUri: String) {
-        val existing = _owners.value[SINGLES].orEmpty()
-        if (!existing.contains(trackUri)) return
-        writeLock.withLock {
+    suspend fun removeSingle(access: AccountLocalDataCoordinator.Access, trackUri: String) {
+        mutate(access) {
             val current = _index.value
-            publish(current.copy(owners = current.owners + (SINGLES to existing - trackUri)))
-            save()
+            val existing = current.owners[SINGLES].orEmpty()
+            if (!existing.contains(trackUri)) return@mutate
+            ownerRefreshFences[SINGLES] = Any()
+            commit(current.copy(
+                owners = current.owners + (SINGLES to existing - trackUri),
+                ownerOccurrences = current.ownerOccurrences + (SINGLES to
+                    occurrencesFor(current, SINGLES).filterNot { it.uri == trackUri }),
+            ))
         }
     }
 
@@ -394,52 +604,56 @@ class DownloadStore(context: Context) {
      * stay on disk for good — several hundred megabytes that nothing in the app
      * could ever see again, let alone remove.
      */
-    suspend fun removeOwner(ownerUri: String) = writeLock.withLock {
+    suspend fun removeOwner(access: AccountLocalDataCoordinator.Access, ownerUri: String) = mutate(access) {
+        ownerRefreshFences.remove(ownerUri)
         val current = _index.value
-        publish(
+        if (ownerUri !in current.owners) return@mutate
+        commit(
             current.copy(
                 owners = current.owners - ownerUri,
+                ownerOccurrences = current.ownerOccurrences - ownerUri,
                 labels = current.labels - ownerUri,
+                legacyOwnerUris = current.legacyOwnerUris - ownerUri,
             ),
         )
-        save()
     }
 
     // ---------------------------------------------------- what the queue says
 
-    fun onProgress(trackUri: String, fraction: Float) {
-        _progress.value = _progress.value + (trackUri to fraction.coerceIn(0f, 1f))
-    }
+    fun onProgress(access: AccountLocalDataCoordinator.Access, trackUri: String, fraction: Float) =
+        accounts.locked {
+            if (!accounts.isCurrent(access) || !isWanted(trackUri)) return@locked
+            _progress.value = _progress.value + (trackUri to fraction.coerceIn(0f, 1f))
+            updateOwnerStates()
+        }
 
-    /**
-     * Forgets that a track was in flight, without recording anything against
-     * it. For a download that stopped for a reason the track had no part in —
-     * the engine going, or the queue being told to stop.
-     */
-    fun clearProgress(trackUri: String) {
-        if (!_progress.value.containsKey(trackUri)) return
+    fun clearProgress(access: AccountLocalDataCoordinator.Access, trackUri: String) = accounts.locked {
+        if (!accounts.isCurrent(access)) return@locked
         _progress.value = _progress.value - trackUri
+        updateOwnerStates()
     }
 
-    suspend fun onCompleted(trackUri: String, record: FileRecord) {
-        writeLock.withLock {
+    suspend fun onCompleted(access: AccountLocalDataCoordinator.Access, trackUri: String, record: FileRecord) {
+        mutate(access) {
+            if (!isWanted(trackUri)) return@mutate
             val current = _index.value
-            publish(
+            commit(
                 current.copy(
                     files = current.files + (trackUri to record),
                     failures = current.failures - trackUri,
                 ),
             )
             _progress.value = _progress.value - trackUri
-            save()
+            updateOwnerStates()
         }
     }
 
-    suspend fun onFailed(trackUri: String, reason: String) {
-        writeLock.withLock {
+    suspend fun onFailed(access: AccountLocalDataCoordinator.Access, trackUri: String, reason: String) {
+        mutate(access) {
+            if (!isWanted(trackUri)) return@mutate
             val current = _index.value
             val before = current.failures[trackUri]
-            publish(
+            commit(
                 current.copy(
                     failures = current.failures + (
                         trackUri to Failure(
@@ -451,14 +665,13 @@ class DownloadStore(context: Context) {
                 ),
             )
             _progress.value = _progress.value - trackUri
-            save()
+            updateOwnerStates()
         }
     }
 
     /** Forgets past failures so [pending] offers those tracks again. */
-    suspend fun retryFailed() = writeLock.withLock {
-        publish(_index.value.copy(failures = emptyMap()))
-        save()
+    suspend fun retryFailed(access: AccountLocalDataCoordinator.Access) = mutate(access) {
+        commit(_index.value.copy(failures = emptyMap()))
     }
 
     // ------------------------------------------------------------ tidying up
@@ -471,75 +684,144 @@ class DownloadStore(context: Context) {
      * separate, so removing one playlist never deletes a file another playlist
      * is still holding.
      *
-     * Returns the tracks whose audio was deleted, so the caller can tell the
-     * engine to drop them.
+     * Runs the synchronous native deletion callback while the global reference check
+     * is still locked. Extras must be retained: they can be shared by other tracks.
      */
-    suspend fun pruneOrphans(): List<String> = writeLock.withLock {
-        val current = _index.value
-        val claimed = current.owners.values.flatten().toSet()
+    suspend fun pruneOrphans(
+        access: AccountLocalDataCoordinator.Access,
+        deleteAudio: (String) -> Unit,
+    ) = mutate(access) { pruneLocked(access, deleteAudio) }
 
-        val orphaned = current.files.keys.filterNot(claimed::contains)
-        val strandedTracks = current.tracks.keys.filterNot(claimed::contains)
-        if (orphaned.isEmpty() && strandedTracks.isEmpty()) return@withLock emptyList()
-
-        publish(
-            current.copy(
-                files = current.files - orphaned.toSet(),
-                tracks = current.tracks - strandedTracks.toSet(),
-                failures = current.failures - strandedTracks.toSet(),
-            ),
-        )
-        save()
-        orphaned
+    /** Clear only this account. Never delete the shared native root, sidecars or extras tree. */
+    suspend fun clearAll(
+        access: AccountLocalDataCoordinator.Access,
+        deleteAudio: (String) -> Unit,
+    ) = mutate(access) {
+        ownerRefreshFences.clear()
+        commit(_index.value.copy(owners = emptyMap(), ownerOccurrences = emptyMap(), labels = emptyMap(), legacyOwnerUris = emptyMap()))
+        _progress.value = emptyMap()
+        pruneLocked(access, deleteAudio)
     }
 
-    /** Everything goes: the index, and the whole store the engine writes into. */
-    suspend fun clearAll() = withContext(Dispatchers.IO) {
-        writeLock.withLock {
-            publish(Index())
-            _progress.value = emptyMap()
-            runCatching { root.deleteRecursively() }
-            root.mkdirs()
-            // The extras live under the same root and go with it; this is only
-            // to drop whatever the object is holding on to.
-            dev.lelonio.square.download.DownloadExtras.clear()
-            save()
+    private fun pruneLocked(access: AccountLocalDataCoordinator.Access, deleteAudio: (String) -> Unit) {
+        val current = _index.value
+        val claimed = current.owners.values.flatten().toSet()
+        val orphaned = current.files.keys.filterNot(claimed::contains).toSet()
+        val others = book.accounts.filterKeys { it != access.namespace }.values + listOfNotNull(book.legacy)
+        val retired = mutableSetOf<String>()
+        // Include physical records left between the last two namespaces' removals. A namespace
+        // may own a pending track without yet having its own completion record.
+        for ((uri, record) in book.assets) {
+            if (uri in claimed || (uri in current.files && uri !in orphaned)) continue
+            val referencedHere = claimed.any { key -> book.assets[key]?.trackId == record.trackId }
+            val referenced = referencedHere || others.any { other ->
+                uri in other.files || other.owners.values.any { uri in it } ||
+                    other.files.values.any { it.trackId == record.trackId } ||
+                    other.owners.values.flatten().any { book.assets[it]?.trackId == record.trackId }
+            }
+            // No suspending/network callback here. The queue must have really joined before GC.
+            // Failure retains the physical record for retry; account data and bytes stay recoverable.
+            if (!referenced) {
+                deleteAudio(uri)
+                retired += uri
+            }
         }
+        val stranded = current.tracks.keys.filterNot(claimed::contains).toSet()
+        commit(current.copy(files = current.files - orphaned, tracks = current.tracks - stranded,
+            failures = current.failures - stranded), retired)
+    }
+
+    suspend fun beginLegacyAssignment(access: AccountLocalDataCoordinator.Access): LegacyAssignment? =
+        mutate(access) {
+            book.legacy?.let { LegacyAssignment(this, access, legacyFingerprint(it)) }
+        }
+
+    /**
+     * One atomic commit is the journal: before publication the old pending document wins;
+     * after it, the full destination plus consumed decision wins. No file move, deletion,
+     * network request, consent or partial multi-file transition is needed on restart.
+     */
+    suspend fun confirmLegacyAssignment(choice: LegacyAssignment) = mutate(choice.access) {
+        require(choice.store === this) { "Legacy choice belongs to another store" }
+        val legacy = checkNotNull(book.legacy) { "Legacy downloads already assigned" }
+        check(choice.fingerprint == legacyFingerprint(legacy)) { "Legacy downloads changed" }
+        val current = _index.value
+        val existingFiles = legacy.files.filterValues { audioFile(it.trackId).isFile }
+        var merged = current.copy(files = existingFiles + current.files,
+            tracks = legacy.tracks + current.tracks, failures = legacy.failures + current.failures)
+        for ((originalUri, uris) in legacy.owners) {
+            // Archive identifiers preserve provenance and prevent claiming that attribution
+            // also granted ongoing Spotify refresh or automatic liked-song downloads.
+            val archived = "downloads:legacy:" + digest(originalUri)
+            val occurrences = occurrencesFor(legacy, originalUri)
+            val label = legacy.labels[originalUri] ?: OwnerLabel(when (originalUri) {
+                SINGLES -> appContext.getString(dev.lelonio.square.R.string.downloaded_tracks)
+                LIKED -> appContext.getString(dev.lelonio.square.R.string.liked_songs)
+                else -> originalUri
+            })
+            merged = merged.copy(
+                owners = merged.owners + (archived to uris),
+                ownerOccurrences = merged.ownerOccurrences + (archived to occurrences),
+                labels = merged.labels + (archived to label),
+                legacyOwnerUris = merged.legacyOwnerUris + (archived to originalUri),
+            )
+        }
+        val next = book.copy(accounts = book.accounts + (choice.access.namespace to merged),
+            assets = legacy.files + book.assets, legacy = null, legacyAssignedTo = choice.access.namespace)
+        persist(next) // on failure, pending state and memory remain unchanged
+        book = next
+        updateLegacyStatus()
+        accounts.use(choice.access) { publish(merged) }
+    }
+
+    private fun legacyFingerprint(index: Index) = digest(json.encodeToString(Index.serializer(), index))
+    private fun digest(value: String): String = java.security.MessageDigest.getInstance("SHA-256")
+        .digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+
+    private fun updateLegacyStatus() {
+        _legacy.value = book.legacy?.let { LegacyStatus(true, it.owners.size, it.files.size) } ?: LegacyStatus()
     }
 
     // ------------------------------------------------------------- internals
+
+    private fun occurrencesFor(index: Index, ownerUri: String): List<OwnerOccurrence> =
+        index.owners[ownerUri].orEmpty().mapIndexed { position, uri ->
+            index.ownerOccurrences[ownerUri]?.getOrNull(position)?.takeIf { it.uri == uri }
+                ?: OwnerOccurrence(uri)
+        }
 
     private fun audioFile(trackId: String): File =
         File(File(root, "audio"), trackId.take(2)).resolve(trackId.drop(2))
 
     private fun publish(index: Index) {
-        _index.value = index
-        _files.value = index.files
+        _ownerStates.value = emptyMap()
+        val effective = index.copy(files = index.files.mapValues { (uri, record) -> book.assets[uri] ?: record })
+        _index.value = effective
+        _files.value = effective.files
         _owners.value = index.owners
         _failures.value = index.failures
+        updateOwnerStates()
     }
 
-    /**
-     * Writes the index through a temporary file.
-     *
-     * Not debounced: every caller here is a whole-playlist change or the end of
-     * a download, which is at most one write every few seconds even with the
-     * queue running flat out. Progress ticks, which arrive several times a
-     * second, never reach this — they live only in [progress].
-     */
-    private fun save() {
-        val snapshot = _index.value
-        scope.launch {
-            runCatching {
-                root.mkdirs()
-                val tmp = File(root, "$INDEX_NAME.tmp")
-                tmp.writeText(json.encodeToString(Index.serializer(), snapshot))
-                if (!tmp.renameTo(indexFile)) {
-                    indexFile.delete()
-                    tmp.renameTo(indexFile)
-                }
-            }
-        }
+    private fun updateOwnerStates() {
+        val access = accounts.capture()
+        if (access == null) { _ownerStates.value = emptyMap(); return }
+        val states = _owners.value.keys.associateWith(::ownerState)
+        _ownerStates.value = if (accounts.isCurrent(access)) states else emptyMap()
+    }
+
+    private fun persist(next: AccountIndex) {
+        root.mkdirs()
+        persistIndex(indexFile, json.encodeToString(AccountIndex.serializer(), next))
+    }
+
+    private fun commit(index: Index, retiredAssets: Set<String> = emptySet()) {
+        val access = checkNotNull(accounts.capture())
+        val next = book.copy(accounts = book.accounts + (access.namespace to index),
+            assets = (book.assets + index.files) - retiredAssets)
+        persist(next)
+        book = next
+        accounts.use(access) { publish(index) }
     }
 
     companion object {

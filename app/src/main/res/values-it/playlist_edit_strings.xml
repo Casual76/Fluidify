@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_edit_create_unconfirmed">Creazione di “%1$s” non confermata</string>
+    <string name="playlist_edit_rename_unconfirmed">Rinomina di “%1$s” non confermata</string>
+    <string name="playlist_edit_delete_unconfirmed">Eliminazione di “%1$s” non confermata</string>
+    <string name="playlist_edit_remove_unconfirmed">Rimozione di “%1$s” non confermata</string>
+    <string name="playlist_edit_check_before_retry">Il servizio non ha confermato la modifica. Aggiorna la raccolta o riapri la playlist per verificare prima di riprovare.</string>
+    <string name="playlist_edit_unavailable">Le modifiche alle playlist non sono disponibili. Controlla la connessione e l’account connesso prima di riprovare.</string>
+    <string name="playlist_edit_selection_changed">La playlist è cambiata o si sta ancora caricando. Riapri il menu del brano e seleziona di nuovo l’occorrenza.</string>
+</resources>

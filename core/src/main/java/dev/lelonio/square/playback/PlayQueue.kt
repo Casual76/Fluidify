@@ -392,6 +392,7 @@ class PlayQueue {
         return best
     }
 
+    @androidx.annotation.OptIn(markerClass = [androidx.media3.common.util.UnstableApi::class])
     private fun toTrack(item: MediaItem): Track? {
         val uri = item.mediaId.takeIf { it.startsWith("spotify:") } ?: return null
         val metadata = item.mediaMetadata

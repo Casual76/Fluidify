@@ -16,7 +16,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
-import androidx.compose.animation.togetherWith
 import androidx.compose.animation.core.Spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
@@ -37,9 +36,22 @@ import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.selected
+import androidx.compose.ui.semantics.heading
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.platform.testTag
+import com.adamglin.phosphoricons.regular.TextAlignLeft
+import com.adamglin.phosphoricons.regular.Info
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.systemBarsPadding
@@ -52,8 +64,6 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.annotation.StringRes
 import androidx.compose.runtime.saveable.rememberSaveable
-import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.ui.draw.drawWithCache
 import androidx.compose.ui.graphics.BlendMode
 import androidx.compose.ui.graphics.CompositingStrategy
@@ -74,6 +84,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.zIndex
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.clip
@@ -178,6 +189,7 @@ private enum class Stage {
 }
 
 @UnstableApi
+@OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
 fun PlayerScreen(
     state: PlaybackState,
@@ -302,8 +314,15 @@ fun PlayerScreen(
     connectAvailable: Boolean = true,
     /** Whether the sound is coming out of another of the account's devices. */
     onAnotherDevice: Boolean = false,
+    airPods: dev.lelonio.square.ui.airpods.AirPodsUiBinding? = null,
 ) {
-    var panel by remember { mutableStateOf(PlayerPanel.NONE) }
+    val motionPolicy = dev.antigravity.fluidengine.ui.fluid.LocalFluidMotionPolicy.current
+    // Font-scale changes recreate the Activity even when ordinary window resizes do not.
+    var panel by rememberSaveable { mutableStateOf(PlayerPanel.NONE) }
+    val queueScroll = androidx.compose.foundation.lazy.rememberLazyListState()
+    val controlsScroll = rememberScrollState()
+    val devicesScroll = rememberScrollState()
+    val playlistsScroll = rememberScrollState()
 
     /** Bumped to open the karaoke control; see KaraokeDial. */
     var karaokeExpand by remember { androidx.compose.runtime.mutableIntStateOf(0) }
@@ -325,7 +344,7 @@ fun PlayerScreen(
      * controls, having forgotten how they were hidden, is the one way this can
      * be a trap.
      */
-    var immersive by remember { mutableStateOf(false) }
+    var immersive by rememberSaveable { mutableStateOf(false) }
 
     // Out of immersion before out of the player. The sheet's own handler is
     // registered further out, so this one is asked first, which is the order
@@ -385,7 +404,7 @@ fun PlayerScreen(
     var canvasReady by remember(canvas?.url) { mutableStateOf(false) }
     // `playerOpen` is handed over as it is: it reads the morph's open fraction, and read here it
     // recomposed this whole screen on every frame of opening and dragging the player.
-    val audioLight = rememberAudioLight(state.isPlaying && !state.isBuffering, visible = playerOpen)
+    val audioLight = rememberAudioLight(state.isPlaying && !state.isBuffering && motionPolicy.allowDecorativeMotion, visible = playerOpen)
     val audioLit by remember { derivedStateOf { audioLight.value != null } }
     var lightCoverBounds by remember { mutableStateOf(androidx.compose.ui.geometry.Rect.Zero) }
     var lightOrigin by remember { mutableStateOf(androidx.compose.ui.geometry.Offset.Zero) }
@@ -487,6 +506,10 @@ fun PlayerScreen(
                 .fillMaxSize()
                 // One layer for both of the things that happen to the stage.
                 .onGloballyPositioned { lightOrigin = it.localToRoot(androidx.compose.ui.geometry.Offset.Zero) }
+                // Capture the rendered stage, including its blur and swipe transform.
+                // glassBackdropSource records only modifiers AFTER it: putting it
+                // inside graphicsLayer gave the glass its input before blur/transform.
+                // Chrome stays in the sibling subtree below, outside this source.
                 //
                 // The blur is spelled out as a render effect rather than left to
                 // `Modifier.blur`, which takes its radius as an argument and so
@@ -500,7 +523,7 @@ fun PlayerScreen(
                 // could be about. Damped, because the clip is the backdrop of
                 // everything above it and moving it one to one drags the whole
                 // screen's refraction with it.
-                .graphicsLayer {
+                .playerStageSource(stageGlass, frozen = stageFrozen) {
                     val radius = canvasBlur.value.toPx()
                     renderEffect = if (radius > 0.5f) {
                         BlurEffect(radius, radius, TileMode.Clamp)
@@ -510,16 +533,14 @@ fun PlayerScreen(
                     clip = radius > 0.5f
 
                     val shift = canvasShift.floatValue
-                    if (shift == 0f) return@graphicsLayer
+                    if (shift == 0f) return@playerStageSource
                     translationX = shift * CANVAS_SWIPE_FOLLOW
                     val travel = (abs(shift) / size.width).coerceIn(0f, 1f)
                     val shrink = 1f - travel * 0.12f
                     scaleX = shrink
                     scaleY = shrink
                     alpha = 1f - travel * 0.5f
-                }
-                // The engine's copy of the same picture; see stageGlass.
-                .glassBackdropSource(stageGlass, frozen = stageFrozen),
+                },
         ) {
             // Inside the recorded layer, and that is the point: the glass above
             // samples this backdrop, so light drawn here is light the buttons
@@ -727,11 +748,11 @@ fun PlayerScreen(
             // half — had turned dark with the rest of the page. Only a part of the player changing
             // side is exactly what that looks like.
             //
-            // The stage alone and not `playerGlass`: the combined one carries the app's ground
-            // with it, and the app's ground is the thing whose veil belongs to the page. The stage
-            // is this screen's own floor, recorded before its body, so nothing sampling it can be
-            // inside it.
-            dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop provides stageGlass,
+            // Match the visible composition in both scopes. Without an opaque
+            // Canvas the stage is transparent over ground; sampling stage alone
+            // omitted that floor. An opaque Canvas naturally covers ground.
+            // Both recordings exclude the player's chrome.
+            dev.antigravity.fluidengine.ui.fluid.LocalFluidCanvasBackdrop provides playerGlass,
         ) {
             PlayerCollapseDrag(
                 onDrag = onMorphDrag,
@@ -739,11 +760,14 @@ fun PlayerScreen(
                 open = playerOpen,
                 modifier = Modifier.fillMaxSize(),
             ) {
+                BoxWithConstraints(Modifier.fillMaxSize().systemBarsPadding()) {
+                val twoPane = playerUsesTwoPanes(
+                    maxWidth, maxHeight, androidx.compose.ui.platform.LocalDensity.current.fontScale,
+                )
                 Column(
-                    Modifier
-                        .fillMaxSize()
-                        .systemBarsPadding()
-                        .padding(horizontal = 20.dp),
+                    Modifier.align(Alignment.Center)
+                        .then(Modifier.widthIn(max = if (twoPane) 1240.dp else 600.dp))
+                        .fillMaxSize().padding(horizontal = 20.dp),
                 ) {
                     // Leaving, not vanishing.
                     //
@@ -770,6 +794,7 @@ fun PlayerScreen(
                         ) + androidx.compose.animation.fadeOut(FluidMotion.fadeOut(CHROME_FADE_MS)),
                     ) {
                     TopBar(
+                        airPods = airPods,
                         panel = panel,
                         source = state.source,
                         onOpenSource = state.contextUri?.let { uri ->
@@ -794,48 +819,6 @@ fun PlayerScreen(
                     )
                     }
 
-                    // Everything sits at the bottom, as in the reference: the
-                    // artwork behind is the subject, and the controls are a
-                    // stack of panes laid over its lower third rather than a
-                    // screen of their own.
-                    // Not scrollable: a weighted spacer inside a scrolling
-                    // column measures against an infinite height. The panels
-                    // below cap their own height and scroll internally, so the
-                    // screen never needs to.
-                    Column(
-                        Modifier.fillMaxSize(),
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.Bottom,
-                    ) {
-                        // With a Canvas the clip *is* the picture and a cover on
-                        // top would compete with it. Without one, the cover
-                        // fills the space above the controls — the shadow that
-                        // settles on pause is the only motion tying this screen
-                        // to the transport, and losing it left a still page.
-                        //
-                        // `weight(1f)`, not `weight(1f, fill = false)`: with the
-                        // column arranged from the bottom, "as much space as it
-                        // wants" is nothing once the controls have taken theirs.
-                        // One slot, cross-faded, rather than two AnimatedVisibility
-                        // blocks taking turns.
-                        //
-                        // Both of those carried a weight, so while one was
-                        // leaving and the other arriving the column briefly had
-                        // two weighted children and split the space between
-                        // them — the cover shrank sideways as it left instead of
-                        // simply going. A plain fade is what opening a lyric
-                        // sheet should look like, and holding the slot open
-                        // keeps everything below it still.
-                        // The cover is drawn here rather than as one of the
-                        // states below.
-                        //
-                        // As a state it could not be made to dissolve: whichever
-                        // container held it — Crossfade first, then
-                        // AnimatedContent — dropped it from the composition in
-                        // the same frame the panel arrived, so there was nothing
-                        // left to fade. The panels go on swapping between
-                        // themselves; the cover is simply the floor of this
-                        // slot, and opening a panel takes its opacity away.
                         val coverShowing = panel == PlayerPanel.NONE &&
                             !(videoOn && videoPlayer != null && LocalGlassEnabled.current) &&
                             (canvas == null || !canvasReady)
@@ -879,30 +862,16 @@ fun PlayerScreen(
                         // — is there any cover left to draw — stays up here,
                         // and derived so it fires twice a change rather than
                         // sixty times a second.
-                        // Side by side instead of one instead of the other,
-                        // when there is room for both.
-                        //
-                        // On a phone the cover and whatever is open are the same
-                        // square foot of screen and the app has to choose; on a
-                        // window twice as wide, choosing is the app pretending it
-                        // is still on a phone. The cross-fade between them is
-                        // what goes: there is nothing to fade between when both
-                        // are there.
-                        val twoPane = androidx.compose.ui.platform.LocalConfiguration.current
-                            .screenWidthDp.dp >= TwoPaneWidth && panel != PlayerPanel.NONE
-
                         val coverPresent by remember(phase, twoPane) {
                             derivedStateOf { twoPane || phase.value < 0.5f }
                         }
 
-                        BoxWithConstraints(Modifier.weight(1f), contentAlignment = Alignment.Center) {
-                            // Half the slot, shifted to its own side. Placed by
-                            // arithmetic rather than by an alignment: the two
-                            // panes are the *same* box at two positions, and an
-                            // alignment would have them agree about the middle
-                            // and disagree about everything else.
-                            val paneWidth = maxWidth / 2f
-                            val paneShift = maxWidth / 4f
+                        AdaptivePlayerLayout(
+                            twoPane = twoPane,
+                            panelOpen = panel != PlayerPanel.NONE,
+                            modifier = Modifier.weight(1f).fillMaxWidth(),
+                            media = {
+                            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
                             // Says so in words, over whatever the slot is
                             // showing.
                             //
@@ -929,19 +898,17 @@ fun PlayerScreen(
                                 }
                             }
 
+                            if (airPods?.state?.playerVisible == true && !immersive && state.source.isNotBlank()) {
+                                Text(state.source, style = MaterialTheme.typography.labelSmall,
+                                    maxLines = 1, overflow = TextOverflow.Ellipsis,
+                                    modifier = Modifier.align(Alignment.TopCenter).zIndex(2f)
+                                        .heightIn(min = 48.dp).then(state.contextUri?.let { uri ->
+                                            Modifier.plainClickable { onCollapse(); onOpenUri(uri, state.source) }
+                                        } ?: Modifier))
+                            }
                             if (coverPresent) {
                                 Box(
-                                    Modifier
-                                        .then(
-                                            if (twoPane) {
-                                                Modifier
-                                                    .fillMaxHeight()
-                                                    .width(paneWidth)
-                                                    .offset(x = -paneShift)
-                                            } else {
-                                                Modifier.fillMaxSize()
-                                            },
-                                        )
+                                    Modifier.fillMaxSize()
                                         .graphicsLayer {
                                             alpha = if (twoPane) {
                                                 1f
@@ -969,6 +936,9 @@ fun PlayerScreen(
                                 }
                             }
 
+                            }
+                            },
+                            detail = {
                         AnimatedContent(
                             targetState = when (panel) {
                                 PlayerPanel.LYRICS -> Stage.LYRICS
@@ -1008,18 +978,7 @@ fun PlayerScreen(
                                     fadeOut(FluidMotion.fadeOut(STAGE_FADE_MS)) using null
                             },
                             label = "stage",
-                            modifier = Modifier
-                                .then(
-                                    if (twoPane) {
-                                        Modifier
-                                            .fillMaxHeight()
-                                            .width(paneWidth)
-                                            .offset(x = paneShift)
-                                            .padding(start = 20.dp)
-                                    } else {
-                                        Modifier.fillMaxSize()
-                                    },
-                                )
+                            modifier = Modifier.fillMaxSize()
                                 .graphicsLayer {
                                     alpha = if (twoPane) {
                                         1f
@@ -1057,6 +1016,7 @@ fun PlayerScreen(
                                     isPlaying = state.isPlaying,
                                     onSeek = onSeek,
                                     expandSignal = karaokeExpand,
+                                    controlsAbove = twoPane,
                                 )
 
                                 // Effects and the queue share the lyrics' space
@@ -1078,13 +1038,14 @@ fun PlayerScreen(
                                         onPlay = onPlayQueueItem,
                                         onRemove = onRemoveQueueItem,
                                         onMove = onMoveQueueItem,
+                                        listState = queueScroll,
                                     )
                                 }
 
                                 Stage.DEVICES -> Box(
                                     Modifier
                                         .fillMaxSize()
-                                        .verticalScroll(rememberScrollState()),
+                                        .verticalScroll(devicesScroll),
                                 ) {
                                     DeviceList(
                                         state = devices,
@@ -1098,7 +1059,7 @@ fun PlayerScreen(
                                 Stage.ADD_TO_PLAYLIST -> Box(
                                     Modifier
                                         .fillMaxSize()
-                                        .verticalScroll(rememberScrollState()),
+                                        .verticalScroll(playlistsScroll),
                                 ) {
                                     PlaylistPicker(
                                         state = addToPlaylist,
@@ -1131,7 +1092,26 @@ fun PlayerScreen(
                                 }
                             }
                         }
-                        }
+                            },
+                            controls = {
+                        if (twoPane) {
+                            TabletPlayerControls(
+                                state = state, positionMs = positionMs, panel = panel,
+                                onSelectPanel = { panel = it }, controlsScroll = controlsScroll,
+                                lyrics = lyrics, immersive = immersive, onPicture = { canvas != null },
+                                onOpenArtist = { uri, name -> onCollapse(); onOpenUri(uri, name) },
+                                onTogglePlay = onTogglePlay, onNext = onNext, onPrevious = onPrevious,
+                                onSeek = onSeek, onToggleShuffle = onToggleShuffle, onCycleRepeat = onCycleRepeat,
+                                onRadio = onRadio, playlistEditAvailable = playlistEditAvailable,
+                                inLikedSongs = inLikedSongs, alreadySaved = alreadySaved,
+                                onAddToPlaylist = onAddToPlaylist,
+                                videoAvailable = videoFileId != null, videoMode = videoMode, onToggleVideo = onToggleVideo,
+                            )
+                        } else {
+                        Column(
+                            Modifier.fillMaxWidth().verticalScroll(controlsScroll),
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                        ) {
 
                         Spacer(Modifier.height(20.dp))
 
@@ -1235,9 +1215,10 @@ fun PlayerScreen(
                                 .fillMaxWidth()
 
                         ) {
-                            Row(
+                            androidx.compose.foundation.layout.FlowRow(
                                 Modifier.padding(start = 22.dp, end = 10.dp, top = 12.dp, bottom = 12.dp),
-                                verticalAlignment = Alignment.CenterVertically,
+                                maxItemsInEachRow = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) 1 else 2,
+                                verticalArrangement = Arrangement.spacedBy(8.dp),
                             ) {
                                 TitleBlock(
                                     state,
@@ -1267,7 +1248,7 @@ fun PlayerScreen(
                                 // official client's own radio button does it.
                                 if (onRadio != null) {
                                     RoundGlassButton(
-                                        size = 40.dp,
+                                        size = 48.dp,
                                         onClick = onRadio,
                                     ) {
                                         Icon(
@@ -1284,7 +1265,7 @@ fun PlayerScreen(
                                 // it, which is why it sits here and not in the
                                 // segmented switch below.
                                 RoundGlassButton(
-                                    size = 40.dp,
+                                    size = 48.dp,
                                     onClick = {
                                         panel = if (panel == PlayerPanel.QUEUE) {
                                             PlayerPanel.NONE
@@ -1307,7 +1288,7 @@ fun PlayerScreen(
                                 if (playlistEditAvailable) {
                                 Spacer(Modifier.size(8.dp))
                                 RoundGlassButton(
-                                    size = 40.dp,
+                                    size = 48.dp,
                                     onClick = {
                                         panel = if (panel == PlayerPanel.ADD_TO_PLAYLIST) {
                                             PlayerPanel.NONE
@@ -1347,7 +1328,7 @@ fun PlayerScreen(
 
                         Spacer(Modifier.height(18.dp))
 
-                        PlaybackScrubber(positionMs, state.durationMs, onSeek)
+                        PlaybackScrubber(positionMs, state.durationMs, onSeek, resetKey = state.mediaId)
 
                         androidx.compose.animation.AnimatedVisibility(
                             visible = !immersive,
@@ -1388,11 +1369,150 @@ fun PlayerScreen(
                         }
 
                         Spacer(Modifier.height(20.dp))
+                        }
+                        }
+                            },
+                        )
                     }
                 }
             }
         }
 
+    }
+}
+
+/** One shared material gives the tablet column a header, transport and action rail.
+ * Panel/session/scroll owners remain in PlayerScreen, above the adaptive layout. */
+@Composable
+private fun TabletPlayerControls(
+    state: PlaybackState,
+    positionMs: State<Long>,
+    panel: PlayerPanel,
+    onSelectPanel: (PlayerPanel) -> Unit,
+    controlsScroll: androidx.compose.foundation.ScrollState,
+    lyrics: dev.lelonio.square.data.Lyrics?,
+    immersive: Boolean,
+    onPicture: () -> Boolean,
+    onOpenArtist: (String, String) -> Unit,
+    onTogglePlay: () -> Unit,
+    onNext: () -> Unit,
+    onPrevious: () -> Unit,
+    onSeek: (Long) -> Unit,
+    onToggleShuffle: () -> Unit,
+    onCycleRepeat: () -> Unit,
+    onRadio: (() -> Unit)?,
+    playlistEditAvailable: Boolean,
+    inLikedSongs: Boolean,
+    alreadySaved: Boolean,
+    onAddToPlaylist: () -> Unit,
+    videoAvailable: Boolean,
+    videoMode: Boolean,
+    onToggleVideo: () -> Unit,
+) {
+    // The finite scroll viewport keeps every action reachable on a short window.
+    // No additional surface around title or sung line.
+    Column(Modifier.fillMaxWidth().verticalScroll(controlsScroll).padding(vertical = 12.dp)) {
+        PlayerPane(
+            onPicture = onPicture,
+            shape = ContinuousCornerShape(dev.antigravity.fluidengine.ui.fluid.FluidRadius.Card),
+            modifier = Modifier.fillMaxWidth().testTag("tablet-player-controls"),
+        ) {
+            Column(Modifier.padding(horizontal = 20.dp, vertical = 16.dp)) {
+                TitleBlock(state, Modifier.fillMaxWidth(), onOpenArtist, tablet = true)
+
+                // A quiet, tappable annotation within the same material. The full
+                // lyric view has its own entry in the rail and needs no duplicate.
+                if (lyrics?.synced == true && panel != PlayerPanel.LYRICS) {
+                    Box(
+                        Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                            .plainClickable { onSelectPanel(PlayerPanel.LYRICS) },
+                        contentAlignment = Alignment.CenterStart,
+                    ) {
+                        SungLineLabel(lyrics, positionMs, state.isPlaying)
+                    }
+                }
+
+                Spacer(Modifier.height(8.dp))
+                PlaybackScrubber(positionMs, state.durationMs, onSeek, resetKey = state.mediaId)
+                AnimatedVisibility(
+                    visible = !immersive,
+                    enter = expandVertically(FluidMotion.intSize()) + fadeIn(FluidMotion.fadeIn(CHROME_IN_MS)),
+                    exit = shrinkVertically(FluidMotion.intSize()) + fadeOut(FluidMotion.fadeOut(CHROME_FADE_MS)),
+                ) {
+                    Column {
+                        Spacer(Modifier.height(8.dp))
+                        Controls(state, onTogglePlay, onNext, onPrevious, onToggleShuffle, onCycleRepeat)
+                        Spacer(Modifier.height(16.dp))
+                        Row(
+                            Modifier.fillMaxWidth().testTag("tablet-player-actions"),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            TabletPlayerAction(PhosphorIcons.Regular.Queue, stringResource(R.string.queue), panel == PlayerPanel.QUEUE) {
+                                onSelectPanel(if (panel == PlayerPanel.QUEUE) PlayerPanel.NONE else PlayerPanel.QUEUE)
+                            }
+                            TabletPlayerAction(PhosphorIcons.Regular.TextAlignLeft, stringResource(R.string.lyrics), panel == PlayerPanel.LYRICS) {
+                                onSelectPanel(if (panel == PlayerPanel.LYRICS) PlayerPanel.NONE else PlayerPanel.LYRICS)
+                            }
+                            TabletPlayerAction(PhosphorIcons.Regular.Info, stringResource(R.string.credits), panel == PlayerPanel.INFO) {
+                                onSelectPanel(if (panel == PlayerPanel.INFO) PlayerPanel.NONE else PlayerPanel.INFO)
+                            }
+                            if (onRadio != null) {
+                                TabletPlayerAction(PhosphorIcons.Regular.Broadcast, stringResource(R.string.radio), onClick = onRadio)
+                            }
+                            if (playlistEditAvailable) {
+                                TabletPlayerAction(
+                                    when {
+                                        inLikedSongs -> PhosphorIcons.Fill.Heart
+                                        alreadySaved -> PhosphorIcons.Regular.Check
+                                        else -> PhosphorIcons.Regular.Plus
+                                    },
+                                    stringResource(when {
+                                        inLikedSongs -> R.string.liked_songs
+                                        alreadySaved -> R.string.in_a_playlist
+                                        else -> R.string.add_to_playlist
+                                    }),
+                                    panel == PlayerPanel.ADD_TO_PLAYLIST || inLikedSongs || alreadySaved,
+                                ) {
+                                    if (panel == PlayerPanel.ADD_TO_PLAYLIST) onSelectPanel(PlayerPanel.NONE)
+                                    else { onAddToPlaylist(); onSelectPanel(PlayerPanel.ADD_TO_PLAYLIST) }
+                                }
+                            }
+                            if (videoAvailable) {
+                                TabletPlayerAction(
+                                    if (videoMode) PhosphorIcons.Regular.MusicNotes else PhosphorIcons.Regular.MonitorPlay,
+                                    stringResource(if (videoMode) R.string.switch_to_audio else R.string.switch_to_video),
+                                    onClick = onToggleVideo,
+                                )
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+/** Flat controls share their parent's material, retaining Fluid press/motion/haptics. */
+@Composable
+private fun TabletPlayerAction(
+    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    label: String,
+    active: Boolean? = null,
+    onClick: () -> Unit,
+) {
+    Box(
+        Modifier.size(48.dp).semantics {
+            if (active != null) selected = active
+            role = Role.Button
+        }
+            .fluidPressable(onClick = onClick)
+            .clip(ContinuousCornerShape(dev.antigravity.fluidengine.ui.fluid.FluidRadius.Card))
+            .background(if (active == true) MaterialTheme.colorScheme.primaryContainer else Color.Transparent),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, label, tint = if (active == true) MaterialTheme.colorScheme.onPrimaryContainer else GlassInk,
+            modifier = Modifier.size(22.dp))
     }
 }
 
@@ -1587,13 +1707,13 @@ private fun PanelAmbient(player: Player, onAmbient: (AmbientEdges) -> Unit) {
     val manifest by dev.lelonio.square.backend.spotify.SpotifyVideoMode.manifest
         .collectAsStateWithLifecycle()
     val report by rememberUpdatedState(onAmbient)
-    val http = remember { okhttp3.OkHttpClient() }
-
     LaunchedEffect(manifest) {
         val current = manifest ?: return@LaunchedEffect
+        val permit = runCatching { dev.lelonio.square.data.SpotifyNetworkPolicy.capture() }.getOrNull() ?: return@LaunchedEffect
         var lastUrl: String? = null
         var sheet: android.graphics.Bitmap? = null
         while (true) {
+            if (!dev.lelonio.square.data.SpotifyNetworkPolicy.isCurrent(permit.revision)) return@LaunchedEffect
             val at = withContext(kotlinx.coroutines.Dispatchers.Main) { player.currentPosition }
             val panel = current.panelAt(at)
             if (panel == null) {
@@ -1603,8 +1723,7 @@ private fun PanelAmbient(player: Player, onAmbient: (AmbientEdges) -> Unit) {
             withContext(kotlinx.coroutines.Dispatchers.IO) {
                 runCatching {
                     if (panel.url != lastUrl) {
-                        val request = okhttp3.Request.Builder().url(panel.url).build()
-                        val bytes = http.newCall(request).execute().use { it.body?.bytes() }
+                        val bytes = dev.lelonio.square.io.HttpFetch.bytes(panel.url, 32 * 1024 * 1024, permit)
                         sheet?.recycle()
                         sheet = bytes?.let {
                             android.graphics.BitmapFactory.decodeByteArray(it, 0, it.size)
@@ -1625,7 +1744,7 @@ private fun PanelAmbient(player: Player, onAmbient: (AmbientEdges) -> Unit) {
                     frame.recycle()
                     val edges = small.edges()
                     small.recycle()
-                    withContext(kotlinx.coroutines.Dispatchers.Main) { report(edges) }
+                    withContext(kotlinx.coroutines.Dispatchers.Main) { permit.admit { report(edges) } }
                 }
             }
             kotlinx.coroutines.delay(AMBIENT_INTERVAL_MS)
@@ -1659,6 +1778,7 @@ private fun TopBar(
     /** Null when the track has no video to watch. */
     onWatchVideo: (() -> Unit)?,
     videoOn: Boolean,
+    airPods: dev.lelonio.square.ui.airpods.AirPodsUiBinding? = null,
 ) {
     Row(
         Modifier
@@ -1671,7 +1791,11 @@ private fun TopBar(
         }
         // Names whatever the middle of the screen is currently showing, so the
         // switch below has a label without carrying one.
-        Crossfade(
+        if (airPods?.state?.playerVisible == true) {
+            Box(Modifier.weight(1f), contentAlignment = Alignment.Center) {
+                dev.lelonio.square.ui.airpods.AirPodsCapsule(airPods, Modifier.widthIn(max = 160.dp))
+            }
+        } else Crossfade(
             targetState = when (panel) {
                 PlayerPanel.LYRICS -> stringResource(R.string.lyrics)
                 PlayerPanel.INFO -> stringResource(R.string.info_panel)
@@ -1763,17 +1887,19 @@ private fun Cover(
     onLeaveImmersive: (() -> Unit)?,
     onBounds: (androidx.compose.ui.geometry.Rect) -> Unit = {},
 ) {
+    val motion = dev.antigravity.fluidengine.ui.fluid.LocalFluidMotionPolicy.current
     val coverFraction by animateFloatAsState(
         targetValue = if (panel == PlayerPanel.NONE) 0.82f else 0.44f,
+        animationSpec = if (motion.reducedMotion) androidx.compose.animation.core.snap() else FluidMotion.standard(),
         label = "cover",
     )
     val playingScale by animateFloatAsState(
-        targetValue = if (state.isPlaying) 1f else 0.88f,
+        targetValue = if (state.isPlaying || motion.reducedMotion) 1f else 0.88f,
         animationSpec = FluidMotion.fluid(),
         label = "coverScale",
     )
     val playingLift by animateFloatAsState(
-        targetValue = if (state.isPlaying) 1f else 0.35f,
+        targetValue = if (state.isPlaying || motion.reducedMotion) 1f else 0.35f,
         animationSpec = FluidMotion.crossFade(420),
         label = "coverLift",
     )
@@ -1835,6 +1961,7 @@ private fun TitleBlock(
     state: PlaybackState,
     modifier: Modifier = Modifier,
     onOpenArtist: (uri: String, name: String) -> Unit = { _, _ -> },
+    tablet: Boolean = false,
 ) {
     // Slid rather than swapped on a track change: this capsule is the only place
     // the track is named now that the big cover is gone, so the change has to be
@@ -1842,8 +1969,8 @@ private fun TitleBlock(
     AnimatedContent(
         targetState = state.title to state.artist,
         transitionSpec = {
-            (slideInVertically { it / 2 } + fadeIn(FluidMotion.fadeIn(220)))
-                .togetherWith(slideOutVertically { -it / 2 } + fadeOut(FluidMotion.fadeOut(170)))
+            (slideInVertically(FluidMotion.intOffset()) { it / 2 } + fadeIn(FluidMotion.fadeIn(220)))
+                .togetherWith(slideOutVertically(FluidMotion.intOffset()) { -it / 2 } + fadeOut(FluidMotion.fadeOut(170)))
         },
         label = "title",
         modifier = modifier,
@@ -1851,11 +1978,12 @@ private fun TitleBlock(
         Column {
             Text(
                 text = title,
-                style = MaterialTheme.typography.titleLarge,
-                maxLines = 1,
+                style = if (tablet) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
+                modifier = if (tablet) Modifier.semantics { heading() } else Modifier,
+                maxLines = if (tablet || androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) 2 else 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            ArtistLine(state, artist, onOpenArtist)
+            ArtistLine(state, artist, onOpenArtist, tablet)
         }
     }
 }
@@ -1877,6 +2005,7 @@ private fun ArtistLine(
     state: PlaybackState,
     artist: String,
     onOpenArtist: (uri: String, name: String) -> Unit,
+    tablet: Boolean = false,
 ) {
     val credits = state.artists
     // The names as written, so the spans below line up with what is drawn.
@@ -1889,10 +2018,22 @@ private fun ArtistLine(
         text = label,
         style = MaterialTheme.typography.bodyMedium,
         color = GlassInkDim,
-        maxLines = 1,
+        maxLines = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) 2 else 1,
         overflow = TextOverflow.Ellipsis,
         onTextLayout = { layout = it },
-        modifier = if (!openable) {
+        modifier = (if (tablet && openable) Modifier.heightIn(min = 48.dp).semantics {
+            onClick {
+                val credit = credits.firstOrNull { it.uri != null }
+                val uri = credit?.uri ?: state.artistUri
+                if (uri != null) onOpenArtist(uri, credit?.name ?: artist)
+                uri != null
+            }
+            customActions = credits.mapNotNull { credit ->
+                credit.uri?.let { uri ->
+                    CustomAccessibilityAction(credit.name) { onOpenArtist(uri, credit.name); true }
+                }
+            }
+        } else Modifier).then(if (!openable) {
             Modifier
         } else {
             Modifier.pointerInput(credits, label) {
@@ -1913,7 +2054,7 @@ private fun ArtistLine(
                     onOpenArtist(uri, hit?.name ?: artist)
                 }
             }
-        },
+        }),
     )
 }
 
@@ -2205,7 +2346,7 @@ private fun PlayerGlassButton(
     onClick: () -> Unit,
     content: @Composable () -> Unit,
 ) {
-    RoundGlassButton(size = 44.dp, onClick = onClick) { content() }
+    RoundGlassButton(size = 48.dp, onClick = onClick) { content() }
 }
 
 /** A control that opened the panel currently showing is coloured, not just lit. */
@@ -2279,6 +2420,7 @@ internal fun LyricsStage(
     /** Bumped when somebody arrives here asking for the karaoke control. */
     expandSignal: Int,
     modifier: Modifier = Modifier,
+    controlsAbove: Boolean = false,
 ) {
     // Off when a song starts: turning it on is asking to read this one.
     var translated by androidx.compose.runtime.saveable.rememberSaveable(lyrics) {
@@ -2289,9 +2431,9 @@ internal fun LyricsStage(
     // into — not the phone's, when the two have been made to differ on purpose.
     val context = androidx.compose.ui.platform.LocalContext.current
     val target = remember(context) {
-        (context.applicationContext as dev.lelonio.square.SquareApplication)
-            .language
-            .language()
+        val language = (context.applicationContext as? dev.lelonio.square.SquareApplication)
+            ?.language ?: dev.lelonio.square.data.LanguageStore(context)
+        language.language()
     }
 
     // What the translator answered for this song, once it has been asked.
@@ -2349,8 +2491,11 @@ internal fun LyricsStage(
                 positionMs = positionMs,
                 isPlaying = isPlaying,
                 showTranslation = translated,
+                controlsAbove = controlsAbove,
                 onSeek = onSeek,
-                modifier = Modifier.fillMaxSize(),
+                // Keep words out of the translation/karaoke control column.
+                modifier = Modifier.fillMaxSize()
+                    .then(if (controlsAbove) Modifier.padding(end = 64.dp) else Modifier),
             )
         }
 
@@ -2565,13 +2710,3 @@ private enum class InfoPage(@StringRes val label: Int) {
     ARTIST(R.string.artist),
     CREDITS(R.string.credits),
 }
-
-/**
- * Where the player stops choosing between the cover and what is open, and shows
- * both.
- *
- * Nine hundred, the same width the now-playing panel needs beside a page: below
- * it two halves are each narrower than a phone, and a cover that size next to
- * lyrics that size is worse than either of them alone.
- */
-private val TwoPaneWidth = 900.dp

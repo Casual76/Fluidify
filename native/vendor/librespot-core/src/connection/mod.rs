@@ -95,6 +95,43 @@ pub async fn connect_with_retry(
     }
 }
 
+pub async fn connect_with_network(
+    host: &str, port: u16, proxy: Option<&Url>, max_retries: u8,
+    network: &crate::network::NetworkLease,
+) -> Result<Transport, Error> {
+    for attempt in 0..=max_retries {
+        network.check()?;
+        let connect = network.transport("ap.connect", || connect(host, port, proxy))?;
+        match network.run(async { Ok(connect.await?) }).await {
+            Ok(transport) => return Ok(transport),
+            Err(error) => { network.check()?; if attempt == max_retries { return Err(error); } }
+        }
+    }
+    unreachable!()
+}
+
+pub async fn authenticate_with_network(
+    transport: &mut Transport, credentials: Credentials, device_id: &str,
+    network: &crate::network::NetworkLease,
+) -> Result<Credentials, Error> {
+    authenticate_with_network_and_receipt(transport,credentials,device_id,network, |_| Ok(())).await
+}
+
+pub async fn authenticate_with_network_and_receipt(
+    transport: &mut Transport, credentials: Credentials, device_id: &str,
+    network: &crate::network::NetworkLease,
+    receipt: impl FnOnce(&Credentials) -> Result<(), Error>,
+) -> Result<Credentials, Error> {
+    let auth = network.transport("ap.auth", || authenticate(transport, credentials, device_id))?;
+    network.run(async {
+        let credentials = auth.await?;
+        // A parsed rotation is account-local data. Persist it before the post-await lease fence,
+        // and before any token -> stored-credential reconnect could be admitted.
+        network.commit_local(|| receipt(&credentials))??;
+        Ok(credentials)
+    }).await
+}
+
 pub async fn authenticate(
     transport: &mut Transport,
     credentials: Credentials,

@@ -1,0 +1,7 @@
+<resources>
+    <string name="legacy_downloads_title">ये डाउनलोड किस खाते के हैं?</string>
+    <string name="legacy_downloads_message">खातों को अलग करने से पहले सहेजे गए डाउनलोड अभी भी इस डिवाइस पर हैं। क्या मौजूदा फ़ाइलें और ऑफ़लाइन संग्रह Spotify खाते %1$s को सौंपें?\n\nकोई नया डाउनलोड या अपने आप सिंक शुरू नहीं होगा। दूसरा खाता चुनने के लिए बाद में चुनें और उस खाते में साइन इन करें।</string>
+    <string name="legacy_downloads_later">बाद में / दूसरा खाता</string>
+    <string name="legacy_downloads_assign">इस खाते को सौंपें</string>
+    <string name="legacy_downloads_failed">डाउनलोड नहीं सौंपे जा सके। आपकी फ़ाइलें सुरक्षित हैं; फिर से कोशिश करें।</string>
+</resources>

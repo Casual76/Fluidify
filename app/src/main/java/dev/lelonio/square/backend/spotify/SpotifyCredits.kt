@@ -3,7 +3,6 @@ package dev.lelonio.square.backend.spotify
 import dev.lelonio.square.nativecore.NativeBridge
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
 
@@ -18,7 +17,7 @@ import org.json.JSONObject
  */
 object SpotifyCredits {
 
-    private val http = OkHttpClient()
+    private val http = dev.lelonio.square.data.SpotifyMediaClient.create()
 
     /** One group of people with the same job on this track. */
     data class Role(val title: String, val people: List<Person>)
@@ -44,25 +43,31 @@ object SpotifyCredits {
      * Null when the track has none, when the account cannot be asked, or when
      * anything at all goes wrong: this is a panel, not a feature to fail over.
      */
-    suspend fun of(trackUri: String): Credits? = withContext(Dispatchers.IO) {
-        val id = trackUri.substringAfterLast(':').takeIf { it.isNotEmpty() }
-            ?: return@withContext null
-        val token = NativeBridge.accessToken() ?: return@withContext null
+    suspend fun of(trackUri: String): Credits? {
+        val permit = runCatching { dev.lelonio.square.data.SpotifyNetworkPolicy.capture() }.getOrNull() ?: return null
+        return withContext(Dispatchers.IO) {
+            val id = trackUri.substringAfterLast(':').takeIf { it.isNotEmpty() }
+                ?: return@withContext null
+            val token = runCatching {
+                permit.dispatch { NativeBridge.accessToken() }
+            }.getOrNull() ?: return@withContext null
 
-        runCatching {
-            val request = Request.Builder()
-                .url("$HOST/track-credits-view/v0/experimental/$id/credits")
-                .header("authorization", "Bearer $token")
-                .header("accept", "application/json")
-                .build()
+            runCatching {
+                val request = Request.Builder()
+                    .url("$HOST/track-credits-view/v0/experimental/$id/credits")
+                    .header("authorization", "Bearer $token")
+                    .header("accept", "application/json")
+                    .tag(dev.lelonio.square.data.SpotifyNetworkPolicy.Permit::class.java, permit)
+                    .build()
 
-            http.newCall(request).execute().use { response ->
-                if (!response.isSuccessful) return@withContext null
-                parse(JSONObject(response.body?.string().orEmpty()))
+                http.newCall(request).execute().use { response ->
+                    if (!response.isSuccessful) return@withContext null
+                    parse(JSONObject(response.body?.string().orEmpty()))
+                }
             }
+                .onFailure { android.util.Log.i(TAG, "no credits for $trackUri: ${it.message}") }
+                .getOrNull()
         }
-            .onFailure { android.util.Log.i(TAG, "no credits for $trackUri: ${it.message}") }
-            .getOrNull()
     }
 
     private fun parse(body: JSONObject): Credits {

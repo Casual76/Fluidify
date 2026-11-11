@@ -10,6 +10,9 @@ mod collection;
 mod downloads;
 mod playlists;
 mod engine;
+mod local_player;
+#[cfg(test)]
+mod manual_offline_tests;
 mod events;
 mod ffi;
 mod pathfinder;

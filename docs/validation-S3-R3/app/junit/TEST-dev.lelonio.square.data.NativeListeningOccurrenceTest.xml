@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.data.NativeListeningOccurrenceTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-07T20:44:52.743Z" hostname="PC_FISSO" time="0.276">
+  <properties/>
+  <testcase name="explicitSelectionBindsOneNativeRequestAndRestoredTokenFailsClosedOnFreshLoad" classname="dev.lelonio.square.data.NativeListeningOccurrenceTest" time="0.014"/>
+  <testcase name="freshLoadCannotOverwriteRestoredOwnedSameUriCheckpoint" classname="dev.lelonio.square.data.NativeListeningOccurrenceTest" time="0.061"/>
+  <testcase name="freshNativeSameUriTwentyPlusTwentyAreTwoUnqualifiedOccurrences" classname="dev.lelonio.square.data.NativeListeningOccurrenceTest" time="0.054"/>
+  <testcase name="nativeEndBelowDurationSeparatesRepeatOneAndConsecutiveDuplicateUris" classname="dev.lelonio.square.data.NativeListeningOccurrenceTest" time="0.074"/>
+  <testcase name="continuingShuffleInsertRemoveMoveReindexesRemainOneQualifiedFortySeconds" classname="dev.lelonio.square.data.NativeListeningOccurrenceTest" time="0.059"/>
+  <testcase name="nativeResumeSeekPauseAndPrefetchKeepIdentityButNewSelectionDoesNot" classname="dev.lelonio.square.data.NativeListeningOccurrenceTest" time="0.012"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

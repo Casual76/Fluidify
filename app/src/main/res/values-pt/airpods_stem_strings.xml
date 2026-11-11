@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_stem_local_choice">Salvo neste telefone</string>
+    <string name="airpods_stem_shared">Pressão longa &#183; estado compartilhado do dispositivo</string>
+    <string name="airpods_stem_unknown">Interceptação atual: desconhecida. Nenhuma leitura atual do dispositivo.</string>
+    <string name="airpods_stem_intercepted">Leitura atual: o Fluidify intercepta as pressões longas dos dois lados.</string>
+    <string name="airpods_stem_hardware">Leitura atual: os fones de ouvido gerenciam as pressões longas.</string>
+    <string name="airpods_stem_pending">Última solicitação: aguardando uma leitura do dispositivo. As alterações dos dois lados estão pausadas.</string>
+    <string name="airpods_stem_match">Última solicitação: foi recebida uma leitura correspondente do dispositivo.</string>
+    <string name="airpods_stem_other">Última solicitação: o dispositivo informou uma configuração diferente.</string>
+    <string name="airpods_stem_timeout">Última solicitação: nenhuma confirmação em 5 segundos. A escolha salva continua sendo uma intenção local.</string>
+    <string name="airpods_stem_failed">Última solicitação: falha no envio. A escolha salva continua sendo uma intenção local.</string>
+    <string name="airpods_stem_closed">Última solicitação: a conexão foi encerrada antes da confirmação.</string>
+    <string name="airpods_stem_no_command">Nenhuma solicitação nesta conexão. As escolhas salvas são intenções locais.</string>
+    <string name="airpods_stem_need_observation">Aguarde uma leitura atual do dispositivo antes de alterar as pressões longas.</string>
+</resources>

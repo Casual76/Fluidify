@@ -185,4 +185,8 @@
     <string name="updated_to">%1$s sürümüne güncellendi</string>
     <string name="updated_to_tap">Yeniliklere bak</string>
     <string name="update_downloading_wifi">Wi-Fi ile indiriliyor…</string>
+    <string name="watch_downloads_legacy_note">Eski indirmelerin sahibi bilinmiyor. Bunları bir hesaba atamadan saklayabilir veya bu saatte oturum açılan hesaba atayabilirsiniz.</string>
+    <string name="watch_downloads_legacy_assign">Eski indirmeleri ata…</string>
+    <string name="watch_downloads_legacy_confirm">Onayla: %1$s hesabına ata</string>
+    <string name="watch_downloads_legacy_later">Atamadan sakla</string>
 </resources>

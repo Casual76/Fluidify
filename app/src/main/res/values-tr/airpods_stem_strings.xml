@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_stem_local_choice">Bu telefona kaydedildi</string>
+    <string name="airpods_stem_shared">Uzun basma &#183; paylaşılan cihaz durumu</string>
+    <string name="airpods_stem_unknown">Mevcut yakalama durumu: bilinmiyor. Cihazdan alınmış güncel bir okuma yok.</string>
+    <string name="airpods_stem_intercepted">Güncel okuma: Fluidify her iki taraftaki uzun basmaları yakalıyor.</string>
+    <string name="airpods_stem_hardware">Güncel okuma: uzun basmaları kulaklıklar işliyor.</string>
+    <string name="airpods_stem_pending">Son istek: cihazdan bir okuma bekleniyor. Her iki taraftaki değişiklikler duraklatıldı.</string>
+    <string name="airpods_stem_match">Son istek: cihazdan istekle eşleşen bir okuma alındı.</string>
+    <string name="airpods_stem_other">Son istek: cihaz farklı bir ayar bildirdi.</string>
+    <string name="airpods_stem_timeout">Son istek: 5 saniye içinde onay alınmadı. Kaydedilen seçim yalnızca yerel bir tercih olarak kalır.</string>
+    <string name="airpods_stem_failed">Son istek: gönderme başarısız oldu. Kaydedilen seçim yalnızca yerel bir tercih olarak kalır.</string>
+    <string name="airpods_stem_closed">Son istek: onay alınmadan bağlantı kapandı.</string>
+    <string name="airpods_stem_no_command">Bu bağlantıda istek yok. Kaydedilen seçimler yalnızca yerel tercihlerdir.</string>
+    <string name="airpods_stem_need_observation">Uzun basmaları değiştirmeden önce cihazdan güncel bir okuma gelmesini bekleyin.</string>
+</resources>

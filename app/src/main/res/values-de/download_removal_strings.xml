@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_removal_title">Downloads entfernen?</string>
+    <string name="download_removal_message">Die heruntergeladene Kopie von „%1$s“ von diesem Gerät entfernen? Zum Offlinehören muss sie erneut heruntergeladen werden. Titel aus anderen heruntergeladenen Sammlungen bleiben verfügbar.</string>
+</resources>

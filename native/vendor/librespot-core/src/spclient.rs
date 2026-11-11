@@ -34,7 +34,7 @@ use hyper::{
     HeaderMap, Method, Request,
     header::{ACCEPT, ACCEPT_LANGUAGE, AUTHORIZATION, CONTENT_LENGTH, CONTENT_TYPE, HeaderName, RANGE},
 };
-use hyper_util::client::legacy::ResponseFuture;
+use crate::http_client::ResponseFuture;
 use protobuf::{Enum, EnumOrUnknown, Message, MessageFull};
 use rand::RngCore;
 use serde::Serialize;
@@ -471,6 +471,7 @@ impl SpClient {
         let body = body.unwrap_or_default();
 
         loop {
+            self.session().network().check()?;
             tries += 1;
 
             // Reconnection logic: retrieve the endpoint every iteration, so we can try
@@ -571,7 +572,7 @@ impl SpClient {
                         // straight back was re-sent at once, ten times in a row,
                         // into a server that had just said it was struggling.
                         let pause = std::time::Duration::from_millis(200 * tries.min(10) as u64);
-                        tokio::time::sleep(pause).await;
+                        self.session().network().run(async { tokio::time::sleep(pause).await; Ok(()) }).await?;
                     }
                     _ => break, // if we can't build the request now, then we won't ever
                 }

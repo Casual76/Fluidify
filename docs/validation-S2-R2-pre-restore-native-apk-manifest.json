@@ -1,0 +1,51 @@
+{
+  "apk": {
+    "path": "app/build/outputs/apk/debug/app-debug.apk",
+    "bytes": 80275333,
+    "sha256": "383AA1A5D4E6D60CC7D2E616DFCFE97EE7A5446E6254CF93F4F9130FA8BA5B27"
+  },
+  "nativeSourceSha256": "713AAC39D48A6BDB2CD3560CA61EC541B8DCE2925DB0739D37B81BFF810B63AD",
+  "rebuilt": [
+    {
+      "abi": "arm64-v8a",
+      "path": "core/src/main/jniLibs/arm64-v8a/libsquarecore.so",
+      "bytes": 9415360,
+      "sha256": "8C341E02AE0E5E92C9B305C7AEB712C7BD6EBBDC3E3E73418BF567DC1EE0A63F",
+      "differsFromPreBuild": true,
+      "containsPlaybackRequestTransport": true
+    },
+    {
+      "abi": "armeabi-v7a",
+      "path": "core/src/main/jniLibs/armeabi-v7a/libsquarecore.so",
+      "bytes": 6489464,
+      "sha256": "B99DB810E55071B7297B8EAAA426E600A8CEA01DECA9881CEE4466D679BC9A23",
+      "differsFromPreBuild": true,
+      "containsPlaybackRequestTransport": true
+    },
+    {
+      "abi": "x86_64",
+      "path": "core/src/main/jniLibs/x86_64/libsquarecore.so",
+      "bytes": 10449840,
+      "sha256": "6CD99725FBDB6404526F9FC51EEBB40E3DF2A7615C227D5CE1B0C0A3E82ABE7E",
+      "differsFromPreBuild": true,
+      "containsPlaybackRequestTransport": true
+    }
+  ],
+  "apkLibraries": [
+    {
+      "entry": "lib/arm64-v8a/libsquarecore.so",
+      "abi": "arm64-v8a",
+      "bytes": 9415360,
+      "sha256": "8C341E02AE0E5E92C9B305C7AEB712C7BD6EBBDC3E3E73418BF567DC1EE0A63F",
+      "exactMatchToRebuiltJniLib": true
+    },
+    {
+      "entry": "lib/x86_64/libsquarecore.so",
+      "abi": "x86_64",
+      "bytes": 10449840,
+      "sha256": "6CD99725FBDB6404526F9FC51EEBB40E3DF2A7615C227D5CE1B0C0A3E82ABE7E",
+      "exactMatchToRebuiltJniLib": true
+    }
+  ],
+  "proof": "Three fresh release-profile builds; every output changed from pre-build hash and contains playback_request; both shipped ABI entries match rebuilt bytes exactly. AGP keepDebugSymbols preserves libsquarecore.so without further stripping."
+}

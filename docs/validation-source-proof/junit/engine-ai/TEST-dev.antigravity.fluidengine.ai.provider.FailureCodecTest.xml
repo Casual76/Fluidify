@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.provider.FailureCodecTest" tests="2" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:20.095Z" hostname="PC_FISSO" time="0.002">
+  <properties/>
+  <testcase name="un blocco di Gemini porta la sua ragione, e un errore a stream aperto si classifica" classname="dev.antigravity.fluidengine.ai.provider.FailureCodecTest" time="0.002"/>
+  <testcase name="la chiamata malformata di Gemini e' una risposta vuota con fine OTHER, senza frase segnaposto" classname="dev.antigravity.fluidengine.ai.provider.FailureCodecTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -34,7 +34,7 @@ class PlaylistOrderStore(context: Context) {
 
     fun clear() {
         _order.value = emptyList()
-        prefs.edit().remove(KEY_ORDER).apply()
+        check(prefs.edit().remove(KEY_ORDER).commit()) { "Could not persist account cache revocation" }
     }
 
     private fun load(): List<String> =

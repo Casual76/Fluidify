@@ -660,7 +660,15 @@ impl SpircTask {
         }
     }
 
-    async fn run(mut self) {
+    async fn run(self) {
+        if let Err(why) = self.session.dealer().start().await {
+            error!("starting dealer failed: {why}");
+            return;
+        }
+        self.run_connected().await;
+    }
+
+    async fn run_connected(mut self) {
         // simplify unwrapping of received item or parsed result
         macro_rules! unwrap {
             ( $next:expr, |$some:ident| $use_some:expr ) => {
@@ -680,12 +688,7 @@ impl SpircTask {
             };
         }
 
-        if let Err(why) = self.session.dealer().start().await {
-            error!("starting dealer failed: {why}");
-            return;
-        }
-
-        while !self.session.is_invalid() && !self.shutdown {
+        while !self.session.is_invalid() && !self.shutdown && self.session.network().check().is_ok() {
             // LOCAL PATCH: published every turn, so a caller outside the loop can
             // ask whether this device holds playback, and what it is playing,
             // without guessing from the cluster; see [`Spirc`].
@@ -693,6 +696,7 @@ impl SpircTask {
 
             // LOCAL PATCH: read before the futures below borrow the rest.
             let state_update_delay = self.state_update_delay();
+            let network = self.session.network().clone();
             let commands = self.commands.as_mut();
             let player_events = self.player_events.as_mut();
 
@@ -701,6 +705,8 @@ impl SpircTask {
             let allow_context_resolving = !self.update_state && !self.update_volume;
 
             tokio::select! {
+                biased;
+                _ = network.revoked() => return,
                 // startup of the dealer requires a connection_id, which is retrieved at the very beginning
                 connection_id_update = self.connection_id_update.next() => unwrap! {
                     connection_id_update,
@@ -825,6 +831,7 @@ impl SpircTask {
             self.publish_local_state();
         }
 
+        if self.session.network().check().is_err() { return; }
         if !self.shutdown && self.connect_state.is_active() {
             warn!("unexpected shutdown");
             if let Err(why) = self.handle_disconnect().await {
@@ -1518,6 +1525,7 @@ impl SpircTask {
                             seek_to: play.options.seek_to.unwrap_or_default(),
                             playing_track: play.options.skip_to.and_then(|s| s.try_into().ok()),
                             context_options,
+                            restore_nonce: None,
                         },
                     },
                     play.context.pages.pop(),
@@ -1876,7 +1884,7 @@ impl SpircTask {
         }
 
         if self.connect_state.current_track(MessageField::is_some) {
-            self.load_track(cmd_options.start_playing, cmd_options.seek_to)?;
+            self.load_track_owned(cmd_options.start_playing, cmd_options.seek_to, cmd_options.restore_nonce)?;
         } else {
             info!("No active track, stopping");
             self.handle_stop()
@@ -2322,6 +2330,12 @@ impl SpircTask {
     }
 
     fn load_track(&mut self, start_playing: bool, position_ms: u32) -> Result<(), Error> {
+        self.load_track_owned(start_playing, position_ms, None)
+    }
+
+    // LOCAL PATCH: tag travels only through its own LoadRequest, not mutable player state.
+    fn load_track_owned(&mut self, start_playing: bool, position_ms: u32,
+        restore_nonce: Option<String>) -> Result<(), Error> {
         if self.connect_state.current_track(MessageField::is_none) {
             debug!("current track is none, stopping playback");
             self.handle_stop();
@@ -2330,7 +2344,7 @@ impl SpircTask {
 
         let current_uri = self.connect_state.current_track(|t| &t.uri);
         let id = SpotifyUri::from_uri(current_uri)?;
-        self.player.load(id, start_playing, position_ms);
+        self.player.load_with_restore_nonce(id, start_playing, position_ms, restore_nonce);
 
         self.connect_state
             .update_position(position_ms, self.now_ms());
@@ -2417,4 +2431,38 @@ impl Drop for SpircTask {
     fn drop(&mut self) {
         debug!("drop Spirc[{}]", self.spirc_id);
     }
+}
+
+/// Host test entry immediately after authenticated Dealer setup; executes the production loop.
+#[cfg(feature = "offline-contract-tests")]
+#[doc(hidden)]
+pub async fn manual_offline_connected_task(session: Session, player: Arc<Player>, ready: tokio::sync::oneshot::Sender<()>) {
+    use crate::playback::mixer::{softmixer::SoftMixer, MixerConfig};
+    use std::sync::{Mutex, atomic::AtomicBool};
+    let (commands,rx)=mpsc::unbounded_channel();
+    let mut connect_state=ConnectState::new(ConnectConfig::default(),&session);
+    connect_state.set_active(true); // Wrong teardown would stop the already-playing local track.
+    let task=SpircTask {
+        player:player.clone(),mixer:Arc::new(SoftMixer::open(MixerConfig::default()).unwrap()),connect_state,
+        active:Arc::new(AtomicBool::new(true)),playing:Arc::new(Mutex::new(PlayingHere::default())),
+        established:Arc::new(AtomicBool::new(true)),connect_established:true,
+        play_request_id:None,play_status:SpircPlayStatus::Stopped,last_advance:None,
+        cluster_listener:Arc::new(Mutex::new(None)),state_timeouts:0,state_retry_after:None,
+        connection_id_update:Box::pin(futures_util::stream::pending()),
+        connect_state_update:Box::pin(futures_util::stream::pending()),
+        connect_state_volume_update:Box::pin(futures_util::stream::pending()),
+        connect_state_logout_request:Box::pin(futures_util::stream::pending()),
+        playlist_update:Box::pin(futures_util::stream::pending()),
+        session_update:Box::pin(futures_util::stream::pending()),
+        connect_state_command:Box::pin(futures_util::stream::pending()),
+        user_attributes_update:Box::pin(futures_util::stream::pending()),
+        user_attributes_mutation:Box::pin(futures_util::stream::pending()),
+        commands:Some(rx),player_events:Some(player.get_player_event_channel()),
+        context_resolver:ContextResolver::new(session.clone()),shutdown:false,session,
+        transfer_state:None,update_volume:false,update_state:false,spirc_id:SPIRC_COUNTER.fetch_add(1,Ordering::AcqRel),
+    };
+    // Keep the command sender alive for the real select loop.
+    let _commands=commands;
+    ready.send(()).ok().unwrap();
+    task.run_connected().await;
 }

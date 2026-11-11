@@ -49,8 +49,10 @@ object ApiFactory {
         debug: Boolean = false,
     ): SpotifyApi {
         val client = OkHttpClient.Builder()
+            .addInterceptor(SpotifyNetworkInterceptor())
             .addInterceptor(AuthInterceptor(tokens, sessionToken))
             .addInterceptor(RateLimitInterceptor())
+            .addNetworkInterceptor(SpotifyNetworkInterceptor(networkAttempt = true))
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .apply {
@@ -137,10 +139,11 @@ object ApiFactory {
     ) : Interceptor {
         override fun intercept(chain: Interceptor.Chain): Response {
             val original = chain.request()
+            val permit = original.tag(SpotifyNetworkPolicy.Permit::class.java) ?: SpotifyNetworkPolicy.capture()
             val scopes = original.header(SESSION_AUTH)
             val stripped = original.newBuilder().removeHeader(SESSION_AUTH).build()
 
-            val session = scopes?.let { runCatching { sessionToken(it) }.getOrNull() }
+            val session = scopes?.let { runCatching { permit.dispatch { sessionToken(it) } }.getOrNull() }
             if (session != null) {
                 val response = chain.proceed(send(stripped, session))
                 // Refused as the official client too, or the token had gone
@@ -151,7 +154,7 @@ object ApiFactory {
                 response.close()
             }
 
-            return chain.proceed(send(stripped, stored()))
+            return chain.proceed(send(stripped, stored(permit)))
         }
 
         private fun send(request: okhttp3.Request, token: String) =
@@ -167,8 +170,8 @@ object ApiFactory {
          * its own thread, which takes the whole process down instead of failing
          * the one call.
          */
-        private fun stored(): String = try {
-            runBlocking { tokens.validAccessToken() }
+        private fun stored(permit: SpotifyNetworkPolicy.Permit): String = try {
+            runBlocking { tokens.validAccessToken(permit) }
         } catch (e: IOException) {
             throw e
         } catch (e: Exception) {

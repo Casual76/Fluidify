@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_edit_create_unconfirmed">“%1$s” बनाने की पुष्टि नहीं हुई</string>
+    <string name="playlist_edit_rename_unconfirmed">“%1$s” का नाम बदलने की पुष्टि नहीं हुई</string>
+    <string name="playlist_edit_delete_unconfirmed">“%1$s” मिटाने की पुष्टि नहीं हुई</string>
+    <string name="playlist_edit_remove_unconfirmed">“%1$s” हटाने की पुष्टि नहीं हुई</string>
+    <string name="playlist_edit_check_before_retry">सेवा ने बदलाव की पुष्टि नहीं की। फिर से कोशिश करने से पहले लाइब्रेरी रीफ़्रेश करें या प्लेलिस्ट दोबारा खोलकर जाँचें।</string>
+    <string name="playlist_edit_unavailable">अभी प्लेलिस्ट में बदलाव उपलब्ध नहीं हैं। फिर से कोशिश करने से पहले कनेक्शन और साइन इन किए गए खाते की जाँच करें।</string>
+    <string name="playlist_edit_selection_changed">प्लेलिस्ट बदल गई है या अभी लोड हो रही है। गाने का मेन्यू दोबारा खोलें और उसी प्रविष्टि को फिर से चुनें।</string>
+</resources>

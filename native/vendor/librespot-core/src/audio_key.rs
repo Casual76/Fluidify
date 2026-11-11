@@ -129,7 +129,7 @@ impl AudioKeyManager {
                     .and_then(|until| until.checked_duration_since(Instant::now()))
             }) {
                 debug!("waiting {wait:?} before asking for another audio key");
-                tokio::time::sleep(wait).await;
+                self.session().network().run(async { tokio::time::sleep(wait).await; Ok(()) }).await?;
             }
 
             match self.request_once(track, file).await {

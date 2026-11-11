@@ -1,0 +1,25 @@
+{
+  "status": "RUNNER RELEASED",
+  "releasedAtUtc": "2026-11-07T19:12:09.572904+00:00",
+  "allOwnedCompilerProcessesEnded": true,
+  "ownedRuns": [
+    {
+      "session": 37657,
+      "exitCode": 1,
+      "result": "initial nullable-caller compilation failure, corrected",
+      "log": "docs/validation-S2-R2-tests.log"
+    },
+    {
+      "session": 43946,
+      "exitCode": 0,
+      "result": "fresh app56/core18/bridge26 tests PASS",
+      "log": "docs/validation-S2-R2-tests-final.log"
+    },
+    {
+      "session": 32123,
+      "exitCode": 1,
+      "result": "three native ABIs/assemble/app+bridge lint PASS; known core lint3 errors",
+      "log": "docs/validation-S2-R2-native-assemble-lint.log"
+    }
+  ]
+}

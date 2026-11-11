@@ -6,6 +6,9 @@ import dev.lelonio.square.R
 import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.backend.SearchLabels
 import dev.lelonio.square.data.CatalogPlaylist
+import dev.lelonio.square.data.AccountLocalDataCoordinator.Access
+import dev.lelonio.square.data.AccountRequestCache
+import dev.lelonio.square.data.writeDownloadIndexAtomically
 import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.data.SpotifyHome
 import dev.lelonio.square.nativecore.NativeBridge
@@ -34,7 +37,7 @@ import kotlinx.coroutines.sync.withLock
  */
 class WearLibrarySource(private val app: SquareApplication) {
     private val contextsLock = Mutex()
-    private val contexts = LinkedHashMap<String, Pair<Long, List<CatalogTrack>>>()
+    private val contexts = AccountRequestCache<Pair<Long, List<CatalogTrack>>>(app.accountLocalData)
 
     /**
      * The watch's Home: the listener's pins on top, then what they played lately, then what they
@@ -46,8 +49,13 @@ class WearLibrarySource(private val app: SquareApplication) {
      * the watch's Home used to come back half empty. If it is not up in time, the last Home this
      * phone answered stands in, with today's pins.
      */
-    suspend fun home(): LibraryPage = withContext(Dispatchers.IO) {
-        if (!engineReady()) cachedHome()?.let { return@withContext it }
+    suspend fun home(access: Access): LibraryPage = withContext(Dispatchers.IO) {
+        app.accountLocalData.use(access) { Unit }
+        if (!app.accountLocalData.isOnlineCurrent(access)) {
+            return@withContext cachedHome(access) ?: section(access, LibrarySection.DOWNLOADS)
+        }
+        if (!engineReady(access)) return@withContext cachedHome(access) ?: section(access, LibrarySection.DOWNLOADS)
+        app.accountLocalData.requireOnline(access)
         val keys = app.pathfinderKeys
         runCatching { keys.refresh() }
         val shelves = runCatching {
@@ -60,16 +68,18 @@ class WearLibrarySource(private val app: SquareApplication) {
                 ),
             )
         }.getOrDefault(emptyList())
+        app.accountLocalData.requireOnline(access)
         val playlists = runCatching { app.spotifyBackend.playlists() }.getOrDefault(emptyList())
-        if (shelves.isEmpty() && playlists.isEmpty()) cachedHome()?.let { return@withContext it }
+        if (shelves.isEmpty() && playlists.isEmpty()) cachedHome(access)?.let { return@withContext it }
 
+        app.accountLocalData.use(access) { Unit }
         val pinned = app.pinnedPlaylists.pinned.value
         val top = WatchHome.top(pinned, app.recentContexts.contexts.value, app.playlistOrder.order.value, playlists, HOME_TOP_ROWS)
         val fromHome = shelves.flatMap { shelf -> shelf.items.map { HomeEntry(it.uri, it.name, it.artworkUrl) } }
-        val made = WatchHome.madeForYou(fromHome, playlists, rememberedMadeForYou(fromHome + top, playlists), MADE_FOR_YOU_ROWS)
+        val made = WatchHome.madeForYou(fromHome, playlists, rememberedMadeForYou(access, fromHome + top, playlists), MADE_FOR_YOU_ROWS)
         val shown = (top.map { it.uri } + made.map { it.uri }).toHashSet()
 
-        val withCovers = withCovers(top + made)
+        val withCovers = withCovers(access, top + made)
         val page = LibraryPage(
             shelves = buildList {
                 if (top.isNotEmpty()) add(LibraryShelf(title = "", items = top.map { withCovers.getValue(it.uri).toItem() }))
@@ -82,20 +92,25 @@ class WearLibrarySource(private val app: SquareApplication) {
                 }
             },
         )
-        saveHome(page)
+        saveHome(access, page)
         page
     }
 
     /** Starts the phone's engine if it is not running, and waits a little for it to connect. */
-    private suspend fun engineReady(): Boolean = app.wearBridge.engineReady(ENGINE_WAIT_MS)
+    private suspend fun engineReady(access: Access): Boolean {
+        app.accountLocalData.requireOnline(access)
+        val ready = app.wearBridge.engineReady(ENGINE_WAIT_MS)
+        app.accountLocalData.requireOnline(access)
+        return ready
+    }
 
     /**
      * The made-for-you playlists found before, and once a day a search for the two that matter
      * most when neither Spotify's home nor the library has them: Discover Weekly and Release Radar
      * are the listener's own, so their ids never change, and remembering them costs nothing.
      */
-    private suspend fun rememberedMadeForYou(seen: List<HomeEntry>, playlists: List<CatalogPlaylist>): List<HomeEntry> {
-        val prefs = app.getSharedPreferences(MADE_FOR_YOU_PREFS, android.content.Context.MODE_PRIVATE)
+    private suspend fun rememberedMadeForYou(access: Access, seen: List<HomeEntry>, playlists: List<CatalogPlaylist>): List<HomeEntry> {
+        val prefs = app.getSharedPreferences("$MADE_FOR_YOU_PREFS:${access.namespace}", android.content.Context.MODE_PRIVATE)
         val known = prefs.getString(KEY_MADE, null)?.let { saved ->
             runCatching { dev.pampa.fluidify.wear.protocol.WearCodec.json.decodeFromString(MadeList.serializer(), saved).items }.getOrNull()
         }.orEmpty().map { HomeEntry(it.uri, it.name, it.artworkUrl) }
@@ -103,16 +118,17 @@ class WearLibrarySource(private val app: SquareApplication) {
         val hasWeekly = present.any { it.removePrefix("spotify:playlist:").startsWith("37i9dQZEVX") }
         val lastSearch = prefs.getLong(KEY_SEARCHED_AT, 0L)
         if (hasWeekly || System.currentTimeMillis() - lastSearch < SEARCH_EVERY_MS) return known
-        prefs.edit().putLong(KEY_SEARCHED_AT, System.currentTimeMillis()).apply()
+        app.accountLocalData.use(access) { prefs.edit().putLong(KEY_SEARCHED_AT, System.currentTimeMillis()).commit() }
         val labels = SearchLabels(app.getString(R.string.artist), app.getString(R.string.album), app.getString(R.string.playlist))
         val found = SEARCHES.flatMap { query ->
+            app.accountLocalData.requireOnline(access)
             runCatching { app.spotifyBackend.search(query, labels).playlists }.getOrDefault(emptyList())
                 .filter { WatchHome.isMadeForYou(it.uri) }
                 .take(1)
                 .map { HomeEntry(it.uri, it.title, it.artworkUrl) }
         }
         val merged = (found + known).distinctBy { it.uri }.take(MADE_FOR_YOU_ROWS)
-        prefs.edit().putString(KEY_MADE, dev.pampa.fluidify.wear.protocol.WearCodec.json.encodeToString(MadeList.serializer(), MadeList(merged.map { MadeItem(it.uri, it.name, it.artworkUrl) }))).apply()
+        app.accountLocalData.use(access) { prefs.edit().putString(KEY_MADE, dev.pampa.fluidify.wear.protocol.WearCodec.json.encodeToString(MadeList.serializer(), MadeList(merged.map { MadeItem(it.uri, it.name, it.artworkUrl) }))).commit() }
         return merged
     }
 
@@ -121,17 +137,18 @@ class WearLibrarySource(private val app: SquareApplication) {
      * mixes — keep their picture on the playlist, not in the account's list of it, so those rows
      * arrived blank. Looked up once each and remembered for as long as the process lives.
      */
-    private suspend fun withCovers(entries: List<HomeEntry>): Map<String, HomeEntry> {
+    private suspend fun withCovers(access: Access, entries: List<HomeEntry>): Map<String, HomeEntry> {
         var lookups = 0
         return entries.associate { entry ->
-            val art = entry.artworkUrl ?: coverCache[entry.uri] ?: if (
-                lookups < MAX_COVER_LOOKUPS && entry.uri.startsWith("spotify:playlist:") && entry.uri !in noCover
+            val art = entry.artworkUrl ?: coverCache.get(access, entry.uri) ?: if (
+                lookups < MAX_COVER_LOOKUPS && entry.uri.startsWith("spotify:playlist:") && noCover.get(access, entry.uri) != true
             ) {
                 lookups++
                 // A playlist with no cover is remembered as such too: asked again on every Home, the
                 // same twelve lookups ran each time and pushed the answer past the watch's patience.
+                app.accountLocalData.requireOnline(access)
                 runCatching { dev.lelonio.square.data.Catalog.playlistCover(entry.uri) }.getOrNull()
-                    ?.also { coverCache[entry.uri] = it } ?: null.also { noCover += entry.uri }
+                    ?.also { coverCache.put(access, entry.uri, it) } ?: null.also { noCover.put(access, entry.uri, true) }
             } else {
                 null
             }
@@ -139,18 +156,22 @@ class WearLibrarySource(private val app: SquareApplication) {
         }
     }
 
-    private val coverCache = java.util.concurrent.ConcurrentHashMap<String, String>()
-    private val noCover: MutableSet<String> = java.util.concurrent.ConcurrentHashMap.newKeySet()
-    private val homeFile get() = homeFile(app)
+    private val coverCache = AccountRequestCache<String>(app.accountLocalData)
+    private val noCover = AccountRequestCache<Boolean>(app.accountLocalData)
+    private fun homeFile(access: Access) = java.io.File(app.filesDir, "watch-home-v2/${access.namespace}.json")
 
-    private fun saveHome(page: LibraryPage) {
-        runCatching { homeFile.writeBytes(dev.pampa.fluidify.wear.protocol.WearCodec.encode(LibraryPage.serializer(), page)) }
+    private fun saveHome(access: Access, page: LibraryPage) = app.accountLocalData.use(access) {
+        val file = homeFile(access)
+        file.parentFile!!.mkdirs()
+        writeDownloadIndexAtomically(file, dev.pampa.fluidify.wear.protocol.WearCodec.json.encodeToString(LibraryPage.serializer(), page))
     }
 
     /** The last Home answered, with the pins as they are now. */
-    fun cachedHome(): LibraryPage? {
-        val page = runCatching { dev.pampa.fluidify.wear.protocol.WearCodec.decodeOrNull(LibraryPage.serializer(), homeFile.readBytes()) }.getOrNull()
+    fun cachedHome(access: Access): LibraryPage? {
+        app.accountLocalData.use(access) { Unit }
+        val page = runCatching { dev.pampa.fluidify.wear.protocol.WearCodec.decodeOrNull(LibraryPage.serializer(), homeFile(access).readBytes()) }.getOrNull()
             ?: return null
+        app.accountLocalData.use(access) { Unit }
         val pinned = app.pinnedPlaylists.pinned.value.toSet()
         return page.copy(
             shelves = page.shelves.mapIndexed { index, shelf ->
@@ -179,8 +200,10 @@ class WearLibrarySource(private val app: SquareApplication) {
     @kotlinx.serialization.Serializable
     private data class MadeList(val items: List<MadeItem>)
 
-    suspend fun section(section: LibrarySection): LibraryPage = withContext(Dispatchers.IO) {
-        when (section) {
+    suspend fun section(access: Access, section: LibrarySection): LibraryPage = withContext(Dispatchers.IO) {
+        app.accountLocalData.use(access) { Unit }
+        if (section != LibrarySection.DOWNLOADS && section != LibrarySection.RECENT) app.accountLocalData.requireOnline(access)
+        val page = when (section) {
             LibrarySection.PLAYLISTS -> LibraryPage(
                 listOf(LibraryShelf("", app.spotifyBackend.playlists().map { it.toItem() })),
             )
@@ -217,6 +240,8 @@ class WearLibrarySource(private val app: SquareApplication) {
             }
             LibrarySection.DOWNLOADS -> {
                 val store = app.downloads
+                store.load()
+                app.accountLocalData.use(access) { Unit }
                 val items = store.owners.value.keys.mapNotNull { owner ->
                     val label = store.labelOf(owner) ?: return@mapNotNull null
                     LibraryItem(
@@ -233,22 +258,33 @@ class WearLibrarySource(private val app: SquareApplication) {
                 listOf(LibraryShelf("", app.recentStore.tracks.value.map { it.toItem() })),
             )
         }
+        app.accountLocalData.use(access) { page }
     }
 
-    suspend fun context(uri: String, offset: Int, limit: Int): ContextPage = withContext(Dispatchers.IO) {
+    suspend fun context(access: Access, uri: String, offset: Int, limit: Int): ContextPage = withContext(Dispatchers.IO) {
+        app.downloads.load()
+        val offline = app.downloads.read(access) {
+            if (owners.value.containsKey(uri)) tracksForOwner(uri) else null
+        }
+        if (offline != null) return@withContext app.accountLocalData.use(access) {
+            val label = app.downloads.labelOf(uri)
+            ContextPage(uri, label?.name.orEmpty(), artKey = artKeyOf(label?.artworkUrl),
+                artUrl = label?.artworkUrl, tracks = offline.drop(offset).take(limit).map { it.toItem() }, total = offline.size)
+        }
+        app.accountLocalData.requireOnline(access)
         if (uri.startsWith("spotify:artist:") && !app.webApi.isReady) {
             return@withContext ContextPage(uri, "", tracks = emptyList(),
                 unavailableReason = app.getString(R.string.connect_app_in_settings))
         }
         val tracks = contextsLock.withLock {
             val now = android.os.SystemClock.elapsedRealtime()
-            contexts.entries.removeAll { now - it.value.first > 120_000L }
-            if (offset == 0) contexts.remove(uri)
-            contexts[uri]?.second ?: app.spotifyBackend.tracksOf(uri).also {
-                if (contexts.size >= 8) contexts.remove(contexts.keys.first())
-                contexts[uri] = now to it
+            if (offset == 0) contexts.remove(access, uri)
+            val cached = contexts.get(access, uri)?.takeIf { now - it.first <= 120_000L }
+            cached?.second ?: app.spotifyBackend.tracksOf(uri).also {
+                contexts.put(access, uri, now to it)
             }
         }
+        app.accountLocalData.requireOnline(access)
         val playlist = runCatching { app.spotifyBackend.playlists().firstOrNull { it.uri == uri } }.getOrNull()
         val label = app.downloads.labelOf(uri)
         val art = playlist?.artworkUrl ?: label?.artworkUrl ?: tracks.firstOrNull()?.artworkUrl
@@ -262,7 +298,8 @@ class WearLibrarySource(private val app: SquareApplication) {
         )
     }
 
-    suspend fun search(query: String): LibraryPage = withContext(Dispatchers.IO) {
+    suspend fun search(access: Access, query: String): LibraryPage = withContext(Dispatchers.IO) {
+        app.accountLocalData.requireOnline(access)
         val labels = SearchLabels(
             artist = app.getString(R.string.artist),
             album = app.getString(R.string.album),
@@ -312,17 +349,7 @@ class WearLibrarySource(private val app: SquareApplication) {
         private const val SHELF_ITEMS = 10
         private const val MAX_COVER_LOOKUPS = 12
         private const val ENGINE_WAIT_MS = 6_000L
-        fun homeFile(context: android.content.Context) = java.io.File(context.filesDir, "wear-home.json")
-
-        /**
-         * What the watch's Home remembers of an account — its last Home, the made-for-you lists
-         * found for it — gone with the account: the next one to sign in must not be shown the last
-         * one's Discover Weekly, nor have its own search skipped because those ids looked known.
-         */
-        fun forgetAccount(context: android.content.Context) {
-            homeFile(context).delete()
-            context.getSharedPreferences(MADE_FOR_YOU_PREFS, android.content.Context.MODE_PRIVATE).edit().clear().apply()
-        }
+        // The old global wear-home.json and preferences stay untouched and unassigned.
 
         private const val MADE_FOR_YOU_PREFS = "wear_made_for_you"
         private const val KEY_MADE = "items"

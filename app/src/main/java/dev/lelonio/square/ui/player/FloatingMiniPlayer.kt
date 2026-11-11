@@ -35,6 +35,7 @@ import dev.antigravity.fluidengine.ui.fluid.FluidProgressBar
 import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.IconButtonDefaults
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
@@ -325,11 +326,15 @@ fun FloatingMiniPlayer(
             // Skip first and play second, which is the order asked for: the
             // button that starts the music is the one nearest the thumb.
             if (!inline) {
-                IconButton(onClick = onNext, modifier = Modifier.size(ControlSize)) {
+                IconButton(
+                    onClick = onNext,
+                    enabled = state.hasNext,
+                    colors = IconButtonDefaults.iconButtonColors(contentColor = contentColor),
+                    modifier = Modifier.size(ControlSize),
+                ) {
                     Icon(
                         PhosphorIcons.Fill.SkipForward,
                         contentDescription = stringResource(R.string.next),
-                        tint = contentColor,
                         modifier = Modifier.size(22.dp),
                     )
                 }

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_removal_title">Supprimer les téléchargements ?</string>
+    <string name="download_removal_message">Supprimer la copie téléchargée de « %1$s » de cet appareil ? Pour une écoute hors connexion, il faudra la télécharger de nouveau. Les titres conservés dans les autres collections téléchargées resteront disponibles.</string>
+</resources>

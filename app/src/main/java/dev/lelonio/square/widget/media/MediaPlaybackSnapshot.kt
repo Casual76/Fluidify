@@ -44,6 +44,8 @@ data class MediaPlaybackSnapshot(
   val lastPositionUpdateTimeMs: Long = 0L,
   val playbackSpeed: Float = 0f,
   val isFromCache: Boolean = false,
+  val isBuffering: Boolean = false,
+  val positionKnown: Boolean = true,
 ) {
   /** Stable identity used to reject late artwork and cache entries from another track. */
   val trackKey: String

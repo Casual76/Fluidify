@@ -442,3 +442,17 @@ in every state update. It now keeps those limits whatever it is handed, and the
 engine hands it a window around the current track that it moves as each track
 starts (`engine::slide_queue_window`), so the device never runs out of the
 listener's order and refills from the context's.
+
+
+### Fluidify S2-R2 owned restore command correlation (2026-11-07)
+
+Local MIT-licensed extension to vendored librespot-playback/connect 0.8.0 from
+librespot-org/librespot. Player.load remains untagged and returns Unit. Optional
+load_with_restore_nonce carries the nonce inside its PlayerCommand::Load; the player
+emits OwnedLoadBound with the request ID allocated while handling that exact command,
+immediately before PlayRequestIdChanged. owned_load.rs is the shared production binding
+constructor with isolated host tests. Connect LoadRequestOptions carries the optional
+nonce to that command only; remote play/advance/seek paths use None. No URI, position,
+time window, next-request guess or mutable global pending tag is used. Native forwarding
+and Kotlin's account-fenced saved-restore ticket consume the explicit acknowledgement.
+Upstream license files and Spotify reporting/event observation remain unchanged.

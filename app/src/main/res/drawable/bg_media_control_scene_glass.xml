@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Idle material is in the shared scene bitmap. The real ImageButton owns the ripple/hit target.
+     The mask mirrors FluidRadius.Control (12dp); it does not paint an opaque idle fill. -->
+<ripple xmlns:android="http://schemas.android.com/apk/res/android"
+  android:color="#26FFFFFF">
+  <item android:id="@android:id/mask">
+    <shape>
+      <corners android:radius="12dp" />
+      <solid android:color="#FFFFFFFF" />
+    </shape>
+  </item>
+</ripple>

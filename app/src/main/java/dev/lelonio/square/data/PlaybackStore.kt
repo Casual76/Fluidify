@@ -26,7 +26,23 @@ data class SavedPlayback(
     val contextOrdered: Boolean = false,
     /** What the player shows as the source: "Playlist · Estate 2025". */
     val contextLabel: String = "",
+    val listeningOccurrenceId: String? = null,
+    val historyContinuity: String? = null,
 )
+
+/** Continuity requires the explicit playback token and the still-valid history fence. */
+fun SavedPlayback.restoredListeningOccurrence(continuity: String?): String? =
+    listeningOccurrenceId?.takeIf { historyContinuity != null && historyContinuity == continuity }
+
+/** Snapshot authorization plus a live validator reused by the service and producer integration tests. */
+internal fun SavedPlayback.listeningRestoreAuthorization(history: ListeningRepository): Pair<String?, () -> Boolean> {
+    val access = history.session.value.access
+    val token = restoredListeningOccurrence(history.playbackContinuity())
+    return token to {
+        access != null && token != null && history.session.value.access == access &&
+            restoredListeningOccurrence(history.playbackContinuity()) == token
+    }
+}
 
 /**
  * Persists the playing queue so a restart resumes where the user left off.
@@ -47,21 +63,10 @@ class PlaybackStore(context: Context) {
             clear()
             return
         }
-        // Trimmed: a queue can be hundreds of tracks, and writing all of them a
-        // few times a minute is a lot of I/O for something only the first screen
-        // of which is ever seen again.
-        // Trimming a shuffled queue would invalidate the permutation, so the
-        // cap only applies when there is no order to keep consistent.
-        val trimmed = if (state.shuffleOrder != null || state.tracks.size <= MAX_TRACKS) {
-            state
-        } else {
-            state.copy(
-                tracks = state.tracks.take(MAX_TRACKS),
-                index = state.index.coerceIn(0, MAX_TRACKS - 1),
-            )
-        }
+        // This is the playback state, not a preview. Dropping the tail changes
+        // both the selected occurrence and what comes next after a restart.
         prefs.edit()
-            .putString(KEY_STATE, json.encodeToString(SavedPlayback.serializer(), trimmed))
+            .putString(KEY_STATE, json.encodeToString(SavedPlayback.serializer(), state))
             .apply()
     }
 
@@ -77,6 +82,5 @@ class PlaybackStore(context: Context) {
     private companion object {
         const val FILE_NAME = "square_playback"
         const val KEY_STATE = "state"
-        const val MAX_TRACKS = 200
     }
 }

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" tests="16" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:20.106Z" hostname="PC_FISSO" time="0.041">
+  <properties/>
+  <testcase name="un frame della cattura e' di 20 ms a 16 kHz" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.0"/>
+  <testcase name="una voce bassa fermata a mano non si butta, l'audio c'e'" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.009"/>
+  <testcase name="un microfono che non parte dice perche'" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.001"/>
+  <testcase name="la cancellazione ferma il microfono e non scrive niente" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.002"/>
+  <testcase name="se nessuno parla e si ferma a mano, non ha sentito niente" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.004"/>
+  <testcase name="il livello segue la voce e dice quando e' parlato" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.005"/>
+  <testcase name="il solo rumore di fondo non e' parlato, nemmeno fermando a mano" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.001"/>
+  <testcase name="l'intestazione del WAV e' little-endian e dice cio' che c'e' dentro" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.0"/>
+  <testcase name="una lettura che fallisce dice perche'" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.002"/>
+  <testcase name="in una stanza rumorosa il parlato forte si riconosce lo stesso" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.003"/>
+  <testcase name="una frase troppo breve non e' una domanda" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.001"/>
+  <testcase name="una frase e poi silenzio finisce da sola, col WAV tagliato all'ultima parola piu' un margine" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.004"/>
+  <testcase name="un frame vuoto ogni tanto non e' un guasto" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.003"/>
+  <testcase name="un microfono che smette di mandare campioni e' perso" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.001"/>
+  <testcase name="il WAV scritto ha l'intestazione e i campioni, nell'ordine" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.003"/>
+  <testcase name="si ferma al tetto di durata" classname="dev.antigravity.fluidengine.ai.speech.SpeechCaptureTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

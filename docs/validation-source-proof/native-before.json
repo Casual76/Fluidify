@@ -1,0 +1,30 @@
+{
+  "core\\src\\main\\jniLibs\\arm64-v8a\\libsquarecore.so": {
+    "sha256": "667ea3fa26ea451fabc17aa7a6f851e2019186cc67e401df5e6d1462fd63b597",
+    "size": 9422016
+  },
+  "core\\src\\main\\jniLibs\\armeabi-v7a\\libsquarecore.so": {
+    "sha256": "1108b69558a81b060ceddc3ac48a5e8d4ba00e4110001b36bec57c5b804c4efc",
+    "size": 6495480
+  },
+  "core\\src\\main\\jniLibs\\x86_64\\libsquarecore.so": {
+    "sha256": "7abc31c5bba24bce6ea486c35f92631594aa72fa1ca42a82273bc1014b2227af",
+    "size": 10460528
+  },
+  "app\\build\\intermediates\\cxx\\Debug\\286k5v33\\obj\\arm64-v8a\\libairpods_socket.so": {
+    "sha256": "74bc089754e7a8c52047e4f405ff8244dd80aff9dabac7864dd0f82db7a6b75f",
+    "size": 3082480
+  },
+  "app\\build\\intermediates\\cxx\\Debug\\286k5v33\\obj\\arm64-v8a\\libspotstretch.so": {
+    "sha256": "292fda3d9d4e70bcc6326292e61949e9b3c2801c23500cd15026dfc08e884c1d",
+    "size": 9061800
+  },
+  "app\\build\\intermediates\\cxx\\Debug\\286k5v33\\obj\\x86_64\\libairpods_socket.so": {
+    "sha256": "c4f7757a63d1e1bf177d727e411f1332fdae85c05454732c146cc428997e161a",
+    "size": 2833392
+  },
+  "app\\build\\intermediates\\cxx\\Debug\\286k5v33\\obj\\x86_64\\libspotstretch.so": {
+    "sha256": "0e7862d419a2cc4b85f9f674ac7d8fef2836306c27a5c574b35b92a9420f9ce1",
+    "size": 8833880
+  }
+}

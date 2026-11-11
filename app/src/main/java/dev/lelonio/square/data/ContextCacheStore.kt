@@ -111,6 +111,15 @@ class ContextCacheStore(context: Context) {
         Unit
     }
 
+    /** An old edit's queued invalidation cannot delete a new account's cache entry. */
+    internal suspend fun remove(uri: String, accounts: AccountLocalDataCoordinator,
+        access: AccountLocalDataCoordinator.Access) = withContext(Dispatchers.IO) {
+        accounts.use(access) {
+            fileFor(uri).delete()
+            Unit
+        }
+    }
+
     suspend fun clear() = withContext(Dispatchers.IO) {
         dir.deleteRecursively()
         Unit

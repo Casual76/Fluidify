@@ -1112,8 +1112,6 @@ checksum = "b6d2cec3eae94f9f509c767b45932f1ada8350c4bdb85af2fcab4a3c14807981"
 [[package]]
 name = "librespot-audio"
 version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "b3fe76acb49f58165484303edf0e7bd778f0e6d96f5c59e9d6b6fde1a90d36ff"
 dependencies = [
  "aes",
  "bytes",
@@ -2345,6 +2343,7 @@ dependencies = [
  "ndk-context",
  "once_cell",
  "protobuf",
+ "serde",
  "serde_json",
  "tokio",
 ]

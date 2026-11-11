@@ -1,0 +1,305 @@
+{
+  "formatVersion": 1,
+  "database": {
+    "version": 1,
+    "identityHash": "c614e14bcbfeb13e65871c5b35a6dc08",
+    "entities": [
+      {
+        "tableName": "listens",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`service` TEXT NOT NULL, `account` TEXT NOT NULL, `id` TEXT NOT NULL, `song` TEXT NOT NULL, `trackJson` TEXT NOT NULL, `startedAt` INTEGER NOT NULL, `endedAt` INTEGER NOT NULL, `playedAt` INTEGER NOT NULL, `measuredMs` INTEGER, `qualified` INTEGER NOT NULL, `spotifyAt` INTEGER, PRIMARY KEY(`service`, `account`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "service",
+            "columnName": "service",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "account",
+            "columnName": "account",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "song",
+            "columnName": "song",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "trackJson",
+            "columnName": "trackJson",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "startedAt",
+            "columnName": "startedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "endedAt",
+            "columnName": "endedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "playedAt",
+            "columnName": "playedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "measuredMs",
+            "columnName": "measuredMs",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "qualified",
+            "columnName": "qualified",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "spotifyAt",
+            "columnName": "spotifyAt",
+            "affinity": "INTEGER"
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "service",
+            "account",
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_listens_service_account_startedAt",
+            "unique": false,
+            "columnNames": [
+              "service",
+              "account",
+              "startedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_listens_service_account_startedAt` ON `${TABLE_NAME}` (`service`, `account`, `startedAt`)"
+          },
+          {
+            "name": "index_listens_service_account_song_spotifyAt",
+            "unique": true,
+            "columnNames": [
+              "service",
+              "account",
+              "song",
+              "spotifyAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE UNIQUE INDEX IF NOT EXISTS `index_listens_service_account_song_spotifyAt` ON `${TABLE_NAME}` (`service`, `account`, `song`, `spotifyAt`)"
+          },
+          {
+            "name": "index_listens_service_account_playedAt",
+            "unique": false,
+            "columnNames": [
+              "service",
+              "account",
+              "playedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_listens_service_account_playedAt` ON `${TABLE_NAME}` (`service`, `account`, `playedAt`)"
+          }
+        ]
+      },
+      {
+        "tableName": "measured_intervals",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`service` TEXT NOT NULL, `account` TEXT NOT NULL, `eventId` TEXT NOT NULL, `fromAt` INTEGER NOT NULL, `untilAt` INTEGER NOT NULL, PRIMARY KEY(`service`, `account`, `eventId`, `fromAt`, `untilAt`))",
+        "fields": [
+          {
+            "fieldPath": "service",
+            "columnName": "service",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "account",
+            "columnName": "account",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "eventId",
+            "columnName": "eventId",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "fromAt",
+            "columnName": "fromAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "untilAt",
+            "columnName": "untilAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "service",
+            "account",
+            "eventId",
+            "fromAt",
+            "untilAt"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_measured_intervals_service_account_untilAt",
+            "unique": false,
+            "columnNames": [
+              "service",
+              "account",
+              "untilAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_measured_intervals_service_account_untilAt` ON `${TABLE_NAME}` (`service`, `account`, `untilAt`)"
+          }
+        ]
+      },
+      {
+        "tableName": "history_coverage",
+        "createSql": "CREATE TABLE IF NOT EXISTS `${TABLE_NAME}` (`service` TEXT NOT NULL, `account` TEXT NOT NULL, `id` TEXT NOT NULL, `requestedFrom` INTEGER, `requestedUntil` INTEGER NOT NULL, `observedFrom` INTEGER, `observedUntil` INTEGER, `importedAt` INTEGER NOT NULL, `pages` INTEGER NOT NULL, `truncated` INTEGER NOT NULL, `missingPages` INTEGER NOT NULL, `status` TEXT NOT NULL, `error` TEXT, `source` TEXT NOT NULL, `precision` TEXT NOT NULL, `complete` INTEGER NOT NULL, PRIMARY KEY(`service`, `account`, `id`))",
+        "fields": [
+          {
+            "fieldPath": "service",
+            "columnName": "service",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "account",
+            "columnName": "account",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "id",
+            "columnName": "id",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "requestedFrom",
+            "columnName": "requestedFrom",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "requestedUntil",
+            "columnName": "requestedUntil",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "observedFrom",
+            "columnName": "observedFrom",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "observedUntil",
+            "columnName": "observedUntil",
+            "affinity": "INTEGER"
+          },
+          {
+            "fieldPath": "importedAt",
+            "columnName": "importedAt",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "pages",
+            "columnName": "pages",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "truncated",
+            "columnName": "truncated",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "missingPages",
+            "columnName": "missingPages",
+            "affinity": "INTEGER",
+            "notNull": true
+          },
+          {
+            "fieldPath": "status",
+            "columnName": "status",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "error",
+            "columnName": "error",
+            "affinity": "TEXT"
+          },
+          {
+            "fieldPath": "source",
+            "columnName": "source",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "precision",
+            "columnName": "precision",
+            "affinity": "TEXT",
+            "notNull": true
+          },
+          {
+            "fieldPath": "complete",
+            "columnName": "complete",
+            "affinity": "INTEGER",
+            "notNull": true
+          }
+        ],
+        "primaryKey": {
+          "autoGenerate": false,
+          "columnNames": [
+            "service",
+            "account",
+            "id"
+          ]
+        },
+        "indices": [
+          {
+            "name": "index_history_coverage_service_account_importedAt",
+            "unique": false,
+            "columnNames": [
+              "service",
+              "account",
+              "importedAt"
+            ],
+            "orders": [],
+            "createSql": "CREATE INDEX IF NOT EXISTS `index_history_coverage_service_account_importedAt` ON `${TABLE_NAME}` (`service`, `account`, `importedAt`)"
+          }
+        ]
+      }
+    ],
+    "setupQueries": [
+      "CREATE TABLE IF NOT EXISTS room_master_table (id INTEGER PRIMARY KEY,identity_hash TEXT)",
+      "INSERT OR REPLACE INTO room_master_table (id,identity_hash) VALUES(42, 'c614e14bcbfeb13e65871c5b35a6dc08')"
+    ]
+  }
+}

@@ -84,25 +84,42 @@ class SpotifyBackend(private val container: SquareApplication) : MusicBackend {
      * client. So the registered application stays as the fallback, and a search
      * only fails when both have nothing; see [dev.lelonio.square.data.Gateway].
      */
-    override suspend fun search(query: String, labels: SearchLabels): SearchResults {
-        val term = query.trim()
-        container.gateway.search(term)
-            ?.let { dev.lelonio.square.data.GatewaySearch.parse(it, labels) }
-            ?.let {
-                searchNeedsSetup = false
-                return it
-            }
-
-        if (!container.webApi.isReady) {
-            searchNeedsSetup = true
-            return SearchResults()
+    override suspend fun search(query: String, labels: SearchLabels): SearchResults =
+        when (val outcome = searchOutcome(query, labels)) {
+            is SearchOutcome.Success -> { searchNeedsSetup = false; outcome.results }
+            SearchOutcome.NeedsSetup -> { searchNeedsSetup = true; SearchResults() }
+            is SearchOutcome.Failure -> { searchNeedsSetup = false; throw outcome.cause }
         }
-        searchNeedsSetup = false
-        return container.api.search(term).toResults(
-            artistLabel = labels.artist,
-            albumLabel = labels.album,
-            playlistLabel = labels.playlist,
-        )
+
+    override suspend fun searchOutcome(query: String, labels: SearchLabels): SearchOutcome {
+        val term = query.trim()
+        val gatewayFailure = try {
+            val raw = container.gateway.searchOrThrow(term)
+            val results = raw?.let { dev.lelonio.square.data.GatewaySearch.parse(it, labels) }
+            if (results != null) return SearchOutcome.Success(results)
+            val body = org.json.JSONObject(raw.orEmpty())
+            val errors = body.optJSONArray("errors")?.toString().orEmpty()
+            when {
+                errors.contains("PersistedQueryNotFound", ignoreCase = true) ||
+                    errors.contains("PersistedQueryNotSupported", ignoreCase = true) -> SearchOutcome.NeedsSetup
+                errors.contains("UNAUTHENTICATED", ignoreCase = true) ||
+                    errors.contains("FORBIDDEN", ignoreCase = true) -> SearchOutcome.Failure(
+                        SearchFailureKind.AUTH, IllegalStateException("Gateway search authorization failed"),
+                    )
+                else -> SearchOutcome.Failure(SearchFailureKind.RESPONSE, IllegalStateException("Gateway search response unavailable"))
+            }
+        } catch (error: Throwable) {
+            searchFailure(error)
+        }
+        // Keep the useful Web API fallback even after gateway transport failure.
+        if (container.webApi.isReady) return try {
+            SearchOutcome.Success(container.api.search(term).toResults(
+                artistLabel = labels.artist, albumLabel = labels.album, playlistLabel = labels.playlist,
+            ))
+        } catch (error: Throwable) {
+            searchFailure(error)
+        }
+        return gatewayFailure
     }
 
     /**

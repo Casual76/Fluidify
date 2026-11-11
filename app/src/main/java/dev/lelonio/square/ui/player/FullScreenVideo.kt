@@ -214,7 +214,7 @@ fun FullScreenVideo(
             // The vertical player's own bar and its own discs of glass. Same
             // controls, same material: turning the phone changes where they sit
             // on the screen, not what the app is made of.
-            PlaybackScrubber(positionMs, state.durationMs, onSeek)
+            PlaybackScrubber(positionMs, state.durationMs, onSeek, resetKey = state.mediaId)
 
             Spacer(Modifier.height(10.dp))
 

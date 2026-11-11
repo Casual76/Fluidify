@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_removal_title">डाउनलोड हटाएँ?</string>
+    <string name="download_removal_message">इस डिवाइस से “%1$s” की डाउनलोड की गई कॉपी हटाएँ? ऑफलाइन सुनने के लिए इसे फिर से डाउनलोड करना होगा। दूसरे डाउनलोड किए गए संग्रहों में रखे गाने उपलब्ध रहेंगे।</string>
+</resources>

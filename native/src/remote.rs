@@ -82,10 +82,12 @@ pub fn watch(session: &Session, notify: impl Fn() + Send + 'static) {
 
     // Spawned on whatever runtime is calling, which is the engine's own: this
     // runs inside the block_on that builds a session.
+    let lease = session.network().clone();
     tokio::spawn(async move {
         use futures_util::StreamExt;
         let mut updates = updates;
-        while let Some(update) = updates.next().await {
+        while let Some(update) = tokio::select! { biased; _ = lease.revoked() => None, value = updates.next() => value } {
+            if lease.check().is_err() { break; }
             let mut update: ClusterUpdate = match update {
                 Ok(update) => update,
                 Err(e) => {
@@ -110,9 +112,9 @@ pub fn watch(session: &Session, notify: impl Fn() + Send + 'static) {
                     .collect::<Vec<_>>()
                     .join(", "),
             );
-            if let Ok(mut stored) = CLUSTER.lock() {
-                *stored = Some(cluster);
-            }
+            if lease.admit(|| {
+                if let Ok(mut stored) = CLUSTER.lock() { *stored = Some(cluster); }
+            }).is_err() { break; }
             notify();
         }
         log::info!("cluster watch ended");

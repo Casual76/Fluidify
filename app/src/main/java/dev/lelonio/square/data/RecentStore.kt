@@ -46,7 +46,7 @@ class RecentStore(context: Context) {
 
     fun clear() {
         _tracks.value = emptyList()
-        prefs.edit().remove(KEY_TRACKS).apply()
+        check(prefs.edit().remove(KEY_TRACKS).commit()) { "Could not persist account cache revocation" }
     }
 
     private fun load(): List<CatalogTrack> {

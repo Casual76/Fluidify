@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="playlist_added_newest_first">Più recenti prima</string>
+    <string name="playlist_added_oldest_first">Meno recenti prima</string>
+    <string name="playlist_title_a_to_z">A–Z</string>
+    <string name="playlist_title_z_to_a">Z–A</string>
+    <string name="playlist_search_loaded_count">%1$d di %2$d brani caricati</string>
+    <string name="playlist_search_loading_scope">Altri brani in caricamento. La ricerca copre i brani caricati finora.</string>
+    <string name="playlist_added_dates_unavailable">La fonte non fornisce date di aggiunta per questi brani caricati. Viene mantenuto il loro ordine originale.</string>
+</resources>

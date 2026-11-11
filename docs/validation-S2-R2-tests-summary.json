@@ -1,0 +1,195 @@
+{
+  "app": {
+    "xmlCount": 12,
+    "counts": {
+      "tests": 56,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "classes": [
+      {
+        "name": "dev.lelonio.square.bridge.AiToolHostProviderGuardTest",
+        "tests": "6",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:46.124Z"
+      },
+      {
+        "name": "dev.lelonio.square.bridge.BridgeStateTest",
+        "tests": "9",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:49.838Z"
+      },
+      {
+        "name": "dev.lelonio.square.bridge.FluidifyToolValidationTest",
+        "tests": "5",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:49.896Z"
+      },
+      {
+        "name": "dev.lelonio.square.bridge.ResultFragmentsTest",
+        "tests": "4",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:50.100Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.DownloadIndexPersistenceTest",
+        "tests": "3",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:50.283Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.ListeningHistoryTest",
+        "tests": "5",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:50.600Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.ListeningMedia3OccurrenceTest",
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:50.604Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.ListeningOccurrenceRestoreTest",
+        "tests": "4",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:51.004Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.ListeningRecorderTest",
+        "tests": "1",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:51.378Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.ListeningRepositoryTest",
+        "tests": "8",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:51.443Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.NativeListeningOccurrenceTest",
+        "tests": "6",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:52.046Z"
+      },
+      {
+        "name": "dev.lelonio.square.data.SpotifyHistoryImportTest",
+        "tests": "4",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:52.321Z"
+      }
+    ]
+  },
+  "core": {
+    "xmlCount": 4,
+    "counts": {
+      "tests": 18,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "classes": [
+      {
+        "name": "dev.lelonio.square.download.DownloadExtrasArtTest",
+        "tests": "2",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:56.015Z"
+      },
+      {
+        "name": "dev.lelonio.square.io.HttpFetchTest",
+        "tests": "2",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:56.082Z"
+      },
+      {
+        "name": "dev.lelonio.square.playback.AudioSpectrumTest",
+        "tests": "7",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:56.091Z"
+      },
+      {
+        "name": "dev.lelonio.square.playback.PlayQueueTest",
+        "tests": "7",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:56.237Z"
+      }
+    ]
+  },
+  "engine/engine-ai-bridge": {
+    "xmlCount": 4,
+    "counts": {
+      "tests": 26,
+      "failures": 0,
+      "errors": 0,
+      "skipped": 0
+    },
+    "classes": [
+      {
+        "name": "dev.antigravity.fluidengine.ai.bridge.BridgeProtocolTest",
+        "tests": "4",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:57.463Z"
+      },
+      {
+        "name": "dev.antigravity.fluidengine.ai.bridge.ManifestTest",
+        "tests": "4",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:57.552Z"
+      },
+      {
+        "name": "dev.antigravity.fluidengine.ai.bridge.RemoteToolTest",
+        "tests": "12",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:57.561Z"
+      },
+      {
+        "name": "dev.antigravity.fluidengine.ai.bridge.TypedProtocolTest",
+        "tests": "6",
+        "failures": "0",
+        "errors": "0",
+        "skipped": "0",
+        "timestamp": "2026-11-07T18:57:57.683Z"
+      }
+    ]
+  }
+}

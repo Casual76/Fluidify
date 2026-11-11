@@ -287,8 +287,7 @@ fn write_sidecar(path: &Path, value: &Value) -> Result<(), String> {
 ///
 /// Deliberately reads from disk on every call. See `DownloadLookup` in
 /// `librespot-playback`'s `config.rs` for why a cached map would be worse.
-fn lookup_track(track_id: &SpotifyId) -> Option<DownloadedTrack> {
-    let root = root()?;
+fn lookup_track_at(root: &Path, track_id: &SpotifyId) -> Option<DownloadedTrack> {
     let id = track_id.to_base16().ok()?;
     let meta = meta_path(&root, &id)?;
     let path = audio_path(&root, &id)?;
@@ -302,6 +301,7 @@ fn lookup_track(track_id: &SpotifyId) -> Option<DownloadedTrack> {
         .and_then(hex_to_bytes)
         .and_then(|bytes| <[u8; 16]>::try_from(bytes.as_slice()).ok());
 
+    if !path.is_file() { return None; }
     let strings = |field: &str| -> Vec<String> {
         value
             .get(field)
@@ -316,6 +316,7 @@ fn lookup_track(track_id: &SpotifyId) -> Option<DownloadedTrack> {
     };
 
     Some(DownloadedTrack {
+        is_current: None,
         path,
         key,
         format,
@@ -342,7 +343,60 @@ fn lookup_track(track_id: &SpotifyId) -> Option<DownloadedTrack> {
 
 /// The lookup handed to `PlayerConfig` when the engine is built.
 pub fn lookup() -> DownloadLookup {
-    Arc::new(lookup_track)
+    Arc::new(move |id| lookup_track_at(&root()?, id))
+}
+
+/// A phone player only reads records authorized by its current local account binding.
+/// Snapshot identity is immutable; replacing it revokes readers captured by an old load.
+#[derive(Clone, PartialEq, Eq, serde::Deserialize)]
+pub struct SourceBinding {
+    pub owner: String,
+    pub namespace: String,
+    pub root: PathBuf,
+    pub records: std::collections::HashMap<String, String>,
+}
+static SOURCE: Mutex<Option<Arc<SourceBinding>>> = Mutex::new(None);
+static SOURCE_OWNER: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+pub fn begin_source_owner() { SOURCE_OWNER.fetch_add(1, std::sync::atomic::Ordering::SeqCst); }
+pub fn retire_source_owner() { begin_source_owner(); clear_source(); }
+pub fn bind_source(binding: SourceBinding) -> EngineResult<()> {
+    if binding.owner.is_empty() || binding.namespace.is_empty() || !binding.root.is_absolute() {
+        return Err("invalid local download binding".into());
+    }
+    let mut source = SOURCE.lock().map_err(|_| "source binding poisoned")?;
+    if source.as_deref() != Some(&binding) { *source = Some(Arc::new(binding)); }
+    Ok(())
+}
+pub fn source_identity() -> Option<(String, String, PathBuf)> {
+    let binding = SOURCE.lock().ok()?.clone()?;
+    Some((binding.owner.clone(), binding.namespace.clone(), binding.root.clone()))
+}
+pub fn clear_source() { if let Ok(mut source) = SOURCE.lock() { *source = None; } }
+pub fn scoped_lookup() -> DownloadLookup {
+    let owner = SOURCE_OWNER.load(std::sync::atomic::Ordering::SeqCst);
+    let expected = Mutex::new(source_identity());
+    Arc::new(move |track| {
+        if SOURCE_OWNER.load(std::sync::atomic::Ordering::SeqCst) != owner { return None; }
+        let binding = SOURCE.lock().ok()?.clone()?;
+        let identity = (binding.owner.clone(), binding.namespace.clone(), binding.root.clone());
+        let mut expected = expected.lock().ok()?;
+        if expected.is_none() { *expected = Some(identity.clone()); }
+        if expected.as_ref() != Some(&identity) { return None; }
+        drop(expected);
+        let id = track.to_base16().ok()?;
+        if !binding.records.values().any(|record| record == &id) { return None; }
+        let value = read_sidecar(&meta_path(&binding.root, &id)?)?;
+        if value.get("trackId")?.as_str()? != id { return None; }
+        let mut result = lookup_track_at(&binding.root, track)?;
+        if result.key.is_none() { return None; }
+        // An account/root/index change during file/key lookup cannot publish to the new owner.
+        let current = SOURCE.lock().ok()?.clone()?;
+        if SOURCE_OWNER.load(std::sync::atomic::Ordering::SeqCst) != owner || !Arc::ptr_eq(&current, &binding) { return None; }
+        let admitted_source = binding.clone();
+        result.is_current = Some(Arc::new(move || SOURCE_OWNER.load(std::sync::atomic::Ordering::SeqCst) == owner &&
+            SOURCE.lock().ok().and_then(|source| source.clone()).is_some_and(|source| Arc::ptr_eq(&source, &admitted_source))));
+        Some(result)
+    })
 }
 
 // -------------------------------------------------------------- what is there
@@ -572,6 +626,7 @@ async fn fetch_known(session: Session, mut sidecar: Value, root: PathBuf) -> Res
 
     let audio = audio_path(&root, &id).ok_or("bad download path")?;
     let meta = meta_path(&root, &id).ok_or("bad download path")?;
+    session.network().check().map_err(|e| e.to_string())?;
     clear_cancel(&id);
 
     // Already here at least as good: nothing to do, as with an ordinary download.
@@ -589,15 +644,17 @@ async fn fetch_known(session: Session, mut sidecar: Value, root: PathBuf) -> Res
 
     let part = audio.with_extension("part");
     let done = fetch_file(&session, file_id, &id, &uri_text, &part).await?;
+    session.network().check().map_err(|e| e.to_string())?;
     fs::rename(&part, &audio).map_err(|e| format!("could not store the download: {e}"))?;
 
     if let Some(object) = sidecar.as_object_mut() {
         object.insert("bytes".to_string(), json!(done));
         object.insert("downloadedAt".to_string(), json!(now_ms()));
     }
+    session.network().check().map_err(|e| e.to_string())?;
     write_sidecar(&meta, &sidecar)?;
     log::debug!("downloaded <{uri_text}> with a key it was given ({done} bytes)");
-    engine::emit_app("download_done", &uri_text, done as i64);
+    engine::emit_online(session.network(), "download_done", &uri_text, done as i64);
     Ok(sidecar.to_string())
 }
 
@@ -607,6 +664,7 @@ async fn fetch(session: Session, uri_text: String, kbps: i32, root: PathBuf) -> 
     let audio = audio_path(&root, &id).ok_or("bad download path")?;
     let meta = meta_path(&root, &id).ok_or("bad download path")?;
 
+    session.network().check().map_err(|e| e.to_string())?;
     clear_cancel(&id);
 
     let wanted = format_rank(preferred_formats(kbps)[0]);
@@ -662,6 +720,7 @@ async fn fetch(session: Session, uri_text: String, kbps: i32, root: PathBuf) -> 
     let part = audio.with_extension("part");
     let done = fetch_file(&session, file_id, &id, &uri_text, &part).await?;
 
+    session.network().check().map_err(|e| e.to_string())?;
     fs::rename(&part, &audio).map_err(|e| format!("could not store the download: {e}"))?;
 
     // The same bytes may well be sitting in the 512 MB playback cache from the
@@ -725,6 +784,7 @@ async fn fetch(session: Session, uri_text: String, kbps: i32, root: PathBuf) -> 
         "downloadedAt": now_ms(),
     });
 
+    session.network().check().map_err(|e| e.to_string())?;
     write_sidecar(&meta, &sidecar)?;
 
     log::info!(
@@ -733,7 +793,7 @@ async fn fetch(session: Session, uri_text: String, kbps: i32, root: PathBuf) -> 
         format_name(format),
         done
     );
-    engine::emit_app("download_done", &uri_text, done as i64);
+    engine::emit_online(session.network(), "download_done", &uri_text, done as i64);
 
     Ok(sidecar.to_string())
 }
@@ -784,6 +844,7 @@ async fn fetch_file(
 
     let mut total = 0usize;
     loop {
+        session.network().check().map_err(|e| e.to_string())?;
         if cancelled(id) {
             clear_cancel(id);
             return Err("cancelled".to_string());
@@ -807,6 +868,7 @@ async fn fetch_file(
             let mut last = "the CDN offered no url".to_string();
             let mut got = None;
             for url in &urls {
+                session.network().check().map_err(|e| e.to_string())?;
                 match get_range(session, url, done, CHUNK).await {
                     Ok(chunk) => {
                         got = Some(chunk);
@@ -823,6 +885,7 @@ async fn fetch_file(
             if attempt >= CHUNK_ATTEMPTS {
                 return Err(last);
             }
+            session.network().check().map_err(|e| e.to_string())?;
             log::warn!("a download stumbled at {done}: {last}; asking again");
             // A fresh set of URLs, not a fresh wait: a signed URL that expired
             // while the queue worked through a long playlist is the common
@@ -850,7 +913,7 @@ async fn fetch_file(
         } else {
             0
         };
-        engine::emit_app("download_progress", uri_text, permille.min(1000));
+        engine::emit_online(session.network(), "download_progress", uri_text, permille.min(1000));
     }
 
     file.flush()

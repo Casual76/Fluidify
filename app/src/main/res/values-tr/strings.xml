@@ -417,7 +417,7 @@
     <string name="widget_add_row">Satırı ana ekrana ekle</string>
     <string name="widget_add_note">Arkada kapak, çalan parça ve üç düğme. Uygulamanın temasını izler.</string>
     <string name="widget_nothing_playing_hint">Fluidify&#8217;ı aç ve oynata bas</string>
-    <string name="library_offline">İndirilenler gösteriliyor. Spotify henüz yanıt vermedi.</string>
+    <string name="library_offline">İndirilen içerik gösteriliyor.</string>
     <string name="library_offline_action">Yeniden dene</string>
     <string name="library_needs_app">Takip ettiğin sanatçılar ve kaydettiğin albümler için kendi Spotify uygulamanın bağlı olması gerekir.</string>
     <string name="library_needs_app_action">Bağla</string>
@@ -528,4 +528,17 @@
     <string name="watch_update_wifi">Saat %1$s sürümünü kendi Wi-Fi&#8217;ı ile indiriyor…</string>
     <string name="onboarding_step_of">Adım %1$d / %2$d</string>
     <string name="update_section_title">Güncellemeler</string>
+    <string name="history_title">Dinleme geçmişi</string>
+    <string name="history_record">Bu telefondaki dinlemeleri kaydet</string>
+    <string name="history_retention">Geçmiş siz silene kadar saklanır. Spotify aktarımları son gözlemlerdir, tam bir aylık geçmiş değildir. Uzaktan dinleme süresi bilinmiyor.</string>
+    <string name="history_account">Spotify hesabı</string>
+    <string name="history_import">Son Spotify dinlemelerini içe aktar</string>
+    <string name="history_importing">İçe aktarılıyor…</string>
+    <string name="history_import_result">Son içe aktarma</string>
+    <string name="history_import_observed">Son gözlemler içe aktarıldı; aylık kapsam eksik kalıyor.</string>
+    <string name="history_import_empty">Spotify son gözlem döndürmedi.</string>
+    <string name="history_import_error">İçe aktarma başarısız. Kaydedilen geçmiş korunur. Bağlı Web API hesabını ve izinleri kontrol edin.</string>
+    <string name="history_import_partial">Son gözlemler kısmen içe aktarıldı; kapsam sınırlı.</string>
+    <string name="history_delete">Bu hesabın geçmişini sil</string>
+    <string name="history_delete_confirm">Bu telefondaki %1$s hesabına ait tüm dinleme kayıtları ve içe aktarma kapsamı verileri silinsin mi? Bu işlem geri alınamaz. Etkinse kayıt devam eder.</string>
 </resources>

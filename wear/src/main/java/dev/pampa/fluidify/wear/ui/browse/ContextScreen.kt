@@ -43,6 +43,10 @@ fun ContextScreen(
     title: String,
     onPlaying: () -> Unit,
 ) {
+    val localAccount by app.downloads.authority.access.collectAsStateWithLifecycle()
+    val phoneAccount by app.link.accountSessions.scope.collectAsStateWithLifecycle()
+    val displayedLocal = localAccount
+    val displayedPhone = phoneAccount
     val data = rememberPhoneData(uri, { app.library.cachedContext(uri) }, { app.library.peekContext(uri) }) { app.library.context(uri) }
     val texts = rememberPhoneDataTexts()
     val nothingHere = stringResource(R.string.nothing_here)
@@ -92,11 +96,18 @@ fun ContextScreen(
                 androidx.wear.compose.material3.SwitchButton(
                     checked = kept,
                     onCheckedChange = { keep ->
+                        val account = displayedLocal
                         // Files are written and deleted: never on the main thread, one edit after the other.
                         val name = page?.title ?: title
                         val artUrl = page?.artUrl
                         scope.launch(app.downloads.edits) {
-                            if (keep) app.downloads.keep(uri, name, artUrl) else app.downloads.drop(uri)
+                            if (account != null && app.downloads.authority.isCurrent(account)) {
+                                if (keep) app.downloads.keep(account, uri, name, artUrl) else app.downloads.drop(account, uri)
+                            } else if (account == null && displayedPhone != null && app.link.accountSessions.isCurrent(displayedPhone)) {
+                                app.downloads.onRequest(dev.pampa.fluidify.wear.protocol.DownloadRequest(
+                                    uri, name, keep, artUrl, accountSession = displayedPhone.session,
+                                    accountNamespace = displayedPhone.namespace))
+                            }
                         }
                     },
                     label = { androidx.wear.compose.material3.Text(stringResource(R.string.keep_on_watch)) },

@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.playback.AudioSpectrumTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-07T20:44:54.970Z" hostname="PC_FISSO" time="0.124">
+  <properties/>
+  <testcase name="floatMonoAndSplitWindowsProduceFullFFTWithFiniteValues" classname="dev.lelonio.square.playback.AudioSpectrumTest" time="0.008"/>
+  <testcase name="logarithmicBandsSeparateSyntheticTonesAtDifferentRates" classname="dev.lelonio.square.playback.AudioSpectrumTest" time="0.02"/>
+  <testcase name="pauseFadeCompletesIn250msEvenWithDroppedFrames" classname="dev.lelonio.square.playback.AudioSpectrumTest" time="0.0"/>
+  <testcase name="oldSinkCannotSupplyFramesAfterSourceOrSpeedChange" classname="dev.lelonio.square.playback.AudioSpectrumTest" time="0.068"/>
+  <testcase name="capturePreservesPCMAndWaitsForQueuedAudioAndClearsOnSeek" classname="dev.lelonio.square.playback.AudioSpectrumTest" time="0.006"/>
+  <testcase name="silenceAndQuietPassagesAreNotAmplified" classname="dev.lelonio.square.playback.AudioSpectrumTest" time="0.022"/>
+  <testcase name="lightModeRespondsToBassWithoutFFTAndResetsAfterImpulse" classname="dev.lelonio.square.playback.AudioSpectrumTest" time="0.0"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

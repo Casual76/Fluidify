@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="download_removal_title">Remover os downloads?</string>
+    <string name="download_removal_message">Remover a cópia baixada de “%1$s” deste dispositivo? Para ouvir offline, será necessário baixá-la novamente. As faixas mantidas em outras coleções baixadas continuarão disponíveis.</string>
+</resources>

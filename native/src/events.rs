@@ -116,6 +116,8 @@ pub struct Listen<'a> {
 pub struct EventService {
     session: Session,
     transitions: AtomicU64,
+    #[cfg(test)]
+    before_post: Option<Box<dyn Fn() + Send + Sync>>,
 }
 
 impl EventService {
@@ -123,6 +125,7 @@ impl EventService {
         EventService {
             session,
             transitions: AtomicU64::new(0),
+            #[cfg(test)] before_post: None,
         }
     }
 
@@ -149,7 +152,7 @@ impl EventService {
     }
 
     /// A track ended. The one event Spotify turns into history.
-    pub fn track_transition(&self, listen: &Listen) {
+    pub fn track_transition(&self, listen: &Listen) -> bool {
         let device_id = self.session.device_id().to_string();
         let count = self.transitions.fetch_add(1, Ordering::Relaxed);
 
@@ -216,7 +219,7 @@ impl EventService {
             .field(&device_id)
             .field("na")
             .field("none");
-        self.post(event);
+        self.post(event)
     }
 
     /// Posts the event and logs what Spotify made of it.
@@ -225,7 +228,11 @@ impl EventService {
     /// silently drops and a rejected one are indistinguishable without it, and
     /// this whole format is reverse-engineered. Upstream's Mercury client has
     /// neither POST nor header fields, so both were added to the vendored copy.
-    fn post(&self, event: Event) {
+    pub fn allowed(&self) -> bool { self.session.network().check().is_ok() }
+
+    fn post(&self, event: Event) -> bool {
+        if !self.allowed() { return false; }
+        #[cfg(test)] if let Some(hook) = &self.before_post { hook(); }
         let body = event.body;
         let fields = vec![
             ("Accept-Language".to_string(), b"en".to_vec()),
@@ -239,7 +246,7 @@ impl EventService {
             Ok(request) => request,
             Err(e) => {
                 log::warn!("event not sent: {e}");
-                return;
+                return false;
             }
         };
 
@@ -251,7 +258,7 @@ impl EventService {
         // READ_LOGS can read.
         let kind = kind_of(&body);
         let Ok(handle) = crate::engine::runtime_handle() else {
-            return;
+            return false;
         };
         handle.spawn(async move {
             match request.await {
@@ -262,6 +269,7 @@ impl EventService {
                 Err(e) => log::warn!("event {kind} failed: {e}"),
             }
         });
+        true
     }
 }
 
@@ -339,7 +347,7 @@ pub mod pending {
     pub fn flush(dir: &str, events: &EventService) {
         take(dir, |listen| {
             log::info!("reporting a listen the last run did not finish");
-            events.track_transition(listen);
+            if !events.track_transition(listen) { super::outbox::append(dir, listen); }
         });
     }
 
@@ -438,9 +446,9 @@ pub mod outbox {
         let Ok(raw) = std::fs::read_to_string(&file) else {
             return;
         };
-        let _ = std::fs::remove_file(&file);
         let now = now_ms();
         let mut sent = 0;
+        let mut retained = Vec::new();
         for line in raw.lines() {
             let parts: Vec<&str> = line.split('\t').collect();
             if parts.len() != 9 {
@@ -454,7 +462,7 @@ pub mod outbox {
             let Some(reason_end) = EndReason::parse(parts[7]) else {
                 continue;
             };
-            events.track_transition(&Listen {
+            let admitted = events.track_transition(&Listen {
                 track_hex: parts[0],
                 playback_id: parts[1],
                 context_uri: parts[2],
@@ -465,8 +473,13 @@ pub mod outbox {
                 reason_end,
                 started_at,
             });
-            sent += 1;
+            if admitted { sent += 1; } else { retained.push(line); }
         }
+        // Keep unadmitted rows atomically. Admitted posts have uncertain server delivery;
+        // this is deliberately not an exactly-once delivery claim.
+        let remaining = if retained.is_empty() { String::new() } else { retained.join("\n") + "\n" };
+        let temporary = file.with_extension("pending.tmp");
+        if std::fs::write(&temporary, remaining).is_ok() { let _ = std::fs::rename(&temporary, &file); }
         if sent > 0 {
             log::info!("reported {sent} listens heard offline");
         }
@@ -575,3 +588,40 @@ mod tests {
     }
 }
 
+
+#[cfg(test)]
+mod manual_offline_reporting_tests {
+    use super::*;
+    use librespot_core::{network::{NetworkAuthority, Snapshot}, SessionConfig};
+    use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
+
+    #[tokio::test]
+    async fn revocation_between_outbox_selection_and_mercury_enqueue_retains_every_unadmitted_listen() {
+        let directory = std::env::temp_dir().join(format!("offline-reporting-{}",random_id()));
+        std::fs::create_dir_all(&directory).unwrap(); let dir=directory.to_str().unwrap();
+        let authority=NetworkAuthority::new(Snapshot { revision:0,manual:false });
+        let admissions=Arc::new(AtomicUsize::new(0)); let recorded=admissions.clone();
+        authority.set_dispatch_observer(Arc::new(move |_| { recorded.fetch_add(1,Ordering::SeqCst); Ok(()) }));
+        let session=Session::new_with_network(SessionConfig::default(),None,authority.lease().unwrap());
+        let mut events=EventService::new(session);
+        let revoke=authority.clone();
+        events.before_post=Some(Box::new(move || {
+            revoke.apply(Snapshot { revision:1,manual:true }).unwrap();
+            revoke.apply(Snapshot { revision:2,manual:false }).unwrap();
+        }));
+        let listen=Listen { track_hex:"00000000000000000000000000000001",playback_id:"synthetic",
+            context_uri:"spotify:playlist:synthetic",start_ms:0,end_ms:40_000,duration_ms:80_000,
+            reason_start:"playbtn",reason_end:EndReason::TrackDone,started_at:now_ms() };
+        outbox::append(dir,&listen); outbox::append(dir,&listen);
+        let before=std::fs::read(directory.join("listen-outbox")).unwrap();
+        outbox::flush(dir,&events);
+        assert_eq!(std::fs::read(directory.join("listen-outbox")).unwrap(),before);
+        assert_eq!(admissions.load(Ordering::SeqCst),0);
+        pending::write(dir,&pending::Pending { track_hex:listen.track_hex.into(),playback_id:listen.playback_id.into(),
+            context_uri:listen.context_uri.into(),start_ms:0,position_ms:40_000,duration_ms:80_000,started_at:listen.started_at });
+        pending::flush(dir,&events);
+        assert_eq!(std::fs::read_to_string(directory.join("listen-outbox")).unwrap().lines().count(),3);
+        assert_eq!(admissions.load(Ordering::SeqCst),0);
+        std::fs::remove_dir_all(directory).unwrap();
+    }
+}

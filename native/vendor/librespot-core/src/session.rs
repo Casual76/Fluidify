@@ -29,7 +29,7 @@ use crate::{
 use byteorder::{BigEndian, ByteOrder};
 use bytes::Bytes;
 use futures_core::TryStream;
-use futures_util::StreamExt;
+use futures_util::{StreamExt, SinkExt};
 use librespot_protocol::authentication::AuthenticationType;
 use num_traits::FromPrimitive;
 use pin_project_lite::pin_project;
@@ -98,6 +98,7 @@ struct SessionData {
 
 struct SessionInternal {
     config: SessionConfig,
+    network: crate::network::NetworkLease,
     data: RwLock<SessionData>,
 
     http_client: HttpClient,
@@ -112,8 +113,19 @@ struct SessionInternal {
     token_provider: OnceLock<TokenProvider>,
     login5: OnceLock<Login5Manager>,
     cache: Option<Arc<Cache>>,
+    credential_receipt: OnceLock<Arc<dyn Fn(&Credentials) -> Result<(), Error> + Send + Sync>>,
 
     handle: tokio::runtime::Handle,
+}
+
+async fn forward_packets<S>(lease: crate::network::NetworkLease,
+    mut packets: mpsc::UnboundedReceiver<(u8, Vec<u8>)>, mut sink: S) -> Result<(), Error>
+where S: futures_util::Sink<(u8, Vec<u8>), Error = io::Error> + Unpin {
+    while let Some(packet) = packets.recv().await {
+        let send = lease.transport("ap.packet.send", || sink.send(packet))?;
+        lease.run(async { Ok(send.await?) }).await?;
+    }
+    Ok(())
 }
 
 /// A shared reference to a Spotify session.
@@ -130,7 +142,14 @@ pub struct Session(Arc<SessionInternal>);
 
 impl Session {
     pub fn new(config: SessionConfig, cache: Option<Cache>) -> Self {
-        let http_client = HttpClient::new(config.proxy.as_ref());
+        Self::new_with_network(config, cache, Default::default())
+    }
+
+    pub fn network(&self) -> &crate::network::NetworkLease { &self.0.network }
+
+    pub fn new_with_network(config: SessionConfig, cache: Option<Cache>, network: crate::network::NetworkLease) -> Self {
+        let network = network.child();
+        let http_client = HttpClient::new_with_network(config.proxy.as_ref(), network.clone());
 
         debug!("new Session");
 
@@ -143,10 +162,12 @@ impl Session {
 
         Self(Arc::new(SessionInternal {
             config,
+            network,
             data: RwLock::new(session_data),
             http_client,
             tx_connection: OnceLock::new(),
             cache: cache.map(Arc::new),
+            credential_receipt: OnceLock::new(),
             apresolver: OnceLock::new(),
             audio_key: OnceLock::new(),
             channel: OnceLock::new(),
@@ -159,23 +180,38 @@ impl Session {
         }))
     }
 
+    /// Account-owner-local persistence of an already parsed APWelcome. Never grants network work.
+    pub fn set_credential_receipt(&self, receipt: Arc<dyn Fn(&Credentials) -> Result<(), Error> + Send + Sync>) {
+        let _ = self.0.credential_receipt.set(receipt);
+    }
+
+    fn persist_credential_receipt(&self, credentials: &Credentials, store: bool) -> Result<(), Error> {
+        if store { if let Some(cache) = self.cache() { cache.save_credentials(credentials); } }
+        if let Some(receipt) = self.0.credential_receipt.get() { receipt(credentials)?; }
+        Ok(())
+    }
+
     async fn connect_inner(
         &self,
         access_point: &SocketAddress,
         credentials: Credentials,
+        store_credentials: bool,
     ) -> Result<(Credentials, Transport), Error> {
         const MAX_RETRIES: u8 = 1;
-        let mut transport = connection::connect_with_retry(
+        let mut transport = connection::connect_with_network(
             &access_point.0,
             access_point.1,
             self.config().proxy.as_ref(),
             MAX_RETRIES,
+            self.network(),
         )
         .await?;
-        let mut reusable_credentials = connection::authenticate(
+        let mut reusable_credentials = connection::authenticate_with_network_and_receipt(
             &mut transport,
             credentials.clone(),
             &self.config().device_id,
+            self.network(),
+            |received| self.persist_credential_receipt(received, store_credentials),
         )
         .await?;
 
@@ -184,17 +220,20 @@ impl Session {
             trace!(
                 "Reconnect using stored credentials as token authed sessions cannot use keymaster."
             );
-            transport = connection::connect_with_retry(
+            transport = connection::connect_with_network(
                 &access_point.0,
                 access_point.1,
                 self.config().proxy.as_ref(),
                 MAX_RETRIES,
+                self.network(),
             )
             .await?;
-            reusable_credentials = connection::authenticate(
+            reusable_credentials = connection::authenticate_with_network_and_receipt(
                 &mut transport,
                 reusable_credentials.clone(),
                 &self.config().device_id,
+                self.network(),
+                |received| self.persist_credential_receipt(received, store_credentials),
             )
             .await?;
         }
@@ -209,11 +248,13 @@ impl Session {
     ) -> Result<(), Error> {
         // There currently happen to be 6 APs but anything will do to avoid an infinite loop.
         const MAX_AP_TRIES: u8 = 6;
+        self.network().check()?;
         let mut num_ap_tries = 0;
         let (reusable_credentials, transport) = loop {
+            self.network().check()?;
             let ap = self.apresolver().resolve("accesspoint").await?;
             info!("Connecting to AP \"{}:{}\"", ap.0, ap.1);
-            match self.connect_inner(&ap, credentials.clone()).await {
+            match self.connect_inner(&ap, credentials.clone(), store_credentials).await {
                 Ok(ct) => break ct,
                 Err(e) => {
                     num_ap_tries += 1;
@@ -238,6 +279,7 @@ impl Session {
             }
         };
 
+        self.network().check()?;
         let username = reusable_credentials
             .username
             .as_ref()
@@ -252,7 +294,7 @@ impl Session {
                     .map(|c| c != reusable_credentials)
                     .unwrap_or(true);
                 if cred_changed {
-                    cache.save_credentials(&reusable_credentials);
+                    self.network().commit_local(|| cache.save_credentials(&reusable_credentials))?;
                 }
             }
         }
@@ -266,12 +308,11 @@ impl Session {
             .map_err(|_| SessionError::NotConnected)?;
 
         let (sink, stream) = transport.split();
-        let sender_task = UnboundedReceiverStream::new(rx_connection)
-            .map(Ok)
-            .forward(sink);
+        let sender_task = forward_packets(self.network().clone(), rx_connection, sink);
         let session_weak = self.weak();
+        let sender_lease = self.network().clone();
         tokio::spawn(async move {
-            if let Err(e) = sender_task.await {
+            if let Err(e) = sender_lease.run(async { Ok(sender_task.await?) }).await {
                 error!("{e}");
                 if let Some(session) = session_weak.try_upgrade() {
                     if !session.is_invalid() {
@@ -281,7 +322,11 @@ impl Session {
             }
         });
 
-        tokio::spawn(DispatchTask::new(self.weak(), stream));
+        let dispatch = DispatchTask::new(self.weak(), stream);
+        let lease = self.network().clone();
+        tokio::spawn(async move {
+            tokio::select! { biased; _ = lease.revoked() => (), _ = dispatch => () }
+        });
 
         Ok(())
     }
@@ -376,10 +421,10 @@ impl Session {
     }
 
     pub fn send_packet(&self, cmd: PacketType, data: Vec<u8>) -> Result<(), Error> {
-        match self.0.tx_connection.get() {
+        self.network().transport("ap.packet.enqueue", || match self.0.tx_connection.get() {
             Some(tx) => Ok(tx.send((cmd as u8, data))?),
             None => Err(SessionError::NotConnected.into()),
-        }
+        })?
     }
 
     pub fn cache(&self) -> Option<&Arc<Cache>> {
@@ -638,6 +683,7 @@ impl Session {
     }
 
     pub fn shutdown(&self) {
+        self.network().retire();
         debug!("Shutdown: Invalidating session");
         self.0.data.write().expect(SESSION_DATA_POISON_MSG).invalid = true;
         self.mercury().shutdown();
@@ -955,5 +1001,30 @@ where
         }
 
         Poll::Pending
+    }
+}
+
+#[cfg(feature = "offline-contract-tests")]
+#[doc(hidden)]
+pub mod manual_offline_packet_tests {
+    use super::*;
+    use crate::network::{NetworkAuthority, Snapshot};
+    pub async fn manual_offline_packet_sender_does_not_drain_queued_packets_after_revocation() {
+        let authority = NetworkAuthority::new(Snapshot { revision:0, manual:false });
+        let session = Session::new_with_network(Default::default(), None, authority.lease().unwrap());
+        let (tx, rx) = mpsc::unbounded_channel(); session.0.tx_connection.set(tx).unwrap();
+        session.send_packet(PacketType::Ping, vec![1]).unwrap();
+        session.send_packet(PacketType::Ping, vec![2]).unwrap();
+        let received = Arc::new(std::sync::Mutex::new(Vec::new())); let output = received.clone();
+        let sink = futures_util::sink::unfold((), move |_, packet| {
+            let output = output.clone(); async move { output.lock().unwrap().push(packet); Ok::<(), io::Error>(()) }
+        });
+        // No packet has been handed to the sink. Revocation precedes first poll of the actual sender.
+        authority.apply(Snapshot { revision:1, manual:true }).unwrap();
+        authority.apply(Snapshot { revision:2, manual:false }).unwrap();
+        futures_util::pin_mut!(sink);
+        assert!(forward_packets(session.network().clone(), rx, sink).await.is_err());
+        assert!(received.lock().unwrap().is_empty());
+        assert!(session.send_packet(PacketType::Ping, vec![3]).is_err());
     }
 }

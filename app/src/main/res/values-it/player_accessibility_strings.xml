@@ -1,0 +1,6 @@
+<resources>
+    <string name="player_seek_position">Posizione di riproduzione</string>
+    <string name="player_seek_back">Indietro di 10 secondi</string>
+    <string name="player_seek_forward">Avanti di 10 secondi</string>
+    <string name="player_seek_value">%1$s di %2$s</string>
+</resources>

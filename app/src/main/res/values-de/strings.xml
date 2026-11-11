@@ -402,7 +402,7 @@
     <string name="widget_add_row">Die Zeile zum Startbildschirm hinzufügen</string>
     <string name="widget_add_note">Das Cover dahinter, was läuft, und die drei Tasten. Folgt dem Thema der App.</string>
     <string name="widget_nothing_playing_hint">Fluidify öffnen und Play drücken</string>
-    <string name="library_offline">Angezeigt wird, was heruntergeladen ist. Spotify hat noch nicht geantwortet.</string>
+    <string name="library_offline">Heruntergeladene Inhalte werden angezeigt.</string>
     <string name="library_offline_action">Erneut versuchen</string>
     <string name="library_needs_app">Gefolgte Künstler und gespeicherte Alben brauchen deine eigene verbundene Spotify-Anwendung.</string>
     <string name="library_needs_app_action">Verbinden</string>
@@ -513,4 +513,17 @@
     <string name="watch_update_wifi">Die Uhr lädt %1$s über ihr WLAN…</string>
     <string name="onboarding_step_of">Schritt %1$d von %2$d</string>
     <string name="update_section_title">Updates</string>
+    <string name="history_title">Hörverlauf</string>
+    <string name="history_record">Wiedergabe auf diesem Telefon aufzeichnen</string>
+    <string name="history_retention">Der Verlauf bleibt erhalten, bis du ihn löschst. Spotify-Importe sind aktuelle Beobachtungen, kein vollständiger Monatsverlauf. Die Dauer entfernter Wiedergabe ist unbekannt.</string>
+    <string name="history_account">Spotify-Konto</string>
+    <string name="history_import">Letzte Spotify-Wiedergaben importieren</string>
+    <string name="history_importing">Import läuft…</string>
+    <string name="history_import_result">Letzter Import</string>
+    <string name="history_import_observed">Aktuelle Beobachtungen importiert; die monatliche Abdeckung bleibt unvollständig.</string>
+    <string name="history_import_empty">Spotify hat keine aktuellen Beobachtungen zurückgegeben.</string>
+    <string name="history_import_error">Import fehlgeschlagen. Der gespeicherte Verlauf bleibt erhalten. Prüfe das verbundene Web-API-Konto und die Berechtigungen.</string>
+    <string name="history_import_partial">Aktuelle Beobachtungen teilweise importiert; die Abdeckung ist begrenzt.</string>
+    <string name="history_delete">Verlauf dieses Kontos löschen</string>
+    <string name="history_delete_confirm">Alle Wiedergaben und Importabdeckungsdaten für %1$s auf diesem Telefon löschen? Dies kann nicht rückgängig gemacht werden. Die Aufzeichnung wird fortgesetzt, wenn sie aktiviert ist.</string>
 </resources>

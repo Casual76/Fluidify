@@ -148,14 +148,17 @@ impl DealerManager {
         debug!("Launching dealer");
 
         let session = self.session();
+        session.network().check()?;
         // the url has to be a function that can retrieve a new url,
         // otherwise when we later try to reconnect with the initial url/token
         // and the token is expired we will just get 401 error
+        let network = session.network().clone();
         let get_url = move || Self::get_url(session.clone());
 
         let dealer = self
             .lock(move |inner| inner.builder.take())
             .ok_or(DealerError::BuilderNotAvailable)?
+            .with_network(network)
             .launch(get_url, None)
             .await
             .map_err(DealerError::LaunchFailure)?;

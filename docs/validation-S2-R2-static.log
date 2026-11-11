@@ -1,0 +1,24 @@
+SOURCE ONLY. CV retains exclusive compiler/Gradle runner. No compiler/test/config/build/lint/device invocation.
+S2 manifest SHA256 verified: 4CB75323E02C8E4E5C25BD8DB477C27BF16541FE37DA4C3280CB1EA86F0E61B1
+git diff --check -- <seven owned source paths>: exit 0
+
+
+UTF-8/NUL/trailing whitespace: PASS 7/7 owned source files.
+Native diff: three additive transport hunks before History; no reporting/vendor hunks.
+@@ -1498,0 +1499,4 @@ fn spawn_event_pump(
+@@ -1518,0 +1523 @@ fn spawn_event_pump(
+@@ -1534,0 +1540,5 @@ fn spawn_event_pump(
+Earlier direct Git-object suffix equality check failed on Unicode comment representation; not used as proof.
+S2 unchanged SHA256 PASS: app/schemas/dev.lelonio.square.data.ListeningDatabase/1.json 01E55F98D52A6C2E6DEA7ED25F0DEE9966E22F7F9F46E70DB781D43C886DC1A0
+S2 unchanged SHA256 PASS: app/src/main/java/dev/lelonio/square/data/PlaybackStore.kt 279DEF8E1EEB13B396436E8BBF800C903442D69CEF48EB2C61DB45A34D92D4AD
+S2 unchanged SHA256 PASS: app/src/main/java/dev/lelonio/square/playback/ListeningRecorder.kt ABF1E3202CFD72E2DE96A465D87FD9CA8C9127E5CE2B61A5533F5879EBDC1FA2
+S2 unchanged SHA256 PASS: app/src/main/java/dev/lelonio/square/playback/PlaybackService.kt D12EA3CE5E47B6F494370FC35E35CF687BFFC6067ABF00815E39075AD5A5B2D1
+Engine version/HEAD: 3.0.5 / a055257fc4b559bee54b9ce114f265bcd237adfd unchanged. No engine/vendor edits.
+New tests prepared: ResultFragmentsTest 4; NativeListeningOccurrenceTest 4 added (6 total). None executed.
+Static inventory: cargo.exe, cargo-ndk.exe, NDK 28.2.13676358 clang.exe present; rustlib Android aarch64/armv7/x86_64 directories present.
+No toolchain binaries run. Existing .so files/APK are old artifacts, not this correction.
+Final source manifest refresh after fixture state notifications; seven source UTF-8/NUL/whitespace checks PASS.
+Final scoped git diff --check including updated docs: exit 0
+POST-VALIDATION: final seven source hashes and UTF-8/NUL/whitespace checks PASS; scoped diff check exit0.
+Room v1 + PlaybackStore + ListeningRecorder + PlaybackService unchanged vs S2; APK hash reverified; engine version/HEAD unchanged.
+Report writer corrected to explicit UTF-8 after a Windows-default cp1252 decoding failure; final reports decode as UTF-8.

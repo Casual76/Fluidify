@@ -16,6 +16,7 @@ import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
@@ -24,6 +25,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Brush
@@ -39,8 +41,12 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.lelonio.square.data.Lyrics
-import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.flow.filter
+import kotlinx.coroutines.flow.collectLatest
 import kotlin.math.abs
+
+/** A clipped lyric pane retains scroll/animation state, while its rows lose input authority. */
+internal val LocalLyricInteractionEnabled = compositionLocalOf { true }
 
 /**
  * Synced lyrics, animated in the manner of Apple Music's view — the approach
@@ -60,6 +66,8 @@ fun LyricsView(
     modifier: Modifier = Modifier,
     /** Whether to read each line in the listener's language underneath it. */
     showTranslation: Boolean = false,
+    /** Tablet: keep the current verse near the transport, with context below. */
+    controlsAbove: Boolean = false,
     onSeek: (Long) -> Unit,
 ) {
     // Keyed on the lyrics, so a new track starts at its first line. Kept across
@@ -87,27 +95,37 @@ fun LyricsView(
     // only the effect below ever reads.
     val placed = remember(lyrics) { BooleanArray(1) }
 
-    // Centre the active line rather than pin it to the top: the lines around it
-    // are the context that makes a lyric readable while it plays.
-    androidx.compose.runtime.LaunchedEffect(lyrics, activeLine) {
+    val tabletAnchorPx = with(LocalDensity.current) { 80.dp.roundToPx() }
+    // The phone centres the verse. Below the tablet transport, one preceding
+    // line is enough context: centring in the entire remaining height left a
+    // large gap between the controls and the words being sung.
+    androidx.compose.runtime.LaunchedEffect(lyrics, activeLine, controlsAbove, tabletAnchorPx) {
         if (activeLine < 0) return@LaunchedEffect
         // The effect runs before the list has been measured, so on the first
         // pass the viewport is still nothing high and centring on it would
         // land the line at the top of the screen. Wait for a real height.
-        val viewportCentre = snapshotFlow { listState.layoutInfo.viewportSize.height }
-            .first { it > 0 } / 2
-        val offset = -viewportCentre + LineHeightPx
-        // Arriving is not a line change. Opening the panel forty lines into a
-        // song used to animate the list all the way down from the first line,
-        // composing and measuring every line it passed — on the same frames the
-        // panel was fading in, which is exactly where the switch stuttered. The
-        // first placement is a jump; every line after it is the travel.
-        if (placed[0]) {
-            listState.animateScrollToItem(activeLine, offset)
-        } else {
-            listState.scrollToItem(activeLine, offset)
-            placed[0] = true
-        }
+        var firstMeasurement = true
+        snapshotFlow { listState.layoutInfo.viewportSize.height }
+            .filter { it > 0 }
+            .collectLatest { height ->
+                // layoutInfo can publish from a measurement. A scroll forces another measure;
+                // yield to the next frame so it cannot re-enter the layout that reported it.
+                withFrameMillis { }
+                val offset = if (controlsAbove) {
+                    -minOf(tabletAnchorPx, height / 4)
+                } else {
+                    -height / 2 + LineHeightPx
+                }
+                // Jump on arrival; animate subsequent line changes only.
+                if (placed[0] && firstMeasurement) {
+                    listState.animateScrollToItem(activeLine, offset)
+                } else {
+                    listState.scrollToItem(activeLine, offset)
+                    placed[0] = true
+                }
+                // Resize repositions the same list without travelling across old bounds.
+                firstMeasurement = false
+            }
     }
 
     LazyColumn(
@@ -120,17 +138,19 @@ fun LyricsView(
             .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
             .drawWithContent {
                 drawContent()
+                val topFade = if (controlsAbove) (16.dp.toPx() / size.height).coerceIn(0f, .18f) else .18f
+                val bottomFade = if (controlsAbove) (24.dp.toPx() / size.height).coerceIn(0f, .18f) else .18f
                 drawRect(
                     brush = Brush.verticalGradient(
                         0f to Color.Transparent,
-                        0.18f to Color.Black,
-                        0.82f to Color.Black,
+                        topFade to Color.Black,
+                        (1f - bottomFade) to Color.Black,
                         1f to Color.Transparent,
                     ),
                     blendMode = BlendMode.DstIn,
                 )
             },
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = 40.dp),
+        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = if (controlsAbove) 12.dp else 40.dp),
     ) {
         itemsIndexed(lyrics.lines) { index, line ->
             val isActive = index == activeLine
@@ -256,7 +276,7 @@ private fun LyricRow(
     Box(
         Modifier
             .fillMaxWidth()
-            .clickable(enabled = !unsynced, onClick = onClick)
+            .clickable(enabled = !unsynced && LocalLyricInteractionEnabled.current, onClick = onClick)
             .padding(horizontal = 22.dp, vertical = 9.dp),
         contentAlignment = Alignment.CenterStart,
     ) {

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.tools.ToolContractsTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:20.153Z" hostname="PC_FISSO" time="0.003">
+  <properties/>
+  <testcase name="malformedAndMissingArgumentsAreRejected" classname="dev.antigravity.fluidengine.ai.tools.ToolContractsTest" time="0.001"/>
+  <testcase name="legacyOutputHasNoInventedOutcome" classname="dev.antigravity.fluidengine.ai.tools.ToolContractsTest" time="0.001"/>
+  <testcase name="tolerantExistingArgsAndZeroBasedPagesRemainValid" classname="dev.antigravity.fluidengine.ai.tools.ToolContractsTest" time="0.0"/>
+  <testcase name="truncationRetainsLongFirstLineWithinEveryLimit" classname="dev.antigravity.fluidengine.ai.tools.ToolContractsTest" time="0.0"/>
+  <testcase name="localReferencesEnforceRequiredAndUnionTypesDoNotConflictWithCoercion" classname="dev.antigravity.fluidengine.ai.tools.ToolContractsTest" time="0.0"/>
+  <testcase name="nestedRequiredAndNullableAlternatives" classname="dev.antigravity.fluidengine.ai.tools.ToolContractsTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

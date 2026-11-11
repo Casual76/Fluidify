@@ -52,7 +52,7 @@ class RecentContextsStore(context: Context) {
     /** Forgets everything: the account it belonged to signed out. */
     fun clear() {
         _contexts.value = emptyList()
-        prefs.edit().remove(KEY).apply()
+        check(prefs.edit().remove(KEY).commit()) { "Could not persist account cache revocation" }
     }
 
     private fun load(): List<RecentContext> =

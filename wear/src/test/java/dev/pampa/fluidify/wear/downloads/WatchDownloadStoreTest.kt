@@ -18,7 +18,9 @@ import java.io.File
 @Config(sdk = [36])
 class WatchDownloadStoreTest {
 
-    private lateinit var store: WatchDownloadStore
+    private lateinit var store: WatchDownloadFiles
+    private lateinit var authority: WatchDownloadAuthority
+    private fun reopen() = WatchDownloadStore(ApplicationProvider.getApplicationContext<WearApp>(), authority).forAccount(authority.capture()!!)
     private val track = "spotify:track:5sWHDYs0csV6RS48xBl0tH"
     private val other = "spotify:track:0000000000000000000001"
 
@@ -27,7 +29,12 @@ class WatchDownloadStoreTest {
         val app = ApplicationProvider.getApplicationContext<WearApp>()
         File(app.filesDir, "downloads").deleteRecursively()
         app.getSharedPreferences("watch_download_failures", 0).edit().clear().commit()
-        store = WatchDownloadStore(app)
+        val receipt = File(app.cacheDir, "download-test-receipt.json").apply { delete() }
+        val credential = File(app.cacheDir, "download-test-credential.json").apply {
+            writeText("""{"auth_type":1,"username":"synthetic-A","auth_data":"AQ=="}""")
+        }
+        authority = WatchDownloadAuthority(receipt, credential)
+        store = reopen()
     }
 
     private fun sidecar(uri: String) =
@@ -44,8 +51,8 @@ class WatchDownloadStoreTest {
     @Test
     fun pathsAreTheNativeStoresShards() {
         // native/src/downloads.rs: <root>/audio/<xx>/<rest>, <root>/meta/<xx>/<rest>.json
-        assertTrue(store.audioFile(track)!!.path.replace('\\', '/').endsWith("downloads/audio/b3/9fe8081e1f4c54be38e8d6f9f12bb9"))
-        assertTrue(store.metaFile(track)!!.path.replace('\\', '/').endsWith("downloads/meta/b3/9fe8081e1f4c54be38e8d6f9f12bb9.json"))
+        assertTrue(store.audioFile(track)!!.path.replace('\\', '/').endsWith("audio/b3/9fe8081e1f4c54be38e8d6f9f12bb9"))
+        assertTrue(store.metaFile(track)!!.path.replace('\\', '/').endsWith("meta/b3/9fe8081e1f4c54be38e8d6f9f12bb9.json"))
         assertNull(store.audioFile("spotify:album:5sWHDYs0csV6RS48xBl0tH"))
     }
 
@@ -126,7 +133,7 @@ class WatchDownloadStoreTest {
     fun theListSurvivesARestart() {
         store.keep("spotify:playlist:a", "A")
         store.setTracks("spotify:playlist:a", listOf(track))
-        val again = WatchDownloadStore(ApplicationProvider.getApplicationContext())
+        val again = reopen()
         assertEquals(listOf(track), again.owners.value.single().tracks)
     }
 
@@ -147,7 +154,7 @@ class WatchDownloadStoreTest {
         store.recordFailure(track)
         assertTrue(store.pending().isEmpty())
         assertEquals(1, store.unavailableCount())
-        val again = WatchDownloadStore(ApplicationProvider.getApplicationContext())
+        val again = reopen()
         assertEquals(1, again.unavailableCount())
         again.delete(track)
         assertEquals(listOf(track), again.pending())

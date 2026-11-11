@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" tests="12" skipped="0" failures="0" errors="0" timestamp="2026-11-07T18:57:57.561Z" hostname="PC_FISSO" time="0.121">
+  <properties/>
+  <testcase name="missingRequiredArgumentsNeverLeaveClientOrAskConfirmation" classname="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" time="0.089"/>
+  <testcase name="confirmationIsAskedByTheCallerAndPassedToTheHost" classname="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" time="0.002"/>
+  <testcase name="anErrorFromTheHostStaysAnError" classname="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" time="0.001"/>
+  <testcase name="legacyWriteWithoutParentExecutionIdentityNeverLeavesClient" classname="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" time="0.002"/>
+  <testcase name="aRefusedConfirmationNeverReachesTheHost" classname="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" time="0.001"/>
+  <testcase name="actionsOffStopTheCallBeforeItLeavesTheApp" classname="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" time="0.002"/>
+  <testcase name="aLongJobIsFollowedUntilItFinishes" classname="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" time="0.003"/>
+  <testcase name="stableSuppliedOperationIdentitySurvivesSeparateRetriesAndLegacyIsUnknown" classname="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" time="0.002"/>
+  <testcase name="twoArgumentWriteCannotInventIdentityButReadRemainsLegacyCompatible" classname="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" time="0.002"/>
+  <testcase name="cancellationCancelsRunningRemoteJobOnceAndPropagates" classname="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" time="0.011"/>
+  <testcase name="partsComeBackAsContentForTheModel" classname="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" time="0.002"/>
+  <testcase name="aFailedJobBecomesAnError" classname="dev.antigravity.fluidengine.ai.bridge.RemoteToolTest" time="0.002"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

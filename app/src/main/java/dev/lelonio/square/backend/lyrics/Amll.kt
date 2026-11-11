@@ -74,7 +74,9 @@ object Amll {
     }
 
     private fun alternatives(trackUri: String): List<String> = runCatching {
-        val answer = NativeBridge.trackRelatives(trackUri) ?: return emptyList()
+        val answer = dev.lelonio.square.data.SpotifyNetworkPolicy.capture().dispatch {
+            NativeBridge.trackRelatives(trackUri)
+        } ?: return emptyList()
         val array = JSONObject(answer).optJSONArray("alternatives") ?: return emptyList()
         (0 until array.length()).mapNotNull { array.optString(it).takeIf(String::isNotEmpty) }
     }.getOrDefault(emptyList())

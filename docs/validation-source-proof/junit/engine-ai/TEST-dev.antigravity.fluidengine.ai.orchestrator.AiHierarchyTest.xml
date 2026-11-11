@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.orchestrator.AiHierarchyTest" tests="11" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:12.104Z" hostname="PC_FISSO" time="1.026">
+  <properties/>
+  <testcase name="senza categoria al modello arrivano solo i tool built-in" classname="dev.antigravity.fluidengine.ai.orchestrator.AiHierarchyTest" time="0.008"/>
+  <testcase name="una categoria senza sottocategorie apre i gruppi di partenza, o tutti se l'app non ne ha marcati" classname="dev.antigravity.fluidengine.ai.orchestrator.AiHierarchyTest" time="0.001"/>
+  <testcase name="un allegato che regge solo il livello profondo fa partire da li'" classname="dev.antigravity.fluidengine.ai.orchestrator.AiHierarchyTest" time="0.001"/>
+  <testcase name="un allegato che nessun modello regge passa dalla traduzione dell'app, o viene detto al modello" classname="dev.antigravity.fluidengine.ai.orchestrator.AiHierarchyTest" time="0.002"/>
+  <testcase name="oltre il tetto cadono i gruppi usati meno di recente, mai quello appena aperto" classname="dev.antigravity.fluidengine.ai.orchestrator.AiHierarchyTest" time="0.001"/>
+  <testcase name="apri_categoria e apri_sottocategoria valgono dal giro dopo e restano nella conversazione" classname="dev.antigravity.fluidengine.ai.orchestrator.AiHierarchyTest" time="0.002"/>
+  <testcase name="l'allegato nella storia diventa una riga quando il nuovo provider non lo regge" classname="dev.antigravity.fluidengine.ai.orchestrator.AiHierarchyTest" time="0.001"/>
+  <testcase name="un allegato dell'utente che il modello della chat regge entra nel suo messaggio" classname="dev.antigravity.fluidengine.ai.orchestrator.AiHierarchyTest" time="0.001"/>
+  <testcase name="su OpenRouter col catalogo gerarchico non parte tutto, solo i gruppi aperti e il suggerimento" classname="dev.antigravity.fluidengine.ai.orchestrator.AiHierarchyTest" time="0.0"/>
+  <testcase name="lo stadio 1 apre categoria e sottocategorie, che restano aperte alla domanda dopo" classname="dev.antigravity.fluidengine.ai.orchestrator.AiHierarchyTest" time="0.001"/>
+  <testcase name="il sink dei consumi riceve un evento per ogni chiamata, router compreso, anche quando fallisce" classname="dev.antigravity.fluidengine.ai.orchestrator.AiHierarchyTest" time="1.007"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -4,7 +4,19 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
+import androidx.compose.ui.graphics.GraphicsLayerScope
+import androidx.compose.ui.graphics.graphicsLayer
 import dev.antigravity.fluidengine.ui.fluid.glassSurface
+import dev.antigravity.fluidengine.ui.fluid.GlassBackdropState
+import dev.antigravity.fluidengine.ui.fluid.glassBackdropSource
+
+/** Record the stage's visible effects, excluding its sibling chrome. Order matters:
+ * the engine source records modifiers after it, so the effect must be inside. */
+internal fun Modifier.playerStageSource(
+    backdrop: GlassBackdropState,
+    frozen: () -> Boolean = { false },
+    effects: GraphicsLayerScope.() -> Unit,
+): Modifier = glassBackdropSource(backdrop, frozen).graphicsLayer(effects)
 
 /**
  * Whether panes refresh what they are reflecting, or hold the last look at it.

@@ -135,15 +135,37 @@ class SheetScreenshots {
 
     @Test
     fun watchDownloads() {
-        app.downloads.keep("spotify:playlist:a", "Corsa del mattino")
-        app.downloads.store.setTracks("spotify:playlist:a", List(24) { "spotify:track:00000000000000000000%02d".format(it) })
-        app.downloads.keep("spotify:album:b", "Riflessi")
-        app.downloads.changed(schedule = false)
-        capture("watch_downloads") { dev.pampa.fluidify.wear.ui.browse.WatchDownloadsScreen(app.downloads, onOpen = { _, _ -> }) }
+        val credential = java.io.File(app.filesDir, "librespot/reusable/credentials.json")
+        credential.parentFile!!.mkdirs()
+        credential.writeText("""{"auth_type":1,"username":"synthetic-preview","auth_data":"AQ=="}""")
+        // A screenshot owns its synthetic authority and scope; no process-lifetime file watcher
+        // may outlive Robolectric's temporary application directory.
+        val authority = dev.pampa.fluidify.wear.downloads.WatchDownloadAuthority(
+            java.io.File(app.noBackupFilesDir, "synthetic-watch-download-authority.json"), credential)
+        val sessions = dev.pampa.fluidify.wear.link.PhoneAccountSession(app.getSharedPreferences("synthetic-watch-download-session", 0))
+        sessions.accept(dev.pampa.fluidify.wear.protocol.AccountState(
+            true, "synthetic-preview", System.currentTimeMillis(), "synthetic-download-session",
+            dev.pampa.fluidify.wear.downloads.WatchDownloadAuthority.namespace("synthetic-preview")))
+        val previewScope = CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Unconfined)
+        val downloads = dev.pampa.fluidify.wear.downloads.WatchDownloads(app, authority, sessions, previewScope,
+            enqueue = { _, _ -> }, publishTransport = {})
+        try {
+            check(authority.confirm("synthetic-preview", authority.startTicket()))
+            val access = authority.capture()!!
+            downloads.keep(access, "spotify:playlist:a", "Corsa del mattino")
+            downloads.store.forAccount(access).setTracks("spotify:playlist:a", List(24) { "spotify:track:00000000000000000000%02d".format(it) })
+            downloads.keep(access, "spotify:album:b", "Riflessi")
+            downloads.changed(schedule = false)
+            capture("watch_downloads") { dev.pampa.fluidify.wear.ui.browse.WatchDownloadsScreen(downloads, onOpen = { _, _ -> }) }
+        } finally {
+            previewScope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
+        }
     }
 
     @Test
     fun home() {
+        app.link.accountSessions.accept(dev.pampa.fluidify.wear.protocol.AccountState(
+            true, "synthetic-preview", localDataSession = "synthetic-preview-session", localDataNamespace = "synthetic-preview"))
         app.library.seed(
             home = LibraryPage(
                 listOf(
@@ -167,6 +189,8 @@ class SheetScreenshots {
 
     @Test
     fun context() {
+        app.link.accountSessions.accept(dev.pampa.fluidify.wear.protocol.AccountState(
+            true, "synthetic-preview", localDataSession = "synthetic-preview-session", localDataNamespace = "synthetic-preview"))
         app.library.seed(
             contexts = listOf(
                 ContextPage(
@@ -182,6 +206,8 @@ class SheetScreenshots {
 
     @Test
     fun addToPlaylist() {
+        app.link.accountSessions.accept(dev.pampa.fluidify.wear.protocol.AccountState(
+            true, "synthetic-preview", localDataSession = "synthetic-preview-session", localDataNamespace = "synthetic-preview"))
         app.library.seed(
             sections = mapOf(
                 dev.pampa.fluidify.wear.protocol.LibrarySection.PLAYLISTS to LibraryPage(

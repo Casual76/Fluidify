@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.media3.common.C
 import com.google.android.gms.wearable.Wearable
 import dev.lelonio.square.SquareApplication
+import dev.lelonio.square.data.AccountLocalDataCoordinator.Access
 import dev.lelonio.square.data.RemoteConnect
 import dev.lelonio.square.io.WriteWatchdog
 import dev.pampa.fluidify.wear.protocol.AckErrors
@@ -23,6 +24,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.tasks.await
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.async
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.KSerializer
 import kotlinx.serialization.json.JsonElement
@@ -49,6 +51,11 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
      * cancel the reply along with the work and the watch waited its full twelve seconds for nothing.
      */
     suspend fun onRequest(nodeId: String, request: RpcRequest) {
+        val access = app.accountLocalData.captureRequest(request.accountSession)
+        if (access == null) {
+            reply(nodeId, RpcResponse(request.id, false, error = "account-changed", accountSession = request.accountSession), null)
+            return
+        }
         // What the question asks for, held to what the phone allows: a negative count or an
         // enormous page from a watch is an exception or a lot of work here, not an answer.
         val method = RpcLimits.sanitised(request.method)
@@ -56,14 +63,14 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
         // Not a child of this call: much of an answer is blocking native and network work that no
         // timeout can interrupt, and a child would hold the reply until it ended. Raced instead,
         // and left to finish on its own when it loses (a Home built late is still kept for next time).
-        val work = answers.async { answer(method) }
+        val work = answers.async { answer(access, method) }
         val response = try {
             val payload = withTimeoutOrNull(budgetFor(method)) { work.await() }
             if (payload != null || work.isCompleted) {
                 RpcResponse(request.id, ok = true, payload = payload)
             } else {
                 Log.w(TAG, "rpc $kind ran out of time")
-                fallback(request.id, method) ?: RpcResponse(request.id, ok = false, error = "timeout")
+                fallback(access, request.id, method) ?: RpcResponse(request.id, ok = false, error = "timeout")
             }
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
@@ -73,7 +80,9 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
             // A code, not the exception's message: that stays on the phone.
             RpcResponse(request.id, ok = false, error = AckErrors.INTERNAL)
         }
-        reply(nodeId, response)
+        val admitted = if (app.accountLocalData.isCurrent(access)) response.copy(accountSession = access.requestSession)
+            else RpcResponse(request.id, false, error = "account-changed", accountSession = access.requestSession)
+        reply(nodeId, admitted, access)
     }
 
     /**
@@ -82,23 +91,25 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
      * [WearCodec.peekId]), and that is enough for the watch to stop waiting.
      */
     suspend fun onUnsupported(nodeId: String, id: Long) {
-        reply(nodeId, RpcResponse(id, ok = false, error = AckErrors.UNSUPPORTED))
+        reply(nodeId, RpcResponse(id, ok = false, error = AckErrors.UNSUPPORTED), null)
     }
 
-    private suspend fun reply(nodeId: String, response: RpcResponse) {
+    private suspend fun reply(nodeId: String, response: RpcResponse, access: Access?) {
         withContext(kotlinx.coroutines.NonCancellable) {
-            val bytes = WearCodec.encode(RpcResponse.serializer(), response)
+            val current = if (response.ok && (access == null || !app.accountLocalData.isCurrent(access)))
+                response.copy(ok = false, error = "account-changed", payload = null) else response
+            val bytes = WearCodec.encode(RpcResponse.serializer(), current)
             if (bytes.size <= RPC_MESSAGE_LIMIT) {
                 bridge.link.send(nodeId, WearPaths.RPC_REPLY, bytes)
             } else {
-                stream(nodeId, response.id, WearCodec.gzip(bytes))
+                stream(access, nodeId, response.id, WearCodec.gzip(bytes))
             }
         }
     }
 
     /** What stands in for an answer that did not come in time: the last Home, for the Home. */
-    private fun fallback(id: Long, method: RpcMethod): RpcResponse? = when (method) {
-        RpcMethod.Home -> library.cachedHome()?.let { RpcResponse(id, ok = true, payload = encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), it)) }
+    private fun fallback(access: Access, id: Long, method: RpcMethod): RpcResponse? = when (method) {
+        RpcMethod.Home -> library.cachedHome(access)?.let { RpcResponse(id, ok = true, payload = encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), it)) }
         else -> null
     }
 
@@ -108,19 +119,25 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
         else -> ANSWER_BUDGET_MS
     }
 
-    private suspend fun answer(method: RpcMethod): JsonElement? = when (method) {
+    private suspend fun answer(access: Access, method: RpcMethod): JsonElement? {
+        app.accountLocalData.use(access) { Unit }
+        return when (method) {
         is RpcMethod.Queue -> encode(QueueWindow.serializer(), withContext(Dispatchers.Main.immediate) { queue(method) })
-        RpcMethod.Devices -> encode(DeviceList.serializer(), devices())
-        RpcMethod.Home -> encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), library.home())
-        is RpcMethod.Library -> encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), library.section(method.section))
-        is RpcMethod.Context -> encode(dev.pampa.fluidify.wear.protocol.ContextPage.serializer(), library.context(method.uri, method.offset, method.limit))
-        is RpcMethod.Search -> encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), library.search(method.query))
-        is RpcMethod.Downloads -> encode(dev.pampa.fluidify.wear.protocol.PhoneDownloads.serializer(), phoneDownloads(method.uris))
-        is RpcMethod.Liked -> encode(dev.pampa.fluidify.wear.protocol.LikedAnswer.serializer(), liked(method.uris))
+        RpcMethod.Devices -> encode(DeviceList.serializer(), devices(access))
+        RpcMethod.Home -> encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), library.home(access))
+        is RpcMethod.Library -> encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), library.section(access, method.section))
+        is RpcMethod.Context -> encode(dev.pampa.fluidify.wear.protocol.ContextPage.serializer(), library.context(access, method.uri, method.offset, method.limit))
+        is RpcMethod.Search -> encode(dev.pampa.fluidify.wear.protocol.LibraryPage.serializer(), library.search(access, method.query))
+        is RpcMethod.Downloads -> encode(dev.pampa.fluidify.wear.protocol.PhoneDownloads.serializer(), phoneDownloads(access, method.uris))
+        is RpcMethod.Liked -> encode(dev.pampa.fluidify.wear.protocol.LikedAnswer.serializer(), liked(access, method.uris))
+        }
     }
 
-    private suspend fun liked(uris: List<String>): dev.pampa.fluidify.wear.protocol.LikedAnswer {
-        val answers = uris.take(MAX_LIKED_QUERY).associateWith { uri -> catchingNonCancel { app.likedTracks.isLiked(uri) }.getOrNull() }
+    private suspend fun liked(access: Access, uris: List<String>): dev.pampa.fluidify.wear.protocol.LikedAnswer {
+        app.accountLocalData.requireOnline(access)
+        val answers = uris.take(MAX_LIKED_QUERY).associateWith { uri ->
+            app.accountLocalData.requireOnline(access)
+            catchingNonCancel { app.likedTracks.isLiked(uri) }.getOrNull() }
         return dev.pampa.fluidify.wear.protocol.LikedAnswer(
             liked = answers.filterValues { it == true }.keys.toList(),
             notLiked = answers.filterValues { it == false }.keys.toList(),
@@ -133,13 +150,16 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
      * to fetch a track (see TransportPlanner) and, with the key, to fetch it from the
      * CDN without asking Spotify for a key of its own.
      */
-    private suspend fun phoneDownloads(uris: List<String>) = withContext(Dispatchers.IO) {
+    private suspend fun phoneDownloads(access: Access, uris: List<String>) = withContext(Dispatchers.IO) {
+        app.downloads.load()
+        app.accountLocalData.use(access) { Unit }
         // The store may not have been told where it lives yet: this can run in a process
         // the listener service woke, with no engine started.
         runCatching { dev.lelonio.square.nativecore.NativeBridge.setDownloadRoot(app.downloads.root.absolutePath) }
         dev.pampa.fluidify.wear.protocol.PhoneDownloads(
             uris.take(MAX_DOWNLOAD_QUERY).map { uri ->
-                val sidecar = runCatching { dev.lelonio.square.nativecore.NativeBridge.downloadState(uri) }.getOrNull()
+                val owned = app.downloads.read(access) { isDownloaded(uri) }
+                val sidecar = if (!owned) null else runCatching { dev.lelonio.square.nativecore.NativeBridge.downloadState(uri) }.getOrNull()
                 dev.pampa.fluidify.wear.protocol.PhoneDownload(uri, sidecar?.takeIf { it != "null" })
             },
         )
@@ -183,7 +203,8 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
         return QueueWindow(currentIndex = current, total = count, items = items)
     }
 
-    private suspend fun devices(): DeviceList {
+    private suspend fun devices(access: Access): DeviceList {
+        app.accountLocalData.requireOnline(access)
         // The cluster the engine follows; a refresh first, so a speaker switched on a
         // moment ago is in the list.
         // On the main thread, where the player refreshes it too: RemoteConnect's maps are not
@@ -222,21 +243,36 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
      * only after that, or after a short grace; see [ChannelWrapUp]. Closed on the heels of the
      * last byte, the tail of a large answer could be lost with the channel.
      */
-    private suspend fun stream(nodeId: String, id: Long, gzipped: ByteArray) {
+    private suspend fun stream(access: Access?, nodeId: String, id: Long, gzipped: ByteArray) {
         val channels = Wearable.getChannelClient(app)
         var wrapUp: ChannelWrapUp? = null
         var delivered = false
+        var observer: AutoCloseable? = null
         try {
+            if (access != null && !app.accountLocalData.isCurrent(access)) return
             val channel = channels.openChannel(nodeId, WearPaths.rpcStream(id)).await()
+            if (access != null && !app.accountLocalData.isCurrent(access)) { channels.close(channel); return }
             wrapUp = ChannelWrapUp(channels, channel).also { it.start() }
+            observer = app.accountLocalData.observe { current ->
+                if (access != null && current !== access) answers.launch { channels.close(channel).await() }
+            }
             val raw = channels.getOutputStream(channel).await()
-            WriteWatchdog(raw, STREAM_IDLE_MS, STREAM_DEADLINE_MS) { channels.close(channel) }.use { it.write(gzipped) }
+            WriteWatchdog(raw, STREAM_IDLE_MS, STREAM_DEADLINE_MS) { channels.close(channel) }.use { out ->
+                var offset = 0
+                while (offset < gzipped.size) {
+                    if (access != null) app.accountLocalData.use(access) { Unit }
+                    val count = minOf(16 * 1024, gzipped.size - offset)
+                    out.write(gzipped, offset, count)
+                    offset += count
+                }
+            }
             delivered = true
         } catch (cancelled: kotlinx.coroutines.CancellationException) {
             throw cancelled
         } catch (error: Exception) {
             Log.w(TAG, "rpc stream $id failed: ${error.message}")
         } finally {
+            observer?.close()
             withContext(kotlinx.coroutines.NonCancellable) { wrapUp?.finish(delivered) }
         }
     }

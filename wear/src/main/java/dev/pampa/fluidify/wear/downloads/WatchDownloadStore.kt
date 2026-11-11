@@ -1,273 +1,104 @@
 package dev.pampa.fluidify.wear.downloads
 
 import android.content.Context
-import android.os.StatFs
-import android.util.Log
-import dev.pampa.fluidify.wear.protocol.SpotifyIds
-import dev.pampa.fluidify.wear.protocol.WatchDownloadOwner
-import dev.pampa.fluidify.wear.protocol.WearCodec
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.serialization.Serializable
-import kotlinx.serialization.builtins.ListSerializer
-import kotlinx.serialization.json.JsonObject
-import kotlinx.serialization.json.contentOrNull
-import kotlinx.serialization.json.jsonObject
-import kotlinx.serialization.json.jsonPrimitive
 import java.io.File
-import java.io.IOException
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import dev.pampa.fluidify.wear.link.PhoneAccountSession
+import dev.pampa.fluidify.wear.protocol.WearCodec
+import kotlinx.serialization.builtins.ListSerializer
 
-/** A playlist or album kept on the watch, and the tracks it had when last read. */
-@Serializable
-data class KeptOwner(
-    val uri: String,
-    val title: String,
-    val tracks: List<String> = emptyList(),
-    val artUrl: String? = null,
-    val addedAtEpochMs: Long = 0,
-)
+/** Stable UI facade; captured file handles never follow a later account. Legacy bytes stay put. */
+class WatchDownloadStore(
+    private val context: Context,
+    val authority: WatchDownloadAuthority = WatchDownloadAuthority.forContext(context),
+) {
+    private val base = File(context.filesDir, "downloads")
+    private val mutableOwners = MutableStateFlow<List<KeptOwner>>(emptyList())
+    val owners = mutableOwners.asStateFlow()
+    private val mutableFailed = MutableStateFlow(false)
+    val saveFailed = mutableFailed.asStateFlow()
+    private var pinned: Pair<WatchDownloadAuthority.Access, WatchDownloadFiles>? = null
+    init { authority.observe { reload(it) } }
 
-/**
- * What the watch keeps for offline listening, on its own disk.
- *
- * The files are the native store's (native/src/downloads.rs), laid out the
- * same way as on the phone: `audio/<xx>/<rest>` is the CDN file still
- * encrypted, `meta/<xx>/<rest>.json` its sidecar with the key. The engine reads
- * them when it plays; this class reads them to know what is there, and writes
- * them when a file arrives from the phone over Bluetooth — a byte-for-byte copy
- * of the phone's own download, which is why the watch never has to ask Spotify
- * for a key for it.
- *
- * Which playlists and albums to keep is the watch's list ([owners]), edited
- * from the wrist or the phone.
- *
- * Everything here touches the disk (a list of owners is a file, a track is two), so none of it
- * belongs on the main thread: the screens go through [WatchDownloads.edits].
- */
-class WatchDownloadStore(context: Context) {
-
-    val root: File = File(context.filesDir, "downloads").apply { mkdirs() }
-    private val ownersFile = File(root, "owners.json")
-    private val failures = context.getSharedPreferences("watch_download_failures", Context.MODE_PRIVATE)
-    private val _owners = MutableStateFlow(load())
-
-    val owners: StateFlow<List<KeptOwner>> = _owners.asStateFlow()
-
-    private val _saveFailed = MutableStateFlow(false)
-
-    /** True while the list of owners could not be written to the disk (full, most likely). */
-    val saveFailed: StateFlow<Boolean> = _saveFailed.asStateFlow()
-
-    fun isKept(uri: String): Boolean = _owners.value.any { it.uri == uri }
-
-    /** Whether [uri] is kept and every one of its tracks is on the disk: it can be played without asking anyone. */
-    fun isComplete(uri: String): Boolean {
-        val owner = _owners.value.firstOrNull { it.uri == uri } ?: return false
-        return owner.tracks.isNotEmpty() && owner.tracks.all(::has)
+    private fun reload(access: WatchDownloadAuthority.Access?) {
+        pinned = access?.let { captured -> captured to make(captured.namespace, object : DownloadFileAccess {
+            override fun <T> use(block: () -> T): T = authority.use(captured, block)
+        }) }
+        mutableOwners.value = pinned?.second?.owners?.value.orEmpty()
+        val files = pinned?.second
+        mutableFailed.value = files?.saveFailed?.value == true
+        files?.onChanged = { mutableOwners.value = files.owners.value; mutableFailed.value = files.saveFailed.value }
     }
-
-    @Synchronized fun keep(uri: String, title: String, artUrl: String? = null) {
-        if (isKept(uri)) return
-        save(_owners.value + KeptOwner(uri, title, artUrl = artUrl, addedAtEpochMs = System.currentTimeMillis()))
+    fun forAccount(access: WatchDownloadAuthority.Access): WatchDownloadFiles = authority.use(access) {
+        if (pinned?.first !== access) reload(access)
+        pinned!!.second
     }
-
-    /** Stops keeping [uri], and deletes the tracks no other kept owner has. */
-    @Synchronized fun drop(uri: String) {
-        val leaving = _owners.value.firstOrNull { it.uri == uri } ?: return
-        val remaining = _owners.value - leaving
-        val stillWanted = remaining.flatMap { it.tracks }.toSet()
-        // The list first: the switch that asked is already off, and a stop half way through the
-        // deleting leaves files nobody wants, which is better than a list that wants files gone.
-        save(remaining)
-        deleteAll(leaving.tracks.filterNot { it in stillWanted })
+    private fun make(namespace: String, access: DownloadFileAccess): WatchDownloadFiles {
+        require(namespace.matches(Regex("[a-f0-9]{64}")))
+        return WatchDownloadFiles(File(base, "accounts/$namespace"),
+            context.getSharedPreferences("watch-download-failures-$namespace", Context.MODE_PRIVATE), access)
     }
-
-    /** The owner's tracks as read now; tracks taken out of the playlist go from the disk too. */
-    @Synchronized fun setTracks(uri: String, tracks: List<String>, title: String? = null) {
-        val owner = _owners.value.firstOrNull { it.uri == uri } ?: return
-        val removed = owner.tracks.toSet() - tracks.toSet()
-        val updated = _owners.value.map { if (it.uri == uri) it.copy(tracks = tracks, title = title ?: it.title) else it }
-        val stillWanted = updated.flatMap { it.tracks }.toSet()
-        save(updated)
-        deleteAll(removed.filterNot { it in stillWanted })
-    }
-
-    /** Every kept track not yet on the disk, in the order the owners were added. */
-    fun pending(): List<String> =
-        _owners.value.flatMap { it.tracks }.distinct().filterNot { has(it) || unavailable(it) }
-
-    fun unavailable(uri: String): Boolean = failures.getInt(uri, 0) >= MAX_FAILURES
-    @Synchronized fun recordFailure(uri: String) {
-        failures.edit().putInt(uri, (failures.getInt(uri, 0) + 1).coerceAtMost(MAX_FAILURES)).apply()
-    }
-    @Synchronized fun clearFailure(uri: String) { clearFailures(listOf(uri)) }
-
-    /** Forgets the failures of [uris] in one edit: one write, not one per track. */
-    @Synchronized private fun clearFailures(uris: Collection<String>) {
-        if (uris.isEmpty()) return
-        val editor = failures.edit()
-        uris.forEach { editor.remove(it) }
-        editor.apply()
-    }
-    fun unavailableCount(): Int = _owners.value.flatMap { it.tracks }.distinct().count { !has(it) && unavailable(it) }
-
-    /**
-     * Which tracks are on the disk, as far as this store has looked. The status of the downloads is
-     * worked out again at each step of the queue, and each look was two calls to the file system
-     * for every track of every kept list: a queue of a thousand tracks did millions. A look is now
-     * kept until the store itself changes the track ([adopt], [delete]) or whoever knows the files
-     * moved under it — the engine writes its own downloads — says so ([invalidate]).
-     */
-    private val presence = java.util.concurrent.ConcurrentHashMap<String, Boolean>()
-
-    fun has(trackUri: String): Boolean =
-        presence.getOrPut(trackUri) { metaFile(trackUri)?.isFile == true && audioFile(trackUri)?.isFile == true }
-
-    /** Looks at the disk again for [trackUri] next time: its files may have been written or removed by the engine. */
-    fun invalidate(trackUri: String) {
-        presence.remove(trackUri)
-    }
-
-    /** Looks at the disk again for every track: the start of a pass of the queue. */
-    fun invalidateAll() {
-        presence.clear()
-    }
-
-    fun sidecar(trackUri: String): JsonObject? = runCatching {
-        val file = metaFile(trackUri)?.takeIf { it.isFile } ?: return null
-        WearCodec.json.parseToJsonElement(file.readText()).jsonObject
-    }.getOrNull()
-
-    /** The kbps of a stored track's format, read from its sidecar ("OGG_VORBIS_160" is 160). */
-    fun kbpsOf(sidecar: JsonObject?): Int? = formatKbps(sidecar?.get("format")?.jsonPrimitive?.contentOrNull)
-
-    fun audioFile(trackUri: String): File? = shard("audio", trackUri, "")
-    fun partFile(trackUri: String): File? = audioFile(trackUri)?.let { File(it.path + ".part") }
-    fun partIdentityFile(trackUri: String): File? = partFile(trackUri)?.let { File(it.path + ".id") }
-    fun metaFile(trackUri: String): File? = shard("meta", trackUri, ".json")
-
-    /**
-     * Files a track that arrived whole: the `.part` becomes the audio file and the
-     * sidecar is written last, through a temporary file — its presence is the one
-     * signal the engine trusts that a download is complete.
-     */
-    @Synchronized fun adopt(trackUri: String, sidecarJson: String): Boolean {
-        val part = partFile(trackUri) ?: return false
-        val audio = audioFile(trackUri) ?: return false
-        val meta = metaFile(trackUri) ?: return false
-        if (!part.isFile) return false
-        audio.parentFile?.mkdirs()
-        if (!part.renameTo(audio)) return false
-        meta.parentFile?.mkdirs()
-        val tmp = File(meta.path + ".tmp")
-        try {
-            tmp.writeText(sidecarJson)
-        } catch (full: IOException) {
-            // No room for even the sidecar: the audio without it is not a download, and is space.
-            Log.w(TAG, "sidecar not written for $trackUri: ${full.message}")
-            tmp.delete()
-            audio.delete()
-            return false
+    /** A current phone correlation can edit a plan; it cannot authorize the watch's offline view. */
+    internal fun <T> phoneEdit(sessions: PhoneAccountSession, scope: PhoneAccountSession.Scope,
+        block: (WatchDownloadFiles) -> T): T {
+        val result = sessions.use(scope) {
+            val files = make(scope.namespace, object : DownloadFileAccess {
+                override fun <T> use(block: () -> T): T = sessions.use(scope, block)
+            })
+            block(files)
         }
-        return tmp.renameTo(meta).also {
-            if (it) {
-                partIdentityFile(trackUri)?.delete()
-                clearFailure(trackUri)
-                presence[trackUri] = true
+        authority.capture()?.takeIf { it.namespace == scope.namespace }?.let { authority.use(it) { reload(it) } }
+        return result
+    }
+    private fun current(): WatchDownloadFiles? = authority.capture()?.let(::forAccount)
+    fun isKept(uri: String) = current()?.isKept(uri) == true
+    fun isComplete(uri: String) = current()?.isComplete(uri) == true
+    fun offlineTracks(uri: String) = current()?.offlineTracks(uri).orEmpty()
+    fun ownerStatus() = current()?.ownerStatus().orEmpty()
+    fun pending() = current()?.pending().orEmpty()
+    fun unavailableCount() = current()?.unavailableCount() ?: 0
+    fun bytesUsed() = current()?.bytesUsed() ?: 0L
+    fun bytesFree() = current()?.bytesFree() ?: 0L
+
+    fun hasLegacy(): Boolean {
+        if (!File(base, "owners.json").isFile || File(base, "legacy-claimed").exists()) return false
+        val reserved = File(base, "legacy-claim")
+        return !reserved.exists() || reserved.readText() == authority.capture()?.namespace
+    }
+    /** Explicit user choice, captured before dispatch. Reserve first so a crash cannot reassign it. */
+    fun claimLegacy(access: WatchDownloadAuthority.Access) = authority.use(access) {
+        val marker = File(base, "legacy-claim")
+        if (marker.exists()) check(marker.readText() == access.namespace) { "Legacy already claimed" }
+        else {
+            val tmp = File(base, "legacy-claimed.tmp")
+            tmp.writeText(access.namespace)
+            check(tmp.renameTo(marker))
+        }
+        val files = forAccount(access)
+        val legacy = File(base, "owners.json")
+        val list = WearCodec.json.decodeFromString(ListSerializer(KeptOwner.serializer()), legacy.readText())
+        for (kind in listOf("audio", "meta")) {
+            val source = File(base, kind)
+            if (source.isDirectory) source.walkTopDown().filter { it.isFile && !it.name.contains(".part") }.forEach { old ->
+                val target = File(files.root, "$kind/${old.relativeTo(source).invariantSeparatorsPath}")
+                if (!target.exists()) {
+                    target.parentFile!!.mkdirs()
+                    val tmp = File(target.path + ".legacy.tmp")
+                    old.copyTo(tmp, overwrite = true)
+                    check(tmp.renameTo(target))
+                }
             }
         }
+        files.importLegacy(list)
+        files.invalidateAll()
+        val done = File(base, "legacy-claimed.tmp")
+        done.writeText(access.namespace)
+        check(done.renameTo(File(base, "legacy-claimed")))
+        reload(access)
     }
-
-    @Synchronized fun delete(trackUri: String) {
-        deleteAll(listOf(trackUri))
-    }
-
-    /** The files of every track in [uris], and what was remembered of their failures, in one go. */
-    private fun deleteAll(uris: Collection<String>) {
-        for (trackUri in uris) {
-            metaFile(trackUri)?.delete()
-            audioFile(trackUri)?.delete()
-            partFile(trackUri)?.delete()
-            partIdentityFile(trackUri)?.delete()
-            presence.remove(trackUri)
-        }
-        clearFailures(uris)
-    }
-
-    /**
-     * The kept tracks of [ownerUri] that are on the disk, read from their sidecars:
-     * what the watch plays when there is no session to read the playlist through.
-     */
-    fun offlineTracks(ownerUri: String): List<dev.lelonio.square.data.CatalogTrack> {
-        val owner = _owners.value.firstOrNull { it.uri == ownerUri } ?: return emptyList()
-        return owner.tracks.filter(::has).mapNotNull { uri ->
-            val sidecar = sidecar(uri) ?: return@mapNotNull null
-            val text = { key: String -> sidecar[key]?.jsonPrimitive?.contentOrNull }
-            val artists = runCatching {
-                (sidecar["artists"] as? kotlinx.serialization.json.JsonArray).orEmpty().map { element ->
-                    val artist = element.jsonObject
-                    dev.lelonio.square.data.CatalogArtist(
-                        artist["name"]?.jsonPrimitive?.contentOrNull.orEmpty(),
-                        artist["uri"]?.jsonPrimitive?.contentOrNull?.takeIf { it.isNotEmpty() },
-                    )
-                }
-            }.getOrDefault(emptyList())
-            dev.lelonio.square.data.CatalogTrack(
-                uri = uri,
-                name = text("name").orEmpty(),
-                artist = artists.joinToString(", ") { it.name },
-                artistUri = artists.firstOrNull()?.uri,
-                artists = artists,
-                album = text("album").orEmpty(),
-                durationMs = text("durationMs")?.toLongOrNull() ?: 0,
-                artworkUrl = text("coverUrl")?.takeIf { it.isNotEmpty() },
-            )
-        }
-    }
-
-    fun ownerStatus(): List<WatchDownloadOwner> = _owners.value.map { owner ->
-        WatchDownloadOwner(owner.uri, owner.title, tracks = owner.tracks.size, done = owner.tracks.count(::has), unavailable = owner.tracks.count { !has(it) && unavailable(it) })
-    }
-
-    fun bytesUsed(): Long = root.walkTopDown().filter { it.isFile }.sumOf { it.length() }
-
-    fun bytesFree(): Long = runCatching { StatFs(root.path).availableBytes }.getOrDefault(0L)
-
-    private fun shard(kind: String, trackUri: String, suffix: String): File? {
-        val hex = SpotifyIds.trackHex(trackUri) ?: return null
-        return File(File(File(root, kind), hex.substring(0, 2)), hex.substring(2) + suffix)
-    }
-
-    private fun load(): List<KeptOwner> = runCatching {
-        if (!ownersFile.isFile) return emptyList()
-        WearCodec.json.decodeFromString(ListSerializer(KeptOwner.serializer()), ownersFile.readText())
-    }.getOrDefault(emptyList())
-
-    /**
-     * The list in memory at once (the screens follow it), then to the disk through a temporary
-     * file. A disk that refuses the write (full) used to throw out of here, into whatever called —
-     * a switch on the main thread — and is now said by [saveFailed]; the list stays right in
-     * memory, and the next write that fits puts all of it on disk.
-     */
-    private fun save(owners: List<KeptOwner>) {
-        _owners.value = owners
-        val tmp = File(ownersFile.path + ".tmp")
-        val written = try {
-            tmp.writeText(WearCodec.json.encodeToString(ListSerializer(KeptOwner.serializer()), owners))
-            tmp.renameTo(ownersFile)
-        } catch (failed: IOException) {
-            Log.w(TAG, "kept list not written: ${failed.message}")
-            tmp.delete()
-            false
-        }
-        _saveFailed.value = !written
-    }
-
     companion object {
-        private const val TAG = "WatchDownloadStore"
-        const val MAX_FAILURES = 3
-        /** "OGG_VORBIS_320" → 320; the formats without a number are the phone's MP3/AAC, which a watch never asks for. */
-        fun formatKbps(format: String?): Int? = format?.substringAfterLast('_')?.toIntOrNull()
+        const val MAX_FAILURES = WatchDownloadFiles.MAX_FAILURES
+        fun formatKbps(format: String?) = WatchDownloadFiles.formatKbps(format)
     }
 }

@@ -22,6 +22,7 @@ import kotlinx.serialization.Serializable
 data class AuthRequest(
     val id: Long,
     val reason: AuthReason = AuthReason.FIRST_LOGIN,
+    val accountSession: String? = null,
 )
 
 @Serializable
@@ -46,6 +47,7 @@ data class AuthGrant(
     val expiresAtEpochMs: Long = 0,
     /** Why not, when [ok] is false: signed out, no network, Premium needed. */
     val error: String? = null,
+    val accountSession: String? = null,
 )
 
 /**
@@ -60,6 +62,8 @@ data class AccountState(
     val signedIn: Boolean,
     val username: String? = null,
     val changedAtEpochMs: Long = 0,
+    val localDataSession: String? = null,
+    val localDataNamespace: String? = null,
 )
 
 object AuthErrors {

@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.bridge.FluidifyToolValidationTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:14:54.686Z" hostname="PC_FISSO" time="0.245">
+  <properties/>
+  <testcase name="threeArgumentWriteRejectsModelIdentityBeforeAnyApplicationAccess" classname="dev.lelonio.square.bridge.FluidifyToolValidationTest" time="0.076"/>
+  <testcase name="discoveryNeedsNoAccountAndNeverSelectsAnotherAccount" classname="dev.lelonio.square.bridge.FluidifyToolValidationTest" time="0.023"/>
+  <testcase name="transportIdentityWinsAndConflictsFailClosed" classname="dev.lelonio.square.bridge.FluidifyToolValidationTest" time="0.019"/>
+  <testcase name="durableDuplicateClaimsSurviveStoreRecreation" classname="dev.lelonio.square.bridge.FluidifyToolValidationTest" time="0.08"/>
+  <testcase name="malformedWritesReturnErrorBeforeTouchingUnattachedApplication" classname="dev.lelonio.square.bridge.FluidifyToolValidationTest" time="0.021"/>
+  <testcase name="sourceProofToolsAreInActualRegistryWithoutWeakeningWriteConfirmation" classname="dev.lelonio.square.bridge.FluidifyToolValidationTest" time="0.02"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

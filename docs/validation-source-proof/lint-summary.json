@@ -1,0 +1,48 @@
+{
+  "core": {
+    "errors": 3,
+    "warnings": 9,
+    "errorLocations": [
+      {
+        "id": "UnsafeOptInUsageError",
+        "locations": [
+          {
+            "file": "C:\\VibeCoded Projects\\Fluidify\\core\\src\\main\\java\\dev\\lelonio\\square\\playback\\AudioReactive.kt",
+            "line": "428",
+            "column": "23"
+          }
+        ]
+      },
+      {
+        "id": "UnsafeOptInUsageError",
+        "locations": [
+          {
+            "file": "C:\\VibeCoded Projects\\Fluidify\\core\\src\\main\\java\\dev\\lelonio\\square\\playback\\PlayQueue.kt",
+            "line": "404",
+            "column": "35"
+          }
+        ]
+      },
+      {
+        "id": "UnsafeOptInUsageError",
+        "locations": [
+          {
+            "file": "C:\\VibeCoded Projects\\Fluidify\\core\\src\\main\\java\\dev\\lelonio\\square\\playback\\QueueItems.kt",
+            "line": "43",
+            "column": "18"
+          }
+        ]
+      }
+    ]
+  },
+  "engine-ai": {
+    "errors": 0,
+    "warnings": 1,
+    "errorLocations": []
+  },
+  "engine-ai-bridge": {
+    "errors": 0,
+    "warnings": 2,
+    "errorLocations": []
+  }
+}

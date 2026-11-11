@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" tests="14" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:17.290Z" hostname="PC_FISSO" time="2.566">
+  <properties/>
+  <testcase name="un gruppo con il suo tetto taglia il tool lento, e uno senza tetto proprio usa quello della configurazione" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.305"/>
+  <testcase name="il tetto della configurazione e' quello di chi non ne dichiara uno, e basta a tagliare" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.155"/>
+  <testcase name="due conferme nello stesso giro stanno in fila, e la seconda ha ancora tempo dopo la prima" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.82"/>
+  <testcase name="venti secondi di lavoro e una conferma da sessanta, la somma la fa l'orchestratore e non si puo' sbagliare" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.001"/>
+  <testcase name="una conferma rifiutata fra due non fa cadere l'altra" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.184"/>
+  <testcase name="un tool che chiede senza essere un'azione lo dichiara da se', in qualunque gruppo" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.001"/>
+  <testcase name="i flag nuovi hanno un default che non cambia niente, nessun tetto proprio e nessuna attesa" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.001"/>
+  <testcase name="un tool che aspetta una conferma ha il tempo di lavoro piu' la finestra del cancello" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.478"/>
+  <testcase name="il tetto di un tool che non aspetta conferme e' il suo tempo, mai oltre il budget meno cinque secondi, mai sotto i tre" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.0"/>
+  <testcase name="needsConfirmation basta a far aspettare, l'attesa non dipende dal gruppo" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.465"/>
+  <testcase name="due conferme nello stesso giro valgono due finestre, e mai meno di una" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.001"/>
+  <testcase name="il cancello dato all'orchestratore vale piu' del numero della configurazione" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.0"/>
+  <testcase name="il tempo dichiarato dal tool batte quello del gruppo" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.0"/>
+  <testcase name="lo stesso tool in un gruppo che non aspetta conferme viene tagliato mentre la scheda e' a schermo, e la scheda sparisce" classname="dev.antigravity.fluidengine.ai.orchestrator.AiToolTimeoutTest" time="0.155"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

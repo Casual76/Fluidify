@@ -1,0 +1,7 @@
+<resources>
+    <string name="legacy_downloads_title">A quem pertencem estes downloads?</string>
+    <string name="legacy_downloads_message">Os downloads salvos antes da separação das contas continuam neste dispositivo. Atribuir os arquivos e as coleções offline existentes à conta Spotify %1$s?\n\nNenhum novo download ou sincronização automática será iniciado. Para escolher outra conta, selecione Mais tarde e entre nessa conta.</string>
+    <string name="legacy_downloads_later">Mais tarde / outra conta</string>
+    <string name="legacy_downloads_assign">Atribuir a esta conta</string>
+    <string name="legacy_downloads_failed">Não foi possível atribuir os downloads. Seus arquivos estão seguros; tente novamente.</string>
+</resources>

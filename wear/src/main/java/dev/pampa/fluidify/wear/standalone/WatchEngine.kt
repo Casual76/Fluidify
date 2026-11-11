@@ -69,6 +69,23 @@ class WatchEngine(
     private var contextReady = false
     private var leases = 0
     private val lock = kotlinx.coroutines.sync.Mutex()
+    private val downloadAuthority = dev.pampa.fluidify.wear.downloads.WatchDownloadAuthority.forContext(context)
+    private val phoneAccounts = dev.pampa.fluidify.wear.link.PhoneAccountSession.forContext(context)
+    private var startTicket: String? = null
+    private var downloadGeneration = java.util.UUID.randomUUID().toString()
+    suspend fun acquireDownload(): String? = lock.withLock {
+        if (!(started || start())) return@withLock null
+        leases++
+        downloadGeneration
+    }
+    suspend fun releaseDownload(generation: String) = withContext(kotlinx.coroutines.NonCancellable) {
+        lock.withLock {
+            if (generation == downloadGeneration) {
+                leases = (leases - 1).coerceAtLeast(0)
+                if (leases == 0) stop()
+            }
+        }
+    }
 
     /** The engine's one listener, handing events to the player of the moment. */
     private val events = object : NativeEvents {
@@ -82,7 +99,8 @@ class WatchEngine(
     }
 
     /** Where the watch keeps its downloads; the engine finds them there, online or not. */
-    var downloadRoot: java.io.File? = null
+    private fun downloadRoot() = java.io.File(context.filesDir,
+        downloadAuthority.capture()?.let { "downloads/accounts/${it.namespace}" } ?: "downloads/unavailable")
 
     /**
      * Takes a lease on the engine, starting it if it is the first. [player] (with
@@ -142,6 +160,7 @@ class WatchEngine(
 
     private suspend fun start(): Boolean {
         if (started) return true
+        startTicket = downloadAuthority.startTicket()
         _status.value = EngineStatus.STARTING
         // The native calls are off the main thread: the first of them loads the library, and the
         // callers (the playback service's scope) are on it.
@@ -151,7 +170,7 @@ class WatchEngine(
                 contextReady = true
             }
             // Before the engine: the first track it is asked for may be one already here.
-            downloadRoot?.let { root -> runCatching { NativeBridge.setDownloadRoot(root.absolutePath) } }
+            NativeBridge.setDownloadRoot(downloadRoot().absolutePath)
             // A watch in the account's device list, not another phone.
             runCatching { NativeBridge.setDeviceType(DEVICE_TYPE) }
         }
@@ -188,6 +207,7 @@ class WatchEngine(
             if (failure == null) {
                 started = true
                 auth.onEngineSignedIn()
+                withContext(Dispatchers.IO) { confirmDownloads() }
                 _status.value = EngineStatus.RUNNING
                 return true
             }
@@ -232,12 +252,43 @@ class WatchEngine(
                 kotlinx.coroutines.delay(pause)
                 pause = (pause * 2).coerceAtMost(CONNECTED_POLL_MAX_MS)
             }
+            lock.withLock { confirmDownloads() }
             true
         } ?: false
     }
 
+    /** Only a live native identity can renew a revoked local receipt. Runs under the engine lock. */
+    private fun confirmDownloads() {
+        if (!NativeBridge.isConnected) return
+        val phone = phoneAccounts.capture()
+        val canonical = NativeBridge.username()
+        if (phoneAccounts.capture() != phone) return
+        if (phone != null && phone.namespace != dev.pampa.fluidify.wear.downloads.WatchDownloadAuthority.namespace(canonical)) return
+        val ticket = startTicket ?: return
+        phoneAccounts.useIfCurrent(phone) {
+            if (downloadAuthority.confirm(canonical, ticket)) NativeBridge.setDownloadRoot(downloadRoot().absolutePath)
+        }
+    }
+
+    /** Serial with shutdown/root changes, and joined through the real JNI return on cancellation. */
+    suspend fun download(access: dev.pampa.fluidify.wear.downloads.WatchDownloadAuthority.Access, block: () -> Unit) =
+        withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
+            lock.withLock {
+                try { dev.pampa.fluidify.wear.downloads.WatchDownloadDispatch(downloadAuthority,
+                    { started && NativeBridge.isConnected }, { NativeBridge.username() },
+                    { NativeBridge.setDownloadRoot(it) }, context.filesDir).run(access, block) }
+                finally { confirmDownloads() }
+            }
+        }
+
+    /** Teardown waits for an in-flight native download before credentials can be removed. */
+    suspend fun stopForAccountChange() = withContext(kotlinx.coroutines.NonCancellable) {
+        lock.withLock { leases = 0; stop() }
+    }
+
     /** Takes the Connect device off the account and lets the network go. */
     private suspend fun stop() {
+        downloadGeneration = java.util.UUID.randomUUID().toString()
         if (!started) return
         // Blocks until the engine is down: never on the main thread.
         withContext(Dispatchers.IO) { runCatching { NativeBridge.shutdown() } }

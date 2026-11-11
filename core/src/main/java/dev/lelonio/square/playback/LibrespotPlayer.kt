@@ -11,6 +11,7 @@ import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import dev.lelonio.square.nativecore.NativeBridge
 import dev.lelonio.square.nativecore.NativeEvents
+import kotlinx.serialization.json.*
 
 /**
  * Adapts the native librespot engine to the Media3 [Player] interface.
@@ -61,6 +62,15 @@ class LibrespotPlayer(
      * player sets. See AudioOutput.duckReverb.
      */
     private val onDuckReverb: (Float) -> Unit,
+    /** Command seam for native-free producer integration fixtures; default is the actual JNI API. */
+    private val loadQueueCommand: (List<String>, Int, Boolean, Int, String, Boolean, String?) -> Unit =
+        { uris, index, play, position, contextUri, asContext, nonce ->
+            if (nonce == null) NativeBridge.loadQueue(uris, index, play, position, contextUri, asContext)
+            else NativeBridge.loadOwnedQueue(uris, index, play, position, contextUri, asContext, nonce)
+        },
+    private val refreshRemoteState: () -> Unit = { dev.lelonio.square.data.RemoteConnect.refresh() },
+    private val airPodsPauseCommand: () -> Unit = { NativeBridge.pause() },
+    private val airPodsPlayCommand: () -> Unit = { NativeBridge.play() },
 ) : SimpleBasePlayer(looper), NativeEvents {
 
     /**
@@ -72,7 +82,7 @@ class LibrespotPlayer(
      * a queue with nothing in it, and would take the end-of-track advance away
      * from the side that owns it.
      */
-    private fun pushQueue(startPlaying: Boolean, positionMs: Int = 0) {
+    private fun pushQueue(startPlaying: Boolean, positionMs: Int = 0, ownedRestore: Boolean = false) {
         val uris = queue.items.map { it.uri }
         if (uris.isEmpty()) return
         // This side has chosen something, so the account's last track has been
@@ -101,6 +111,7 @@ class LibrespotPlayer(
         // own ordering of a list the app has already read, which is nothing,
         // and what is gained is that the queue plays what it shows.
         val asContext = false
+        val restoreNonce = if (ownedRestore) listeningOccurrence.ownedRestoreNonceForLoad() else null
 
         fadeOutThen {
             // Back on the player's looper before anything is read or called.
@@ -121,13 +132,14 @@ class LibrespotPlayer(
                 // before it, and the track sat there selected and silent.
                 val wanted = startPlaying || playWhenReady || wantPlay
                 runCatching {
-                    NativeBridge.loadQueue(
+                    loadQueueCommand(
                         uris,
                         index,
                         wanted,
                         positionMs,
                         contextUri,
-                        playAsContext = asContext,
+                        asContext,
+                        restoreNonce,
                     )
                 }
                     .onFailure { android.util.Log.e("SquarePlayer", "load failed: ${it.message}") }
@@ -175,6 +187,15 @@ class LibrespotPlayer(
     private var cachedPlaylist: List<MediaItemData>? = null
 
     private val handler = android.os.Handler(looper)
+    private val mediaPolicy = dev.lelonio.square.data.SpotifyNetworkPolicy.observe { manual ->
+        val revision = dev.lelonio.square.data.SpotifyNetworkPolicy.revision
+        handler.post {
+            if (released) return@post
+            if (manual && remoteRevision <= revision) retireRemoteProjection()
+            onQueueChanged()
+            invalidateState()
+        }
+    }
 
     /**
      * The app around the player, asked whether the quality the listener chose
@@ -226,7 +247,68 @@ class LibrespotPlayer(
      * a second idea of what is playing. Fed by the service; see
      * PlaybackService.
      */
-    private var remote: dev.lelonio.square.data.RemotePlayback? = null
+    private var remoteValue: dev.lelonio.square.data.RemotePlayback? = null
+    private var remote: dev.lelonio.square.data.RemotePlayback?
+        get() = remoteValue?.takeIf { dev.lelonio.square.data.SpotifyNetworkPolicy.isCurrent(remoteRevision) }
+        set(value) { remoteValue = value }
+
+    /** Authoritative local occurrence identity for service-owned measurement. */
+    val listeningOccurrence = PlaybackOccurrence()
+
+    /** True when this adapter mirrors another Connect device rather than local audio. */
+    val isRemotePlayback: Boolean get() = remote != null
+
+    /** Observation only; does not acquire focus or touch the native engine. */
+    fun observeAirPodsFocus(changed: () -> Unit): java.io.Closeable = focus.observeAirPodsFocus(changed)
+    val airPodsForeignDuckActive: Boolean get() = volumeBeforeDuck != null || focus.foreignAttenuationActive
+    val airPodsAutomationLocal: Boolean get() = remote == null && standby == null && !released
+    private val airPodsRxSequence = java.util.concurrent.atomic.AtomicLong()
+    private var airPodsPauseRxFloor = 0L
+    private var airPodsOrigin: Long? = null
+    private var airPodsPendingPause: Pair<Long, String>? = null
+    private var airPodsAppliedPause: Long? = null
+    // Own PLAY, same causal shape as the pause receipt: armed only by a dispatched origin,
+    // confirmed only by a later engine "playing" of that track with no command in between.
+    private var airPodsPlayRxFloor = 0L
+    private var airPodsPendingPlay: Pair<Long, String>? = null
+    private var airPodsAppliedPlay: Long? = null
+    // Main-thread publication only: a native acknowledgement can correct Media3's position
+    // at the same time as it confirms our PAUSE/PLAY. This is not authority for later ticks.
+    private var airPodsPublishingAcknowledgement: Pair<Long, Boolean>? = null
+    private val airPodsCommandObservers = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
+    val airPodsPauseReceipt: Long? get() = airPodsAppliedPause
+    fun ownsAirPodsPause(effect: Long): Boolean =
+        airPodsPendingPause?.first == effect || airPodsAppliedPause == effect
+    /** Native confirmation of our own PLAY; never inferred from a coincident playing state. */
+    val airPodsPlayReceipt: Long? get() = airPodsAppliedPlay
+    /** Only the actual origin-bound command or its native confirmation, until override. */
+    fun ownsAirPodsPlay(effect: Long): Boolean =
+        airPodsPendingPlay?.first == effect || airPodsAppliedPlay == effect
+    /** True only inside publication of the matching native ACK, until any intervening command. */
+    fun isPublishingAirPodsAcknowledgement(effect: Long, wanted: Boolean): Boolean =
+        airPodsPublishingAcknowledgement == (effect to wanted) &&
+            (if (wanted) airPodsAppliedPlay == effect else airPodsAppliedPause == effect)
+    fun observeAirPodsCommands(changed: () -> Unit): java.io.Closeable {
+        airPodsCommandObservers.add(changed)
+        return java.io.Closeable { airPodsCommandObservers.remove(changed) }
+    }
+    /** Application raw-command ingress, including SimpleBasePlayer's same-state no-op calls. */
+    fun recordAirPodsApplicationCommand() = airPodsOverride()
+    private fun airPodsOverride() {
+        airPodsPendingPause = null; airPodsAppliedPause = null
+        airPodsPendingPlay = null; airPodsAppliedPlay = null
+        airPodsCommandObservers.forEach { runCatching { it() } }
+    }
+    /** Scoped origin reaches the actual local command branch, never Connect/resumeHere. */
+    fun applyAirPodsPlayback(effect: Long, wanted: Boolean): Boolean {
+        if (!airPodsAutomationLocal || awaitingEngine || playbackState != Player.STATE_READY) return false
+        airPodsOrigin = effect
+        try { handleSetPlayWhenReady(wanted) } finally { airPodsOrigin = null }
+        return if (wanted) wantPlay && airPodsPendingPlay?.first == effect
+            else airPodsPendingPause?.first == effect
+    }
+
+
 
     /**
      * The account's last playback, kept after the device doing it let go.
@@ -250,7 +332,7 @@ class LibrespotPlayer(
      * the transport buttons differs, and that is [onRemote]'s business.
      */
     private val mirrored: dev.lelonio.square.data.RemotePlayback?
-        get() = remote ?: standby
+        get() = if (!dev.lelonio.square.data.SpotifyNetworkPolicy.isCurrent(remoteRevision)) null else remote ?: standby
 
     /**
      * Takes the account's last track off the screen, this queue's own being back.
@@ -308,17 +390,35 @@ class LibrespotPlayer(
      */
     private var remoteQueue = dev.lelonio.square.data.RemoteQueue()
 
+    private var remoteRevision = -1L
+    private fun retireRemoteProjection() {
+        remote = null
+        standby = null
+        remoteQueue = dev.lelonio.square.data.RemoteQueue()
+        onQueueChanged()
+    }
+
     fun showRemote(
         playback: dev.lelonio.square.data.RemotePlayback?,
         queue: dev.lelonio.square.data.RemoteQueue = dev.lelonio.square.data.RemoteQueue(),
     ) {
         if (released) return
+        if (dev.lelonio.square.data.SpotifyNetworkPolicy.manual.value) {
+            retireRemoteProjection(); invalidateState(); return
+        }
+        remoteRevision = dev.lelonio.square.data.SpotifyNetworkPolicy.revision
         val was = mirrored
         if (remoteQueue != queue) {
             remoteQueue = queue
             cachedPlaylist = null
         }
+        if (playback != null) airPodsOverride()
         remote = playback
+        // Remote ownership revokes even an unacknowledged local restore. A later
+        // return to local playback cannot revive that old command's checkpoint.
+        if (playback != null) {
+            listeningOccurrence.nativeEvent("remote", playback.uri, this.queue.currentIndex, remote = true)
+        }
         // Nothing is playing anywhere: the device that was has let go and this
         // phone is silent. What it was on is the account's last word, and it is
         // kept rather than thrown away; see [standby].
@@ -345,13 +445,14 @@ class LibrespotPlayer(
      * cluster belongs to the half that already does it, so it arrives here.
      */
     fun showAccountLast(playback: dev.lelonio.square.data.RemotePlayback?) {
-        if (released || remote != null) return
+        if (released || remote != null || dev.lelonio.square.data.SpotifyNetworkPolicy.manual.value) return
         // The same four as above: a track of the account's never stands in
         // front of one this phone is in the middle of taking on.
         val quiet = !sounding && !playWhenReady && !wantPlay && !ownQueuePending
         val wanted = playback?.takeIf { quiet && it.uri.isNotEmpty() }?.copy(playing = false)
         if (wanted?.uri == standby?.uri) return
         standby = wanted
+        remoteRevision = dev.lelonio.square.data.SpotifyNetworkPolicy.revision
         onQueueChanged()
         invalidateState()
     }
@@ -363,6 +464,7 @@ class LibrespotPlayer(
      * it moves music the listener is not hearing.
      */
     private fun onRemote(what: String, command: (String) -> Unit): Boolean {
+        if (dev.lelonio.square.data.SpotifyNetworkPolicy.manual.value) retireRemoteProjection()
         val target = remote ?: return false
         offThread {
             runCatching { command(target.deviceId) }
@@ -372,6 +474,7 @@ class LibrespotPlayer(
     }
 
     override fun getState(): State {
+        if ((remoteValue != null || standby != null) && !dev.lelonio.square.data.SpotifyNetworkPolicy.isCurrent(remoteRevision)) retireRemoteProjection()
         ensureCover()
         mirrored?.let { return remoteState(it) }
 
@@ -764,6 +867,7 @@ class LibrespotPlayer(
     }
 
     private var coverLoading: String? = null
+    private val coverOwnerAlive = java.util.concurrent.atomic.AtomicBoolean(true)
 
     /** Fetches the current track's cover, once, off the looper. */
     private fun ensureCover() {
@@ -774,27 +878,37 @@ class LibrespotPlayer(
             ?.takeIf { it.isNotEmpty() }
             ?: return
         if (covers.containsKey(wanted) || coverLoading == wanted) return
+        // Capture before starting the worker. No fresh permit may be borrowed after ON -> OFF.
+        val permit = runCatching { dev.lelonio.square.data.SpotifyNetworkPolicy.capture() }.getOrNull()
         coverLoading = wanted
 
         Thread({
+            if (!coverOwnerAlive.get()) return@Thread
+            var remoteBytes = false
             val bytes = runCatching {
                 // The copy kept beside a download first — it is the same
                 // picture, it is already here, and offline it is the only one.
                 dev.lelonio.square.download.DownloadExtras.fileOf(wanted, "art")
                     ?.takeIf { it.length() <= MAX_COVER_BYTES }
                     ?.readBytes()
-                    ?: dev.lelonio.square.io.HttpFetch.bytes(wanted, MAX_COVER_BYTES)
+                    ?: if (wanted.startsWith("file:")) dev.lelonio.square.io.HttpFetch.bytes(wanted, MAX_COVER_BYTES)
+                    else permit?.let { remoteBytes = true; dev.lelonio.square.io.HttpFetch.bytes(wanted, MAX_COVER_BYTES, it) { coverOwnerAlive.get() } }
             }.getOrNull()?.takeIf { it.isNotEmpty() }
 
             handler.post {
                 if (released || coverLoading != wanted) return@post
                 coverLoading = null
                 if (bytes == null) return@post
-                covers[wanted] = bytes
-                // The items are cached; this one now describes a different
-                // picture than the one already built.
-                onQueueChanged()
-                invalidateState()
+                // Remote bytes already in flight may drain, but cannot publish under a revoked lease.
+                fun publish() {
+                    covers[wanted] = bytes
+                    onQueueChanged()
+                    invalidateState()
+                }
+                if (remoteBytes) {
+                    try { checkNotNull(permit).admit { publish() } }
+                    catch (_: dev.lelonio.square.data.SpotifyNetworkPolicy.Offline) { }
+                } else publish()
             }
         }, "square-cover").start()
     }
@@ -873,6 +987,7 @@ class LibrespotPlayer(
      * a load at the target, which is one request instead of a dozen.
      */
     private fun requestSkipTo(index: Int, positionMs: Long) {
+        airPodsOverride()
         // A skip on a device in another room is a skip there; the index this
         // side would step through means nothing to it.
         if (remote != null) {
@@ -917,8 +1032,13 @@ class LibrespotPlayer(
     }
 
     /** The two later looks at the cluster; see the `cluster` event. */
-    private val clusterSoon = Runnable { dev.lelonio.square.data.RemoteConnect.refresh() }
-    private val clusterLater = Runnable { dev.lelonio.square.data.RemoteConnect.refresh() }
+    private var clusterRevision = -1L
+    private fun refreshClusterLease() {
+        if (dev.lelonio.square.data.SpotifyNetworkPolicy.isCurrent(clusterRevision))
+            dev.lelonio.square.data.RemoteConnect.refresh()
+    }
+    private val clusterSoon = Runnable { refreshClusterLease() }
+    private val clusterLater = Runnable { refreshClusterLease() }
 
     /**
      * Where commands to another device, and taking the account's track here, run: off the player's
@@ -931,7 +1051,8 @@ class LibrespotPlayer(
 
     /** Runs [block] on [remoteCommands]; dropped once the player has been released. */
     private fun offThread(block: () -> Unit) {
-        runCatching { remoteCommands.execute(block) }
+        val permit = runCatching { dev.lelonio.square.data.SpotifyNetworkPolicy.capture() }.getOrNull() ?: return
+        runCatching { remoteCommands.execute { runCatching { permit.dispatch(block) } } }
     }
 
     private val settleSkip = Runnable {
@@ -1002,6 +1123,7 @@ class LibrespotPlayer(
     }
 
     override fun handleStop(): ListenableFuture<*> {
+        airPodsOverride()
         engine("stop") { NativeBridge.stop() }
         // Dismissing playback answers the account's last track as well: leaving
         // it up would draw a stopped player around a song that is still offered.
@@ -1015,6 +1137,7 @@ class LibrespotPlayer(
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        if (airPodsOrigin == null) airPodsOverride()
         // The buttons follow the music. Everything below drives this phone's
         // own engine, which is silent while another device is playing.
         val wanted = playWhenReady
@@ -1061,11 +1184,30 @@ class LibrespotPlayer(
             if (playbackState == Player.STATE_IDLE || playbackState == Player.STATE_ENDED) {
                 pushQueue(startPlaying = true, positionMs = positionMs.toInt())
             } else {
-                engine("play") { NativeBridge.play() }
+                val origin = airPodsOrigin
+                if (origin == null) engine("play") { NativeBridge.play() }
+                else {
+                    airPodsPendingPause = null; airPodsAppliedPause = null
+                    airPodsPendingPlay = null; airPodsAppliedPlay = null
+                    // Events already queued before this dispatch can never confirm it.
+                    airPodsPlayRxFloor = airPodsRxSequence.get()
+                    runCatching { airPodsPlayCommand() }
+                        .onSuccess { airPodsPendingPlay = origin to (currentMediaItem?.mediaId ?: "") }
+                        .onFailure { android.util.Log.e("SquarePlayer", "play did not reach the engine", it) }
+                }
             }
         } else {
             wantPlay = false
-            engine("pause") { NativeBridge.pause() }
+            val origin = airPodsOrigin
+            if (origin == null) engine("pause") { NativeBridge.pause() }
+            else {
+                airPodsPendingPause = null; airPodsAppliedPause = null
+                airPodsPendingPlay = null; airPodsAppliedPlay = null
+                airPodsPauseRxFloor = airPodsRxSequence.get()
+                runCatching { airPodsPauseCommand() }.onSuccess {
+                    airPodsPendingPause = origin to (currentMediaItem?.mediaId ?: "")
+                }
+            }
             onPlaybackActive(false)
             focus.abandonFocus()
         }
@@ -1136,6 +1278,7 @@ class LibrespotPlayer(
         newPositionMs: Long,
         seekCommand: @Player.Command Int,
     ): ListenableFuture<*> {
+        airPodsOverride()
         // Seeking, skipping and stopping all belong to whichever device is
         // playing; see onRemote.
         if (remote != null) {
@@ -1193,13 +1336,15 @@ class LibrespotPlayer(
         startIndex: Int,
         startPositionMs: Long,
     ): ListenableFuture<*> {
+        airPodsOverride()
         // Choosing a track here is the listener asking for this phone, and it
         // is the only moment in the app where taking the account's playback is
         // what they meant. Everything else that reaches the engine leaves the
         // other device alone; see engine.rs.
-        if (runCatching { NativeBridge.playbackElsewhere }.getOrDefault(false)) {
+        val takeover = runCatching { dev.lelonio.square.data.SpotifyNetworkPolicy.capture() }.getOrNull()
+        if (takeover != null && runCatching { takeover.dispatch { NativeBridge.playbackElsewhere } }.getOrDefault(false)) {
             android.util.Log.i("SquarePlayer", "taking playback back for this device")
-            runCatching { NativeBridge.takeOver() }
+            runCatching { takeover.dispatch { NativeBridge.takeOver() } }
                 .onFailure { android.util.Log.w("SquarePlayer", "could not take over", it) }
         }
 
@@ -1216,6 +1361,7 @@ class LibrespotPlayer(
         // Shuffle before picking the track to load: with the mode on, the tapped
         // track moves to the front and the rest are reordered behind it.
         reapplyShuffle()
+        queue.items.getOrNull(queue.currentIndex)?.let { listeningOccurrence.select(queue.currentIndex, it.uri, notify = false) }
         onQueueChanged()
 
         val first = queue.items.getOrNull(queue.currentIndex) ?: run {
@@ -1228,6 +1374,7 @@ class LibrespotPlayer(
             return Futures.immediateVoidFuture()
         }
 
+        retireRemoteProjection()
         // Starts only if playback was already meant to be running. Loading with
         // startPlaying always true would make a restored session play by itself
         // on launch; when the user taps a track, Media3 follows this with
@@ -1243,6 +1390,7 @@ class LibrespotPlayer(
         check(first.uri.isNotEmpty())
         pushQueue(startPlaying = playWhenReady, positionMs = startPositionMs.toInt())
         invalidateState()
+        listeningOccurrence.notifyListeners()
         return Futures.immediateVoidFuture()
     }
 
@@ -1399,6 +1547,8 @@ class LibrespotPlayer(
          * back looking as though nothing had ever been playing.
          */
         handOverNow: Boolean = true,
+        listeningOccurrenceId: String? = null,
+        listeningContinuityValid: () -> Boolean = { false },
     ) {
         if (tracks.isEmpty()) return
 
@@ -1414,6 +1564,9 @@ class LibrespotPlayer(
         shuffleOrder?.let(queue::applyShuffleOrder)
         queue.currentIndex = index.coerceIn(0, queue.items.lastIndex)
 
+        queue.items.getOrNull(queue.currentIndex)?.let {
+            listeningOccurrence.beginOwnedRestore(queue.currentIndex, it.uri, listeningOccurrenceId, listeningContinuityValid)
+        }
         shuffleEnabled = shuffleOrder != null
         this.repeatMode = repeatMode
         // Told to the engine as well, so what came back from disk is what the
@@ -1446,7 +1599,7 @@ class LibrespotPlayer(
         // launch would pull playback away from whatever the account is actually
         // playing on.
         if (queue.items.isNotEmpty() && handOverNow) {
-            pushQueue(startPlaying = false, positionMs = positionMs.toInt())
+            pushQueue(startPlaying = false, positionMs = positionMs.toInt(), ownedRestore = true)
         }
         invalidateState()
     }
@@ -1471,7 +1624,7 @@ class LibrespotPlayer(
             return
         }
         playbackState = if (wantPlay) Player.STATE_BUFFERING else Player.STATE_READY
-        pushQueue(startPlaying = wantPlay, positionMs = positionMs.toInt())
+        pushQueue(startPlaying = wantPlay, positionMs = positionMs.toInt(), ownedRestore = true)
         invalidateState()
     }
 
@@ -1626,6 +1779,8 @@ class LibrespotPlayer(
 
     override fun handleRelease(): ListenableFuture<*> {
         released = true
+        coverOwnerAlive.set(false)
+        mediaPolicy.close()
         handler.removeCallbacks(settleSkip)
         handler.removeCallbacks(clusterSoon)
         handler.removeCallbacks(clusterLater)
@@ -1638,14 +1793,25 @@ class LibrespotPlayer(
 
     // --- NativeEvents: arrives on a tokio worker thread ---
 
-    override fun onEvent(type: String, uri: String, positionMs: Long) {
+    override fun onEvent(type: String, uri: String, positionMs: Long) = enqueueEvent(type, uri, positionMs, null)
+
+    override fun onLeasedEvent(type: String, uri: String, positionMs: Long, revision: Long) =
+        enqueueEvent(type, uri, positionMs, revision)
+
+    private fun enqueueEvent(type: String, uri: String, positionMs: Long, revision: Long?) {
+        if (revision != null && !dev.lelonio.square.data.SpotifyNetworkPolicy.isCurrent(revision)) return
         // Downloads travel on this channel because the engine has one listener
         // and one JVM attachment, not because they have anything to do with
         // what is playing. Taken off here rather than posted to the player's
         // handler, where a progress tick several times a second would queue
         // behind whatever the player is in the middle of.
         if (dev.lelonio.square.download.DownloadEvents.accept(type, uri, positionMs)) return
-        handler.post { applyEvent(type, uri, positionMs) }
+        val rxSequence = airPodsRxSequence.incrementAndGet()
+        handler.post {
+            if (revision == null || dev.lelonio.square.data.SpotifyNetworkPolicy.isCurrent(revision)) {
+                applyEvent(type, uri, positionMs, rxSequence)
+            }
+        }
     }
 
     /**
@@ -1690,8 +1856,59 @@ class LibrespotPlayer(
         }
     }
 
-    private fun applyEvent(type: String, uri: String, eventPositionMs: Long) {
+    private fun applyEvent(type: String, uri: String, eventPositionMs: Long, rxSequence: Long) {
         if (released) return
+        // The engine executing our own dispatched PLAY is not an application or remote command:
+        // only a later event for the same track, with no intervening command, can be it.
+        val ownPlay = airPodsPendingPlay?.takeIf {
+            it.second == uri && rxSequence > airPodsPlayRxFloor && airPodsAutomationLocal
+        }
+        when {
+            type == "playing" && ownPlay != null -> { airPodsPendingPlay = null; airPodsAppliedPlay = ownPlay.first }
+            // native play() may first adopt/reload the same track through Connect.
+            type == "loading" && ownPlay != null -> Unit
+            // "cluster" is deliberately absent: every Connect state update this device sends,
+            // including the one for our own PAUSE/PLAY, is answered with one (vendored
+            // Spirc::set_cluster_listener). A real takeover reaches showRemote/standby instead.
+            type in setOf("loading", "stopped", "end_of_track", "unavailable", "volume", "playing") -> airPodsOverride()
+        }
+        if (type == "paused") {
+            val pending = airPodsPendingPause
+            airPodsAppliedPause = pending?.first.takeIf {
+                pending != null && pending.second == uri && rxSequence > airPodsPauseRxFloor && airPodsAutomationLocal
+            }
+            airPodsPendingPause = null
+            // A pause received after our PLAY ends that resume; an older queued one does not.
+            if (rxSequence > airPodsPlayRxFloor) { airPodsPendingPlay = null; airPodsAppliedPlay = null }
+        }
+
+        val previousAcknowledgement = airPodsPublishingAcknowledgement
+        airPodsPublishingAcknowledgement = when (type) {
+            "paused" -> airPodsAppliedPause?.let { it to false }
+            "playing" -> airPodsAppliedPlay?.let { it to true }
+            else -> null
+        }
+        try {
+            publishEventState(type, uri, eventPositionMs)
+        } finally {
+            airPodsPublishingAcknowledgement = previousAcknowledgement
+        }
+    }
+
+    private fun publishEventState(type: String, uri: String, eventPositionMs: Long) {
+        if (type == "playback_restore_bound") {
+            runCatching {
+                val binding = Json.parseToJsonElement(uri).jsonObject
+                listeningOccurrence.nativeRestoreBound(binding.getValue("nonce").jsonPrimitive.content,
+                    binding.getValue("request").jsonPrimitive.content, isRemotePlayback)
+            }
+            return
+        }
+        // Request identity uses the existing JNI event channel; it is not a track URI.
+        if (type == "playback_request") {
+            listeningOccurrence.nativeEvent(type, uri, queue.currentIndex, isRemotePlayback)
+            return
+        }
 
         // One line per track change, and nothing for the events that arrive
         // several times a second. What a skip that nobody asked for looks like
@@ -1869,7 +2086,7 @@ class LibrespotPlayer(
             // here plays, so nothing here has to react: the state is read and
             // published, and whoever is showing it redraws.
             "cluster" -> {
-                dev.lelonio.square.data.RemoteConnect.refresh()
+                refreshRemoteState()
                 // And again shortly after.
                 //
                 // A handover is two facts arriving separately: the account says
@@ -1883,6 +2100,7 @@ class LibrespotPlayer(
                 // device sends as well, and each read is four calls into the
                 // engine and a queue's worth of JSON on this thread. Two pending
                 // looks are enough however many updates asked for them.
+                clusterRevision = dev.lelonio.square.data.SpotifyNetworkPolicy.revision
                 handler.removeCallbacks(clusterSoon)
                 handler.removeCallbacks(clusterLater)
                 handler.postDelayed(clusterSoon, 700)
@@ -1891,6 +2109,7 @@ class LibrespotPlayer(
             }
 
             "end_of_track" -> {
+                listeningOccurrence.nativeEvent(type, uri, queue.currentIndex, isRemotePlayback)
                 // With a Connect device on this track it is the device that
                 // decides what comes next, and this side only steps in for a
                 // track it queued itself. Without one the queue stops dead at
@@ -1929,10 +2148,12 @@ class LibrespotPlayer(
         // deciding with an answer from before the handover, which is how a
         // pause pressed here went out to a laptop.
         if (type == "playing" || type == "paused" || type == "stopped") {
-            dev.lelonio.square.data.RemoteConnect.refresh()
+            refreshRemoteState()
         }
 
+        listeningOccurrence.nativeEvent(type, uri, queue.currentIndex, isRemotePlayback, notify = false)
         invalidateState()
+        listeningOccurrence.notifyListeners()
     }
 
     /**
@@ -1952,7 +2173,11 @@ class LibrespotPlayer(
                             .setArtist(track.artist)
                             // Same as MainActivity.toMediaItem: the kept copy
                             // wins, so the notification has a cover offline.
-                            .setArtworkUri(track.artworkUri)
+                            .setArtworkUri(track.artworkUri?.let { artwork ->
+                                if (dev.lelonio.square.data.SpotifyNetworkPolicy.manual.value && artwork.scheme in listOf("http", "https"))
+                                    dev.lelonio.square.download.DownloadExtras.fileOf(artwork.toString(), "art")?.let(android.net.Uri::fromFile)
+                                else artwork
+                            })
                             // And the picture itself, when it is in hand. See
                             // [covers]: a URI alone has never reached the
                             // phone's media panel.

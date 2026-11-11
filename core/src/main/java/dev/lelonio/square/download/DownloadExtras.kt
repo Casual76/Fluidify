@@ -135,24 +135,31 @@ object DownloadExtras {
      * by content — Spotify's image and Canvas URLs name the file — so there is
      * nothing for a smarter client to be smarter about.
      */
-    suspend fun keep(url: String, kind: String): File? = withContext(Dispatchers.IO) {
-        if (url.isBlank()) return@withContext null
-        val file = fileFor(kind, url) ?: return@withContext null
-        if (file.exists() && file.length() > 0) return@withContext file
+    internal var fetch: (String, File, Long) -> Unit = dev.lelonio.square.io.HttpFetch::toFile
 
-        runCatching {
-            file.parentFile?.mkdirs()
-            // Through a part file, so an interrupted fetch never leaves
-            // something half-written where a reader would take it for whole.
+    suspend fun keep(url: String, kind: String): File? {
+        val revision = dev.lelonio.square.data.SpotifyNetworkPolicy.revision
+        return withContext(Dispatchers.IO) {
+            if (url.isBlank()) return@withContext null
+            val file = fileFor(kind, url) ?: return@withContext null
+            if (file.exists() && file.length() > 0) return@withContext file
+
+            if (!dev.lelonio.square.data.SpotifyNetworkPolicy.isCurrent(revision)) return@withContext null
+            val permit = dev.lelonio.square.data.SpotifyNetworkPolicy.capture()
             val part = File(file.parentFile, "${file.name}.part")
-            dev.lelonio.square.io.HttpFetch.toFile(url, part, MAX_EXTRA_BYTES)
-            if (!part.renameTo(file)) {
-                part.delete()
-                return@runCatching null
-            }
-            if (kind == "art") forgetArtAnswers()
-            file
-        }.getOrNull()
+            runCatching {
+                file.parentFile?.mkdirs()
+                // Through a part file, so an interrupted fetch never leaves
+                // something half-written where a reader would take it for whole.
+                permit.dispatch { dev.lelonio.square.io.HttpFetch.withPermit(permit) { fetch(url, part, MAX_EXTRA_BYTES) } }
+                if (!permit.admit { part.renameTo(file) }) {
+                    part.delete()
+                    return@runCatching null
+                }
+                if (kind == "art") forgetArtAnswers()
+                file
+            }.onFailure { part.delete() }.getOrNull()
+        }
     }
 
     /**

@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.lelonio.square.bridge.BridgeStateTest" tests="9" skipped="0" failures="0" errors="0" timestamp="2026-11-07T20:44:50.910Z" hostname="PC_FISSO" time="0.044">
+  <properties/>
+  <testcase name="failedReadbackReconcilesButNeverReplaysMutation" classname="dev.lelonio.square.bridge.BridgeStateTest" time="0.033"/>
+  <testcase name="persistenceFailurePreventsDispatch" classname="dev.lelonio.square.bridge.BridgeStateTest" time="0.001"/>
+  <testcase name="cursorExpiresAndEmptyIsKnownEmpty" classname="dev.lelonio.square.bridge.BridgeStateTest" time="0.002"/>
+  <testcase name="appendRequiresStableExactReadbackIncludingDuplicatesAndUnknownTracks" classname="dev.lelonio.square.bridge.BridgeStateTest" time="0.0"/>
+  <testcase name="lostCreateResponseNeverAutomaticallyDispatchesAgain" classname="dev.lelonio.square.bridge.BridgeStateTest" time="0.001"/>
+  <testcase name="capturedRowsAreCopiedAndOversizeSnapshotsRejected" classname="dev.lelonio.square.bridge.BridgeStateTest" time="0.002"/>
+  <testcase name="cursorCannotCrossAccountOrSurviveProcessRestart" classname="dev.lelonio.square.bridge.BridgeStateTest" time="0.003"/>
+  <testcase name="pagesAreImmutableReplayableAndScopeBound" classname="dev.lelonio.square.bridge.BridgeStateTest" time="0.001"/>
+  <testcase name="duplicateAndProcessRecreationReadBackActualIdWithoutDispatch" classname="dev.lelonio.square.bridge.BridgeStateTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

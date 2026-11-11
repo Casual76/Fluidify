@@ -72,6 +72,7 @@ import dev.lelonio.square.data.sortedByRecentlyOpened
 import dev.lelonio.square.data.withLocalFilesFirst
 import dev.lelonio.square.data.withPinnedFirst
 import dev.lelonio.square.ui.MainViewModel
+import dev.lelonio.square.ui.loadingSemantics
 import dev.lelonio.square.ui.components.Artwork
 import dev.lelonio.square.ui.components.PlaylistCover
 import dev.lelonio.square.ui.components.GlassButton
@@ -198,6 +199,10 @@ fun LibraryScreen(
      * among the playlists everywhere else.
      */
     downloadedSongs: CatalogPlaylist? = null,
+    /** Optional until the isolated listening-stats design is accepted. */
+    onOpenListeningStats: (() -> Unit)? = null,
+    /** The listener explicitly forbids Spotify traffic; retry must not imply leaving this mode. */
+    manualOffline: Boolean = false,
 ) {
     when (state) {
         MainViewModel.UiState.LoggedOut -> Centered {
@@ -230,7 +235,11 @@ fun LibraryScreen(
         MainViewModel.UiState.Connecting,
         MainViewModel.UiState.Loading,
         -> Centered {
-            FluidSpinner(size = 36.dp, color = Ink)
+            FluidSpinner(
+                modifier = Modifier.loadingSemantics(),
+                size = 36.dp, color = Ink,
+            )
+            GlassAction(stringResource(R.string.settings), onOpenSettings)
         }
 
         is MainViewModel.UiState.Failed -> Centered {
@@ -467,16 +476,6 @@ fun LibraryScreen(
                         // The heading rides in the grid, spanning it, so it
                         // scrolls away with what it names. The grid stays a
                         // grid: only the row above it moved into the page.
-                        item(span = { GridItemSpan(maxLineSpan) }, key = "notice") {
-                            LibraryNotices(
-                                offline = state.offline,
-                                onRetry = onRetry,
-                                webApiConnected = webApiConnected,
-                                onConnectWebApi = onConnectWebApi,
-                                filter = shownFilter,
-                            )
-                        }
-
                         item(span = { GridItemSpan(maxLineSpan) }, key = "header") {
                             Header(
                                 count = playlists.size,
@@ -489,6 +488,23 @@ fun LibraryScreen(
                                 onFilter = { filter = it },
                                 sortActions = sortActions,
                             )
+                        }
+
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "notice") {
+                            LibraryNotices(
+                                offline = state.offline,
+                                manualOffline = manualOffline,
+                                onRetry = onRetry,
+                                webApiConnected = webApiConnected,
+                                onConnectWebApi = onConnectWebApi,
+                                filter = shownFilter,
+                            )
+                        }
+
+                        onOpenListeningStats?.let { openStats ->
+                            item(span = { GridItemSpan(maxLineSpan) }, key = "listening-stats") {
+                                dev.lelonio.square.ui.library.stats.ListeningStatsLibraryEntry(openStats)
+                            }
                         }
 
                         if (artists.isNotEmpty() && shownFilter == Filter.ALL) {
@@ -517,16 +533,6 @@ fun LibraryScreen(
                             .fluidOverscrollContent(overscroll),
                         overscrollEffect = null,
                     ) {
-                        item(key = "notice") {
-                            LibraryNotices(
-                                offline = state.offline,
-                                onRetry = onRetry,
-                                webApiConnected = webApiConnected,
-                                onConnectWebApi = onConnectWebApi,
-                                filter = shownFilter,
-                            )
-                        }
-
                         item(key = "header") {
                             Header(
                                 count = playlists.size,
@@ -539,6 +545,30 @@ fun LibraryScreen(
                                 onFilter = { filter = it },
                                 sortActions = sortActions,
                             )
+                        }
+
+                        item(key = "notice") {
+                            LibraryNotices(
+                                offline = state.offline,
+                                manualOffline = manualOffline,
+                                onRetry = onRetry,
+                                webApiConnected = webApiConnected,
+                                onConnectWebApi = onConnectWebApi,
+                                filter = shownFilter,
+                            )
+                        }
+
+                        onOpenListeningStats?.let { openStats ->
+                            item(key = "listening-stats") {
+                                // The rows of this layout sit four apart because each brings
+                                // its own inset; a pane does not, and at four it touched the
+                                // chips above and the shelf title below. This gives it the
+                                // eighteen the grid's own spacing already leaves around it.
+                                dev.lelonio.square.ui.library.stats.ListeningStatsLibraryEntry(
+                                    openStats,
+                                    Modifier.padding(top = 8.dp, bottom = 14.dp),
+                                )
+                            }
                         }
 
                         if (artists.isNotEmpty() && shownFilter == Filter.ALL) {
@@ -887,6 +917,7 @@ private fun PinMark(modifier: Modifier = Modifier) {
 @Composable
 private fun LibraryNotices(
     offline: Boolean,
+    manualOffline: Boolean,
     onRetry: () -> Unit,
     webApiConnected: Boolean,
     onConnectWebApi: () -> Unit,
@@ -904,7 +935,7 @@ private fun LibraryNotices(
             Notice(
                 icon = PhosphorIcons.Regular.CloudSlash,
                 text = stringResource(R.string.library_offline),
-                action = stringResource(R.string.library_offline_action),
+                action = if (manualOffline) null else stringResource(R.string.library_offline_action),
                 onAction = onRetry,
             )
         }
@@ -923,7 +954,7 @@ private fun LibraryNotices(
 private fun Notice(
     icon: androidx.compose.ui.graphics.vector.ImageVector,
     text: String,
-    action: String,
+    action: String?,
     onAction: () -> Unit,
 ) {
     Row(
@@ -949,7 +980,7 @@ private fun Notice(
                 .weight(1f)
                 .padding(start = 10.dp),
         )
-        Text(
+        if (action != null) Text(
             action,
             style = MaterialTheme.typography.labelLarge,
             color = MaterialTheme.colorScheme.primary,

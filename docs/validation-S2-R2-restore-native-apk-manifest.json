@@ -1,0 +1,51 @@
+{
+  "apk": {
+    "path": "app/build/outputs/apk/debug/app-debug.apk",
+    "bytes": 80286021,
+    "sha256": "FEE2598F8DCD004C7C6840462045F8CF90F3D6542BFA6FBBEC237B227578DD36"
+  },
+  "nativeSourceSha256": "EC6D4F3E7DAC3B9B8C428FCD9114D0C12CBEB93B7A8FF5978209518AA97FF3D6",
+  "rebuilt": [
+    {
+      "abi": "arm64-v8a",
+      "path": "core/src/main/jniLibs/arm64-v8a/libsquarecore.so",
+      "bytes": 9422016,
+      "sha256": "667EA3FA26EA451FABC17AA7A6F851E2019186CC67E401DF5E6D1462FD63B597",
+      "differsFromPreIntegrationBuild": true,
+      "containsOwnedAckAndNewJniAndCompatibleOldJni": true
+    },
+    {
+      "abi": "armeabi-v7a",
+      "path": "core/src/main/jniLibs/armeabi-v7a/libsquarecore.so",
+      "bytes": 6495480,
+      "sha256": "1108B69558A81B060CEDDC3AC48A5E8D4BA00E4110001B36BEC57C5B804C4EFC",
+      "differsFromPreIntegrationBuild": true,
+      "containsOwnedAckAndNewJniAndCompatibleOldJni": true
+    },
+    {
+      "abi": "x86_64",
+      "path": "core/src/main/jniLibs/x86_64/libsquarecore.so",
+      "bytes": 10460528,
+      "sha256": "7ABC31C5BBA24BCE6EA486C35F92631594AA72FA1CA42A82273BC1014B2227AF",
+      "differsFromPreIntegrationBuild": true,
+      "containsOwnedAckAndNewJniAndCompatibleOldJni": true
+    }
+  ],
+  "apkLibraries": [
+    {
+      "entry": "lib/arm64-v8a/libsquarecore.so",
+      "abi": "arm64-v8a",
+      "bytes": 9422016,
+      "sha256": "667EA3FA26EA451FABC17AA7A6F851E2019186CC67E401DF5E6D1462FD63B597",
+      "exactMatchToRebuiltJniLib": true
+    },
+    {
+      "entry": "lib/x86_64/libsquarecore.so",
+      "abi": "x86_64",
+      "bytes": 10460528,
+      "sha256": "7ABC31C5BBA24BCE6EA486C35F92631594AA72FA1CA42A82273BC1014B2227AF",
+      "exactMatchToRebuiltJniLib": true
+    }
+  ],
+  "proof": "All three release ABI builds compiled patched librespot-playback/connect/squarecore. Outputs differ from prior R2. Both packaged ABIs match rebuilt bytes exactly and contain owned ack/new JNI entry/compatible old JNI entry. keepDebugSymbols prevents re-stripping."
+}

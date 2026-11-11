@@ -1,0 +1,7 @@
+<resources>
+    <string name="legacy_downloads_title">À qui appartiennent ces téléchargements ?</string>
+    <string name="legacy_downloads_message">Les téléchargements enregistrés avant la séparation des comptes sont toujours sur cet appareil. Attribuer les fichiers existants et les collections hors ligne au compte Spotify %1$s ?\n\nAucun nouveau téléchargement ni synchronisation automatique ne sera lancé. Pour choisir un autre compte, sélectionne « Plus tard » et connecte-toi à ce compte.</string>
+    <string name="legacy_downloads_later">Plus tard / autre compte</string>
+    <string name="legacy_downloads_assign">Attribuer à ce compte</string>
+    <string name="legacy_downloads_failed">Les téléchargements n’ont pas pu être attribués. Tes fichiers sont conservés ; réessaie.</string>
+</resources>

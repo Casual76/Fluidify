@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.keys.AvoidListTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:02.778Z" hostname="PC_FISSO" time="0.107">
+  <properties/>
+  <testcase name="il profondo e il gratuito predefinito non sono mai un modello da evitare, per quanto punteggi" classname="dev.antigravity.fluidengine.ai.keys.AvoidListTest" time="0.002"/>
+  <testcase name="senza client il riallineamento usa comunque il catalogo salvato" classname="dev.antigravity.fluidengine.ai.keys.AvoidListTest" time="0.039"/>
+  <testcase name="la lista da evitare ha Inkling, e null non e' da evitare" classname="dev.antigravity.fluidengine.ai.keys.AvoidListTest" time="0.0"/>
+  <testcase name="una scelta salvata su Inkling si sostituisce al riallineamento, una valida resta" classname="dev.antigravity.fluidengine.ai.keys.AvoidListTest" time="0.024"/>
+  <testcase name="il riallineamento avviene anche quando il catalogo e' ancora fresco e non si scarica niente" classname="dev.antigravity.fluidengine.ai.keys.AvoidListTest" time="0.027"/>
+  <testcase name="una scelta da evitare se ne va anche quando non c'e' niente di meglio, una solo sparita resta" classname="dev.antigravity.fluidengine.ai.keys.AvoidListTest" time="0.014"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -1,21 +1,17 @@
 package dev.lelonio.square.wear
 
 import android.util.Log
-import androidx.core.content.edit
 import com.google.android.gms.wearable.Wearable
 import dev.lelonio.square.SquareApplication
+import dev.lelonio.square.data.AccountLocalDataCoordinator
 import dev.pampa.fluidify.wear.protocol.DownloadRequest
-import dev.pampa.fluidify.wear.protocol.WatchDownloadOwner
 import dev.pampa.fluidify.wear.protocol.WatchDownloads
 import dev.pampa.fluidify.wear.protocol.WearCodec
 import dev.pampa.fluidify.wear.protocol.WearPaths
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.tasks.await
-import kotlinx.coroutines.withContext
-import kotlinx.serialization.builtins.ListSerializer
+import kotlinx.coroutines.launch
+import java.io.IOException
 
 /**
  * The phone's view of the watch's downloads, and its way of asking for more.
@@ -27,13 +23,58 @@ import kotlinx.serialization.builtins.ListSerializer
 class WatchDownloadsRemote(private val app: SquareApplication, private val link: WearLink) {
 
     private val prefs = app.getSharedPreferences("watch_downloads_remote", android.content.Context.MODE_PRIVATE)
-    private val _status = MutableStateFlow<WatchDownloads?>(null)
+    private val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO)
+    private val receipts = WatchDownloadReceipts { request ->
+        app.accountLocalData.captureOnline()?.let {
+            it.requestSession == request.accountSession && it.namespace == request.accountNamespace
+        } == true
+    }
+    fun onPlanAck(bytes: ByteArray) {
+        WearCodec.decodeOrNull(dev.pampa.fluidify.wear.protocol.DownloadPlanAck.serializer(), bytes)?.let(receipts::onAck)
+    }
+    private val inventory = WatchDownloadStatusBoundary(
+        capture = { capture()?.let { PendingWatchDownloads.Scope(it.namespace, it.requestSession) } },
+        use = { scope, block ->
+            val access = app.accountLocalData.captureRequest(scope.session)
+            if (access != null && access.namespace == scope.namespace) app.accountLocalData.use(access, block)
+        },
+        read = { prefs.getString("status/$it", null) },
+        write = { namespace, value -> check(prefs.edit().putString("status/$namespace", value).commit()) },
+    )
 
     /** The watch's last word; null until a watch with downloads has spoken. */
-    val status: StateFlow<WatchDownloads?> = _status.asStateFlow()
+    val status: StateFlow<WatchDownloads?> = inventory.status
 
-    private val _waiting = MutableStateFlow(0)
+    private val pending = PendingWatchDownloads(
+        read = { namespace -> prefs.getString("$KEY_PENDING/$namespace", null) },
+        write = { namespace, encoded ->
+            if (!prefs.edit().putString("$KEY_PENDING/$namespace", encoded).commit()) {
+                throw IOException("watch download requests could not be persisted")
+            }
+        },
+        broadcast = { request ->
+            receipts.deliver(request) { link.broadcast(WearPaths.DOWNLOAD_PLAN, WearCodec.encode(DownloadRequest.serializer(), request)) }
+        },
+        send = { nodeId, request ->
+            receipts.deliver(request) { link.send(nodeId, WearPaths.DOWNLOAD_PLAN, WearCodec.encode(DownloadRequest.serializer(), request)) }
+        },
+        capture = { capture()?.let { PendingWatchDownloads.Scope(it.namespace, it.requestSession) } },
+        current = { scope -> capture()?.let { it.namespace == scope.namespace && it.requestSession == scope.session } == true },
+        online = { scope -> app.accountLocalData.captureOnline()?.let { it.namespace == scope.namespace && it.requestSession == scope.session } == true },
+        use = { scope, block ->
+            val access = app.accountLocalData.captureRequest(scope.session)
+            if (access != null && access.namespace == scope.namespace) app.accountLocalData.use(access, block)
+        },
+    )
 
+    init {
+        app.accountLocalData.observe {
+            inventory.accountChanged()
+            pending.accountChanged()
+            scope.launch { pending.refresh(); pending.flushBroadcast() }
+        }
+    }
+    fun capture(): AccountLocalDataCoordinator.Access? = app.accountLocalData.capture()
     /**
      * How many requests are waiting for the watch to come back.
      *
@@ -42,17 +83,15 @@ class WatchDownloadsRemote(private val app: SquareApplication, private val link:
      * what lets the Watch page say it has not been. Zero until [refresh] has read the preferences,
      * so that building this (with the bridge, in every process) does not touch the disk.
      */
-    val waiting: StateFlow<Int> = _waiting.asStateFlow()
+    val waiting: StateFlow<Int> = pending.waiting
 
-    fun keeps(uri: String): Boolean = _status.value?.owners?.any { it.uri == uri } == true
+    fun keeps(uri: String): Boolean = status.value?.owners?.any { it.uri == uri } == true
 
-    fun onStatus(bytes: ByteArray) {
-        WearCodec.decodeOrNull(WatchDownloads.serializer(), bytes)?.let { _status.value = it }
-    }
+    fun onStatus(bytes: ByteArray) = inventory.onStatus(bytes)
 
     /** Reads what the Data Layer already holds, for a phone that was away when it changed. */
     suspend fun refresh() {
-        _waiting.value = withContext(Dispatchers.IO) { pending().size }
+        pending.refresh()
         // No watch with the companion: nothing to read, and no Data Layer call made.
         if (!link.hasWatch()) return
         catchingNonCancel {
@@ -66,38 +105,15 @@ class WatchDownloadsRemote(private val app: SquareApplication, private val link:
     }
 
     /** Keep (or stop keeping) [uri] on the watch. Shown at once; the watch confirms with its next status. */
-    suspend fun request(request: DownloadRequest) {
-        request.owner?.let { owner ->
-            val current = _status.value ?: WatchDownloads()
-            _status.value = current.copy(
-                owners = if (request.keep) {
-                    if (current.owners.any { it.uri == owner }) current.owners else current.owners + WatchDownloadOwner(owner, request.title)
-                } else {
-                    current.owners.filterNot { it.uri == owner }
-                },
-            )
-        }
-        val sent = link.broadcast(WearPaths.DOWNLOAD_PLAN, WearCodec.encode(DownloadRequest.serializer(), request))
-        if (!sent) savePending(pending() + request)
+    suspend fun request(request: DownloadRequest, access: AccountLocalDataCoordinator.Access) {
+        if (!app.accountLocalData.isCurrent(access)) return
+        inventory.optimistic(PendingWatchDownloads.Scope(access.namespace, access.requestSession), request)
+        pending.request(request, PendingWatchDownloads.Scope(access.namespace, access.requestSession))
     }
 
     /** What waited for the watch to come back. */
     suspend fun flushPending(nodeId: String) {
-        val waiting = pending()
-        if (waiting.isEmpty()) return
-        val left = waiting.filterNot { link.send(nodeId, WearPaths.DOWNLOAD_PLAN, WearCodec.encode(DownloadRequest.serializer(), it)) }
-        savePending(left)
-    }
-
-    private fun pending(): List<DownloadRequest> = runCatching {
-        prefs.getString(KEY_PENDING, null)?.let {
-            WearCodec.json.decodeFromString(ListSerializer(DownloadRequest.serializer()), it)
-        }
-    }.getOrNull().orEmpty()
-
-    private fun savePending(requests: List<DownloadRequest>) {
-        _waiting.value = requests.size
-        prefs.edit { putString(KEY_PENDING, WearCodec.json.encodeToString(ListSerializer(DownloadRequest.serializer()), requests)) }
+        pending.flush(nodeId)
     }
 
     private companion object {

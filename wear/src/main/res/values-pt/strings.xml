@@ -186,4 +186,8 @@
     <string name="updated_to">Atualizado para %1$s</string>
     <string name="updated_to_tap">Ver novidades</string>
     <string name="update_downloading_wifi">A transferir por Wi-Fi…</string>
+    <string name="watch_downloads_legacy_note">Os downloads antigos não têm um proprietário conhecido. Pode mantê-los sem os atribuir ou atribuí-los à conta com sessão iniciada neste relógio.</string>
+    <string name="watch_downloads_legacy_assign">Atribuir downloads antigos…</string>
+    <string name="watch_downloads_legacy_confirm">Confirmar: atribuir a %1$s</string>
+    <string name="watch_downloads_legacy_later">Manter sem atribuir</string>
 </resources>

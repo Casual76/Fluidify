@@ -411,7 +411,7 @@
     <string name="widget_add_row">Añadir la fila a la pantalla de inicio</string>
     <string name="widget_add_note">La portada detrás, lo que suena, y los tres botones. Sigue el tema de la aplicación.</string>
     <string name="widget_nothing_playing_hint">Abre Fluidify y pulsa play</string>
-    <string name="library_offline">Se muestra lo descargado. Spotify aún no ha respondido.</string>
+    <string name="library_offline">Se muestra el contenido descargado.</string>
     <string name="library_offline_action">Reintentar</string>
     <string name="library_needs_app">Los artistas que sigues y los álbumes guardados necesitan tu propia aplicación de Spotify conectada.</string>
     <string name="library_needs_app_action">Conectar</string>
@@ -524,4 +524,17 @@
     <string name="watch_update_wifi">El reloj descarga la %1$s por su Wi-Fi…</string>
     <string name="onboarding_step_of">Paso %1$d de %2$d</string>
     <string name="update_section_title">Actualizaciones</string>
+    <string name="history_title">Historial de escucha</string>
+    <string name="history_record">Registrar las escuchas en este teléfono</string>
+    <string name="history_retention">El historial se conserva hasta que lo elimines. Las importaciones de Spotify son observaciones recientes, no un historial mensual completo. Se desconoce la duración de las escuchas remotas.</string>
+    <string name="history_account">Cuenta de Spotify</string>
+    <string name="history_import">Importar escuchas recientes de Spotify</string>
+    <string name="history_importing">Importando…</string>
+    <string name="history_import_result">Última importación</string>
+    <string name="history_import_observed">Observaciones recientes importadas; la cobertura mensual sigue incompleta.</string>
+    <string name="history_import_empty">Spotify no devolvió observaciones recientes.</string>
+    <string name="history_import_error">La importación falló. El historial guardado se conserva. Comprueba la cuenta Web API conectada y los permisos.</string>
+    <string name="history_import_partial">Observaciones recientes importadas parcialmente; la cobertura es limitada.</string>
+    <string name="history_delete">Eliminar el historial de esta cuenta</string>
+    <string name="history_delete_confirm">¿Eliminar todas las escuchas y los datos de cobertura de importaciones de %1$s en este teléfono? Esta acción es irreversible. El registro continuará si está activado.</string>
 </resources>

@@ -1,0 +1,128 @@
+C:\VibeCoded Projects\Fluidify\core\src\main\java\dev\lelonio\square\playback\AudioEffects.kt:73: Warning: Consider using apply() instead; commit writes its data to persistent storage immediately, whereas apply will handle it in the background [ApplySharedPref]
+        prefs?.edit()?.putFloat(KEY_KARAOKE, wanted)?.commit()
+                                                      ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\core\src\main\java\dev\lelonio\square\playback\AudioEffects.kt:110: Warning: Consider using apply() instead; commit writes its data to persistent storage immediately, whereas apply will handle it in the background [ApplySharedPref]
+            .commit()
+             ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\core\src\main\java\dev\lelonio\square\playback\AudioEffects.kt:124: Warning: Consider using apply() instead; commit writes its data to persistent storage immediately, whereas apply will handle it in the background [ApplySharedPref]
+        store.edit().putFloat(KEY_REVERB, wanted).commit()
+                                                  ~~~~~~~~
+C:\VibeCoded Projects\Fluidify\core\src\main\java\dev\lelonio\square\playback\AudioEffects.kt:143: Warning: Consider using apply() instead; commit writes its data to persistent storage immediately, whereas apply will handle it in the background [ApplySharedPref]
+            .commit()
+             ~~~~~~~~
+
+   Explanation for issues of type "ApplySharedPref":
+   Consider using apply() instead of commit on shared preferences. Whereas
+   commit blocks and writes its data to persistent storage immediately, apply
+   will handle it in the background.
+
+C:\VibeCoded Projects\Fluidify\core\src\main\java\dev\lelonio\square\playback\AudioReactive.kt:428: Error: This declaration is opt-in and its usage should be marked with @androidx.media3.common.util.UnstableApi or @OptIn(markerClass = androidx.media3.common.util.UnstableApi.class) [UnsafeOptInUsageError from androidx.annotation.experimental]
+        if (player is LibrespotPlayer) AudioLightSource.NATIVE else AudioLightSource.MEDIA3,
+                      ~~~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\core\src\main\java\dev\lelonio\square\playback\PlayQueue.kt:404: Error: This declaration is opt-in and its usage should be marked with @androidx.media3.common.util.UnstableApi or @OptIn(markerClass = androidx.media3.common.util.UnstableApi.class) [UnsafeOptInUsageError from androidx.annotation.experimental]
+            durationMs = metadata.durationMs ?: 0L,
+                                  ~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\core\src\main\java\dev\lelonio\square\playback\QueueItems.kt:43: Error: This declaration is opt-in and its usage should be marked with @androidx.media3.common.util.UnstableApi or @OptIn(markerClass = androidx.media3.common.util.UnstableApi.class) [UnsafeOptInUsageError from androidx.annotation.experimental]
+                .setDurationMs(this.durationMs.takeIf { it > 0 })
+                 ~~~~~~~~~~~~~
+
+   Explanation for issues of type "UnsafeOptInUsageError":
+   This API has been flagged as opt-in with error-level severity.
+
+   Any declaration annotated with this marker is considered part of an
+   unstable or
+   otherwise non-standard API surface and its call sites should accept the
+   opt-in
+   aspect of it by using the @OptIn annotation, using the marker annotation
+   --
+   effectively causing further propagation of the opt-in aspect -- or
+   configuring
+   the UnsafeOptInUsageError check's options for project-wide opt-in.
+
+   To configure project-wide opt-in, specify the opt-in option value in
+   lint.xml
+   as a comma-delimited list of opted-in annotations:
+
+   <lint>
+       <issue id="UnsafeOptInUsageError">
+           <option name="opt-in" value="com.foo.ExperimentalBarAnnotation" />
+       </issue>
+   </lint>
+
+   Vendor: Android Open Source Project
+   Identifier: androidx.annotation.experimental
+   Feedback: https://issuetracker.google.com/issues/new?component=459778
+
+C:\VibeCoded Projects\Fluidify\core\src\main\java\dev\lelonio\square\playback\AudioEffects.kt:73: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        prefs?.edit()?.putFloat(KEY_KARAOKE, wanted)?.commit()
+        ~~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\core\src\main\java\dev\lelonio\square\playback\AudioEffects.kt:105: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        store.edit()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\core\src\main\java\dev\lelonio\square\playback\AudioEffects.kt:124: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        store.edit().putFloat(KEY_REVERB, wanted).commit()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\core\src\main\java\dev\lelonio\square\playback\AudioEffects.kt:140: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+        store.edit()
+        ~~~~~~~~~~~~
+C:\VibeCoded Projects\Fluidify\core\src\main\java\dev\lelonio\square\playback\AudioLightPreferences.kt:14: Warning: Use the KTX extension function SharedPreferences.edit instead? [UseKtx]
+    fun setEnabled(value: Boolean) { state.value = value; prefs.edit().putBoolean("enabled", value).apply() }
+                                                          ~~~~~~~~~~~~
+
+   Explanation for issues of type "UseKtx":
+   The Android KTX libraries decorates the Android platform SDK as well as
+   various libraries with more convenient extension functions available from
+   Kotlin, allowing you to use default parameters, named parameters, and
+   more.
+
+   Available options:
+
+   **remove-defaults** (default is true):
+   Whether to skip arguments that match the defaults provided by the extension.
+
+   Extensions often provide default values for some of the parameters. For example:
+   ```kotlin
+   fun Path.readLines(charset: Charset = Charsets.UTF_8): List<String> { return Files.readAllLines(this, charset) }
+   ```
+   This lint check will by default automatically omit parameters that match the default, so if your code was calling
+
+   ```kotlin
+   Files.readAllLines(file, Charset.UTF_8)
+   ```
+   lint would replace this with
+   ```kotlin
+   file.readLines()
+   ```
+   rather than
+
+   ```kotlin
+   file.readLines(Charset.UTF_8
+   ```
+   You can turn this behavior off using this option.
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UseKtx">
+           <option name="remove-defaults" value="true" />
+       </issue>
+   </lint>
+   ```
+
+   **require-present** (default is true):
+   Whether to only offer extensions already available.
+
+   This option lets you only have lint suggest extension replacements if those extensions are already available on the class path (in other words, you're already depending on the library containing the extension method.)
+
+   To configure this option, use a `lint.xml` file with an <option> like this:
+
+   ```xml
+   <lint>
+       <issue id="UseKtx">
+           <option name="require-present" value="true" />
+       </issue>
+   </lint>
+   ```
+
+3 errors, 9 warnings

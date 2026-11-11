@@ -1,0 +1,12 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.provider.WebSearchCodecTest" tests="6" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:20.100Z" hostname="PC_FISSO" time="0.003">
+  <properties/>
+  <testcase name="Groq con la ricerca passa al compound, senza strumenti ne' ragionamento" classname="dev.antigravity.fluidengine.ai.provider.WebSearchCodecTest" time="0.001"/>
+  <testcase name="le fonti di Gemini vengono dai grounding chunk del web" classname="dev.antigravity.fluidengine.ai.provider.WebSearchCodecTest" time="0.001"/>
+  <testcase name="le fonti OpenAI si leggono dalle annotations di OpenRouter e dai search_results di Groq, senza doppioni" classname="dev.antigravity.fluidengine.ai.provider.WebSearchCodecTest" time="0.0"/>
+  <testcase name="nello stream OpenAI le fonti si accumulano fino alla fine" classname="dev.antigravity.fluidengine.ai.provider.WebSearchCodecTest" time="0.0"/>
+  <testcase name="OpenRouter chiede il plugin web solo con la ricerca, accanto al parser dei PDF" classname="dev.antigravity.fluidengine.ai.provider.WebSearchCodecTest" time="0.0"/>
+  <testcase name="il codec OpenAI ignora un JsonObjectBuilder vuoto" classname="dev.antigravity.fluidengine.ai.provider.WebSearchCodecTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -11,8 +11,6 @@ import okhttp3.FormBody
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
-import java.net.InetAddress
-import java.net.ServerSocket
 import java.security.MessageDigest
 import java.security.SecureRandom
 import java.util.Base64
@@ -135,7 +133,26 @@ object SpotifyOAuth {
 
     private const val TAG = "SpotOAuth"
 
-    private val http = OkHttpClient()
+    // Token rotation is single-attempt: do not retry/redirect a refresh after its lease is revoked.
+    // An already admitted response is parsed so TokenStore can preserve a received rotation.
+    private val http = tokenClient()
+
+    internal fun tokenClient(): OkHttpClient = OkHttpClient.Builder().retryOnConnectionFailure(false)
+        .followRedirects(false).followSslRedirects(false)
+        .addInterceptor { chain ->
+            val permit = chain.request().tag(dev.lelonio.square.data.SpotifyNetworkPolicy.Permit::class.java)
+                ?: dev.lelonio.square.data.SpotifyNetworkPolicy.capture()
+            permit.check()
+            chain.proceed(chain.request().newBuilder()
+                .tag(dev.lelonio.square.data.SpotifyNetworkPolicy.Permit::class.java, permit).build())
+        }
+        .addNetworkInterceptor { chain ->
+            checkNotNull(chain.request().tag(dev.lelonio.square.data.SpotifyNetworkPolicy.Permit::class.java)).check()
+            val response = chain.proceed(chain.request())
+            // RetryAndFollowUpInterceptor otherwise replays 503/Retry-After:0 independently
+            // of retryOnConnectionFailure. Keep the response so an admitted rotation can be parsed.
+            if (response.code == 503) response.newBuilder().removeHeader("Retry-After").build() else response
+        }.build()
     private val random = SecureRandom()
 
     data class Tokens(
@@ -179,15 +196,15 @@ object SpotifyOAuth {
         clientId: String = CLIENT_ID,
         scopes: List<String> = SCOPES,
     ): Tokens = withContext(Dispatchers.IO) {
+        val permission = dev.lelonio.square.data.SpotifyNetworkPolicy.capture()
         val verifier = randomVerifier()
         val challenge = challengeFor(verifier)
         val state = randomState()
 
-        LoopbackReceiver(REDIRECT_PORT, context.getString(R.string.browser_return)).use { receiver ->
+        val (code, redirectUri) = withOAuthLoopbackReceiver(
+            REDIRECT_PORT, context.getString(R.string.browser_return),
+        ) { receiver ->
             val redirectUri = receiver.redirectUri
-            // The port is ephemeral, so without this there is no way to tell a
-            // listener that never accepted from a browser that refused to load
-            // the redirect.
             android.util.Log.i(TAG, "listening for OAuth redirect on $redirectUri")
 
             val authUri = Uri.parse(AUTHORIZE_URL).buildUpon()
@@ -201,6 +218,7 @@ object SpotifyOAuth {
                 .build()
 
             withContext(Dispatchers.Main) {
+                permission.check()
                 CustomTabsIntent.Builder().build().apply {
                     // The caller is a ViewModel, so this is the application
                     // context; starting an activity from one without
@@ -212,35 +230,41 @@ object SpotifyOAuth {
                 }.launchUrl(context, authUri)
             }
 
-            val callback = receiver.awaitRedirect()
+            val target = receiver.awaitRequest()
+            val callback = Uri.parse("http://127.0.0.1$target")
             android.util.Log.i(TAG, "redirect received")
-            check(callback.state == state) { "OAuth state mismatch — request was not ours" }
-            val code = callback.code ?: error("authorization denied: ${callback.error}")
-
-            exchangeCode(code, verifier, redirectUri, clientId)
+            check(callback.getQueryParameter("state") == state) { "OAuth state mismatch — request was not ours" }
+            val code = callback.getQueryParameter("code")
+                ?: error("authorization denied: ${callback.getQueryParameter("error")}")
+            code to redirectUri
         }
+        // The listener is released before the token HTTP exchange as well.
+        exchangeCode(code, verifier, redirectUri, clientId, permission)
     }
 
     /** Trades a refresh token for a fresh access token. */
     suspend fun refresh(
         refreshToken: String,
         clientId: String = CLIENT_ID,
-    ): Tokens = withContext(Dispatchers.IO) {
-        val form = FormBody.Builder()
-            .add("grant_type", "refresh_token")
-            .add("refresh_token", refreshToken)
-            .add("client_id", clientId)
-            .build()
-        // Spotify may or may not rotate the refresh token; keep the old one when
-        // the response omits it, otherwise the next refresh has nothing to use.
-        postToken(form).let { it.copy(refreshToken = it.refreshToken ?: refreshToken) }
+        permit: dev.lelonio.square.data.SpotifyNetworkPolicy.Permit = dev.lelonio.square.data.SpotifyNetworkPolicy.capture(),
+    ): Tokens = refreshUsing(http, TOKEN_URL, refreshToken, clientId, permit)
+
+    /** Same production request/parser with a synthetic transport endpoint for host contracts. */
+    internal suspend fun refreshUsing(client: OkHttpClient, endpoint: String, refreshToken: String,
+        clientId: String, permit: dev.lelonio.square.data.SpotifyNetworkPolicy.Permit): Tokens = withContext(Dispatchers.IO) {
+        val form = FormBody.Builder().add("grant_type", "refresh_token")
+            .add("refresh_token", refreshToken).add("client_id", clientId).build()
+        postToken(form, permit, client, endpoint).let { it.copy(refreshToken = it.refreshToken ?: refreshToken) }
     }
 
-    private fun exchangeCode(
+    internal fun exchangeCode(
         code: String,
         verifier: String,
         redirectUri: String,
         clientId: String,
+        permit: dev.lelonio.square.data.SpotifyNetworkPolicy.Permit,
+        client: OkHttpClient = http,
+        endpoint: String = TOKEN_URL,
     ): Tokens {
         val form = FormBody.Builder()
             .add("grant_type", "authorization_code")
@@ -249,12 +273,15 @@ object SpotifyOAuth {
             .add("client_id", clientId)
             .add("code_verifier", verifier)
             .build()
-        return postToken(form)
+        return postToken(form, permit, client, endpoint)
     }
 
-    private fun postToken(form: FormBody): Tokens {
-        val request = Request.Builder().url(TOKEN_URL).post(form).build()
-        http.newCall(request).execute().use { response ->
+    private fun postToken(form: FormBody, permit: dev.lelonio.square.data.SpotifyNetworkPolicy.Permit = dev.lelonio.square.data.SpotifyNetworkPolicy.capture(),
+        client: OkHttpClient = http, endpoint: String = TOKEN_URL): Tokens {
+        val request = Request.Builder().url(endpoint).post(form)
+            .tag(dev.lelonio.square.data.SpotifyNetworkPolicy.Permit::class.java, permit).build()
+        permit.check()
+        client.newCall(request).execute().use { response ->
             val body = response.body?.string().orEmpty()
             if (!response.isSuccessful) {
                 // `invalid_grant` is Spotify saying the refresh token is dead —
@@ -288,75 +315,4 @@ object SpotifyOAuth {
 
     private fun base64Url(bytes: ByteArray): String =
         Base64.getUrlEncoder().withoutPadding().encodeToString(bytes)
-}
-
-/**
- * Single-shot loopback HTTP listener for the OAuth redirect.
- *
- * Binds an ephemeral port on 127.0.0.1, serves exactly one request, and closes.
- * Only the device's own browser can reach it.
- */
-private class LoopbackReceiver(port: Int, private val doneMessage: String) : AutoCloseable {
-
-    data class Callback(val code: String?, val state: String?, val error: String?)
-
-    /**
-     * Bound to the IPv4 loopback explicitly, on the exact registered port.
-     *
-     * `InetAddress.getLoopbackAddress()` returns `::1` on Android, so binding
-     * through it leaves nothing listening on `127.0.0.1` — which is the literal
-     * Spotify's registered redirect URIs use, and the browser then fails the
-     * redirect with ERR_CONNECTION_REFUSED.
-     */
-    private val server = ServerSocket(port, 1, InetAddress.getByName("127.0.0.1"))
-
-    /** The one line the browser shows once the redirect lands, in the app's language. */
-    private val response: String = buildString {
-        val page = "<html><body><h2>$doneMessage</h2></body></html>"
-        append("HTTP/1.1 200 OK\r\n")
-        append("Content-Type: text/html; charset=utf-8\r\n")
-        append("Content-Length: ${page.toByteArray().size}\r\n")
-        append("Connection: close\r\n\r\n")
-        append(page)
-    }
-
-    /** Derived from the socket, so the URI can never disagree with the bind. */
-    val redirectUri: String =
-        "http://${server.inetAddress.hostAddress}:${server.localPort}/login"
-
-    init {
-        // If the user abandons the browser we must not leak the thread forever.
-        server.soTimeout = REDIRECT_TIMEOUT_MS
-    }
-
-    fun awaitRedirect(): Callback {
-        val socket = server.accept()
-        socket.use {
-            val reader = it.getInputStream().bufferedReader()
-            val requestLine = reader.readLine() ?: error("empty redirect request")
-            // "GET /login?code=...&state=... HTTP/1.1"
-            val target = requestLine.split(' ').getOrNull(1)
-                ?: error("malformed redirect request: $requestLine")
-            val uri = Uri.parse("http://127.0.0.1$target")
-
-            it.getOutputStream().writer().apply {
-                write(response)
-                flush()
-            }
-
-            return Callback(
-                code = uri.getQueryParameter("code"),
-                state = uri.getQueryParameter("state"),
-                error = uri.getQueryParameter("error"),
-            )
-        }
-    }
-
-    override fun close() {
-        runCatching { server.close() }
-    }
-
-    private companion object {
-        const val REDIRECT_TIMEOUT_MS = 5 * 60 * 1000
-    }
 }

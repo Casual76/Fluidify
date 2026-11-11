@@ -21,6 +21,10 @@ interface NativeEvents {
      *   [NativeBridge.SESSION_FAILED] or [NativeBridge.SESSION_PREMIUM_REQUIRED].
      */
     fun onEvent(type: String, uri: String, positionMs: Long)
+    /** Exact origin revision, retained while the receiver posts onto its own thread. */
+    fun onLeasedEvent(type: String, uri: String, positionMs: Long, revision: Long) {
+        if (dev.lelonio.square.data.SpotifyNetworkPolicy.isCurrent(revision)) onEvent(type, uri, positionMs)
+    }
 }
 
 /**
@@ -119,6 +123,46 @@ object NativeBridge {
         listener,
     )
 
+    /** Creates the same native player without token refresh, authentication or Connect. */
+    fun startLocal(clientId: String, deviceName: String, deviceId: String,
+        credentialsDir: String, cacheDir: String, language: String, bitrateKbps: Int,
+        crossfadeMs: Int, sourceJson: String, revision: Long, manual: Boolean,
+        listener: NativeEvents): Long = nativeStartLocal(clientId, deviceName, deviceId,
+            credentialsDir, cacheDir, language, bitrateKbps, crossfadeMs, sourceJson,
+            revision, manual, LeasedEvents(listener))
+
+    private class LeasedEvents(private val target: NativeEvents) : NativeEvents {
+        override fun onEvent(type: String, uri: String, positionMs: Long) {
+            if (!type.startsWith("leased:")) { target.onEvent(type, uri, positionMs); return }
+            val fields = type.split(':', limit = 3)
+            val revision = fields.getOrNull(1)?.toLongOrNull() ?: return
+            if (fields.size == 3) target.onLeasedEvent(fields[2], uri, positionMs, revision)
+        }
+    }
+
+    fun applyNetworkSnapshot(handle: Long, revision: Long, manual: Boolean): Long =
+        nativeApplyNetworkSnapshot(handle, revision, manual)
+    fun ensureOnline(handle: Long, revision: Long, accessToken: String) =
+        nativeEnsureOnline(handle, revision, accessToken)
+    /** Synchronous dispatch scope: JNI cannot silently capture a later ON -> OFF revision. */
+    fun enterNetworkScope(handle: Long, revision: Long): AutoCloseable {
+        nativePushNetworkScope(handle, revision)
+        return AutoCloseable { nativePopNetworkScope() }
+    }
+    private external fun nativePushNetworkScope(handle: Long, revision: Long)
+    private external fun nativePopNetworkScope()
+    fun retireNetworkOwner(handle: Long) = nativeRetireNetworkOwner(handle)
+    private external fun nativeRetireNetworkOwner(handle: Long)
+    fun bindDownloadSource(handle: Long, sourceJson: String) = nativeBindDownloadSource(handle, sourceJson)
+
+    private external fun nativeStartLocal(clientId: String, deviceName: String, deviceId: String,
+        credentialsDir: String, cacheDir: String, language: String, bitrateKbps: Int,
+        crossfadeMs: Int, sourceJson: String, revision: Long, manual: Boolean,
+        listener: NativeEvents): Long
+    private external fun nativeApplyNetworkSnapshot(handle: Long, revision: Long, manual: Boolean): Long
+    private external fun nativeEnsureOnline(handle: Long, revision: Long, accessToken: String)
+    private external fun nativeBindDownloadSource(handle: Long, sourceJson: String)
+
     /**
      * Hands the whole queue to the Connect device, starting at [index].
      *
@@ -127,23 +171,16 @@ object NativeBridge {
      * other device see, and it is Spirc that advances at the end of a track.
      */
     fun loadQueue(
-        uris: List<String>,
-        index: Int,
-        startPlaying: Boolean,
-        positionMs: Int = 0,
-        /** The playlist or album the queue came from; empty when it came from none. */
-        contextUri: String = "",
-        /** Hand playback to Spotify as that context rather than as loose tracks. */
-        playAsContext: Boolean = false,
-    ) =
-        nativeLoadQueue(
-            Json.encodeToString(ListSerializer(String.serializer()), uris),
-            index,
-            startPlaying,
-            positionMs,
-            contextUri,
-            playAsContext,
-        )
+        uris: List<String>, index: Int, startPlaying: Boolean, positionMs: Int = 0,
+        contextUri: String = "", playAsContext: Boolean = false,
+    ) = nativeLoadQueue(Json.encodeToString(ListSerializer(String.serializer()), uris),
+        index, startPlaying, positionMs, contextUri, playAsContext)
+
+    /** Explicit app-owned saved restore; untagged loadQueue/JNI entry remains unchanged. */
+    fun loadOwnedQueue(uris: List<String>, index: Int, startPlaying: Boolean, positionMs: Int,
+        contextUri: String, playAsContext: Boolean, restoreNonce: String) =
+        nativeLoadOwnedQueue(Json.encodeToString(ListSerializer(String.serializer()), uris),
+            index, startPlaying, positionMs, contextUri, playAsContext, restoreNonce)
 
     /**
      * Tells the device a new running order, leaving the current track playing.
@@ -653,6 +690,10 @@ object NativeBridge {
         listener: NativeEvents,
     )
 
+    private external fun nativeLoadOwnedQueue(
+        urisJson: String, index: Int, startPlaying: Boolean, positionMs: Int,
+        contextUri: String, playAsContext: Boolean, restoreNonce: String,
+    )
     private external fun nativeLoadQueue(
         urisJson: String,
         index: Int,

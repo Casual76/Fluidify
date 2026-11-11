@@ -2,17 +2,26 @@
 
 package dev.lelonio.square.playback
 
+
 import android.content.Intent
 import androidx.media3.session.MediaLibraryService
 import androidx.media3.session.MediaSession
 import dev.lelonio.square.auth.SpotifyOAuth
 import dev.lelonio.square.auth.TokenStore
 import dev.lelonio.square.data.CatalogTrack
+import dev.lelonio.square.data.SpotifyNetworkPolicy
+import dev.lelonio.square.data.restoredListeningOccurrence
+import dev.lelonio.square.data.listeningRestoreAuthorization
 import dev.lelonio.square.data.PlaybackStore
 import dev.lelonio.square.backend.spotify.licenseUrl
 import dev.lelonio.square.backend.spotify.toMpd
 import dev.lelonio.square.data.SavedPlayback
 import dev.lelonio.square.nativecore.NativeBridge
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.Deferred
+import kotlinx.coroutines.async
+import dev.lelonio.square.auth.AccountLifecycle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
@@ -49,6 +58,24 @@ class PlaybackService : MediaLibraryService() {
 
     private lateinit var tokens: TokenStore
     private var session: MediaLibrarySession? = null
+    private var airPodsPlayerAttachment: java.io.Closeable? = null
+
+    private fun detachAirPodsPlayer() {
+        airPodsPlayerAttachment?.close()
+        airPodsPlayerAttachment = null
+    }
+
+    /** Replace the observation provider along with the session player; no playback start/bind. */
+    private fun attachAirPodsPlayer(): androidx.media3.common.Player {
+        detachAirPodsPlayer()
+        val bridge = PlaybackAirPodsProvider(this, player,
+            if (player is LibrespotPlayer) audioOutput else null,
+            { mediaAccountEpoch }, { sleepFadeActive || AudioEffects.reverb.value > 0f ||
+                (player as? LibrespotPlayer)?.airPodsForeignDuckActive == true })
+        airPodsPlayerAttachment = PlaybackAirPodsMediaBridge.attach(bridge)
+        return bridge.sessionPlayer
+    }
+
     private var engineStarted = false
 
     private lateinit var container: dev.lelonio.square.SquareApplication
@@ -92,17 +119,27 @@ class PlaybackService : MediaLibraryService() {
      * The volume is put back once it is paused, so pressing play afterwards is
      * not silent.
      */
+    private fun pauseApplicationPlayer() {
+        (player as? LibrespotPlayer)?.recordAirPodsApplicationCommand()
+        player.pause()
+    }
+    private var sleepFadeActive = false
     private suspend fun fadeOutAndPause() {
+        sleepFadeActive = true
+        PlaybackAirPodsMediaBridge.changed()
+        try { fadeOutAndPauseApplied() } finally { sleepFadeActive = false; PlaybackAirPodsMediaBridge.changed() }
+    }
+    private suspend fun fadeOutAndPauseApplied() {
         if (player is LibrespotPlayer) {
             // A song that changed or stopped during the fade still ends here:
             // the timer is about the time, not about the song.
             if (!fadeEngineOutAndPause(SLEEP_FADE_MS, player.currentMediaItem?.mediaId)) {
-                player.pause()
+                pauseApplicationPlayer()
             }
             return
         }
         if (!player.isCommandAvailable(androidx.media3.common.Player.COMMAND_SET_VOLUME)) {
-            player.pause()
+            pauseApplicationPlayer()
             return
         }
         val was = player.volume
@@ -110,7 +147,7 @@ class PlaybackService : MediaLibraryService() {
             player.volume = was * (1f - (step + 1f) / SLEEP_FADE_STEPS)
             kotlinx.coroutines.delay(SLEEP_FADE_MS / SLEEP_FADE_STEPS)
         }
-        player.pause()
+        pauseApplicationPlayer()
         player.volume = was
     }
 
@@ -130,7 +167,7 @@ class PlaybackService : MediaLibraryService() {
             runCatching { dev.lelonio.square.nativecore.NativeBridge.volume }.getOrNull()
         }
         if (level == null || durationMs <= 0) {
-            player.pause()
+            pauseApplicationPlayer()
             return true
         }
         val steps = (durationMs / ENGINE_FADE_STEP_MS).coerceIn(1, 400).toInt()
@@ -145,7 +182,7 @@ class PlaybackService : MediaLibraryService() {
                 }
                 kotlinx.coroutines.delay(durationMs / steps)
             }
-            player.pause()
+            pauseApplicationPlayer()
             return true
         } finally {
             withContext(kotlinx.coroutines.NonCancellable + Dispatchers.IO) {
@@ -158,6 +195,7 @@ class PlaybackService : MediaLibraryService() {
     private lateinit var quality: dev.lelonio.square.data.QualityStore
     private lateinit var crossfade: dev.lelonio.square.data.CrossfadeStore
     private var saveJob: Job? = null
+    private var listeningRecorder: ListeningRecorder? = null
 
     private val playbackHost = object : dev.lelonio.square.backend.PlaybackHost {
         override val context get() = this@PlaybackService
@@ -166,6 +204,7 @@ class PlaybackService : MediaLibraryService() {
 
     override fun onCreate() {
         super.onCreate()
+        activeService = this
         playbackStore = PlaybackStore(this)
         container = application as dev.lelonio.square.SquareApplication
         // The container's own store, not one of this service's making. Two
@@ -178,8 +217,26 @@ class PlaybackService : MediaLibraryService() {
         crossfade = container.crossfade
 
         player = buildPlayer(PlayerKind.SPOTIFY)
+        if (container.spotifySignedIn) container.listeningHistory.restoreAccount()
+        // A recording/delete generation also revokes local-data leases. Reverify only after
+        // this service has observed an authenticated native session, never on restore alone.
+        scope.launch {
+            container.listeningHistory.session.collect {
+                container.accountLocalData.historyChanged()
+                if (localDataNativeVerified && !accountLifecycle.blocked &&
+                    container.accountLocalData.captureOnline() == null) {
+                    container.downloadQueue.stopAndJoin()
+                    container.wearBridge.files.stopAndJoin()
+                    if (localDataNativeVerified && !accountLifecycle.blocked &&
+                        container.accountLocalData.verifyNativeAccount()) {
+                        dev.lelonio.square.download.DownloadService.start(this@PlaybackService)
+                    }
+                }
+            }
+        }
+        listeningRecorder = ListeningRecorder(container.listeningHistory, scope, { player })
         val browseTree = MediaBrowseTree(this, scope, ::ensurePlayerFor)
-        session = MediaLibrarySession.Builder(this, player, browseTree)
+        session = MediaLibrarySession.Builder(this, attachAirPodsPlayer(), browseTree)
             // Without this the notification is inert to a tap: Media3 has no way
             // to know which activity owns the session. `SINGLE_TOP` so an app
             // already running comes forward rather than starting a second copy
@@ -205,7 +262,7 @@ class PlaybackService : MediaLibraryService() {
 
         // The watch remote follows whichever player is current; see PhoneWearBridge.
         container.wearBridge.browseTree = browseTree
-        container.wearBridge.attach(player)
+        container.wearBridge.attach(session?.player ?: player)
         // A watch setting that changes how the notification is built, applied now.
         scope.launch { container.wearBridge.notificationRefresh.collect { session?.let { onUpdateNotification(it, false) } } }
 
@@ -311,7 +368,7 @@ class PlaybackService : MediaLibraryService() {
                     val id = player.currentMediaItem?.mediaId
                     if (id != watched) {
                         if (lastLeft <= END_NEAR_MS) {
-                            player.pause()
+                            pauseApplicationPlayer()
                             SleepTimer.cancel()
                             return@collectLatest
                         }
@@ -334,7 +391,7 @@ class PlaybackService : MediaLibraryService() {
                         continue
                     }
                     if (left <= END_STOP_MS) {
-                        player.pause()
+                        pauseApplicationPlayer()
                         SleepTimer.cancel()
                         return@collectLatest
                     }
@@ -426,7 +483,10 @@ class PlaybackService : MediaLibraryService() {
         // nothing after it. Watched here rather than in the UI because the
         // queue belongs to the service, and this has to work with no screen on.
         scope.launch {
-            dev.lelonio.square.data.RemoteConnect.here.collect(::adoptRemoteQueue)
+            dev.lelonio.square.data.RemoteConnect.here.collect { here ->
+                val ticket = accountLifecycle.generation
+                accountLifecycle.runCurrent(ticket) { adoptRemoteQueue(here) }
+            }
         }
 
         // Playback on another device, mirrored into this one's player.
@@ -435,12 +495,19 @@ class PlaybackService : MediaLibraryService() {
         // controller read the player and nothing else, so without this they
         // showed a stopped app while the account was playing in the next room.
         scope.launch {
-            kotlinx.coroutines.flow.combine(
-                dev.lelonio.square.data.RemoteConnect.playback,
-                dev.lelonio.square.data.RemoteConnect.queue,
-            ) { elsewhere, queue -> elsewhere to queue }.collect { (elsewhere, queue) ->
-                librespot?.showRemote(elsewhere?.let { describeRemote(it) }, queue)
-                if (elsewhere != null) describeRemoteQueue(queue)
+            dev.lelonio.square.data.RemoteConnect.projection.collect { projection ->
+                val ticket = accountLifecycle.generation
+                accountLifecycle.runCurrent(ticket) {
+                    val permit = projection.permit
+                    if (permit == null) { librespot?.showRemote(null); return@runCurrent }
+                    try {
+                        permit.check()
+                        val described = projection.playback?.let { describeRemote(it, permit) }
+                        accountLifecycle.requireCurrent(ticket)
+                        permit.admit { librespot?.showRemote(described, projection.queue) }
+                        if (projection.playback != null) describeRemoteQueue(projection.queue, permit)
+                    } catch (_: SpotifyNetworkPolicy.Offline) { /* A retired projection never resumes. */ }
+                }
             }
         }
 
@@ -471,13 +538,17 @@ class PlaybackService : MediaLibraryService() {
             while (true) {
                 kotlinx.coroutines.delay(DEVICE_WATCH_MS)
                 tick += 1
-                runCatching { librespot?.ensureDevice() }
-                    .onFailure { android.util.Log.w(TAG, "device watch: $it") }
-                if (tick % 2 == 0L) watchConnection()
-                if (uiOnScreen() || tick % BACKGROUND_CLUSTER_TICKS == 0L) {
-                    withContext(Dispatchers.IO) {
-                        runCatching { NativeBridge.refreshCluster() }
-                            .onFailure { android.util.Log.d(TAG, "cluster not refreshed: ${it.message}") }
+                val ticket = accountLifecycle.generation
+                accountLifecycle.runCurrent(ticket) {
+                    if (!engineUp) return@runCurrent
+                    runCatching { librespot?.ensureDevice() }
+                        .onFailure { android.util.Log.w(TAG, "device watch: $it") }
+                    if (tick % 2 == 0L) watchConnection()
+                    if (uiOnScreen() || tick % BACKGROUND_CLUSTER_TICKS == 0L) {
+                        withContext(Dispatchers.IO) {
+                            runCatching { SpotifyNetworkPolicy.capture().dispatch { NativeBridge.refreshCluster() } }
+                                .onFailure { android.util.Log.d(TAG, "cluster not refreshed: ${it.message}") }
+                        }
                     }
                 }
             }
@@ -570,7 +641,7 @@ class PlaybackService : MediaLibraryService() {
                 withContext(Dispatchers.IO) {
                     if (!dev.lelonio.square.data.RemoteConnect.elsewhereActive.value) {
                         val before = NativeBridge.stateAcks
-                        val republished = runCatching { NativeBridge.publishContext(position.toInt()) }
+                        val republished = runCatching { SpotifyNetworkPolicy.capture().dispatch { NativeBridge.publishContext(position.toInt()) } }
                             .getOrDefault(false)
                         if (republished) dev.lelonio.square.data.RemoteConnect.awaitStatePublished(before)
                     }
@@ -585,11 +656,11 @@ class PlaybackService : MediaLibraryService() {
                     ?: return
                 withContext(Dispatchers.IO) {
                     runCatching {
-                        NativeBridge.resumeHere(
+                        SpotifyNetworkPolicy.capture().dispatch { NativeBridge.resumeHere(
                             remote.realContext.orEmpty(),
                             remote.uri,
                             remote.positionMs.toInt(),
-                        )
+                        ) }
                     }.onFailure { android.util.Log.w(TAG, "could not bring playback here: $it") }
                 }
             }
@@ -607,6 +678,9 @@ class PlaybackService : MediaLibraryService() {
     private enum class PlayerKind { SPOTIFY, LOCAL, VIDEO }
 
     private var playerKind = PlayerKind.SPOTIFY
+    private var videoNetworkPermit: SpotifyNetworkPolicy.Permit? = null
+    private var videoOwnerAlive = java.util.concurrent.atomic.AtomicBoolean(false)
+    private var videoNetworkOwner: () -> Boolean = { false }
 
     /**
      * The Spotify player while a local file is in front of it.
@@ -638,12 +712,14 @@ class PlaybackService : MediaLibraryService() {
     private suspend fun playVideoRequest(
         request: dev.lelonio.square.backend.spotify.SpotifyVideoMode.Request,
     ) {
+        val ticket = accountLifecycle.generation
         when (request) {
             is dev.lelonio.square.backend.spotify.SpotifyVideoMode.Request.Watch -> {
-                val token = withContext(Dispatchers.IO) { NativeBridge.accessToken() }
+                val videoPermit = SpotifyNetworkPolicy.capture()
+                val token = withContext(Dispatchers.IO) { videoPermit.dispatch { NativeBridge.accessToken() } }
                     ?: error("the engine has no token")
                 val manifest = dev.lelonio.square.backend.spotify.SpotifyVideo
-                    .manifest(request.fileId, token)
+                    .manifest(request.fileId, token, videoPermit)
                 val file = withContext(Dispatchers.IO) {
                     cacheDir.resolve("video-${request.fileId}.mpd")
                         .apply { writeText(manifest.toMpd()) }
@@ -660,7 +736,15 @@ class PlaybackService : MediaLibraryService() {
                 val identity = playing?.mediaId
                 val metadata = playing?.mediaMetadata
 
+                accountLifecycle.requireCurrent(ticket)
+                videoPermit.check()
+                videoNetworkPermit = videoPermit
+                videoOwnerAlive.set(false)
+                videoOwnerAlive = java.util.concurrent.atomic.AtomicBoolean(true)
+                val owner = videoOwnerAlive
+                videoNetworkOwner = { owner.get() && accountLifecycle.current(ticket) }
                 swapPlayer(PlayerKind.VIDEO, restore = false)
+                accountLifecycle.requireCurrent(ticket)
                 val item = androidx.media3.common.MediaItem.Builder()
                     .setUri(android.net.Uri.fromFile(file))
                     .setMediaId(identity ?: request.fileId)
@@ -674,12 +758,18 @@ class PlaybackService : MediaLibraryService() {
                             .build(),
                     )
                     .build()
-                player.setMediaItem(item)
-                player.prepare()
-                player.seekTo(request.positionMs)
-                player.play()
-                dev.lelonio.square.backend.spotify.SpotifyVideoMode.setManifest(manifest)
-                dev.lelonio.square.backend.spotify.SpotifyVideoMode.setEnabled(true)
+                videoPermit.admit {
+                    player.setMediaItem(item)
+                    player.prepare()
+                    player.seekTo(request.positionMs)
+                    player.play()
+                    dev.lelonio.square.backend.spotify.SpotifyVideoMode.setManifest(manifest)
+                    dev.lelonio.square.backend.spotify.SpotifyVideoMode.setEnabled(true)
+                }
+                parkedSpotify?.let { spotify ->
+                    VideoPlaybackQueue.show(VideoQueueOwner(spotify, ticket,
+                        handOver = ::handOverVideoQueue, changed = ::savePlayback))
+                }
             }
 
             is dev.lelonio.square.backend.spotify.SpotifyVideoMode.Request.Skip -> {
@@ -696,6 +786,19 @@ class PlaybackService : MediaLibraryService() {
                 swapPlayer(PlayerKind.SPOTIFY, restore = true)
                 player.seekTo(request.positionMs)
                 player.play()
+            }
+        }
+    }
+
+    private fun handOverVideoQueue(snapshot: DisplayedPlaybackQueue, selected: (androidx.media3.common.Player) -> Unit) {
+        val ticket = accountLifecycle.generation
+        scope.launch {
+            accountLifecycle.runCurrent(ticket) {
+                if (!snapshot.isCurrent() || playerKind != PlayerKind.VIDEO) return@runCurrent
+                dev.lelonio.square.backend.spotify.SpotifyVideoMode.setEnabled(false)
+                dev.lelonio.square.backend.spotify.SpotifyVideoMode.setManifest(null)
+                swapPlayerOwned(PlayerKind.SPOTIFY, restore = false)
+                selected(player)
             }
         }
     }
@@ -770,7 +873,14 @@ class PlaybackService : MediaLibraryService() {
             // where the app's own speed and pitch live: built plain, a video
             // played at one and dry while the listener had the sliders set, and
             // the effects came back only when the song did.
-            androidx.media3.exoplayer.ExoPlayer.Builder(this, LocalPlayerFactory.renderers(playbackHost))
+            val renderers = LocalPlayerFactory.renderers(playbackHost)
+            val mediaSources = androidx.media3.exoplayer.source.DefaultMediaSourceFactory(this)
+                .setDataSourceFactory(SpotifyMediaDataSource.factory(this, videoNetworkPermit, videoNetworkOwner))
+                .setDrmSessionManagerProvider(androidx.media3.exoplayer.drm.DefaultDrmSessionManagerProvider().apply {
+                    setDrmHttpDataSourceFactory(SpotifyMediaDataSource.factory(this@PlaybackService, videoNetworkPermit, videoNetworkOwner))
+                })
+            androidx.media3.exoplayer.ExoPlayer.Builder(this, renderers)
+                .setMediaSourceFactory(mediaSources)
                 .setLooper(playbackHost.looper)
                 .setHandleAudioBecomingNoisy(true)
                 .setAudioAttributes(
@@ -778,9 +888,10 @@ class PlaybackService : MediaLibraryService() {
                         .setUsage(androidx.media3.common.C.USAGE_MEDIA)
                         .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MUSIC)
                         .build(),
-                    /* handleAudioFocus = */ true,
+                    /* handleAudioFocus = */ false,
                 )
                 .build()
+                .let { LocalPlayerFactory.trackFocus(it, this, renderers) }
                 .also { built ->
                     built.playbackParameters = androidx.media3.common.PlaybackParameters(
                         AudioEffects.speed.value,
@@ -827,9 +938,9 @@ class PlaybackService : MediaLibraryService() {
 
         // Another client pointing this device at a track of its own; see
         // LibrespotPlayer.onUnknownTrack.
-        built.onUnknownTrack = { uri -> scope.launch { adoptPlayingTrack(uri) } }
+        bindAccountCallbacks(built, accountLifecycle.generation)
         // What came of a handshake, whenever one is made; see onSessionOutcome.
-        built.onSession = { outcome -> scope.launch { onSessionOutcome(outcome) } }
+
 
         // Applied straight to the output rather than waiting for the UI: the
         // service can be running with no activity attached at all.
@@ -850,8 +961,84 @@ class PlaybackService : MediaLibraryService() {
         return built
     }
 
+    private fun bindAccountCallbacks(engine: LibrespotPlayer, ticket: Long) {
+        engine.onUnknownTrack = { uri -> scope.launch {
+            accountLifecycle.runCurrent(ticket) { adoptPlayingTrack(uri) }
+        } }
+        engine.onSession = { outcome ->
+            val revision = SpotifyNetworkPolicy.revision
+            scope.launch { accountLifecycle.runCurrent(ticket) {
+                if (SpotifyNetworkPolicy.isCurrent(revision)) onSessionOutcome(outcome)
+            } }
+        }
+    }
+
+    /** The service owns this even while bound and while Spotify is parked. */
+    private suspend fun tearDownAccount() {
+        closeNativePolicyBinding()
+        engineUp = false
+        sleepJob?.cancel()
+        saveJob?.cancel()
+        val spotify = librespot ?: parkedSpotify
+        spotify?.onSession = null
+        spotify?.onUnknownTrack = null
+        pauseApplicationPlayer()
+        spotify?.recordAirPodsApplicationCommand()
+        spotify?.pause()
+        stopService(Intent(this, dev.lelonio.square.download.DownloadService::class.java))
+        // Never time out this join: JNI must have returned before native shutdown.
+        container.downloadQueue.stopAndJoin()
+        container.wearBridge.files.stopAndJoin()
+        player.stop()
+        player.clearMediaItems()
+        spotify?.clearForRestart()
+        spotify?.shutdownEngineOnRelease = false
+        if (engineStarted) withContext(Dispatchers.IO) { closeNativePolicyBinding(); NativeBridge.shutdown() }
+        if (player === spotify) detachAirPodsPlayer()
+        spotify?.release()
+        engineStarted = false
+        parkedSpotify = null
+        if (librespot != null) {
+            librespot = null
+            player = buildSpotifyPlayer()
+            session?.player = attachAirPodsPlayer()
+            container.wearBridge.attach(session?.player ?: player)
+        }
+        playbackStore.clear()
+        adoptedContext = null
+        describedQueue.clear()
+        dev.lelonio.square.data.RemoteConnect.clear()
+        slowLink = false
+        slowTicks = 0
+        OfflineMode.setNoSession(true)
+        OfflineMode.setSlow(false)
+        // Native start can write a credential after the UI's immediate clear.
+        dev.lelonio.square.auth.EngineCredentials.clear(this)
+    }
+
+    private suspend fun releaseSpotifyOwned(stale: LibrespotPlayer) {
+        closeNativePolicyBinding()
+        stale.onSession = null
+        stale.onUnknownTrack = null
+        engineUp = false
+        container.downloadQueue.stopAndJoin()
+        container.wearBridge.files.stopAndJoin()
+        stale.shutdownEngineOnRelease = false
+        stale.release()
+        withContext(Dispatchers.IO) { closeNativePolicyBinding(); NativeBridge.shutdown() }
+        engineStarted = false
+    }
+
     /** The swap itself; see [ensurePlayerFor]. */
     private suspend fun swapPlayer(kind: PlayerKind, restore: Boolean = true) {
+        val ticket = accountLifecycle.generation
+        accountLifecycle.runCurrent(ticket) { swapPlayerOwned(kind, restore) }
+    }
+
+    private suspend fun swapPlayerOwned(kind: PlayerKind, restore: Boolean) {
+        if (kind != PlayerKind.VIDEO) videoOwnerAlive.set(false)
+        if (kind != PlayerKind.VIDEO) VideoPlaybackQueue.clear()
+        detachAirPodsPlayer()
         // Only a player with something in it has anything to save, and saving
         // an empty one does not write nothing: it clears the store. At startup
         // the player being swapped away from is the one just built, empty, so
@@ -891,8 +1078,8 @@ class PlaybackService : MediaLibraryService() {
             librespot = null
             playerKind = kind
             player = buildPlayer(kind)
-            session?.player = player
-            container.wearBridge.attach(player)
+            session?.player = attachAirPodsPlayer()
+            container.wearBridge.attach(session?.player ?: player)
             // The queue on disk belongs to this player when it is the one being
             // restored into — leaving it out is what made a local song paused
             // at closing time impossible to start again: the screen had it, the
@@ -915,8 +1102,8 @@ class PlaybackService : MediaLibraryService() {
             librespot = parked
             playerKind = kind
             player = parked
-            session?.player = player
-            container.wearBridge.attach(player)
+            session?.player = attachAirPodsPlayer()
+            container.wearBridge.attach(session?.player ?: player)
             if (restore) restoreQueue()
             observeForSaving()
             return
@@ -926,8 +1113,7 @@ class PlaybackService : MediaLibraryService() {
         // no place in it.
         parkedSpotify?.let { stale ->
             parkedSpotify = null
-            runCatching { stale.release() }
-            engineStarted = false
+            releaseSpotifyOwned(stale)
         }
 
         // Emptied before it goes: the session keeps reporting whatever the old
@@ -939,11 +1125,13 @@ class PlaybackService : MediaLibraryService() {
             player.stop()
             player.clearMediaItems()
         }
-        runCatching { player.release() }
+        val leavingSpotify = player as? LibrespotPlayer
+        if (leavingSpotify != null) releaseSpotifyOwned(leavingSpotify)
+        else runCatching { player.release() }
 
         player = buildPlayer(kind)
-        session?.player = player
-        container.wearBridge.attach(player)
+        session?.player = attachAirPodsPlayer()
+        container.wearBridge.attach(session?.player ?: player)
         followReverb()
         // The engine is what the Spotify player plays through, so it is started
         // whatever brought us here — without this, coming back from a local file
@@ -1017,9 +1205,10 @@ class PlaybackService : MediaLibraryService() {
      */
     private suspend fun describeRemote(
         playback: dev.lelonio.square.data.RemotePlayback,
+        permit: SpotifyNetworkPolicy.Permit = SpotifyNetworkPolicy.capture(),
     ): dev.lelonio.square.data.RemotePlayback {
         if (playback.title.isNotEmpty() && playback.artist.isNotEmpty()) return playback
-        val track = runCatching { container.activeBackend.tracksOf(playback.uri).firstOrNull() }
+        val track = runCatching { dev.lelonio.square.data.Catalog.tracks(listOf(playback.uri), permit).firstOrNull() }
             .onFailure { android.util.Log.w(TAG, "cannot read ${playback.uri}: $it") }
             .getOrNull() ?: return playback
 
@@ -1032,7 +1221,7 @@ class PlaybackService : MediaLibraryService() {
         // Kept there rather than here: every part of the app reads that state,
         // and the next cluster update rebuilds it from what the other device
         // published, which is what left this out in the first place.
-        dev.lelonio.square.data.RemoteConnect.describe(filled)
+        permit.admit { dev.lelonio.square.data.RemoteConnect.describe(filled) }
         return filled
     }
 
@@ -1058,7 +1247,9 @@ class PlaybackService : MediaLibraryService() {
      * only for the tracks that arrived without a name. The answer goes back
      * into RemoteConnect, which redraws the queue from it.
      */
-    private suspend fun describeRemoteQueue(queue: dev.lelonio.square.data.RemoteQueue) {
+    private suspend fun describeRemoteQueue(queue: dev.lelonio.square.data.RemoteQueue,
+        permit: SpotifyNetworkPolicy.Permit = SpotifyNetworkPolicy.capture()) {
+        permit.check()
         val missing = queue.items
             .filter { it.title.isEmpty() && it.uri.startsWith("spotify:track:") }
             .map { it.uri }
@@ -1067,11 +1258,12 @@ class PlaybackService : MediaLibraryService() {
         if (missing.isEmpty()) return
         describedQueue += missing
         describedQueue.trim()
-        val tracks = runCatching { dev.lelonio.square.data.Catalog.tracks(missing) }
+        val tracks = runCatching { dev.lelonio.square.data.Catalog.tracks(missing, permit) }
             .onFailure { android.util.Log.w(TAG, "cannot read the other device's queue: $it") }
             .getOrDefault(emptyList())
         if (tracks.isEmpty()) return
-        dev.lelonio.square.data.RemoteConnect.describeQueue(
+        permit.check()
+        permit.admit { dev.lelonio.square.data.RemoteConnect.describeQueue(
             tracks.map { track ->
                 dev.lelonio.square.data.RemoteQueueItem(
                     uri = track.uri,
@@ -1082,7 +1274,7 @@ class PlaybackService : MediaLibraryService() {
                     coverUri = track.artworkUrl.orEmpty(),
                 )
             },
-        )
+        ) }
     }
 
     /** The queue last taken on, so the same transfer is not resolved twice. */
@@ -1240,7 +1432,8 @@ class PlaybackService : MediaLibraryService() {
         if (librespot == null || !engineStarted) return
         android.util.Log.i(TAG, "quality: $reason changed, telling the player")
 
-        scope.launch {
+        val ticket = accountLifecycle.generation
+        scope.launch { accountLifecycle.runCurrent(ticket) {
             withContext(Dispatchers.IO) {
                 runCatching {
                     android.util.Log.i(
@@ -1255,7 +1448,7 @@ class PlaybackService : MediaLibraryService() {
                 }
                     .onFailure { android.util.Log.e(TAG, "could not change the quality: $it") }
             }
-        }
+        } }
     }
 
     /**
@@ -1268,14 +1461,39 @@ class PlaybackService : MediaLibraryService() {
      * offline notice, which says only downloaded music is on offer until there
      * is one.
      */
+    private var localDataNativeVerified = false
+
     private fun onSessionOutcome(outcome: Long) {
+        if (accountLifecycle.blocked || !container.spotifySignedIn) return
         when (outcome) {
             NativeBridge.SESSION_CONNECTED -> {
                 android.util.Log.i(TAG, "engine connected")
+                val priorHistorySession = container.listeningHistory.session.value
+                val ticket = accountLifecycle.generation
+                scope.launch {
+                    val id = runCatching { dev.lelonio.square.data.Catalog.username() }
+                        .getOrNull()
+                    if (!accountLifecycle.current(ticket)) { return@launch }
+                    if (id.isNullOrBlank()) { return@launch }
+                    if (!container.spotifySignedIn) { return@launch }
+                    if (container.listeningHistory.session.value != priorHistorySession) { return@launch }
+                    if (container.accountLocalData.capture()?.account?.id != id) {
+                        // Serialize revocation BEFORE HistoryAccess can point at another account.
+                        container.accountLocalData.revoke()
+                        container.downloadQueue.stopAndJoin()
+                        container.wearBridge.files.stopAndJoin()
+                        if (!accountLifecycle.current(ticket)) { return@launch }
+                        if (!container.spotifySignedIn) { return@launch }
+                        if (container.listeningHistory.session.value != priorHistorySession) { return@launch }
+                    }
+                    container.listeningHistory.connect(dev.lelonio.square.data.HistoryAccount(id))
+                    localDataNativeVerified = true
+                    if (container.accountLocalData.verifyNativeAccount()) {
+                        dev.lelonio.square.download.DownloadService.start(this@PlaybackService)
+                    }
+                }
                 OfflineMode.setNoSession(false)
                 watchConnection()
-                // Whatever the queue still owes, now that it can be had.
-                dev.lelonio.square.download.DownloadService.start(this)
             }
 
             NativeBridge.SESSION_FAILED -> {
@@ -1287,7 +1505,9 @@ class PlaybackService : MediaLibraryService() {
                 // Back to the login screen, with a reason. Staying signed in
                 // would leave an app that looks connected and plays nothing.
                 android.util.Log.e(TAG, "the account cannot stream to this client")
+                container.listeningHistory.disconnect()
                 tokens.clear()
+                disconnectAccount()
                 dev.lelonio.square.auth.EngineCredentials.clear(this)
                 android.widget.Toast.makeText(
                     this,
@@ -1330,105 +1550,103 @@ class PlaybackService : MediaLibraryService() {
      * Authenticates the native session. Runs off the main thread because the
      * access-point handshake is blocking.
      */
-    private fun connectEngine(restoreQueue: Boolean = true) = scope.launch {
-        // Guards against the repeated ACTION_CONNECT the UI may send: the native
-        // side rejects a second start, and that error would look like a login
-        // failure and clear a perfectly good session.
-        if (engineStarted || !container.spotifySignedIn) return@launch
-        // Nothing to authenticate against while another backend is playing, and
-        // starting the engine would take the audio device out from under it.
-        val engine = librespot ?: return@launch
-        engineStarted = true
+    private var nativeHandle = 0L
+    private var nativePolicyBinding: AutoCloseable? = null
+    private var nativeSourceJob: Job? = null
 
-        runCatching {
-            // Empty is a real answer here. The engine keeps the credential the
-            // access point issued and prefers it, so a token is only needed by a
-            // device logging in for the first time: refusing to start without
-            // one would throw away a session that works because the OAuth half
-            // of it, which playback does not use, has lapsed.
-            val kept = dev.lelonio.square.auth.EngineCredentials.exist(this@PlaybackService)
-            val accessToken = runCatching { tokens.validAccessToken() }
-                .getOrElse { error ->
-                    if (!kept) throw error
-                    android.util.Log.w(TAG, "no token, logging in with the kept credential", error)
-                    ""
-                }
-            // Before the engine, so the very first track it is asked for can
-            // already be found on disk. The root is handed over even when
-            // nothing has been downloaded: the lookup answers "no" for an empty
-            // store, and setting it later would mean a window in which
-            // downloaded tracks streamed instead.
-            withContext(Dispatchers.IO) {
+    private fun connectEngine(restoreQueue: Boolean = true): Job {
+        val ticket = accountLifecycle.generation
+        return scope.launch { accountLifecycle.runCurrent(ticket) {
+            connectEngineOwned(restoreQueue, ticket)
+        } }
+    }
+
+    private suspend fun connectEngineOwned(restoreQueue: Boolean, ticket: Long) {
+        if (!container.spotifySignedIn) return
+        val engine = librespot ?: return
+        if (!engineStarted) {
+            bindAccountCallbacks(engine, ticket)
+            try {
                 container.downloads.load()
-                runCatching {
+                accountLifecycle.requireCurrent(ticket)
+                // OAuth bootstrap needs no local download authority. A later canonical receipt
+                // can admit the first source for this owner; no unverified file is readable.
+                val sourceOwner = NativeDownloadSourceOwner(container.downloads)
+                val source = sourceOwner.binding()
+                // Complete ownership even if cancellation arrives while JNI constructs the player.
+                // Teardown cannot pass the lifecycle owner until this native call really returns.
+                withContext(Dispatchers.IO + kotlinx.coroutines.NonCancellable) {
+                    accountLifecycle.requireCurrent(ticket)
                     NativeBridge.setDownloadRoot(container.downloads.root.absolutePath)
-                }.onFailure {
-                    android.util.Log.w(TAG, "downloads have no home: $it")
+                    val initial = SpotifyNetworkPolicy.snapshot()
+                    nativeHandle = NativeBridge.startLocal(
+                        clientId = SpotifyOAuth.CLIENT_ID,
+                        deviceName = android.os.Build.MODEL ?: "Android",
+                        deviceId = container.preferences.deviceId(),
+                        credentialsDir = filesDir.resolve("librespot").absolutePath,
+                        cacheDir = cacheDir.absolutePath,
+                        language = appLanguage(), bitrateKbps = quality.bitrateKbps(),
+                        crossfadeMs = crossfade.durationMs(), sourceJson = source,
+                        revision = initial.revision, manual = initial.manual, listener = engine,
+                    )
+                    engineStarted = true
+                    val ownedHandle = nativeHandle
+                    nativePolicyBinding = SpotifyNetworkPolicy.bindNative(
+                        enter = { revision -> NativeBridge.enterNetworkScope(ownedHandle, revision) },
+                    ) { snapshot ->
+                        check(NativeBridge.applyNetworkSnapshot(ownedHandle, snapshot.revision,
+                            snapshot.manual) == snapshot.revision) { "Native policy acknowledgement mismatch" }
+                    }
                 }
+                accountLifecycle.requireCurrent(ticket)
+                engineUp = true
+                nativeSourceJob?.cancel()
+                val ownedHandle = nativeHandle
+                nativeSourceJob = scope.launch {
+                    kotlinx.coroutines.flow.combine(container.downloads.files,
+                        container.accountLocalData.access) { _, current -> current }.collect {
+                        accountLifecycle.runCurrent(ticket) {
+                            if (ownedHandle != nativeHandle || !engineUp) return@runCurrent
+                            val binding = sourceOwner.binding()
+                            NativeBridge.bindDownloadSource(ownedHandle, binding)
+                        }
+                    }
+                }
+                if (restoreQueue) restoreQueue()
+                observeForSaving()
+                watchConnection()
+            } catch (error: Exception) {
+                if (error is CancellationException) throw error
+                android.util.Log.e(TAG, "local engine initialization failed", error)
+                return
             }
-
-            withContext(Dispatchers.IO) {
-                NativeBridge.start(
-                    // Must match the id the OAuth token was minted for.
-                    // `Login5Manager::auth_token` always asks as a stored
-                    // credential, and that path signs the request with the
-                    // session's client id — so the two have to agree or the
-                    // access point rejects every catalogue call.
-                    clientId = SpotifyOAuth.CLIENT_ID,
-                    deviceName = android.os.Build.MODEL ?: "Android",
-                    // Kept across launches, so the account sees this phone as
-                    // one device rather than a new one every time.
-                    deviceId = container.preferences.deviceId(),
-                    accessToken = accessToken,
-                    // filesDir, not cacheDir: credentials must survive the
-                    // system reclaiming cache space, or the next launch loses
-                    // catalogue access until the user logs in again.
-                    credentialsDir = filesDir.resolve("librespot").absolutePath,
-                    cacheDir = cacheDir.absolutePath,
-                    // The app's own language, not the account's. Spotify
-                    // localises what it answers with, artwork included: the
-                    // generated playlists carry the language in the cover's
-                    // URL, so the tiles came back in English.
-                    language = appLanguage(),
-                    bitrateKbps = quality.bitrateKbps().also {
-                        android.util.Log.i(
-                            TAG,
-                            "quality: starting at $it kbps" +
-                                " (link estimate ${quality.linkKbps()} kbps)",
-                        )
-                    },
-                    // Off is zero, which is upstream librespot's own behaviour.
-                    crossfadeMs = crossfade.durationMs(),
-                    listener = engine,
-                )
-            }
-        }.onFailure { error ->
-            engineStarted = false
-            android.util.Log.e(TAG, "engine start failed: $error", error)
-            // Only a device that has never logged in fails here: for it the
-            // engine makes the handshake before answering, since a token is
-            // all it has and there is nothing on the phone to play meanwhile.
-            // Only a refused account ends the session. Everything else the
-            // handshake can fail with — no network, an access point that is
-            // busy, a dealer that dropped — is temporary, and signing the user
-            // out over it costs them their session for a failure that would
-            // have fixed itself on the next attempt. A refresh token Spotify
-            // really has revoked is cleared by TokenStore before it gets here.
-            if (error.message?.contains(PREMIUM_REQUIRED) == true) {
-                onSessionOutcome(NativeBridge.SESSION_PREMIUM_REQUIRED)
-            }
-        }.onSuccess {
-            // There is a player, and the queue goes to it now: what is on the
-            // phone plays at once, what has to be streamed waits for the
-            // session inside the engine. The handshake's outcome arrives as a
-            // `session` event; see onSessionOutcome. Until then the app is not
-            // offline, merely connecting, and the notice stays down.
-            android.util.Log.i(TAG, "engine started; connecting")
-            engineUp = true
-            if (restoreQueue) restoreQueue()
-            observeForSaving()
-            watchConnection()
         }
+        // Local readiness is independent of online readiness. OFF gets a fresh permit/token attempt.
+        if (nativePolicyBinding == null) return
+        val permit = runCatching { SpotifyNetworkPolicy.capture() }.getOrNull() ?: return
+        try {
+            val kept = dev.lelonio.square.auth.EngineCredentials.exist(this@PlaybackService)
+            val token = if (kept) "" else tokens.validAccessToken(permit)
+            accountLifecycle.requireCurrent(ticket)
+            withContext(Dispatchers.IO) {
+                permit.check()
+                NativeBridge.ensureOnline(nativeHandle, permit.revision, token)
+            }
+        } catch (error: Exception) {
+            if (error is CancellationException) throw error
+            if (error !is SpotifyNetworkPolicy.Offline) android.util.Log.w(TAG, "online admission deferred", error)
+        }
+    }
+
+    /** Unregister before destroying the JNI owner; toggles never destroy this owner. */
+    private fun closeNativePolicyBinding() {
+        videoOwnerAlive.set(false)
+        nativeSourceJob?.cancel()
+        nativeSourceJob = null
+        if (nativeHandle != 0L) NativeBridge.retireNetworkOwner(nativeHandle)
+        nativePolicyBinding?.close()
+        nativePolicyBinding = null
+        nativeHandle = 0L
     }
 
     /**
@@ -1464,11 +1682,18 @@ class PlaybackService : MediaLibraryService() {
                 // answer "engine not started", and the engine is connecting on
                 // its own anyway.
                 if (!engineUp) return
+                if (SpotifyNetworkPolicy.manual.value) return
                 android.util.Log.i(TAG, "a network is back, connecting now")
                 // Returns at once; what comes of it arrives as a `session`
                 // event, see onSessionOutcome.
-                runCatching { NativeBridge.reconnect(force = true) }
-                    .onFailure { android.util.Log.w(TAG, "could not ask to reconnect: $it") }
+                val ticket = accountLifecycle.generation
+                val permit = runCatching { SpotifyNetworkPolicy.capture() }.getOrNull() ?: return
+                scope.launch { accountLifecycle.runCurrent(ticket) {
+                    if (engineUp) withContext(Dispatchers.IO) {
+                        runCatching { permit.dispatch { NativeBridge.reconnect(force = true) } }
+                            .onFailure { android.util.Log.w(TAG, "could not ask to reconnect: $it") }
+                    }
+                } }
             }
         }
         runCatching { manager.registerDefaultNetworkCallback(callback) }
@@ -1538,6 +1763,8 @@ class PlaybackService : MediaLibraryService() {
 
         // One call rather than a sequence of commands: see LibrespotPlayer.restore
         // for why the order, position and modes have to be applied together.
+        val history = container.listeningHistory
+        val (restoreToken, restoreValid) = saved.listeningRestoreAuthorization(history)
         engine.restore(
             tracks = saved.tracks.map(::toQueueTrack),
             shuffleOrder = saved.shuffleOrder,
@@ -1548,6 +1775,8 @@ class PlaybackService : MediaLibraryService() {
             contextIsOrdered = saved.contextOrdered,
             contextLabel = saved.contextLabel,
             handOverNow = handOverNow,
+            listeningOccurrenceId = restoreToken,
+            listeningContinuityValid = restoreValid,
         )
         android.util.Log.i(TAG, "restored ${saved.tracks.size} tracks at ${saved.index}")
     }
@@ -1606,16 +1835,19 @@ class PlaybackService : MediaLibraryService() {
             return
         }
 
+        val historyHandoff = listeningRecorder?.playbackHandoff()
         playbackStore.save(
             SavedPlayback(
                 tracks = queue.originalTracks.map(::toCatalogTrack),
                 shuffleOrder = queue.shuffleOrder,
                 index = queue.currentIndex,
                 positionMs = player.currentPosition.coerceAtLeast(0),
-                repeatMode = player.repeatMode,
+                repeatMode = (librespot ?: parkedSpotify)?.repeatMode ?: player.repeatMode,
                 contextUri = queue.contextUri,
                 contextOrdered = queue.contextIsOrdered,
                 contextLabel = queue.contextLabel,
+                listeningOccurrenceId = historyHandoff?.first,
+                historyContinuity = historyHandoff?.second,
             ),
         )
     }
@@ -1814,10 +2046,14 @@ class PlaybackService : MediaLibraryService() {
         // Media3's own helper rather than a bare stopSelf: it pauses every
         // player attached to the service first, so the engine is told to stop
         // instead of being cut off when onDestroy releases it.
+        detachAirPodsPlayer()
         pauseAllPlayersAndStopSelf()
     }
 
     override fun onDestroy() {
+        VideoPlaybackQueue.clear()
+        detachAirPodsPlayer()
+        listeningRecorder?.close()
         container.wearBridge.detach()
         if (android.os.Build.VERSION.SDK_INT >= android.os.Build.VERSION_CODES.R) {
             systemRouter?.let { router ->
@@ -1832,25 +2068,67 @@ class PlaybackService : MediaLibraryService() {
             }
         }
         networkCallback = null
-        // Before cancelling the scope: the last position is the one worth having.
-        runCatching { savePlayback() }
-        scope.cancel()
-        session?.run {
-            player.release()
-            release()
-        }
+        if (activeService === this) activeService = null
+        val dyingSession = session
+        val dyingPlayer = player
         session = null
-        // Only if there is an engine to stop. Reaching for the Spotify backend
-        // here would otherwise build its audio sink just to release it.
-        if (librespot != null) {
-            NativeBridge.shutdown()
-            audioOutput.release()
+        if (!accountLifecycle.blocked) runCatching { savePlayback() }
+        scope.cancel()
+        ownershipScope.launch {
+            accountLifecycle.exclusive {
+                closeNativePolicyBinding()
+                container.downloadQueue.stopAndJoin()
+                container.wearBridge.files.stopAndJoin()
+                (dyingPlayer as? LibrespotPlayer)?.shutdownEngineOnRelease = false
+                parkedSpotify?.shutdownEngineOnRelease = false
+                dyingPlayer.release()
+                parkedSpotify?.release()
+                dyingSession?.release()
+                if (engineStarted || librespot != null || parkedSpotify != null) {
+                    withContext(Dispatchers.IO) { closeNativePolicyBinding(); NativeBridge.shutdown() }
+                    audioOutput.release()
+                }
+                engineStarted = false
+                engineUp = false
+            }
         }
         super.onDestroy()
     }
 
     companion object {
         private const val TAG = "PlaybackService"
+        private val accountLifecycle = AccountLifecycle()
+        private val ownershipScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+        private var activeService: PlaybackService? = null
+        private var logoutWork: Deferred<Unit>? = null
+
+        /** Read-only guard for process-local media automation; does not start or bind playback. */
+        internal val mediaAccountEpoch: Long
+            get() = accountLifecycle.generation
+
+        /** Process-local API; no exported action or caller-controlled Intent. Main thread only. */
+        internal fun disconnectAccount(): Deferred<Unit> {
+            activeService?.closeNativePolicyBinding()
+            accountLifecycle.invalidate()
+            activeService?.localDataNativeVerified = false
+            activeService?.container?.accountLocalData?.revoke()
+            activeService?.container?.downloadQueue?.stop()
+            VideoPlaybackQueue.clear()
+            PlaybackAirPodsMediaBridge.changed()
+            activeService?.engineUp = false
+            logoutWork?.takeIf { it.isActive }?.let { return it }
+            return ownershipScope.async<Unit> {
+                withContext(NonCancellable) {
+                    accountLifecycle.exclusive { activeService?.tearDownAccount() }
+                }
+            }.also { logoutWork = it }
+        }
+
+        internal suspend fun awaitAccountTeardown() { logoutWork?.await() }
+        internal fun authenticatedAccount() { accountLifecycle.activate() }
+        /** Gate download wake/start until a new authentication has completed. */
+        val accountAllowsDownloads: Boolean get() = !accountLifecycle.blocked
+
 
         /** How long the music takes to go quiet at the end of a sleep timer. */
         private const val SLEEP_FADE_MS = 6_000L
@@ -1903,10 +2181,13 @@ class PlaybackService : MediaLibraryService() {
         private const val SLOW_TICKS_TO_TURN = 2
 
         const val ACTION_CONNECT = "dev.lelonio.square.action.CONNECT"
+        private const val EXTRA_NETWORK_REVISION = "spotify-network-revision"
 
         fun connect(context: android.content.Context) {
+            val revision = SpotifyNetworkPolicy.revision
             context.startService(
-                Intent(context, PlaybackService::class.java).setAction(ACTION_CONNECT),
+                Intent(context, PlaybackService::class.java).setAction(ACTION_CONNECT)
+                    .putExtra(EXTRA_NETWORK_REVISION, revision),
             )
         }
     }

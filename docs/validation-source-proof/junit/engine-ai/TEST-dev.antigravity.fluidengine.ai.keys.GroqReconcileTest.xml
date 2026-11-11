@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.keys.GroqReconcileTest" tests="7" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:02.887Z" hostname="PC_FISSO" time="0.1">
+  <properties/>
+  <testcase name="senza nessun candidato il router lo fa la chat, non il default sparito" classname="dev.antigravity.fluidengine.ai.keys.GroqReconcileTest" time="0.012"/>
+  <testcase name="con i default nel catalogo non si salva niente, restano quelli del codice" classname="dev.antigravity.fluidengine.ai.keys.GroqReconcileTest" time="0.008"/>
+  <testcase name="il router di default sparito senza piccoli nel catalogo prende gpt-oss-20b" classname="dev.antigravity.fluidengine.ai.keys.GroqReconcileTest" time="0.011"/>
+  <testcase name="il default della chat ritirato si sostituisce col migliore del catalogo, il router resta" classname="dev.antigravity.fluidengine.ai.keys.GroqReconcileTest" time="0.01"/>
+  <testcase name="un profondo segnato non disponibile se ne va anche senza un sostituto" classname="dev.antigravity.fluidengine.ai.keys.GroqReconcileTest" time="0.019"/>
+  <testcase name="un modello segnato non disponibile vale come assente anche se il catalogo lo elenca ancora" classname="dev.antigravity.fluidengine.ai.keys.GroqReconcileTest" time="0.017"/>
+  <testcase name="una scelta sparita torna al default togliendo la scelta, un router sparito prende un piccolo" classname="dev.antigravity.fluidengine.ai.keys.GroqReconcileTest" time="0.023"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

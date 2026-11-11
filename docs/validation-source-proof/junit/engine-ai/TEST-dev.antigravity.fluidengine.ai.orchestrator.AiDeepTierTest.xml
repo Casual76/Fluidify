@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="dev.antigravity.fluidengine.ai.orchestrator.AiDeepTierTest" tests="8" skipped="0" failures="0" errors="0" timestamp="2026-11-08T09:15:09.024Z" hostname="PC_FISSO" time="0.029">
+  <properties/>
+  <testcase name="spento, nemmeno l'app puo' chiedere il profondo" classname="dev.antigravity.fluidengine.ai.orchestrator.AiDeepTierTest" time="0.017"/>
+  <testcase name="spento, un tool che chiede l'escalation non cambia modello" classname="dev.antigravity.fluidengine.ai.orchestrator.AiDeepTierTest" time="0.006"/>
+  <testcase name="spento, molto testo dai tool non porta al profondo" classname="dev.antigravity.fluidengine.ai.orchestrator.AiDeepTierTest" time="0.002"/>
+  <testcase name="spento, il tool modello_avanzato non viene offerto al modello" classname="dev.antigravity.fluidengine.ai.orchestrator.AiDeepTierTest" time="0.001"/>
+  <testcase name="spento, un allegato che il modello della chat regge entra come parte senza cambiare livello" classname="dev.antigravity.fluidengine.ai.orchestrator.AiDeepTierTest" time="0.002"/>
+  <testcase name="spento, il router che dice profondo non sposta la domanda dalla chat" classname="dev.antigravity.fluidengine.ai.orchestrator.AiDeepTierTest" time="0.0"/>
+  <testcase name="di serie il livello profondo e' acceso" classname="dev.antigravity.fluidengine.ai.orchestrator.AiDeepTierTest" time="0.0"/>
+  <testcase name="spento, i provider dell'app non vengono ritoccati e il modello profondo salvato semplicemente non conta" classname="dev.antigravity.fluidengine.ai.orchestrator.AiDeepTierTest" time="0.001"/>
+  <system-out><![CDATA[]]></system-out>
+  <system-err><![CDATA[]]></system-err>
+</testsuite>

@@ -423,7 +423,7 @@
     <string name="widget_add_row">Add the row to the home screen</string>
     <string name="widget_add_note">The cover behind, what is playing, and the three buttons. It follows the app&#8217;s theme.</string>
     <string name="widget_nothing_playing_hint">Open Fluidify and press play</string>
-    <string name="library_offline">Showing what is downloaded. Spotify has not answered yet.</string>
+    <string name="library_offline">Showing downloaded content.</string>
     <string name="library_offline_action">Try again</string>
     <string name="library_needs_app">Your followed artists and saved albums need your own Spotify application connected.</string>
     <string name="library_needs_app_action">Connect</string>
@@ -534,4 +534,17 @@
     <string name="watch_update_wifi">The watch is downloading %1$s over its Wi-Fi…</string>
     <string name="onboarding_step_of">Step %1$d of %2$d</string>
     <string name="update_section_title">Updates</string>
+    <string name="history_title">Listening history</string>
+    <string name="history_record">Record listening on this phone</string>
+    <string name="history_retention">Keep history until you delete it. Spotify imports are recent observations, not complete monthly history. Remote listening duration is unknown.</string>
+    <string name="history_account">Spotify account</string>
+    <string name="history_import">Import recent Spotify listening</string>
+    <string name="history_importing">Importing…</string>
+    <string name="history_import_result">Last import</string>
+    <string name="history_import_observed">Recent observations imported; monthly coverage remains incomplete.</string>
+    <string name="history_import_empty">Spotify returned no recent observations.</string>
+    <string name="history_import_error">Import failed. Saved history is retained. Check the connected Web API account and permission.</string>
+    <string name="history_import_partial">Partial recent observations imported; coverage is limited.</string>
+    <string name="history_delete">Delete this account history</string>
+    <string name="history_delete_confirm">Delete all listening records and import coverage for %1$s on this phone? This cannot be undone. Recording will continue if enabled.</string>
 </resources>

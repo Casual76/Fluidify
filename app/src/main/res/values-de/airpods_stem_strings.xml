@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_stem_local_choice">Auf diesem Smartphone gespeichert</string>
+    <string name="airpods_stem_shared">Langes Drücken &#183; gemeinsamer Gerätestatus</string>
+    <string name="airpods_stem_unknown">Aktuelles Abfangen: unbekannt. Keine aktuelle Geräterückmeldung.</string>
+    <string name="airpods_stem_intercepted">Aktuelle Rückmeldung: Fluidify fängt langes Drücken auf beiden Seiten ab.</string>
+    <string name="airpods_stem_hardware">Aktuelle Rückmeldung: Die Ohrhörer verarbeiten langes Drücken.</string>
+    <string name="airpods_stem_pending">Letzte Anfrage: Warten auf eine Geräterückmeldung. Änderungen auf beiden Seiten sind ausgesetzt.</string>
+    <string name="airpods_stem_match">Letzte Anfrage: Eine passende Geräterückmeldung wurde empfangen.</string>
+    <string name="airpods_stem_other">Letzte Anfrage: Das Gerät hat eine andere Einstellung gemeldet.</string>
+    <string name="airpods_stem_timeout">Letzte Anfrage: Keine Bestätigung innerhalb von 5 Sekunden. Die gespeicherte Auswahl bleibt ein lokaler Wunsch.</string>
+    <string name="airpods_stem_failed">Letzte Anfrage: Senden fehlgeschlagen. Die gespeicherte Auswahl bleibt ein lokaler Wunsch.</string>
+    <string name="airpods_stem_closed">Letzte Anfrage: Verbindung vor der Bestätigung geschlossen.</string>
+    <string name="airpods_stem_no_command">Keine Anfrage in dieser Verbindung. Gespeicherte Auswahlen sind lokale Wünsche.</string>
+    <string name="airpods_stem_need_observation">Vor Änderungen am langen Drücken auf eine aktuelle Geräterückmeldung warten.</string>
+</resources>
