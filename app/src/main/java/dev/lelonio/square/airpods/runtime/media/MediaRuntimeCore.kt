@@ -41,6 +41,8 @@ data class MediaCandidate(
 data class PhoneStreamVolume(val domain: String, val volume: MediaVolume)
 
 interface MediaRuntimeEnvironment {
+    /** Publish actual policy ownership to an existing provider; no acquisition or new receipt. */
+    fun retainAutomation(target: MediaTarget?) {}
     /** Fresh pair/permission/mode/range read. No candidate, NLS, route proof or C6 receipt. */
     fun readPhoneVolume(): PhoneStreamVolume? = null
     /** Reread and reject changed domain/range or lost authority immediately before platform write. */
@@ -163,6 +165,7 @@ class MediaRuntimeCore(
             settings.automationsEnabled && settings.otherAppsEnabled,
             c?.correlatedPauseEffect, c?.correlatedVolumeEffect,
             c?.routeEvidence ?: RouteEvidence.UNAVAILABLE), input)
+        publishRetention()
         scheduleTick()
         return c
     }
@@ -172,6 +175,7 @@ class MediaRuntimeCore(
         val input = coordinator.status().inputEpoch
         refresh(input)
         coordinator.onEar(s, value, expectedInputEpoch = input)
+        publishRetention()
         scheduleTick()
     }
 
@@ -180,6 +184,7 @@ class MediaRuntimeCore(
         val input = coordinator.status().inputEpoch
         refresh(input)
         coordinator.onConversation(s, active, expectedInputEpoch = input)
+        publishRetention()
         scheduleTick()
     }
 
@@ -194,6 +199,7 @@ class MediaRuntimeCore(
                 tick = null
                 refresh(input)
                 coordinator.tick(input)
+                publishRetention()
                 scheduleTick()
             }
         }
@@ -211,7 +217,7 @@ class MediaRuntimeCore(
             val c = refresh(input)
             // refresh may revoke the lease on account/route/permission/target/override change.
             if (c == null || !allowed(c) || c.target != effect.target ||
-                effect.lease != coordinator.status().lease) return@post
+                effect.lease != coordinator.status().lease || effect.id in cancelledEffects) return@post
             if (effect.action == MediaAction.SET_VOLUME && c.foreignDuckActive) return@post
             val accepted = environment.execute(effect.target, effect.action, effect.volume, effect.id)
             trace.observe(QualificationEvent(QualificationStep.MEDIA_RESULT, QualificationPhase.UNCONFIRMED,
@@ -220,6 +226,7 @@ class MediaRuntimeCore(
             // A read is not an acknowledgement. Origin receipts must arrive through observe.
             // Dispatch only opens the bounded transitional window of our own PLAY.
             coordinator.onDispatched(effect, accepted, input)
+            publishRetention()
         }
         return true
     }
@@ -260,7 +267,9 @@ class MediaRuntimeCore(
     fun gesture(action: AirPodsMediaGesture): Boolean {
         val c = selected() ?: return false
         if (!accessible(c)) return false
-        revokeManual()
+        coordinator.onManualTransportIntent()
+        publishRetention()
+        scheduleTick()
         val now = selected() ?: return false
         val accepted = now.target == c.target && accessible(now) && environment.gesture(now.target, action)
         trace.observe(QualificationEvent(QualificationStep.MEDIA_RESULT, QualificationPhase.UNCONFIRMED,
@@ -270,6 +279,7 @@ class MediaRuntimeCore(
 
     private fun revokeManual() {
         coordinator.onManualIntent()
+        publishRetention()
         tick?.close(); tick = null
     }
 
@@ -280,10 +290,17 @@ class MediaRuntimeCore(
         environment.configureExternal(false)
         tick?.close(); tick = null
         coordinator.stop()
+        environment.retainAutomation(null)
         session = null; previous = null
         cancelledEffects.clear()
         onVolume(null)
         targetAliases.clear()
         trace.observe(QualificationEvent(QualificationStep.MEDIA_CLOSE, QualificationPhase.COMPLETED))
+    }
+
+    private fun publishRetention() {
+        val status = coordinator.status()
+        val retained = status.pausePending || status.ownsPause || status.volumeOwned || status.rampActive
+        environment.retainAutomation(previous?.takeIf { retained && allowed(it) }?.target)
     }
 }

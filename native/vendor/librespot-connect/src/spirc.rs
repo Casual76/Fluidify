@@ -643,7 +643,9 @@ impl SpircTask {
             // something the app can look up. Counted out before the position is
             // taken, or the position would point past them.
             tracks.retain(|uri| uri.starts_with("spotify:track:"));
-            let index = tracks.iter().position(|uri| *uri == track).unwrap_or(0);
+            let index = state.prev_tracks.iter()
+                .filter(|track| track.uri.starts_with("spotify:track:"))
+                .count();
             let video_id = state
                 .track
                 .as_ref()
@@ -2344,6 +2346,9 @@ impl SpircTask {
 
         let current_uri = self.connect_state.current_track(|t| &t.uri);
         let id = SpotifyUri::from_uri(current_uri)?;
+        // Publish the selected occurrence before the decoder can emit Playing.
+        // URI equality cannot distinguish repeated rows in a queue.
+        self.publish_local_state();
         self.player.load_with_restore_nonce(id, start_playing, position_ms, restore_nonce);
 
         self.connect_state

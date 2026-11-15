@@ -161,8 +161,8 @@ class CorrectiveMediaRuntimeTest {
             assertEquals(listOf(35), f.volumes())
         }
     }
-    @Test fun timeoutWrongReceiptAndMatchingLevelAloneCannotAcquireOrRestore() {
-        for (external in listOf(false, true)) for (failure in 0..2) {
+    @Test fun timeoutOrWrongReceiptCannotAcquireOrRestore() {
+        for (external in listOf(false, true)) for (failure in 0..1) {
             val f = Rig(external, enabled.copy(conversationDuck = true))
             f.env.autoApply = false; f.env.receipt(-44)
             f.core.conversation(true); f.step(300)
@@ -170,11 +170,52 @@ class CorrectiveMediaRuntimeTest {
             when (failure) {
                 0 -> f.step(2_000) // old receipt at unchanged level waits, then times out
                 1 -> { f.env.receipt(-99); f.observe() }
-                2 -> { f.env.candidate = f.env.candidate.copy(volume = MediaVolume(20, 100)); f.observe() }
             }
             f.env.apply(write.first, write.second, write.third); f.queue.drain()
             f.core.conversation(false); f.step(300)
             assertEquals(listOf(20), f.volumes())
+        }
+    }
+    @Test fun matchingLevelAloneCannotRestoreAndItsLaterExpiredReceiptCannotResurrectOwnership() {
+        for (external in listOf(false, true)) {
+            val f = Rig(external, enabled.copy(conversationDuck = true))
+            f.env.autoApply = false; f.env.receipt(-44)
+            f.core.conversation(true); f.step(300)
+            val write = f.env.sent.single()
+            f.env.candidate = f.env.candidate.copy(volume = MediaVolume(20, 100)); f.observe()
+            f.core.conversation(false); f.step(1_500)
+            assertEquals("a matching level supplies no restore authority", listOf(20), f.volumes())
+            f.step(500) // Original request deadline, without extension by matching reads or CA end.
+            f.env.apply(write.first, write.second, write.third); f.queue.drain(); f.step(300)
+            assertEquals("an expired matching receipt cannot restore", listOf(20), f.volumes())
+        }
+    }
+    @Test fun matchingLevelReadThenLegitimateOwnReceiptBeforeDeadlineCanRestore() {
+        for (external in listOf(false, true)) {
+            val f = Rig(external, enabled.copy(conversationDuck = true))
+            f.env.autoApply = false; f.env.receipt(-44)
+            f.core.conversation(true); f.step(300)
+            val write = f.env.sent.single()
+            f.env.candidate = f.env.candidate.copy(volume = MediaVolume(20, 100)); f.observe()
+            f.core.conversation(false); f.step(100)
+            assertEquals("no restore before receipt", listOf(20), f.volumes())
+            f.env.autoApply = true
+            f.env.apply(write.first, write.second, write.third); f.queue.drain(); f.step(300)
+            assertEquals("external=$external", listOf(20, 50), f.volumes())
+            assertEquals(50, f.env.candidate.volume!!.current)
+        }
+    }
+    @Test fun matchingLevelReadThenWrongReceiptPermanentlyRevokesEvenBeforeDeadline() {
+        for (external in listOf(false, true)) {
+            val f = Rig(external, enabled.copy(conversationDuck = true))
+            f.env.autoApply = false; f.env.receipt(-44)
+            f.core.conversation(true); f.step(300)
+            val write = f.env.sent.single()
+            f.env.candidate = f.env.candidate.copy(volume = MediaVolume(20, 100)); f.observe()
+            f.env.receipt(-99); f.observe()
+            f.env.apply(write.first, write.second, write.third); f.queue.drain()
+            f.core.conversation(false); f.step(300)
+            assertEquals("foreign evidence cannot be replaced by a later own receipt", listOf(20), f.volumes())
         }
     }
     @Test fun cleanupAndRevocationAfterOwnedDuckNeverRollBackOrPlay() {

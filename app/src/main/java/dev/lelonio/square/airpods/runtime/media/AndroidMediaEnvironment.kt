@@ -35,6 +35,10 @@ import java.io.Closeable
 
 /** Android discovery with conservative per-target routing. No privileged API or media-key fallback. */
 class AndroidMediaEnvironment(context: Context, private val local: LocalAirPodsMediaBridge? = null) : MediaRuntimeEnvironment {
+    override fun retainAutomation(target: MediaTarget?) {
+        local?.retainAutomation(target?.takeIf { it.applicationId == app.packageName })
+        external.retainAutomation(target?.takeUnless { it.applicationId == app.packageName })
+    }
     private val app = context.applicationContext
     private val audio = app.getSystemService(AudioManager::class.java)
     private val sessions = app.getSystemService(MediaSessionManager::class.java)
@@ -326,7 +330,7 @@ class AndroidMediaEnvironment(context: Context, private val local: LocalAirPodsM
         if (!externalEnabled || current.evidence != MediaEvidence.EXTERNAL_BEST_EFFORT) return false
         val controller = controllers().singleOrNull { generations[it.sessionToken] == target.sessionGeneration &&
             it.packageName == target.applicationId } ?: return false
-        external.invalidate() // explicit transport forfeits all automatic ownership
+        external.manualTransport(target) // forfeit transport; preserve only live volume authority
         return runCatching {
             when (action) {
                 AirPodsMediaGesture.NEXT -> controller.transportControls.skipToNext()

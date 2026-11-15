@@ -1,6 +1,11 @@
 package dev.lelonio.square.data
 
 import dev.lelonio.square.nativecore.NativeBridge
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -106,11 +111,25 @@ object RemoteConnect {
          */
         data class To(
             val deviceId: String,
+            val lease: ConnectCommandLease,
             val done: kotlinx.coroutines.CompletableDeferred<Boolean>? = null,
-        ) : TransferRequest()
+        ) : TransferRequest() {
+            fun isLive() = done?.isActive != false
+            fun check() {
+                lease.check()
+                if (!isLive()) throw kotlinx.coroutines.CancellationException("Transfer request ended")
+            }
+            fun <T> dispatch(block: () -> T): T = lease.dispatch(::isLive, block)
+        }
 
-        /** Bring playback back to this phone. */
+        /** Bring playback back to this phone. Legacy fire-and-forget caller. */
         data object Here : TransferRequest()
+
+        /** Positive completion means the requested track is actually playing on this phone. */
+        data class HereConfirmed(
+            val done: CompletableDeferred<Boolean>,
+            val isCurrent: () -> Boolean,
+        ) : TransferRequest()
     }
 
     private val _requests = MutableSharedFlow<TransferRequest>(extraBufferCapacity = 4)
@@ -121,6 +140,24 @@ object RemoteConnect {
     /** Hands [request] to the playback service. False when there is no service to take it. */
     fun request(request: TransferRequest): Boolean =
         _requests.subscriptionCount.value > 0 && _requests.tryEmit(request)
+
+    /**
+     * Sends once, then awaits playback acquisition, never just an emission receipt.
+     * Closing the completion on every exit fences queued or suspended consumers after timeout/cancellation.
+     */
+    suspend fun requestHere(isCurrent: () -> Boolean, timeoutMs: Long = 7_000): Boolean {
+        val done = CompletableDeferred<Boolean>()
+        try {
+            return withTimeoutOrNull(timeoutMs) {
+                currentCoroutineContext().ensureActive()
+                if (!isCurrent()) return@withTimeoutOrNull false
+                _requests.subscriptionCount.first { it > 0 }
+                if (!isCurrent()) return@withTimeoutOrNull false
+                if (!request(TransferRequest.HereConfirmed(done, isCurrent))) return@withTimeoutOrNull false
+                done.await() && isCurrent()
+            } ?: false
+        } finally { done.complete(false) }
+    }
 
     /** Whether an id is this phone's own. */
     fun isThisPhone(deviceId: String): Boolean {
@@ -426,10 +463,19 @@ object RemoteConnect {
         )
     }
 
-    fun setVolume(deviceId: String, volume: Int) {
-        runCatching { SpotifyNetworkPolicy.capture().dispatch { NativeBridge.remoteVolume(deviceId, volume) } }
-            .onFailure { android.util.Log.w(TAG, "volume did not reach $deviceId", it) }
-    }
+    /** False is observable by every caller; the device list remains the last confirmed cluster. */
+    fun setVolume(deviceId: String, volume: Int): Boolean =
+        i11RemoteVolume(deviceId, volume, NativeBridge::remoteVolume).also { applied ->
+            if (!applied) android.util.Log.w(TAG, "remote volume was refused")
+        }
+
+    /** Account admission covers session pinning, never the blocking HTTP round trip. */
+    fun setVolume(deviceId: String, volume: Int, admission: (() -> Unit) -> Unit): Boolean =
+        i11AdmittedRemoteVolume(deviceId, volume, admission, NativeBridge::remoteVolume)
+
+    fun setVolume(deviceId: String, volume: Int, permit: SpotifyNetworkPolicy.Permit,
+        admission: (() -> Unit) -> Unit): Boolean =
+        i11AdmittedRemoteVolume(deviceId, volume, permit, admission, NativeBridge::remoteVolume)
 
     /**
      * Moves playback to another device, this phone included.
@@ -440,12 +486,16 @@ object RemoteConnect {
      */
     fun transferTo(deviceId: String): Boolean {
         val permit = runCatching { SpotifyNetworkPolicy.capture() }.getOrNull() ?: return false
+        return transferTo(deviceId, ConnectCommandLease(permit, { true }, { it() }, requireNativeScope = false))
+    }
+
+    fun transferTo(deviceId: String, lease: ConnectCommandLease, stillCurrent: () -> Boolean = { true }): Boolean {
         if (isThisPhone(deviceId)) {
             // Coming back here is not a request to the server. A device cannot
             // address a command to itself: it goes out to the access point and
             // comes back refused, which is why choosing Square in the list did
             // nothing at all.
-            return runCatching { permit.dispatch { NativeBridge.takeOver() } }
+            return runCatching { lease.dispatch(stillCurrent) { NativeBridge.takeOver() } }
                 .onFailure { android.util.Log.w(TAG, "could not take playback back", it) }
                 .isSuccess
         }
@@ -454,8 +504,9 @@ object RemoteConnect {
         // listing — a watch whose engine came up a moment ago answers 404 for a few seconds.
         var failure: Throwable? = null
         repeat(TRANSFER_ATTEMPTS) { attempt ->
+            if (!lease.isCurrent() || !stillCurrent()) return false
             if (attempt > 0) Thread.sleep(TRANSFER_RETRY_MS)
-            val outcome = runCatching { permit.dispatch { NativeBridge.transferTo(deviceId) } }
+            val outcome = runCatching { lease.dispatch(stillCurrent) { NativeBridge.transferTo(deviceId) } }
             if (outcome.isSuccess) return true
             failure = outcome.exceptionOrNull()
         }
@@ -463,11 +514,10 @@ object RemoteConnect {
         // The "transfer" player command, as a last resort for a device the transfer call does not
         // reach. It carries no state: a librespot device (the watch) refuses it with a 400, which
         // used to be the error reported, hiding the real one above.
-        if (runCatching { permit.check() }.isFailure) return false
-        return send(
-            deviceId,
-            """{"command":{"endpoint":"transfer","transfer_options":{"restore_paused":"restore"}}}""",
-        )
+        return runCatching { lease.dispatch(stillCurrent) {
+            NativeBridge.remoteCommand(deviceId,
+                """{"command":{"endpoint":"transfer","transfer_options":{"restore_paused":"restore"}}}""")
+        } }.isSuccess
     }
 
     /**

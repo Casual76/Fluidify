@@ -75,6 +75,10 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.graphics.graphicsLayer
 import com.adamglin.phosphoricons.regular.DotsSixVertical
 import dev.antigravity.fluidengine.ui.fluid.fluidPressable
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 
 /** Which panel is open below the transport controls. */
 enum class PlayerPanel {
@@ -315,6 +319,8 @@ internal fun QueueList(
     val rowHeight by rememberUpdatedState(measuredRowHeight)
     val currentQueue by rememberUpdatedState(queue)
     val moveQueueItem by rememberUpdatedState(onMove)
+    val moveUpLabel = stringResource(R.string.wf_i13_move_up)
+    val moveDownLabel = stringResource(R.string.wf_i13_move_down)
 
     // Keyed on the track, not on where it sits.
     //
@@ -339,119 +345,135 @@ internal fun QueueList(
         }
     }
 
-    LazyColumn(state = listState, modifier = Modifier.padding(vertical = 8.dp)) {
-        itemsIndexed(
-            queue,
-            key = { at, _ -> keys[at] },
-        ) { _, entry ->
-            val held = draggingIndex == entry.index
-            val startIndex by rememberUpdatedState(entry.index)
-            QueueRow(
-                entry = entry,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .onSizeChanged { if (it.height > 0) measuredRowHeight = it.height.toFloat() }
-                    // A block each, with air between them.
-                    //
-                    // The list was rows of text standing on the panel's own
-                    // film, which at any length reads as one slab with writing
-                    // on it: nothing says where a song ends and the next begins
-                    // except the gap in the writing. A pane each says it in the
-                    // material, and on a surface that is already glass the
-                    // engine has a recipe for exactly that; see [queueBlock].
-                    .padding(
-                        horizontal = QueueBlockInset,
-                        vertical = QueueBlockGap / 2,
-                    )
-                    // Everything but the row in the hand animates into its new
-                    // place. The held one must not: `animateItem` would be
-                    // animating a row that is already following a finger, and
-                    // the two together read as the row lagging behind the hand
-                    // rather than as the list making room for it.
-                    .then(if (held) Modifier else Modifier.animateItem())
-                    // Lifted onto the glass while it travels, which is the whole
-                    // point of a drag you can see: a row that only slides looks
-                    // like the list scrolling under it.
-                    .graphicsLayer {
-                        if (held) {
-                            translationY = dragOffset
-                            scaleX = QueueHeldScale
-                            scaleY = QueueHeldScale
-                            shadowElevation = QueueHeldElevation.toPx()
-                            shape = ContinuousCornerShape(14.dp)
-                            clip = false
+    Column {
+        // Outside the lazy items: the extension's scroll-to-top contract stays at row zero.
+        QueueDurationLabel(Modifier.padding(horizontal = QueueBlockInset, vertical = 6.dp))
+        LazyColumn(state = listState, modifier = Modifier.weight(1f).padding(vertical = 8.dp)) {
+            itemsIndexed(
+                queue,
+                key = { at, _ -> keys[at] },
+            ) { at, entry ->
+                val held = draggingIndex == entry.index
+                val startIndex by rememberUpdatedState(entry.index)
+                val positionLabel = stringResource(R.string.wf_i13_queue_position, at + 1, queue.size)
+                QueueRow(
+                    entry = entry,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .onSizeChanged { if (it.height > 0) measuredRowHeight = it.height.toFloat() }
+                        // A block each, with air between them.
+                        //
+                        // The list was rows of text standing on the panel's own
+                        // film, which at any length reads as one slab with writing
+                        // on it: nothing says where a song ends and the next begins
+                        // except the gap in the writing. A pane each says it in the
+                        // material, and on a surface that is already glass the
+                        // engine has a recipe for exactly that; see [queueBlock].
+                        .padding(
+                            horizontal = QueueBlockInset,
+                            vertical = QueueBlockGap / 2,
+                        )
+                        // Everything but the row in the hand animates into its new
+                        // place. The held one must not: `animateItem` would be
+                        // animating a row that is already following a finger, and
+                        // the two together read as the row lagging behind the hand
+                        // rather than as the list making room for it.
+                        .then(if (held) Modifier else Modifier.animateItem())
+                        // Lifted onto the glass while it travels, which is the whole
+                        // point of a drag you can see: a row that only slides looks
+                        // like the list scrolling under it.
+                        .graphicsLayer {
+                            if (held) {
+                                translationY = dragOffset
+                                scaleX = QueueHeldScale
+                                scaleY = QueueHeldScale
+                                shadowElevation = QueueHeldElevation.toPx()
+                                shape = ContinuousCornerShape(14.dp)
+                                clip = false
+                            }
                         }
-                    }
-                    .queueBlock()
-                    // What a held row adds to the material, drawn over it
-                    // rather than instead of it: a block is still a block while
-                    // it travels.
-                    .then(
-                        if (held) {
-                            Modifier.background(
-                                GlassInk.copy(alpha = 0.10f),
-                                QueueBlockShape,
-                            )
-                        } else {
-                            Modifier
-                        },
-                    )
-                    .clickable { onPlay(entry.index) },
-                onRemove = { onRemove(entry.index) },
-                handle = {
-                    // A handle, and not the whole row.
-                    //
-                    // The row is already a button — tapping it plays that track
-                    // — and a list that reorders itself when you meant to play
-                    // something is worse than one that does not reorder at all.
-                    // A long press would have been the other answer, and it is
-                    // the wrong one here: this list is inside a panel that is
-                    // itself dragged open and shut, so half a second of holding
-                    // still before anything happens is half a second of the
-                    // panel wondering whether it is being closed.
-                    QueueHandle(
-                        modifier = Modifier
-                            // Keyed on nothing: the detector must survive the
-                            // reordering it is causing. `startIndex` is read
-                            // through a state for the same reason — the row this
-                            // lambda was built for has a different index by the
-                            // second crossing.
-                            .pointerInput(Unit) {
-                                detectVerticalDragGestures(
-                                    onDragStart = {
-                                        draggingIndex = startIndex
-                                        dragOffset = 0f
-                                        haptics.play(FluidHapticEvent.GestureStart)
-                                    },
-                                    onDragEnd = {
-                                        draggingIndex = -1
-                                        dragOffset = 0f
-                                    },
-                                    onDragCancel = {
-                                        draggingIndex = -1
-                                        dragOffset = 0f
-                                    },
-                                ) { change, amount ->
-                                    change.consume()
-                                    dragOffset += amount
-                                    if (currentQueue.isEmpty()) return@detectVerticalDragGestures
-                                    // One command per event, even when several rows were crossed.
-                                    // The next event uses the refreshed queue/action after that move.
-                                    val rows = (dragOffset / rowHeight).toInt()
-                                    val to = (draggingIndex + rows).coerceIn(
-                                        currentQueue.first().index, currentQueue.last().index,
-                                    )
-                                    if (to != draggingIndex) {
-                                        moveQueueItem(draggingIndex, to)
-                                        dragOffset -= (to - draggingIndex) * rowHeight
-                                        draggingIndex = to
-                                        haptics.play(FluidHapticEvent.Tick)
-                                    }
-                                }
+                        .queueBlock()
+                        // What a held row adds to the material, drawn over it
+                        // rather than instead of it: a block is still a block while
+                        // it travels.
+                        .then(
+                            if (held) {
+                                Modifier.background(
+                                    GlassInk.copy(alpha = 0.10f),
+                                    QueueBlockShape,
+                                )
+                            } else {
+                                Modifier
                             },
-                    )
-                },
-            )
+                        )
+                        .semantics {
+                            stateDescription = positionLabel
+                            customActions = if (entry.isCurrent) emptyList() else buildList {
+                                if (at > 0) add(CustomAccessibilityAction(moveUpLabel) {
+                                    i13MoveQueueBy(currentQueue, startIndex, -1, moveQueueItem)
+                                })
+                                if (at < queue.lastIndex) add(CustomAccessibilityAction(moveDownLabel) {
+                                    i13MoveQueueBy(currentQueue, startIndex, 1, moveQueueItem)
+                                })
+                            }
+                        }
+                        .clickable { onPlay(entry.index) },
+                    onRemove = { onRemove(entry.index) },
+                    handle = {
+                        // A handle, and not the whole row.
+                        //
+                        // The row is already a button — tapping it plays that track
+                        // — and a list that reorders itself when you meant to play
+                        // something is worse than one that does not reorder at all.
+                        // A long press would have been the other answer, and it is
+                        // the wrong one here: this list is inside a panel that is
+                        // itself dragged open and shut, so half a second of holding
+                        // still before anything happens is half a second of the
+                        // panel wondering whether it is being closed.
+                        QueueHandle(
+                            modifier = Modifier
+                                // Keyed on nothing: the detector must survive the
+                                // reordering it is causing. `startIndex` is read
+                                // through a state for the same reason — the row this
+                                // lambda was built for has a different index by the
+                                // second crossing.
+                                .pointerInput(Unit) {
+                                    detectVerticalDragGestures(
+                                        onDragStart = {
+                                            draggingIndex = startIndex
+                                            dragOffset = 0f
+                                            haptics.play(FluidHapticEvent.GestureStart)
+                                        },
+                                        onDragEnd = {
+                                            draggingIndex = -1
+                                            dragOffset = 0f
+                                        },
+                                        onDragCancel = {
+                                            draggingIndex = -1
+                                            dragOffset = 0f
+                                        },
+                                    ) { change, amount ->
+                                        change.consume()
+                                        dragOffset += amount
+                                        if (currentQueue.isEmpty()) return@detectVerticalDragGestures
+                                        // One command per event, even when several rows were crossed.
+                                        // The next event uses the refreshed queue/action after that move.
+                                        val rows = (dragOffset / rowHeight).toInt()
+                                        val to = (draggingIndex + rows).coerceIn(
+                                            currentQueue.first().index, currentQueue.last().index,
+                                        )
+                                        if (to != draggingIndex) {
+                                            moveQueueItem(draggingIndex, to)
+                                            dragOffset -= (to - draggingIndex) * rowHeight
+                                            draggingIndex = to
+                                            haptics.play(FluidHapticEvent.Tick)
+                                        }
+                                    }
+                                },
+                        )
+                    },
+                )
+            }
         }
     }
 }

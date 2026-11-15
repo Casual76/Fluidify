@@ -1,10 +1,8 @@
 package dev.lelonio.square.wear
 
-import android.util.Log
 import com.google.android.gms.wearable.PutDataRequest
 import dev.lelonio.square.SquareApplication
 import dev.lelonio.square.auth.SpotifyOAuth
-import dev.lelonio.square.data.Catalog
 import dev.pampa.fluidify.wear.protocol.AccountState
 import dev.pampa.fluidify.wear.protocol.AuthErrors
 import dev.pampa.fluidify.wear.protocol.AuthGrant
@@ -26,25 +24,30 @@ class WearAuthGranter(private val app: SquareApplication, private val link: Wear
 
     suspend fun onRequest(nodeId: String, request: AuthRequest) {
         val access = app.accountLocalData.captureRequest(request.accountSession)
-            ?.takeIf { app.accountLocalData.isOnlineCurrent(it) }
-        val grant = if (access == null) {
-            AuthGrant(request.id, ok = false, error = AuthErrors.UNAVAILABLE)
-        } else try {
-            val token = app.tokenStore.validAccessToken()
-            app.accountLocalData.requireOnline(access)
-            AuthGrant(request.id, ok = true, accessToken = token, clientId = SpotifyOAuth.CLIENT_ID,
-                username = access.account.id, expiresAtEpochMs = System.currentTimeMillis() + TOKEN_LIFETIME_MS,
-                accountSession = access.requestSession)
-        } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
-        catch (_: Exception) { AuthGrant(request.id, ok = false, error = AuthErrors.UNAVAILABLE) }
-        if (access != null && !app.accountLocalData.isOnlineCurrent(access)) return
-        link.send(nodeId, WearPaths.AUTH_GRANT, WearCodec.encode(AuthGrant.serializer(), grant))
+        val session = access?.let { I11WearRequestSession(app.accountLocalData, it) }
+        val tokenGeneration = app.tokenStore.generation
+        val grant = kotlinx.coroutines.withTimeoutOrNull(16_000) {
+            app.wearBridge.withPlaybackUse {
+                i11WearAuthGrant(request, session,
+                    bootstrap = { app.wearBridge.engineReady(it, checkNotNull(session)::bootstrapCurrent) },
+                    token = { app.tokenStore.validAccessToken(checkNotNull(session).networkPermit(), expectedGeneration = tokenGeneration) },
+                    tokenCurrent = { app.tokenStore.generation == tokenGeneration },
+                    clientId = SpotifyOAuth.CLIENT_ID)
+            }
+        } ?: AuthGrant(request.id, ok = false, error = AuthErrors.UNAVAILABLE,
+            accountSession = request.accountSession)
+        val reply = if (grant.ok && session?.isOnlineCurrent() != true) {
+            AuthGrant(request.id, ok = false, error = AuthErrors.UNAVAILABLE,
+                accountSession = request.accountSession)
+        } else grant
+        link.send(nodeId, WearPaths.AUTH_GRANT, WearCodec.encode(AuthGrant.serializer(), reply))
+        if (session != null && !session.isCurrent()) app.wearBridge.refreshWatchAccount()
     }
 
     /** Who the phone is signed in as, for a watch that was away when it changed. */
     private val publication = kotlinx.coroutines.sync.Mutex()
     private var lastPublished: Triple<Boolean, String?, String?>? = null
-    suspend fun publishAccount(signedIn: Boolean = app.accountLocalData.capture() != null) {
+    suspend fun publishAccount(signedIn: Boolean = app.accountLocalData.capture() != null, force: Boolean = false) {
         publication.lock()
         try {
             val access = app.accountLocalData.capture()
@@ -54,7 +57,7 @@ class WearAuthGranter(private val app: SquareApplication, private val link: Wear
             if (!link.hasWatch()) return
             if (app.accountLocalData.capture() !== access) return
             val said = Triple(account.signedIn, account.username, account.localDataSession)
-            if (said == lastPublished) return
+            if (!force && said == lastPublished) return
             val request = PutDataRequest.create(WearPaths.ACCOUNT)
                 .setData(WearCodec.encode(AccountState.serializer(), account)).setUrgent()
             if (link.put(request)) lastPublished = said
@@ -67,10 +70,4 @@ class WearAuthGranter(private val app: SquareApplication, private val link: Wear
         if (app.accountLocalData.capture() == null) link.broadcast(WearPaths.AUTH_LOGOUT, ByteArray(0))
     }
 
-    private companion object {
-        const val TAG = "WearAuth"
-
-        /** Spotify's access tokens last an hour; say a little less. */
-        const val TOKEN_LIFETIME_MS = 50 * 60_000L
-    }
 }

@@ -2,6 +2,10 @@ package dev.pampa.fluidify.wear.playback
 
 import dev.pampa.fluidify.wear.link.LinkStatus
 import dev.pampa.fluidify.wear.link.CommandChannel
+import dev.pampa.fluidify.wear.link.I12CommandRequest
+import dev.pampa.fluidify.wear.link.I12CommandTimeouts
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import dev.pampa.fluidify.wear.link.ReceivedSnapshot
 import dev.pampa.fluidify.wear.link.WatchState
 import dev.pampa.fluidify.wear.protocol.Command
@@ -49,6 +53,8 @@ interface PlaybackControls {
     val nowPlaying: StateFlow<NowPlaying>
     val errors: SharedFlow<String>
     fun togglePlay()
+    /** Absolute transport intent. Implementations must not invert their current player state. */
+    fun setPlaying(playing: Boolean)
     fun next()
     fun previous()
     fun seekTo(positionMs: Long)
@@ -92,7 +98,7 @@ class PhoneRemote(
      * A guess layered over the phone's last word, while a command is in flight: the state it
      * should lead to, and how to tell a snapshot that shows it.
      */
-    private class Guess(val shown: ReceivedSnapshot, val confirmedBy: (PlaybackSnapshot) -> Boolean)
+    private class Guess(val shown: ReceivedSnapshot, val confirmedBy: (PlaybackSnapshot) -> Boolean, val request: I12CommandRequest)
 
     private val optimistic = MutableStateFlow<Guess?>(null)
     private val inFlight = MutableStateFlow(0)
@@ -108,7 +114,7 @@ class PhoneRemote(
             // The guess stands until the phone has shown it — not merely spoken after it: the
             // snapshot sent with the ack is often taken before the player has moved, and dropping
             // the guess on it made the play button flick back and forth on every press.
-            val shown = if (guess != null && (real == null || real.snapshot.seq <= guess.shown.snapshot.seq || !guess.confirmedBy(real.snapshot))) {
+            val shown = if (guess != null && guess.request.ifCurrent {} && (real == null || real.snapshot.seq <= guess.shown.snapshot.seq || !guess.confirmedBy(real.snapshot))) {
                 guess.shown
             } else {
                 real
@@ -146,30 +152,20 @@ class PhoneRemote(
         )
     }
 
-    override fun togglePlay() {
-        val current = nowPlaying.value
-        val snapshot = current.snapshot
+    override fun togglePlay() = setPlaying(nowPlaying.value.snapshot?.let { !it.isPlaying && !it.playWhenReady } ?: true)
+
+    override fun setPlaying(playing: Boolean) {
         val now = System.currentTimeMillis()
-        val guess = snapshot?.let {
-            val playing = !(it.isPlaying || it.playWhenReady)
-            it.copy(
-                isPlaying = playing,
-                playWhenReady = playing,
-                positionMs = current.positionAt(now),
-                sampledAtEpochMs = now,
-                sentAtEpochMs = now,
-            )
+        val current = nowPlaying.value
+        val guess = current.snapshot?.copy(isPlaying = playing, playWhenReady = playing,
+            positionMs = current.positionAt(now), sampledAtEpochMs = now, sentAtEpochMs = now)
+        dispatch(if (playing) Command.Play else Command.Pause, guess) { real ->
+            (real.isPlaying || real.playWhenReady) == playing
         }
-        dispatch(Command.TogglePlay, guess) { real -> guess != null && (real.isPlaying || real.playWhenReady) == guess.isPlaying }
     }
 
     /** Pauses the phone's player; nothing when it is already paused. */
-    fun pause() {
-        val now = System.currentTimeMillis()
-        val current = nowPlaying.value
-        val guess = current.snapshot?.copy(isPlaying = false, playWhenReady = false, positionMs = current.positionAt(now), sampledAtEpochMs = now, sentAtEpochMs = now)
-        dispatch(Command.Pause, guess) { real -> !real.isPlaying && !real.playWhenReady }
-    }
+    fun pause() = setPlaying(false)
 
     /**
      * Skips ahead, and shows the next song at once when the phone said which it is: the title and
@@ -233,8 +229,16 @@ class PhoneRemote(
      * phone first waits for the device to be listed, then republishes its queue, so this takes
      * longer than a button press.
      */
-    suspend fun transferAndWait(deviceId: String): Boolean =
-        link.send(Command.Transfer(deviceId), TRANSFER_ACK_MS)?.ok == true
+    internal fun prepareTransfer(deviceId: String): I12CommandRequest =
+        link.prepare(Command.Transfer(deviceId), I12CommandTimeouts.TRANSFER_ACK_MS)
+
+    suspend fun transferAndWait(deviceId: String): Boolean = awaitTransfer(prepareTransfer(deviceId))
+
+    internal suspend fun awaitTransfer(request: I12CommandRequest, onConfirmed: () -> Unit = {}): Boolean {
+        val ack = request.await()
+        currentCoroutineContext().ensureActive()
+        return ack?.ok == true && request.ifCurrent(onConfirmed)
+    }
 
     override fun setVolume(level: Float, deviceId: String?) {
         val snapshot = nowPlaying.value.snapshot
@@ -260,37 +264,19 @@ class PhoneRemote(
     }
 
     override suspend fun addToPlaylist(playlistUri: String, trackUri: String): Boolean {
-        val ack = link.send(Command.AddToPlaylist(playlistUri, trackUri), WRITE_ACK_MS)
-        if (ack?.ok != true) _errors.tryEmit(ack?.error ?: dev.pampa.fluidify.wear.protocol.AckErrors.UNREACHABLE)
-        return ack?.ok == true
+        val request = link.prepare(Command.AddToPlaylist(playlistUri, trackUri), I12CommandTimeouts.WRITE_ACK_MS)
+        val ack = request.await()
+        val current = request.ifCurrent {
+            if (ack?.ok != true) _errors.tryEmit(ack?.error ?: dev.pampa.fluidify.wear.protocol.AckErrors.UNREACHABLE)
+        }
+        return current && ack?.ok == true
     }
 
     private companion object {
-        /** The phone's own waits for a transfer (device listed, queue republished) plus margin. */
-        const val TRANSFER_ACK_MS = 11_000L
-
-        /** A write to the account: the phone may first have to wake its engine (7 s at most). */
-        const val WRITE_ACK_MS = 10_000L
-
-        /**
-         * A command the phone may have to wake up for — its playback service, its engine, a
-         * playlist read — and that used to show an error after the usual 3 s while it was still
-         * being done.
-         */
-        const val SLOW_ACK_MS = 12_000L
-
         /** How long a confirmed command's guess may stand while the phone's state catches up. */
         const val GUESS_HOLD_MS = 2_000L
         const val VOLUME_MATCH = 0.02f
         const val STALE_CHECK_SLACK_MS = 100L
-
-        fun ackTimeout(command: Command): Long? = when (command) {
-            is Command.PlayContext, is Command.AddToQueue, is Command.StartRadio, is Command.PlayQueueIndex,
-            Command.Play, Command.TogglePlay,
-            -> SLOW_ACK_MS
-            is Command.SetLiked -> WRITE_ACK_MS
-            else -> null
-        }
     }
 
     /**
@@ -300,17 +286,28 @@ class PhoneRemote(
      */
     private fun dispatch(command: Command, guess: PlaybackSnapshot?, confirms: (PlaybackSnapshot) -> Boolean = { true }) {
         val now = System.currentTimeMillis()
-        val placed = guess?.let { Guess(ReceivedSnapshot(it, now), confirms) }
+        val request = link.prepare(command, I12CommandTimeouts.forCommand(command))
+        val batteryReceipt = nowPlaying.value.received?.airPodsBatteryReceipt
+            ?.takeIf { it.battery == guess?.airPodsBattery }
+        val placed = guess?.let { Guess(ReceivedSnapshot(it, now, airPodsBatteryReceipt = batteryReceipt), confirms, request) }
         if (placed != null) optimistic.value = placed
         inFlight.update { it + 1 }
         scope.launch {
             val ack = try {
-                ackTimeout(command)?.let { link.send(command, it) } ?: link.send(command)
+                request.await()
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                if (optimistic.value === placed) optimistic.value = null
+                throw cancelled
             } finally { inFlight.update { it - 1 } }
-            if (ack == null || !ack.ok) {
-                if (placed == null || optimistic.value === placed) optimistic.value = null
-                _errors.tryEmit(ack?.error ?: dev.pampa.fluidify.wear.protocol.AckErrors.UNREACHABLE)
-            } else if (placed != null) {
+            val current = request.ifCurrent {
+                if (ack == null || !ack.ok) {
+                    if (optimistic.value === placed) optimistic.value = null
+                    _errors.tryEmit(ack?.error ?: dev.pampa.fluidify.wear.protocol.AckErrors.UNREACHABLE)
+                }
+            }
+            if (!current) {
+                if (optimistic.value === placed) optimistic.value = null
+            } else if (ack?.ok == true && placed != null) {
                 delay(GUESS_HOLD_MS)
                 if (optimistic.value === placed) optimistic.value = null
             }

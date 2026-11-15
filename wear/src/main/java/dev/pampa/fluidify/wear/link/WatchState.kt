@@ -18,6 +18,9 @@ data class ReceivedSnapshot(
     val receivedAtMs: Long,
     /** How far ahead the watch's clock was of the phone's when this arrived; see [ClockOffset]. */
     val clockOffsetMs: Long? = null,
+    /** Process-local receipt; optimistic copy preserves it, disk never restores it. */
+    @kotlinx.serialization.Transient
+    val airPodsBatteryReceipt: AirPodsBatteryReceipt? = null,
 )
 
 /**
@@ -33,6 +36,7 @@ class WatchState(private val file: File) {
 
     constructor(context: Context) : this(File(context.filesDir, "last-snapshot.json"))
 
+    private val airPodsBatteries = AirPodsBatteryReceiver()
     private val _current = MutableStateFlow(load())
 
     val current: StateFlow<ReceivedSnapshot?> = _current.asStateFlow()
@@ -51,13 +55,42 @@ class WatchState(private val file: File) {
      * recomposition of everything that shows what is playing (the position is extrapolated from
      * this offset, and 50 ms of it is below what a progress ring can show).
      */
-    @Synchronized fun observeClock(sentAtRemoteMs: Long, receivedAtMs: Long = System.currentTimeMillis()) {
+    @Synchronized fun observeClock(sentAtRemoteMs: Long, receivedAtMs: Long = System.currentTimeMillis(),
+        elapsedAtMs: Long = android.os.SystemClock.elapsedRealtime()) {
         if (sentAtRemoteMs <= 0) return
+        airPodsBatteries.observeClock(sentAtRemoteMs, receivedAtMs, elapsedAtMs)
         val estimate = offset.observe(sentAtRemoteMs, receivedAtMs)
         clockOffsetMs = estimate
         _current.update { held ->
             val shown = held?.clockOffsetMs
-            if (held == null || (shown != null && abs(estimate - shown) < CLOCK_STEP_MS)) held else held.copy(clockOffsetMs = estimate)
+            if (held == null) null else {
+                val receipt = airPodsBatteries.accept(held.snapshot, receivedAtMs, elapsedAtMs)
+                val displayOffset = if (shown != null && abs(estimate - shown) < CLOCK_STEP_MS) shown else estimate
+                if (displayOffset == shown && receipt == held.airPodsBatteryReceipt) held
+                else held.copy(clockOffsetMs = displayOffset, airPodsBatteryReceipt = receipt)
+            }
+        }
+    }
+
+    @Synchronized fun beginAirPodsBatteryContact(node: String, wallMs: Long = System.currentTimeMillis(),
+        elapsedMs: Long = android.os.SystemClock.elapsedRealtime()) {
+        airPodsBatteries.beginContact(node, wallMs, elapsedMs)
+    }
+
+    @Synchronized fun confirmAirPodsBatteryContact(remoteMs: Long, node: String,
+        wallMs: Long = System.currentTimeMillis(), elapsedMs: Long = android.os.SystemClock.elapsedRealtime()) {
+        airPodsBatteries.confirmContact(node, remoteMs, wallMs, elapsedMs)
+        _current.update { held ->
+            held?.copy(airPodsBatteryReceipt = airPodsBatteries.accept(held.snapshot, wallMs, elapsedMs))
+        }
+    }
+
+    /** A live account ingress, after PhoneAccountSession accepted its ordering/correlation. */
+    @Synchronized fun observeAirPodsBatteryAccount(account: dev.pampa.fluidify.wear.protocol.AccountState,
+        receivedAtMs: Long = System.currentTimeMillis(), elapsedAtMs: Long = android.os.SystemClock.elapsedRealtime()) {
+        airPodsBatteries.observeAccount(account)
+        _current.update { held ->
+            held?.copy(airPodsBatteryReceipt = airPodsBatteries.accept(held.snapshot, receivedAtMs, elapsedAtMs))
         }
     }
 
@@ -67,17 +100,21 @@ class WatchState(private val file: File) {
      * older snapshot over a newer one.
      */
     @Synchronized
-    fun accept(snapshot: PlaybackSnapshot, receivedAtMs: Long = System.currentTimeMillis()): Boolean {
+    fun accept(snapshot: PlaybackSnapshot, receivedAtMs: Long = System.currentTimeMillis(),
+        elapsedAtMs: Long = android.os.SystemClock.elapsedRealtime()): Boolean {
         val held = _current.value
         // A phone whose clock went backwards restarts its counter lower; a snapshot sent well
         // after the held one is still news.
         val newer = held == null || snapshot.seq > held.snapshot.seq ||
             snapshot.sentAtEpochMs > held.snapshot.sentAtEpochMs + RESTART_GRACE_MS
         if (!newer) return false
-        val received = ReceivedSnapshot(snapshot, receivedAtMs, clockOffsetMs ?: held?.clockOffsetMs ?: 0L)
+        val received = ReceivedSnapshot(snapshot, receivedAtMs, clockOffsetMs ?: held?.clockOffsetMs ?: 0L,
+            airPodsBatteries.accept(snapshot, receivedAtMs, elapsedAtMs))
         _current.value = received
         runCatching {
-            file.writeBytes(WearCodec.encode(ReceivedSnapshot.serializer(), received))
+            // Playback remains cached. Battery values/authority do not survive a watch process.
+            val cache = received.copy(snapshot = snapshot.copy(airPodsBattery = null), airPodsBatteryReceipt = null)
+            file.writeBytes(WearCodec.encode(ReceivedSnapshot.serializer(), cache))
         }
         onAccepted?.invoke(received)
         return true
@@ -85,7 +122,9 @@ class WatchState(private val file: File) {
 
     private fun load(): ReceivedSnapshot? = runCatching {
         if (!file.isFile) return null
-        WearCodec.decodeOrNull(ReceivedSnapshot.serializer(), file.readBytes())
+        WearCodec.decodeOrNull(ReceivedSnapshot.serializer(), file.readBytes())?.let {
+            it.copy(snapshot = it.snapshot.copy(airPodsBattery = null), airPodsBatteryReceipt = null)
+        }
     }.getOrNull()
 
     private companion object {

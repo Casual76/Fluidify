@@ -8,6 +8,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -97,11 +99,18 @@ fun Artwork(
                     .build()
             }
 
+            // Keep a cover while loading and if the stored URL is unavailable (including
+            // offline history). A failed image must not leave an empty square in the recap.
+            var coverLoaded by remember(request) { mutableStateOf(false) }
+            if (!coverLoaded) GeneratedCover(title, corner)
             AsyncImage(
                 model = request,
                 contentDescription = null,
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
+                onLoading = { coverLoaded = false },
+                onSuccess = { coverLoaded = true },
+                onError = { coverLoaded = false },
             )
         } else {
             GeneratedCover(title, corner)

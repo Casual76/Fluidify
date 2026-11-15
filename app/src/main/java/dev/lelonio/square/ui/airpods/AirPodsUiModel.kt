@@ -5,6 +5,8 @@ package dev.lelonio.square.ui.airpods
 
 
 import dev.lelonio.square.airpods.*
+import dev.lelonio.square.airpods.runtime.android.ControlChannelRecovery
+import dev.lelonio.square.airpods.runtime.android.platform.PlatformResult
 
 import dev.lelonio.square.airpods.protocol.*
 
@@ -54,6 +56,13 @@ data class AirPodsUiState(
 
     val functionalAuthority: dev.lelonio.square.airpods.runtime.android.AirPodsFunctionalUiAuthority? = null,
 
+    val controlRecovery: ControlChannelRecovery = ControlChannelRecovery.NONE,
+
+    val callAccess: CallGestureAccess = CallGestureAccess(),
+
+    /** An Android request outcome, never proof that the audio profile changed. */
+    val audioResult: PlatformResult? = null,
+
 ) {
 
     val verified get() = pair.verification != null && conformanceMatches
@@ -100,6 +109,11 @@ data class AirPodsUiState(
 
         domain.canAttemptWrite(property, value)
 
+}
+
+/** Both effective Android grants are required by AndroidOrdinaryCallPort. */
+data class CallGestureAccess(val readPhoneState: Boolean = false, val answerPhoneCalls: Boolean = false) {
+    val granted get() = readPhoneState && answerPhoneCalls
 }
 
 data class PairCandidate(val id: String, val displayName: String, val identityHint: String)

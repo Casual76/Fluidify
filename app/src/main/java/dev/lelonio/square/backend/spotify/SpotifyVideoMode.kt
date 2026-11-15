@@ -24,10 +24,42 @@ import kotlinx.coroutines.flow.asStateFlow
  */
 object SpotifyVideoMode {
 
+    /** Captured at the button press, before the request can wait in a collector. */
+    data class Selection(
+        val owner: Any,
+        val mediaId: String,
+        val index: Int,
+        val windowUid: Any?,
+        val occurrenceId: String?,
+        val revision: Long,
+        val playWhenReady: Boolean,
+    )
+
+    private val requestRevision = java.util.concurrent.atomic.AtomicLong()
+    private var selectionReader: (() -> Selection?)? = null
+
+    /** Installed by the live service; closing an older service cannot unbind its replacement. */
+    internal fun bindSelection(reader: () -> Selection?): java.io.Closeable {
+        selectionReader = reader
+        return java.io.Closeable { if (selectionReader === reader) selectionReader = null }
+    }
+
+    fun invalidateRequests() { requestRevision.incrementAndGet() }
+    fun isCurrent(request: Request): Boolean = request.revision == requestRevision.get()
+
     /** What the player was asked to do; read by the service. */
     sealed interface Request {
-        data class Watch(val fileId: String, val positionMs: Long) : Request
-        data class Listen(val positionMs: Long) : Request
+        val revision: Long
+        data class Watch(
+            val fileId: String,
+            val positionMs: Long,
+            val selection: Selection? = selectionReader?.invoke(),
+            override val revision: Long = requestRevision.incrementAndGet(),
+        ) : Request
+        data class Listen(
+            val positionMs: Long,
+            override val revision: Long = requestRevision.incrementAndGet(),
+        ) : Request
 
         /**
          * Leave the video and move along the queue.
@@ -36,7 +68,10 @@ object SpotifyVideoMode {
          * item and its own player has nowhere to go, while the queue the
          * listener is actually in is held by the engine parked behind it.
          */
-        data class Skip(val forward: Boolean) : Request
+        data class Skip(
+            val forward: Boolean,
+            override val revision: Long = requestRevision.incrementAndGet(),
+        ) : Request
     }
 
     private val _requests = MutableSharedFlow<Request>(extraBufferCapacity = 4)
@@ -95,7 +130,9 @@ object SpotifyVideoMode {
 
     /** Back to sound alone, for when the track or the source changes under it. */
     fun reset() {
+        invalidateRequests()
         _enabled.value = false
+        _manifest.value = null
     }
 
     private val _pictureInPicture = MutableStateFlow(false)

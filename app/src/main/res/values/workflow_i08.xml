@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i08_download_reading">Reading the full collection?</string>
+    <string name="wf_i08_download_incomplete">Collection incomplete. Open it online to finish reading.</string>
+</resources>

@@ -32,6 +32,7 @@ internal fun playlistWriteClient(token: String, permit: SpotifyNetworkPolicy.Per
     .addInterceptor { chain ->
         // Original operation lease, before auth/DNS/connection and without a new capture.
         permit.check()
+        try { fence() } catch (failure: Exception) { throw IOException("Playlist account authority changed", failure) }
         val tagged = chain.request().newBuilder().tag(SpotifyNetworkPolicy.Permit::class.java, permit).build()
         chain.proceed(tagged)
     }

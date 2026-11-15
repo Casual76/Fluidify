@@ -23,6 +23,8 @@ class AudioFocusController(
     private val onPause: () -> Unit,
     private val onResume: () -> Unit,
     private val onDuck: (ducked: Boolean) -> Unit,
+    /** Includes a requested play still loading, but excludes an already requested pause. */
+    private val isPlaybackIntended: () -> Boolean = { true },
 ) {
 
     private val appContext = context.applicationContext
@@ -31,6 +33,9 @@ class AudioFocusController(
     /** True when we paused ourselves and should resume once focus returns. */
     private var pausedByFocusLoss = false
     private var holdsFocus = false
+    /** Separate from ducking and from permission to resume after the loss. */
+    var isPlaybackSuppressed: Boolean = false
+        private set
     private val airPodsObservers = java.util.concurrent.CopyOnWriteArraySet<() -> Unit>()
     /** Observation only: includes loss/duck/noisy, even without a Player state change. */
     fun observeAirPodsFocus(changed: () -> Unit): java.io.Closeable {
@@ -77,6 +82,7 @@ class AudioFocusController(
             AudioManager.AUDIOFOCUS_REQUEST_GRANTED
         if (granted) {
             holdsFocus = true
+            isPlaybackSuppressed = false
             if (foreignAttenuationActive) onDuck(false)
             foreignAttenuationActive = false
             registerNoisyReceiver()
@@ -86,11 +92,20 @@ class AudioFocusController(
 
     /** Release focus when playback stops or the user pauses. */
     fun abandonFocus() {
-        if (!holdsFocus) return
-        audioManager.abandonAudioFocusRequest(request)
-        holdsFocus = false
+        // Revoke first, even if focus was already released or a late callback
+        // arrives while abandonAudioFocusRequest is being processed.
         pausedByFocusLoss = false
+        if (!holdsFocus) return
+        holdsFocus = false
+        audioManager.abandonAudioFocusRequest(request)
         unregisterNoisyReceiver()
+    }
+
+    /** Native pause acknowledgement, including pauses initiated by Connect. */
+    fun onPlaybackPaused() {
+        // Our own transient pause acknowledges the interruption, not a new
+        // user decision. It must keep its one-shot permission to resume.
+        if (!pausedByFocusLoss) abandonFocus()
     }
 
     var foreignAttenuationActive: Boolean = false
@@ -101,6 +116,7 @@ class AudioFocusController(
         notifyAirPodsFocus()
         when (change) {
             AudioManager.AUDIOFOCUS_GAIN -> {
+                isPlaybackSuppressed = false
                 onDuck(false)
                 if (pausedByFocusLoss) {
                     pausedByFocusLoss = false
@@ -111,6 +127,7 @@ class AudioFocusController(
             // Someone took the output for good — a different player started.
             // Give up focus entirely rather than waiting for a return.
             AudioManager.AUDIOFOCUS_LOSS -> {
+                isPlaybackSuppressed = true
                 pausedByFocusLoss = false
                 onPause()
                 abandonFocus()
@@ -118,7 +135,10 @@ class AudioFocusController(
 
             // A call, or another app that will hand focus back.
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT -> {
-                pausedByFocusLoss = true
+                isPlaybackSuppressed = true
+                // A loss while already paused must never mint a resume. Keep
+                // an existing ticket across repeated transient-loss callbacks.
+                pausedByFocusLoss = pausedByFocusLoss || isPlaybackIntended()
                 onPause()
             }
 

@@ -44,6 +44,10 @@ class ListeningStatsScreenshots {
             compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("listening-stats-details-toggle"))
             compose.onNodeWithTag("listening-stats-details-toggle").performClick()
         }
+        if (scrollTo == "listening-stats-receipts-anchor") {
+            compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("listening-stats-imports-toggle"))
+            compose.onNodeWithTag("listening-stats-imports-toggle").performClick()
+        }
         if (scrollTo != null) compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag(scrollTo))
         // The persistent notice overlays the lazy viewport: scroll the metric above that notice.
         if (scrollTo == "listening-stats-minutes") compose.onNode(hasScrollAction())

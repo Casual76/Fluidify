@@ -13,6 +13,7 @@ internal class PlaylistEntrySelection(
     private val open: (CatalogPlaylist) -> Unit,
 ) {
     @Volatile private var requested: CatalogPlaylist? = null
+    @Volatile private var waitingId: String? = null
     fun prepare(playlist: CatalogPlaylist) { requested = playlist }
 
     fun select(id: String?, uri: String? = null, expectedAuthority: String? = null): Boolean {
@@ -22,8 +23,15 @@ internal class PlaylistEntrySelection(
             entries.entry(id, descriptor).takeIf { it.live } ?: return false
         }
         requested = null
-        if (entries.activeId == entry?.id) return true
+        if (entries.activeId == entry?.id) {
+            if (entry != null && entry.needsRead && !entry.state.value.loading && !entry.state.value.loadingMore) {
+                stopRead()
+                open(entry.descriptor)
+            }
+            return true
+        }
         stopRead()
+        waitingId = null
         entries.select(entry)
         changed()
         if (entry != null) {
@@ -33,5 +41,22 @@ internal class PlaylistEntrySelection(
         return true
     }
 
-    fun revoke() { requested = null; entries.revoke() }
+    /** A denied online open remains an unfinished intention, with a terminal visible state. */
+    fun awaitAvailability() { waitingId = entries.pending()?.id }
+
+    /** Only the selected, still-live entry may recover; a covered page never steals selection. */
+    fun recoverActive(): Boolean {
+        val id = waitingId ?: return false
+        if (entries.activeId != id) return false
+        val entry = entries.pending() ?: return false
+        if (!entry.live || entry.state.value.loading || entry.state.value.loadingMore) return false
+        waitingId = null
+        stopRead()
+        open(entry.descriptor)
+        return true
+    }
+
+    // May also run on the credential observer thread. The VM cancels its read job there;
+    // generation mutation stays with the main-thread account collector.
+    fun revoke() { requested = null; waitingId = null; entries.revoke() }
 }

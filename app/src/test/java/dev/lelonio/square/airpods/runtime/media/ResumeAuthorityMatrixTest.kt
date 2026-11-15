@@ -41,6 +41,7 @@ class ResumeAuthorityMatrixTest {
         val sent = mutableListOf<Pair<MediaAction, Int?>>()
         var observer: (() -> Unit)? = null
         override fun configureExternal(enabled: Boolean) { provider.configure(enabled) }
+        override fun retainAutomation(target: MediaTarget?) { provider.retainAutomation(target) }
         override fun read() = provider.candidates(listOf(main), facts)
         override fun observe(changed: () -> Unit): Closeable {
             observer = changed
@@ -163,7 +164,7 @@ class ResumeAuthorityMatrixTest {
         }
     }
 
-    @Test fun interventionWhileOwnResumeIsBufferingRevokesRestore() {
+    @Test fun transportWhileOwnResumeIsBufferingPreservesVolumeUnlessExternalRouteBecomesUnknown() {
         // 0: local command (provider revision); 1: external app paused; 2: external app stopped.
         for (kind in 0..2) {
             val external = kind > 0
@@ -179,12 +180,12 @@ class ResumeAuthorityMatrixTest {
             }
             r.queue.drain(); r.ramp()
             r.env.transition(Playback.PLAYING); r.queue.drain(); r.ramp()
-            assertEquals("kind=$kind", 4, r.volume())
+            assertEquals("kind=$kind", if (kind == 2) 4 else 10, r.volume())
             assertEquals("kind=$kind", listOf(MediaAction.PAUSE, MediaAction.PLAY), r.transport())
         }
     }
 
-    @Test fun interventionAfterConfirmedOwnResumeRevokesRestore() {
+    @Test fun transportAfterConfirmedOwnResumePreservesVolumeAndDoesNotReissuePlayback() {
         for (external in listOf(false, true)) {
             val r = Rig(external, defaults.copy(conversationPause = true, conversationDuck = true))
             r.core.conversation(true); r.queue.drain(); r.ramp()
@@ -192,7 +193,8 @@ class ResumeAuthorityMatrixTest {
             r.step(0) // our PLAY is confirmed by the target before any restore step
             if (external) r.env.transition(Playback.PAUSED) else r.env.localOverride()
             r.queue.drain(); r.ramp()
-            assertEquals("external=$external", 4, r.volume())
+            assertEquals("external=$external", 10, r.volume())
+            assertEquals(listOf(MediaAction.PAUSE, MediaAction.PLAY), r.transport())
         }
     }
 

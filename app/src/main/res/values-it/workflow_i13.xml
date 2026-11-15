@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i13_follow_song">Segui il brano</string>
+    <string name="wf_i13_translation_failed">Traduzione non disponibile</string>
+    <string name="wf_i13_retry_translation">Riprova traduzione</string>
+    <string name="wf_i13_translation_unchanged">Nessuna traduzione aggiuntiva</string>
+    <string name="wf_i13_translation_loading">Traduzione in corso</string>
+    <string name="wf_i13_on">Attiva</string>
+    <string name="wf_i13_off">Disattiva</string>
+    <string name="wf_i13_move_up">Sposta prima</string>
+    <string name="wf_i13_move_down">Sposta dopo</string>
+    <string name="wf_i13_queue_position">%1$d di %2$d</string>
+    <string name="wf_i13_karaoke_value">Riduzione voce: %1$d%%</string>
+    <string name="wf_i13_karaoke_more">Riduci di più la voce</string>
+    <string name="wf_i13_karaoke_less">Riduci di meno la voce</string>
+    <string name="wf_i13_karaoke_off">Disattiva karaoke</string>
+    <string name="wf_i13_screen_on">Mantieni schermo acceso</string>
+    <string name="wf_i13_screen_on_note">Con il player a schermo intero aperto e la musica in riproduzione</string>
+</resources>

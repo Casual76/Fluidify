@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i10_home_loading">Caricamento delle proposte…</string>
+    <string name="wf_i10_home_setup">Collega la Web API per queste proposte.</string>
+    <string name="wf_i10_home_offline">Queste proposte non sono disponibili offline.</string>
+    <string name="wf_i10_home_failed">Alcune proposte non sono state caricate.</string>
+    <string name="wf_i10_home_pending">Queste proposte non sono ancora caricate.</string>
+    <string name="wf_i10_home_empty">Nessun contenuto per questo filtro, per ora.</string>
+    <string name="wf_i10_show_all">Mostra tutto</string>
+    <string name="wf_i10_setup">Collega Web API</string>
+    <string name="wf_i10_search_category_empty">%1$s: nessun risultato per «%2$s».</string>
+    <string name="wf_i10_cancel_wait">Annulla accesso</string>
+    <string name="wf_i10_web_api_title">Web API</string>
+    <string name="wf_i10_web_api_explainer">Accesso facoltativo per pagine artista e raccolte personali. Registra un’app nel dashboard Spotify e incolla qui il Client ID.</string>
+    <string name="wf_i10_same_account">Usa lo stesso account Spotify con cui ascolti.</string>
+    <string name="wf_i10_open_dashboard">Apri dashboard Spotify</string>
+    <string name="wf_i10_artist_requirement">Questa pagina artista richiede la Web API. Collega qui lo stesso account Spotify, poi apri l’artista.</string>
+    <string name="wf_i10_open_artist">Apri artista</string>
+    <string name="wf_i10_identity_mismatch">Hai autorizzato un altro account Spotify. Ricollega la Web API con l’account usato per ascoltare.</string>
+    <string name="wf_i10_identity_verify">Ricollega la Web API per verificare che appartenga all’account con cui ascolti.</string>
+    <string name="wf_i10_identity_native">Accedi prima a Spotify per ascoltare, poi collega la Web API con lo stesso account.</string>
+    <string name="wf_i10_login_cancelled">Accesso annullato. Puoi riprovare.</string>
+    <string name="wf_i10_login_failed">Accesso Spotify non riuscito. Riprova.</string>
+    <string name="wf_i10_web_failed">Collegamento Web API non riuscito. Controlla account, Client ID e connessione, poi riprova.</string>
+    <string name="wf_i10_web_offline">Torna online per collegare la Web API.</string>
+    <string name="wf_i10_login_denied">Accesso Spotify non autorizzato. Puoi riprovare.</string>
+    <string name="wf_i10_login_timeout">L?accesso ? scaduto. Puoi riprovare.</string>
+</resources>

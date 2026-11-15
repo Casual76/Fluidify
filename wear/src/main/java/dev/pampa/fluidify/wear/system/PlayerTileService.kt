@@ -150,11 +150,13 @@ internal class TileButtonIds(private val layout: Long = nextMark()) {
 internal object TileActions {
     const val PREVIOUS = "previous"
     const val TOGGLE = "toggle"
+    const val PLAY = "play"
+    const val PAUSE = "pause"
     const val NEXT = "next"
     const val LIKE = "like"
 
     /** The presses a tile can come back with. Taking a like back is not one: it asks first, in the app. */
-    val ALL = setOf(PREVIOUS, TOGGLE, NEXT, LIKE)
+    val ALL = setOf(PREVIOUS, TOGGLE, PLAY, PAUSE, NEXT, LIKE)
 
     /** A button's id in one layout: its name and the layout's mark, so every layout's presses are new. */
     fun id(name: String, layout: Long): String = "$name@$layout"
@@ -170,6 +172,8 @@ internal object TileActions {
         when (name) {
             PREVIOUS -> controls.previous()
             TOGGLE -> controls.togglePlay()
+            PLAY -> controls.setPlaying(true)
+            PAUSE -> controls.setPlaying(false)
             NEXT -> controls.next()
             LIKE -> controls.setLiked(true)
         }

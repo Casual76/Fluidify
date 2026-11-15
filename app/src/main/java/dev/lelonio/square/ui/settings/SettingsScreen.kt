@@ -131,6 +131,7 @@ fun SettingsScreen(
     deviceName: String,
     onClientIdChange: (String) -> Unit,
     onConnectWebApi: () -> Unit,
+    onCancelWebApi: () -> Unit = {},
     onDisconnectWebApi: () -> Unit,
     onLogOut: () -> Unit,
     onShowTutorial: () -> Unit,
@@ -179,6 +180,7 @@ fun SettingsScreen(
     val updateApp = remember(updateContext) { updateContext.applicationContext as SquareApplication }
     val prefs = updateApp.preferences
     val updateChannel by prefs.updateChannel.collectAsStateWithLifecycle()
+    val keepPlayerScreenOn by prefs.keepPlayerScreenOn.collectAsStateWithLifecycle()
     val engineLicencesTitle = stringResource(R.string.engine_licences_title)
     val engineLicencesFootnote = stringResource(
         R.string.engine_licences_footnote,
@@ -347,7 +349,7 @@ fun SettingsScreen(
                     // The full explanation, because with no application
                     // connected search does not work at all and the reason is
                     // not something anyone would guess.
-                    WebApiSetup(webApi, onClientIdChange, onConnectWebApi)
+                    WebApiSetup(webApi, onClientIdChange, onConnectWebApi, onCancelWebApi)
                 }
             }
         }
@@ -383,6 +385,17 @@ fun SettingsScreen(
 
         if (open == SettingsPage.Playback) item("canvas") {
             CanvasSection()
+        }
+
+        if (open == SettingsPage.Playback) item("wf_i13_player_screen_on") {
+            Section(title = null) {
+                FluidToggleRow(
+                    title = stringResource(R.string.wf_i13_screen_on),
+                    subtitle = stringResource(R.string.wf_i13_screen_on_note),
+                    checked = keepPlayerScreenOn,
+                    onCheckedChange = prefs::setKeepPlayerScreenOn,
+                )
+            }
         }
 
         // The effects run on our own output, so this one holds for both backends.

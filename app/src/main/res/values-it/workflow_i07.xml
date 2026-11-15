@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i07_playlist_waiting">Ora non disponibile. Si caricherà al ritorno della connessione.</string>
+    <string name="wf_i07_search_retry">Riprova</string>
+    <string name="wf_i07_feed_retry">Alcune proposte non sono disponibili. Riprova</string>
+    <string name="wf_i07_radio_waiting">Preparazione radio… Tocca per annullare.</string>
+    <string name="wf_i07_radio_failed">Radio non disponibile. Riprova dal player. Tocca per chiudere.</string>
+    <string name="wf_i07_radio_offline">La radio richiede una connessione. Tocca per chiudere.</string>
+</resources>

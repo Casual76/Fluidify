@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i15_headphones">Headphones</string>
+    <string name="wf_i15_airpods">AirPods</string>
+    <string name="wf_i15_from_phone">Observed by the phone</string>
+    <string name="wf_i15_left">Left</string>
+    <string name="wf_i15_right">Right</string>
+    <string name="wf_i15_case">Case</string>
+    <string name="wf_i15_unknown">Unknown</string>
+    <string name="wf_i15_percent">%1$d%%</string>
+    <string name="wf_i15_no_fresh_reading">No recent reading</string>
+    <string name="wf_i15_phone_unavailable">Phone unavailable</string>
+    <string name="wf_i15_phone_headphones_only">For headphones used by the phone</string>
+    <string name="wf_i15_battery_action">Headphone battery</string>
+</resources>

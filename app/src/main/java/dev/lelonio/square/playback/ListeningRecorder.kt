@@ -116,7 +116,9 @@ class ListeningRecorder(
             source.nativeEvent("", "", player.currentMediaItemIndex, true)
             return
         }
-        val allowed = (source == null || source.id != null) && session.recording && access != null && !remote && item?.mediaId?.startsWith("spotify:track:") == true
+        val uri = item?.mediaId
+        val supported = uri != null && (uri.startsWith("spotify:track:") || LocalLibrary.isLocal(uri))
+        val allowed = (source == null || source.id != null) && session.recording && access != null && !remote && supported
         val metadata = item?.mediaMetadata
         val track = if (allowed) CatalogTrack(item!!.mediaId, metadata?.title?.toString().orEmpty(),
             metadata?.artist?.toString().orEmpty(), album = metadata?.albumTitle?.toString().orEmpty(),

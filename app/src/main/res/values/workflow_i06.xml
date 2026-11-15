@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i06_connection_failed">Couldn?t connect to playback. Try again.</string>
+    <string name="wf_i06_queue_source_mismatch">Not added: play a track from this source to start its queue.</string>
+    <string name="wf_i06_queue_failed">Couldn?t add these tracks to the queue.</string>
+    <string name="wf_i06_widget_unavailable">Playback command unavailable. Open Fluidify to resume.</string>
+    <string name="wf_i06_add_to_queue">Add to queue</string>
+</resources>

@@ -11,16 +11,23 @@ import androidx.activity.enableEdgeToEdge
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MediaMetadata
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
-import com.google.common.util.concurrent.MoreExecutors
+import com.google.common.util.concurrent.ListenableFuture
 import androidx.lifecycle.lifecycleScope
 import dev.lelonio.square.R
 import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.playback.PlaybackService
+import dev.lelonio.square.playback.I06PlaybackIntents
+import dev.lelonio.square.playback.I06QueueSourceMismatch
+import dev.lelonio.square.playback.i06ForRequest
+import dev.lelonio.square.playback.i06CurrentPlaybackAccess
+import dev.lelonio.square.playback.i06PlaybackSelection
+import dev.lelonio.square.playback.i06RequireEnqueueSource
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.CoroutineStart
+import kotlinx.coroutines.guava.await
 
 private const val ACTION_LISTEN = "dev.lelonio.square.LISTEN_ONLY"
 private const val ACTION_TOGGLE = "dev.lelonio.square.PIP_TOGGLE"
@@ -41,6 +48,46 @@ private const val ACTION_TOGGLE = "dev.lelonio.square.PIP_TOGGLE"
 class MainActivity : ComponentActivity() {
 
     private var controller by mutableStateOf<MediaController?>(null)
+    private var controllerFuture: ListenableFuture<MediaController>? = null
+    private var controllerConnection: Job? = null
+    private var playbackStarted = false
+    private data class PlaybackOwner(
+        val access: dev.lelonio.square.data.AccountLocalDataCoordinator.Access,
+        val accountEpoch: Long,
+    )
+    private val playbackApp get() = application as dev.lelonio.square.SquareApplication
+    private var playbackNotice: android.widget.Toast? = null
+    private val playbackIntents by lazy {
+        I06PlaybackIntents<PlaybackOwner, MediaController>(
+            lifecycleScope,
+            isOwnerCurrent = { owner -> i06CurrentPlaybackAccess(playbackApp.accountLocalData,
+                owner.access, owner.accountEpoch, PlaybackService.mediaAccountEpoch) != null },
+            onFailure = { failure ->
+                showPlaybackFailure(if (failure is I06QueueSourceMismatch)
+                    R.string.wf_i06_queue_source_mismatch else R.string.wf_i06_connection_failed)
+            },
+        )
+    }
+
+    private fun playbackOwner(): PlaybackOwner? {
+        val access = playbackApp.accountLocalData.capture()
+        if (access == null) showPlaybackFailure(R.string.wf_i06_connection_failed)
+        return access?.let { PlaybackOwner(it, PlaybackService.mediaAccountEpoch) }
+    }
+
+    /** A local-to-online promotion may replace Access without changing the account lineage. */
+    private fun currentPlaybackAccess(owner: PlaybackOwner): dev.lelonio.square.data.AccountLocalDataCoordinator.Access {
+        return i06CurrentPlaybackAccess(playbackApp.accountLocalData, owner.access,
+            owner.accountEpoch, PlaybackService.mediaAccountEpoch)
+            ?: throw kotlinx.coroutines.CancellationException("Playback account changed")
+    }
+
+    private fun showPlaybackFailure(message: Int) {
+        playbackNotice?.cancel()
+        playbackNotice = android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_LONG)
+            .also { it.show() }
+    }
+
     private val airPodsOpening = dev.lelonio.square.airpods.runtime.AirPodsAppOpening()
 
     private fun android.content.Intent.isOrdinaryAppOpening(): Boolean = when (action) {
@@ -155,9 +202,13 @@ class MainActivity : ComponentActivity() {
                 // controller may not have connected yet on a cold start, so the
                 // play is asked for once it has.
                 openPlayer++
-                lifecycleScope.launch {
-                    val player = awaitController() ?: return@launch
-                    if (!player.isPlaying) player.play()
+                playbackOwner()?.let { owner ->
+                    connectController()
+                    playbackIntents.submit(owner, replacesQueue = true) { player, current ->
+                        if (current()) playbackApp.accountLocalData.use(currentPlaybackAccess(owner)) {
+                            if (!player.playWhenReady) player.play()
+                        }
+                    }
                 }
                 null
             }
@@ -224,6 +275,7 @@ class MainActivity : ComponentActivity() {
                 player = controller,
                 onPlay = ::play,
                 onEnqueue = ::enqueue,
+                onEnqueueAll = ::enqueueAll,
                 openPlayer = openPlayer,
                 link = link,
                 shortcut = shortcut,
@@ -346,6 +398,7 @@ class MainActivity : ComponentActivity() {
 
     override fun onNewIntent(intent: android.content.Intent) {
         super.onNewIntent(intent)
+        playbackIntents.start() // An explicit intent can arrive before the next onStart.
         airPodsOpening.newIntent(intent.isOrdinaryAppOpening())
         setIntent(intent)
         if (intent.opensPlayer()) {
@@ -369,45 +422,29 @@ class MainActivity : ComponentActivity() {
         val query = intent.getStringExtra(android.app.SearchManager.QUERY).orEmpty().trim()
         // Consumed: a rotation must not play it again.
         intent.action = android.content.Intent.ACTION_MAIN
-        lifecycleScope.launch { playFromVoice(query) }
-    }
-
-    private suspend fun playFromVoice(query: String) {
-        val player = awaitController() ?: return
-        val app = application as dev.lelonio.square.SquareApplication
-        if (query.isEmpty()) {
-            if (player.mediaItemCount > 0) {
-                player.play()
-                return
+        val owner = playbackOwner() ?: return
+        val backend = playbackApp.activeBackend
+        connectController()
+        playbackIntents.submit(owner, replacesQueue = true) { player, current ->
+            if (query.isEmpty()) {
+                if (player.mediaItemCount > 0) {
+                    if (current()) playbackApp.accountLocalData.use(currentPlaybackAccess(owner)) { player.play() }
+                } else {
+                    val recent = playbackApp.recentStore.tracks.value.toList()
+                    if (current() && recent.isNotEmpty()) sendPlay(player, owner, recent, 0,
+                        contextLabel = getString(R.string.play_again))
+                }
+            } else {
+                playbackApp.accountLocalData.requireOnline(currentPlaybackAccess(owner))
+                val results = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+                    backend.search(query, dev.lelonio.square.backend.SearchLabels(
+                        artist = getString(R.string.artist), album = getString(R.string.album),
+                        playlist = getString(R.string.playlist)))
+                }
+                if (current() && results.tracks.isNotEmpty()) sendPlay(player, owner, results.tracks, 0,
+                    contextLabel = getString(R.string.search))
             }
-            val recent = app.recentStore.tracks.value
-            if (recent.isNotEmpty()) play(recent, 0, contextLabel = getString(R.string.play_again))
-            return
         }
-        val results = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
-            runCatching {
-                app.activeBackend.search(
-                    query,
-                    dev.lelonio.square.backend.SearchLabels(
-                        artist = getString(R.string.artist),
-                        album = getString(R.string.album),
-                        playlist = getString(R.string.playlist),
-                    ),
-                )
-            }.onFailure { android.util.Log.w("MainActivity", "voice search failed: $it") }.getOrNull()
-        }
-        val tracks = results?.tracks.orEmpty()
-        if (tracks.isEmpty()) return
-        play(tracks, 0, contextLabel = getString(R.string.search))
-    }
-
-    /** The controller, once it has connected; null if it never does. */
-    private suspend fun awaitController(): MediaController? {
-        repeat(CONTROLLER_WAIT_TICKS) {
-            controller?.let { return it }
-            kotlinx.coroutines.delay(CONTROLLER_WAIT_TICK_MS)
-        }
-        return controller
     }
 
     /**
@@ -434,31 +471,77 @@ class MainActivity : ComponentActivity() {
             androidx.core.content.ContextCompat.RECEIVER_NOT_EXPORTED,
         )
         super.onStart()
-        val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-        val future = MediaController.Builder(this, token).buildAsync()
-        future.addListener(
-            {
-                // The activity may already be stopping by the time this lands.
-                controller = runCatching { future.get() }.getOrNull()
-                // The floating window's own button has to say what it does now,
-                // and the system only redraws it when the parameters are set
-                // again.
-                controller?.addListener(object : androidx.media3.common.Player.Listener {
+        playbackStarted = true
+        playbackIntents.start()
+        connectController()
+    }
+
+    /** One bounded attempt per start or fresh user tap; no background reconnect loop. */
+    @androidx.annotation.OptIn(androidx.media3.common.util.UnstableApi::class)
+    private fun connectController() {
+        if (!playbackStarted || controller?.isConnected == true || controllerConnection?.isActive == true) return
+        playbackIntents.connecting()
+        val job = lifecycleScope.launch(start = CoroutineStart.LAZY) {
+            val lease = PlaybackService.connections.retain()
+            var ownedFuture: ListenableFuture<MediaController>? = null
+            try {
+                val connected = try {
+                    kotlinx.coroutines.withTimeout(CONTROLLER_CONNECT_MS) {
+                        PlaybackService.connections.awaitReady()
+                        val token = SessionToken(this@MainActivity, ComponentName(this@MainActivity, PlaybackService::class.java))
+                        val future = MediaController.Builder(this@MainActivity, token)
+                            .setListener(object : MediaController.Listener {
+                                override fun onError(controller: MediaController, sessionError: androidx.media3.session.SessionError) {
+                                    showPlaybackFailure(R.string.wf_i06_queue_failed)
+                                }
+                                override fun onDisconnected(disconnected: MediaController) {
+                                    if (controller === disconnected) {
+                                        controller = null
+                                        controllerConnection?.cancel()
+                                    }
+                                }
+                            }).buildAsync()
+                        ownedFuture = future
+                        controllerFuture = future
+                        future.await()
+                    }
+                } catch (_: kotlinx.coroutines.TimeoutCancellationException) { null }
+                  catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                  catch (_: Exception) { null }
+                controller = connected
+                playbackIntents.connected(connected)
+                connected?.addListener(object : androidx.media3.common.Player.Listener {
+                    override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+                        showPlaybackFailure(R.string.wf_i06_queue_failed)
+                    }
                     override fun onIsPlayingChanged(isPlaying: Boolean) {
                         if (!inPictureInPicture) return
                         runCatching { setPictureInPictureParams(pipParams()) }
                     }
                 })
-            },
-            MoreExecutors.directExecutor(),
-        )
+                if (connected != null) kotlinx.coroutines.awaitCancellation()
+            } finally {
+                // Includes cancellation before connection and futures which complete after release.
+                try {
+                    ownedFuture?.let { future ->
+                        if (controllerFuture === future) { controllerFuture = null; controller = null }
+                        MediaController.releaseFuture(future)
+                    }
+                } finally { lease.close() }
+            }
+        }
+        controllerConnection = job
+        job.start()
     }
 
     override fun onStop() {
+        playbackStarted = false
         airPodsOpening.stopped(isChangingConfigurations)
         runCatching { unregisterReceiver(listenRequest) }
-        controller?.release()
+        playbackIntents.stop()
         controller = null
+        controllerConnection?.cancel()
+        controllerConnection = null
         super.onStop()
     }
 
@@ -478,40 +561,63 @@ class MainActivity : ComponentActivity() {
          */
         positionMs: Long = 0L,
     ) {
-        val player = controller ?: return
-        player.setMediaItems(
-            tracks.map { it.toQueueItem(contextUri, asContext, contextLabel) },
-            index,
-            positionMs,
-        )
-        player.prepare()
-        player.play()
+        if (tracks.isEmpty()) return
+        val chosen = tracks.toList()
+        if (index !in chosen.indices) { showPlaybackFailure(R.string.wf_i06_queue_failed); return }
+        val owner = playbackOwner() ?: return
+        connectController()
+        playbackIntents.submit(owner, replacesQueue = true) { player, current ->
+            if (current()) sendPlay(player, owner, chosen, index, contextUri, asContext, contextLabel, positionMs)
+        }
     }
 
-    /**
-     * Appends one track to the end of the queue.
-     *
-     * Starts playback when nothing is loaded: queueing onto an idle player and
-     * having nothing happen reads as the gesture having failed.
-     */
-    private fun enqueue(track: CatalogTrack) {
-        val player = controller ?: return
-        val wasEmpty = player.mediaItemCount == 0
-        // The index is a formality: the item asks to play next and the queue in
-        // the service picks the place, because only it knows where the run of
-        // already-queued tracks ends.
-        player.addMediaItem(track.toQueueItem(playNext = true))
-        if (wasEmpty) {
+    private fun sendPlay(
+        player: MediaController, owner: PlaybackOwner, tracks: List<CatalogTrack>, index: Int,
+        contextUri: String? = null, asContext: Boolean = false, contextLabel: String = "",
+        positionMs: Long = 0L,
+    ) {
+        check(player.isConnected)
+        val access = currentPlaybackAccess(owner)
+        val selection = i06PlaybackSelection(tracks.mapIndexed { at, track ->
+            track.toQueueItem(contextUri, asContext, contextLabel, cycleAnchor = at == index)
+                .i06ForRequest(access.requestSession)
+        }, index)
+        playbackApp.accountLocalData.use(currentPlaybackAccess(owner)) {
+            player.setMediaItems(selection.items, selection.index, positionMs)
             player.prepare()
             player.play()
         }
     }
 
+    /** A single track and a complete collection enter exactly the same protected FIFO. */
+    private fun enqueue(track: CatalogTrack) = enqueueAll(listOf(track))
+
+    private fun enqueueAll(tracks: List<CatalogTrack>) {
+        if (tracks.isEmpty()) return
+        val block = tracks.toList()
+        val owner = playbackOwner() ?: return
+        connectController()
+        playbackIntents.submit(owner) { player, current ->
+            if (!current()) return@submit
+            check(player.isConnected)
+            val access = currentPlaybackAccess(owner)
+            val items = block.map { track ->
+                track.toQueueItem(playNext = true).i06ForRequest(access.requestSession)
+            }
+            // Do not switch source to make an addition appear successful: that replaces playback.
+            i06RequireEnqueueSource(player.currentMediaItem?.mediaId, items)
+            playbackApp.accountLocalData.use(currentPlaybackAccess(owner)) {
+                // One block, not N calls. The service/core places it after existing manual items.
+                player.addMediaItems(items)
+                // Empty-queue startup belongs to service admission. A newly connected controller
+                // may still have an empty snapshot of an existing queue; never play it on a rejected add.
+            }
+        }
+    }
+
     private companion object {
         const val AIRPODS_USER_OPENING = "airpods_user_opening"
-        /** How long a voice request waits for the session to connect: four seconds. */
-        const val CONTROLLER_WAIT_TICKS = 40
-        const val CONTROLLER_WAIT_TICK_MS = 100L
+        const val CONTROLLER_CONNECT_MS = 4_000L
     }
 }
 /** A `spotify:` URI the app was opened with, and which opening it was. */

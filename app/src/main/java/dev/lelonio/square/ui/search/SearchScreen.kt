@@ -96,6 +96,9 @@ fun SearchScreen(
     /** Opens the same track sheet the library rows open. */
     onTrackMenu: (CatalogTrack) -> Unit,
     onOpenContext: (SearchItem) -> Unit,
+    onRetrySearch: () -> Unit = {},
+    retryOnline: Boolean = false,
+    onCancelWebApi: () -> Unit = {},
 ) {
     var kind by remember(state.query, state.resultScope) { mutableStateOf(Kind.ALL) }
     // A new search answers a new question, so the page goes back to showing all
@@ -141,7 +144,10 @@ fun SearchScreen(
             if (state.resultScope == SearchResultScope.DOWNLOADS_NETWORK_FALLBACK) {
                 item(contentType = "scope-explanation") {
                     Box(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
-                        Message(stringResource(R.string.search_downloads_network_fallback))
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Message(stringResource(R.string.search_downloads_network_fallback))
+                            if (state.retryAvailable && !state.loading && retryOnline) SearchRetry(onRetrySearch)
+                        }
                     }
                 }
             }
@@ -155,7 +161,7 @@ fun SearchScreen(
 
         when {
             state.needsSetup -> item(contentType = "setup") {
-                WebApiSetup(webApi, onClientIdChange, onConnectWebApi)
+                WebApiSetup(webApi, onClientIdChange, onConnectWebApi, onCancelWebApi)
             }
 
             state.loading -> item(contentType = "status") {
@@ -163,7 +169,13 @@ fun SearchScreen(
             }
 
             state.error != null -> item(contentType = "status") {
-                StatusBox { Message(state.error) }
+                StatusBox {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Message(state.error)
+                        if (state.retryAvailable && retryOnline &&
+                            state.resultScope != SearchResultScope.DOWNLOADS_NETWORK_FALLBACK) SearchRetry(onRetrySearch)
+                    }
+                }
             }
 
             state.query.isBlank() && history.isEmpty() -> item(contentType = "status") {
@@ -209,6 +221,26 @@ fun SearchScreen(
 
             else -> {
                 val all = kind == Kind.ALL
+                val categoryEmpty = when (kind) {
+                    Kind.ALL -> false
+                    Kind.TRACKS -> state.results.tracks.isEmpty()
+                    Kind.ARTISTS -> state.results.artists.isEmpty()
+                    Kind.ALBUMS -> state.results.albums.isEmpty()
+                    Kind.PLAYLISTS -> state.results.playlists.isEmpty()
+                }
+                if (categoryEmpty) item(contentType = "category-empty") {
+                    StatusBox {
+                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                            Message(stringResource(R.string.wf_i10_search_category_empty,
+                                stringResource(kind.label), state.query))
+                            dev.antigravity.fluidengine.ui.fluid.FluidButton(
+                                text = stringResource(R.string.wf_i10_show_all),
+                                onClick = { kind = Kind.ALL },
+                                style = dev.antigravity.fluidengine.ui.fluid.FluidButtonStyle.Plain,
+                            )
+                        }
+                    }
+                }
                 val tracks = state.results.tracks
                     .let { if (all && !localResults) it.take(TOP_RESULTS) else it }
 
@@ -254,6 +286,14 @@ fun SearchScreen(
             }
         }
     }
+}
+
+@Composable
+private fun SearchRetry(onRetry: () -> Unit) {
+    dev.antigravity.fluidengine.ui.fluid.FluidButton(
+        text = stringResource(R.string.wf_i07_search_retry), onClick = onRetry,
+        style = dev.antigravity.fluidengine.ui.fluid.FluidButtonStyle.Plain,
+    )
 }
 
 /** The same chips the home page filters with; see the note there. */

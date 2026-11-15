@@ -44,3 +44,8 @@ keystore.properties
 
 # Resoconti di QA locali, con le evidenze dei dispositivi.
 docs/manual-qa-watch-2026-10-03.md
+
+# Local product investigations contain account/device screenshots and review notes.
+docs/product-audit-20261115/
+docs/feature-discovery-20261115/
+docs/implementation-20261115/

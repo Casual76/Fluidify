@@ -24,6 +24,7 @@ fun CatalogTrack.toQueueItem(
     asContext: Boolean = false,
     contextLabel: String = "",
     playNext: Boolean = false,
+    cycleAnchor: Boolean = false,
 ): MediaItem =
     MediaItem.Builder()
         // The media id carries the track's URI; PlayQueue refuses anything else.
@@ -77,6 +78,7 @@ fun CatalogTrack.toQueueItem(
                             )
                         }
                         if (playNext) putBoolean(EXTRA_PLAY_NEXT, true)
+                        if (cycleAnchor) putBoolean(dev.lelonio.square.ui.EXTRA_QUEUE_CYCLE_ANCHOR, true)
                     },
                 )
                 .build(),

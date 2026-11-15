@@ -1,0 +1,28 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i10_home_loading">Loading suggestions…</string>
+    <string name="wf_i10_home_setup">Connect Web API to see these suggestions.</string>
+    <string name="wf_i10_home_offline">These suggestions are unavailable offline.</string>
+    <string name="wf_i10_home_failed">Some suggestions could not load.</string>
+    <string name="wf_i10_home_pending">These suggestions have not loaded yet.</string>
+    <string name="wf_i10_home_empty">Nothing to show in this filter yet.</string>
+    <string name="wf_i10_show_all">Show all</string>
+    <string name="wf_i10_setup">Connect Web API</string>
+    <string name="wf_i10_search_category_empty">%1$s: no results for “%2$s”.</string>
+    <string name="wf_i10_cancel_wait">Cancel sign-in</string>
+    <string name="wf_i10_web_api_title">Web API</string>
+    <string name="wf_i10_web_api_explainer">Optional access for artist pages and personal collections. Register an app in the Spotify dashboard and copy its Client ID here.</string>
+    <string name="wf_i10_same_account">Use the same Spotify account you use for playback.</string>
+    <string name="wf_i10_open_dashboard">Open Spotify dashboard</string>
+    <string name="wf_i10_artist_requirement">This artist page needs Web API access. Connect the same Spotify account here, then open the artist.</string>
+    <string name="wf_i10_open_artist">Open artist</string>
+    <string name="wf_i10_identity_mismatch">A different Spotify account was authorized. Reconnect Web API with the account used for playback.</string>
+    <string name="wf_i10_identity_verify">Reconnect Web API to verify it belongs to your playback account.</string>
+    <string name="wf_i10_identity_native">Sign in to Spotify for playback first, then connect Web API with the same account.</string>
+    <string name="wf_i10_login_cancelled">Sign-in cancelled. You can try again.</string>
+    <string name="wf_i10_login_failed">Spotify sign-in failed. Try again.</string>
+    <string name="wf_i10_web_failed">Web API could not connect. Check your account, Client ID and connection, then try again.</string>
+    <string name="wf_i10_web_offline">Go online to connect Web API.</string>
+    <string name="wf_i10_login_denied">Spotify sign-in was not authorized. You can try again.</string>
+    <string name="wf_i10_login_timeout">Sign-in timed out. You can try again.</string>
+</resources>

@@ -40,6 +40,9 @@ data class ConnectionAdmission(
     val purpose: ConnectionPurpose = ConnectionPurpose.PRODUCT,
     val explicitSetupVisible: Boolean = false,
     val productConformance: Boolean = false,
+    /** Monotonic identity from the process's ConnectionLifetimes. Allows bounded replay rejection
+     * across arbitrarily many real reconnects. Legacy callers without it retain the bounded ledger. */
+    val connectionOrdinal: Long? = null,
 )
 /** Called under gate lock AFTER durable marker. Implementations must be short, nonblocking
  * scheduling facades, not synchronous Bluetooth I/O. No other entry may start FGS/socket.
@@ -87,7 +90,14 @@ class AirPodsStartGate(
     private var settlement: GateResult? = null
     /** Lock-free observation for a worker deciding whether to call settleCleanup(). Not an authorization. */
     val cleanupUnconfirmed: Boolean get() = cleanupPending
+    /** Observation for error presentation, never an authorization or a way to clear a latch. */
+    internal val locallySuppressed: Boolean get() = locallyStopped
     private val attempts = LinkedHashSet<Pair<PairAddress, String>>()
+    private var highestConnectionOrdinal = 0L
+    // Only a failed control acquisition may retry the same audio link, once per genuine
+    // foreground opening. Receiver/Companion duplicates still share the consumed link ID.
+    private var failedConnection: ConnectionAdmission? = null
+    private var lastRecoveryOpening = -1L
 
     init { require(processEpoch.isNotBlank() && ownPid > 0 && ownProcessName.isNotBlank()) }
 
@@ -143,14 +153,23 @@ class AirPodsStartGate(
         return result.fold({ generation ->
             locallyStopped = false
             attempts.clear() // manual consent permits a fresh attempt on the same connection
+            highestConnectionOrdinal = 0L
+            failedConnection = null
+            lastRecoveryOpening = -1L
             GateResult.Resumed(generation)
         }, { GateResult.Denied(GateReason.PERSISTENCE_FAILED) })
     }
 
     /** [acquisitionCurrent] only retires a queued acquisition; it never grants consent or
      * bypasses a gate check. Rechecked across durable marker I/O before any owner callback. */
+    fun attempt(ingress: StartIngress, admission: ConnectionAdmission,
+        acquisitionCurrent: () -> Boolean = { true }): GateResult =
+        attempt(ingress, admission, recoveryOpening = null, acquisitionCurrent = acquisitionCurrent)
+
+    /** [recoveryOpening] is the source-side foreground epoch of a genuine APP_OPEN action.
+     * It only admits a previously failed link, once for this opening, after all ordinary checks. */
     @Synchronized fun attempt(ingress: StartIngress, admission: ConnectionAdmission,
-        acquisitionCurrent: () -> Boolean = { true }): GateResult {
+        recoveryOpening: Long?, acquisitionCurrent: () -> Boolean = { true }): GateResult {
         // The argument documents ALL ingress callers; it conveys no implicit consent.
         @Suppress("UNUSED_VARIABLE") val entry = ingress
         val exits = query()
@@ -186,10 +205,19 @@ class AirPodsStartGate(
         if (cleanupPending) return denied(GateReason.CLEANUP_PENDING)
         require(admission.connectionId.isNotBlank())
         val connection = admission.address to admission.connectionId
-        if (connection in attempts) return denied(GateReason.DUPLICATE_CONNECTION)
-        // Bounded attempt ledger: exhaustion requires explicit stop/resume/new process,
-        // never eviction that could turn a duplicate into an automatic retry.
-        if (attempts.size >= 64) return denied(GateReason.DUPLICATE_CONNECTION)
+        val ordinal = admission.connectionOrdinal
+        val retryFailed = ingress == StartIngress.APP_OPEN && recoveryOpening != null &&
+            recoveryOpening > lastRecoveryOpening && failedConnection?.let {
+                it.address == admission.address && it.connectionId == admission.connectionId &&
+                    it.connectionOrdinal == ordinal && it.expectedConsentGeneration == state.consentGeneration
+            } == true
+        if (!retryFailed) {
+            if (ordinal != null) {
+                if (ordinal <= highestConnectionOrdinal) return denied(GateReason.DUPLICATE_CONNECTION)
+            } else {
+                if (connection in attempts || attempts.size >= 64) return denied(GateReason.DUPLICATE_CONNECTION)
+            }
+        }
         if (!runCatching(acquisitionCurrent).getOrDefault(false)) return denied(GateReason.FGS_DENIED)
         val marked = store.transaction { current ->
             check(current.start == state) { "Consent changed during admission" }
@@ -203,12 +231,17 @@ class AirPodsStartGate(
             if (finishMarker().isFailure) { locallyStopped = true; return denied(GateReason.PERSISTENCE_FAILED) }
             return denied(GateReason.FGS_DENIED)
         }
-        attempts.add(connection)
+        if (ordinal != null) highestConnectionOrdinal = ordinal else attempts.add(connection)
+        if (ingress == StartIngress.APP_OPEN && recoveryOpening != null)
+            lastRecoveryOpening = maxOf(lastRecoveryOpening, recoveryOpening)
+        failedConnection = null
         active = true
         activeConnection = admission
         val started = runCatching { owner.start(admission, state.consentGeneration) }.getOrDefault(false)
         if (!started) {
-            stop(SuppressReason.START_FAILED)
+            // Scheduling/transport failure is not a withdrawal of the user's consent. The link
+            // remains consumed; only a new link or a later real opening can acquire again.
+            connectionFailed(admission)
             return denied(GateReason.START_FAILED)
         }
         return GateResult.Started(state.consentGeneration)
@@ -217,6 +250,7 @@ class AirPodsStartGate(
     /** Persist suppression BEFORE cleanup. Even failed persistence latches in this process.
      * Safe to call repeatedly. No automatic retry and no media commands in this policy. */
     @Synchronized fun stop(reason: SuppressReason = SuppressReason.USER_STOP): GateResult {
+        failedConnection = null
         locallyStopped = true
         val result = store.transaction { data ->
             val changed = !data.start.suppressUntilExplicitResume || data.start.suppressReason != reason
@@ -276,6 +310,17 @@ class AirPodsStartGate(
                 settled
             }
         }
+    }
+
+    /** A current channel failed while audio may still be connected. Cleanup has the same
+     * confirmations as an ordinary disconnect; only cleanup uncertainty escalates to suppression.
+     * No attempt or consent is reset here, and stale failures cannot retire a replacement owner. */
+    @Synchronized fun connectionFailed(admission: ConnectionAdmission): GateResult {
+        // A recovered owner can share both audio-link ID and consent with the failed owner.
+        // Require the exact admitted ticket, rather than letting a late old worker retire it.
+        if (activeConnection !== admission) return GateResult.Denied(GateReason.STALE_GENERATION)
+        failedConnection = admission
+        return disconnected(admission.connectionId, admission.expectedConsentGeneration)
     }
 
     /** Ordinary disconnect: opt-in retained; connection ID stays consumed. */

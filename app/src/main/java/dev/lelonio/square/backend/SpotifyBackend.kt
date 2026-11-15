@@ -13,6 +13,8 @@ import dev.lelonio.square.data.toCatalogTrack
 import dev.lelonio.square.data.toResults
 import dev.lelonio.square.nativecore.NativeBridge
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
 import dev.lelonio.square.playback.AudioOutput
 import dev.lelonio.square.playback.LibrespotPlayer
@@ -148,36 +150,18 @@ class SpotifyBackend(private val container: SquareApplication) : MusicBackend {
                 rootlist().filterNot { it.uri == liked?.uri || it.uri == Catalog.DJ_URI }
         }
 
-    private suspend fun rootlist(): List<CatalogPlaylist> =
-        runCatching { Catalog.playlists() }
-            // An empty rootlist is a failure, not an answer.
-            //
-            // The access point answers a request it cannot serve with an empty
-            // list as readily as with an error — a session that came up without
-            // finishing its handshake is the common way — and `runCatching`
-            // calls that a success. What the listener then saw was a library of
-            // exactly one row, Liked Songs, with nothing to say why. Turning it
-            // into a failure is what puts the Web API fallback below in play.
-            //
-            // An account really can have no playlists, so this only *tries* the
-            // other road: if the Web API comes back empty too, empty is the
-            // honest answer and the `recoverCatching` returns it.
-            .mapCatching { list ->
-                check(list.isNotEmpty()) { "rootlist vuoto" }
-                list
-            }
-            .recoverCatching {
-                android.util.Log.w(TAG, "rootlist unusable, asking the Web API: ${it.message}")
-                check(container.webApi.isReady) { it.message ?: "rootlist non disponibile" }
-                container.api.playlists(limit = WEB_API_LIBRARY_PAGE).items.map { dto ->
-                    CatalogPlaylist(
-                        uri = dto.uri,
-                        name = dto.name,
-                        artworkUrl = dto.images.firstOrNull()?.url,
-                    )
-                }
-            }
-            .getOrThrow()
+    private suspend fun rootlist(): List<CatalogPlaylist> {
+        val access = checkNotNull(container.accountLocalData.captureOnline()) { "Spotify account not ready" }
+        val network = dev.lelonio.square.data.SpotifyNetworkPolicy.capture()
+        return readSpotifyRootlist(
+            accountId = access.account.id,
+            checkCurrent = { network.check(); container.accountLocalData.requireOnline(access) },
+            primary = { Catalog.playlists() },
+            fallbackReady = { container.webApi.isReady },
+            fallbackPage = { offset -> container.api.playlists(limit = WEB_API_LIBRARY_PAGE, offset = offset) },
+            fallbackUsed = { android.util.Log.w(TAG, "rootlist unusable, asking the Web API: ${it.message}") },
+        )
+    }
 
     /**
      * A whole playlist, album or artist, resolved in one go.
@@ -221,34 +205,26 @@ class SpotifyBackend(private val container: SquareApplication) : MusicBackend {
 
     /** Everything the account has saved, newest first, a page at a time. */
     private suspend fun savedTracks(): List<CatalogTrack> {
-        val loaded = mutableListOf<CatalogTrack>()
-        var offset = 0
-        while (true) {
-            val page = container.api.savedTracks(limit = WEB_API_LIBRARY_PAGE, offset = offset)
-            loaded += page.items.mapNotNull { saved ->
-                saved.track
-                    .takeIf { it.isPlayable != false && it.uri.startsWith("spotify:track:") }
-                    ?.toCatalogTrack(saved.addedAt)
-            }
-            offset += page.items.size
-            if (page.items.isEmpty() || offset >= page.total) return loaded
+        val network = dev.lelonio.square.data.SpotifyNetworkPolicy.capture()
+        val access = checkNotNull(container.accountLocalData.captureOnline())
+        return readCompleteLibraryPages(
+            checkCurrent = { network.check(); container.accountLocalData.requireOnline(access) },
+            page = { offset -> container.api.savedTracks(limit = WEB_API_LIBRARY_PAGE, offset = offset) },
+        ).mapNotNull { saved ->
+            saved.track.takeIf { it.isPlayable != false && it.uri.startsWith("spotify:track:") }
+                ?.toCatalogTrack(saved.addedAt)
         }
     }
 
     private suspend fun webApiPlaylistTracks(id: String): List<CatalogTrack> {
-        val loaded = mutableListOf<CatalogTrack>()
-        var offset = 0
-        while (true) {
-            val page = container.api.playlistTracks(id, limit = WEB_API_PAGE, offset = offset)
-            // Episodes and delisted tracks arrive as a null track, and an
-            // unplayable one is something the engine could only skip.
-            loaded += page.items.mapNotNull { item ->
-                item.track
-                    ?.takeIf { it.isPlayable != false && it.uri.startsWith("spotify:track:") }
-                    ?.toCatalogTrack(item.addedAt)
-            }
-            offset += page.items.size
-            if (page.items.isEmpty() || offset >= page.total) return loaded
+        val network = dev.lelonio.square.data.SpotifyNetworkPolicy.capture()
+        val access = checkNotNull(container.accountLocalData.captureOnline())
+        return readCompleteLibraryPages(
+            checkCurrent = { network.check(); container.accountLocalData.requireOnline(access) },
+            page = { offset -> container.api.playlistTracks(id, limit = WEB_API_PAGE, offset = offset) },
+        ).mapNotNull { item ->
+            item.track?.takeIf { it.isPlayable != false && it.uri.startsWith("spotify:track:") }
+                ?.toCatalogTrack(item.addedAt)
         }
     }
 
@@ -284,23 +260,36 @@ class SpotifyBackend(private val container: SquareApplication) : MusicBackend {
         get() = container.spotifySignedIn && container.webApi.isReady
 
     override suspend fun createPlaylist(name: String): CatalogPlaylist {
-        // The account's own id: Spotify creates a playlist under a user rather
-        // than under "me", even though the token already says who that is.
+        val access = checkNotNull(container.accountLocalData.captureOnline()) { "Spotify account not ready" }
+        val network = dev.lelonio.square.data.SpotifyNetworkPolicy.capture()
+        suspend fun checkCurrent() {
+            currentCoroutineContext().ensureActive()
+            network.check()
+            container.accountLocalData.requireOnline(access)
+        }
+        checkCurrent()
         val userId = container.api.me().id
-        val created = container.api.createPlaylist(userId, PlaylistDetailsDto(name))
-        return CatalogPlaylist(
-            uri = created.uri,
-            name = created.name,
-            artworkUrl = created.images.firstOrNull()?.url,
-        )
+        checkCurrent()
+        check(userId == access.account.id) { "Spotify profile belongs to another account" }
+        val writer = dev.lelonio.square.data.accountWriteApi(container.accountLocalData, access,
+            container.webApi.tokens, dev.lelonio.square.data.PLAYLIST_EDIT_SCOPES, network)
+        val created = writer.createPlaylist(userId, PlaylistDetailsDto(name))
+        checkCurrent()
+        return createdSpotifyPlaylist(created, userId)
     }
 
     override suspend fun renamePlaylist(uri: String, name: String) {
-        container.api.updatePlaylistDetails(uri.substringAfterLast(':'), PlaylistDetailsDto(name))
+        val access = checkNotNull(container.accountLocalData.captureOnline()) { "Spotify account not ready" }
+        dev.lelonio.square.data.accountWriteApi(container.accountLocalData, access,
+            container.webApi.tokens, dev.lelonio.square.data.PLAYLIST_EDIT_SCOPES)
+            .updatePlaylistDetails(uri.substringAfterLast(':'), PlaylistDetailsDto(name))
     }
 
     override suspend fun deletePlaylist(uri: String) {
-        container.api.unfollowPlaylist(uri.substringAfterLast(':'))
+        val access = checkNotNull(container.accountLocalData.captureOnline()) { "Spotify account not ready" }
+        dev.lelonio.square.data.accountWriteApi(container.accountLocalData, access,
+            container.webApi.tokens, dev.lelonio.square.data.PLAYLIST_EDIT_SCOPES)
+            .unfollowPlaylist(uri.substringAfterLast(':'))
     }
 
     override fun owns(uri: String) = uri.startsWith("spotify:")

@@ -58,7 +58,7 @@ class PhoneRemoteTest {
 
         assertTrue(remote.nowPlaying.value.snapshot!!.isPlaying)
         assertTrue(remote.nowPlaying.value.busy)
-        assertEquals(listOf<Command>(Command.TogglePlay), channel.sent)
+        assertEquals(listOf<Command>(Command.Play), channel.sent)
     }
 
     @Test

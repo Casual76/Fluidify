@@ -145,8 +145,13 @@ class AirPodsStartGateTest {
         val f = Fixture(); f.prepare(); f.resume(); f.attempt(); f.disconnect()
         denied(GateReason.DUPLICATE_CONNECTION, f.attempt()); assertTrue(f.attempt("connection-2") is GateResult.Started)
         f.disconnect("connection-2"); f.startAllowed = false
-        denied(GateReason.START_FAILED, f.attempt("connection-3")); denied(GateReason.SUPPRESSED, f.attempt("connection-4"))
+        denied(GateReason.START_FAILED, f.attempt("connection-3"))
+        denied(GateReason.DUPLICATE_CONNECTION, f.attempt("connection-3"))
+        assertFalse(f.store.snapshot().getOrThrow().start.suppressUntilExplicitResume)
         assertEquals(3, f.starts)
+        f.startAllowed = true
+        assertTrue("a new real link recovers without new consent", f.attempt("connection-4") is GateResult.Started)
+        assertEquals(4, f.starts)
     }
     @Test fun revokeAndUnpairPersistBeforeCallbackAdmission() {
         val f = Fixture(); f.prepare(); f.resume(); f.attempt(); f.gate.stop(SuppressReason.REVOKED)
@@ -188,5 +193,21 @@ class AirPodsStartGateTest {
         denied(GateReason.CLEANUP_FAILED, f.resume())
         assertTrue(f.store.snapshot().getOrThrow().start.suppressUntilExplicitResume)
         f.stopThrows = false; f.resume(); assertTrue(f.attempt() is GateResult.Started)
+    }
+    @Test fun monotonicRealConnectionsHaveNoProcessLifetimeReconnectLimitAndRejectOldLinks() {
+        val f = Fixture(); f.prepare(); f.resume()
+        val old = f.admission("link-1").copy(connectionOrdinal = 1)
+        for (ordinal in 1L..256L) {
+            val admission = f.admission("link-$ordinal").copy(connectionOrdinal = ordinal)
+            assertTrue("real connection $ordinal", f.gate.attempt(StartIngress.RECEIVER, admission) is GateResult.Started)
+            assertTrue(f.disconnect(admission.connectionId) is GateResult.Stopped)
+        }
+        assertEquals(256, f.starts)
+        denied(GateReason.DUPLICATE_CONNECTION, f.gate.attempt(StartIngress.COMPANION, old))
+        denied(GateReason.DUPLICATE_CONNECTION, f.gate.attempt(StartIngress.RECEIVER,
+            f.admission("different-callback-id").copy(connectionOrdinal = 256)))
+        assertEquals(256, f.starts)
+        assertTrue(f.gate.attempt(StartIngress.COMPANION,
+            f.admission("link-257").copy(connectionOrdinal = 257)) is GateResult.Started)
     }
 }

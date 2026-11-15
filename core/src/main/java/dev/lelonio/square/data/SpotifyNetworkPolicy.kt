@@ -70,12 +70,28 @@ object SpotifyNetworkPolicy {
         fun check() { if (!isCurrent(revision)) throw Offline() }
         /** Short dispatch/publication admission, serialized with revocation. Never block for IO here. */
         fun <T> admit(block: () -> T): T = synchronized(gate) { check(); block() }
-        fun <T> dispatch(block: () -> T): T {
+        fun <T> dispatch(block: () -> T): T = dispatchWithAdmission({ it() }, block = block)
+
+        /** Pin the native session during a short account admission; perform I/O after its lock exits. */
+        fun <T> dispatchWithAdmission(
+            admission: (() -> Unit) -> Unit,
+            requireNativeScope: Boolean = false,
+            block: () -> T,
+        ): T {
             check()
             val scopes = synchronized(gate) { nativeScopes.toList() }
             val opened = mutableListOf<AutoCloseable>()
+            var admitted = false
             try {
-                scopes.forEach { opened += it(revision) }
+                admission {
+                    kotlin.check(!admitted) { "Duplicate dispatch admission" }
+                    check()
+                    kotlin.check(!requireNativeScope || scopes.isNotEmpty()) { "Native session admission unavailable" }
+                    scopes.forEach { opened += it(revision) }
+                    check()
+                    admitted = true
+                }
+                kotlin.check(admitted) { "Missing dispatch admission" }
                 check()
                 val answer = block()
                 check()

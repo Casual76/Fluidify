@@ -31,8 +31,6 @@ import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Brush
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalDensity
@@ -77,6 +75,8 @@ import dev.antigravity.fluidengine.ui.theme.FluidListGroup
 import dev.antigravity.fluidengine.ui.theme.FluidListRow
 import dev.antigravity.fluidengine.ui.theme.FluidToneTile
 import dev.lelonio.square.R
+import dev.lelonio.square.ui.components.Artwork
+import dev.lelonio.square.data.CatalogTrack
 import dev.lelonio.square.data.HistoryCoverage
 import java.text.NumberFormat
 import java.time.Instant
@@ -148,7 +148,7 @@ fun ListeningStatsLibraryEntry(onClick: () -> Unit, modifier: Modifier = Modifie
     }
 }
 
-/** Pure render surface: no account lookup, remote artwork, imports, player controls or network. */
+/** Read-only listening summary. Artwork uses the same cached cover renderer as the library. */
 @Composable
 fun ListeningStatsPage(
     state: ListeningStatsState,
@@ -162,6 +162,8 @@ fun ListeningStatsPage(
 ) {
     val period = state.request.period
     var detailsExpanded by rememberSaveable(state.request.session.access, period) { mutableStateOf(false) }
+    var calculationExpanded by rememberSaveable(state.request.session.access, period) { mutableStateOf(false) }
+    var importsExpanded by rememberSaveable(state.request.session.access, period) { mutableStateOf(false) }
     var noticeHeight by remember { mutableStateOf(0.dp) }
     val locale = LocalConfiguration.current.locales[0]
     val numbers = NumberFormat.getIntegerInstance(locale)
@@ -224,8 +226,7 @@ fun ListeningStatsPage(
             stats.tracks.firstOrNull()?.let { song ->
                 item("song") {
                     SongOfTheMonth(
-                        name = song.track.name,
-                        artist = song.track.artist,
+                        track = song.track,
                         plays = stringResource(R.string.listening_stats_plays_value, count(song.plays)),
                     )
                 }
@@ -244,6 +245,7 @@ fun ListeningStatsPage(
                                 rank = count((index + 1).toLong()),
                                 name = track.track.name,
                                 detail = track.track.artist,
+                                artwork = track.track,
                                 plays = stringResource(R.string.listening_stats_plays_value, count(track.plays)),
                                 roomy = roomy,
                             )
@@ -287,8 +289,7 @@ fun ListeningStatsPage(
             FluidListGroup(Modifier.testTag("listening-stats-coverage"), glass = true) {
                 FluidListRow(
                     title = stringResource(R.string.listening_stats_partial),
-                    subtitle = stringResource(R.string.listening_stats_partial_detail),
-                    meta = stringResource(R.string.listening_stats_range, time(period.from), time(period.until), period.zone.id),
+                    subtitle = stringResource(R.string.listening_stats_partial_compact),
                     disclosure = false,
                 )
                 if (state.request.session.access != null) {
@@ -296,32 +297,50 @@ fun ListeningStatsPage(
                     FluidListRow(
                         title = stringResource(if (state.request.session.recording) R.string.listening_stats_recording_on
                             else R.string.listening_stats_recording_off),
-                        subtitle = stringResource(R.string.listening_stats_recording_detail),
+                        subtitle = stringResource(R.string.listening_stats_recording_compact),
                         disclosure = false,
                     )
                 }
                 if (stats != null) {
                     FluidListDivider()
                     FluidListRow(
-                        title = stringResource(R.string.listening_stats_sources),
-                        subtitle = stringResource(R.string.listening_stats_sources_counts, count(stats.plays),
-                            count(stats.localPlays), count(stats.spotifyOnlyPlays)),
-                        meta = stringResource(R.string.listening_stats_loaded, time(stats.loadedAt)),
+                        title = stringResource(R.string.listening_stats_local_source), subtitle = "",
+                        badge = { Text(count(stats.localPlays), style = FluidTextStyles.numeric) },
+                        disclosure = false,
+                    )
+                    FluidListDivider()
+                    FluidListRow(
+                        title = stringResource(R.string.listening_stats_spotify_source), subtitle = "",
+                        badge = { Text(count(stats.spotifyOnlyPlays), style = FluidTextStyles.numeric) },
                         disclosure = false,
                     )
                 }
             }
         }
-        item("calculation") {
-            FluidSectionFootnote(stringResource(R.string.listening_stats_minutes_detail))
-            FluidSectionFootnote(stringResource(R.string.listening_stats_artist_note))
+        item("calculation-toggle") {
+            DetailToggle(stringResource(R.string.listening_stats_calculation), calculationExpanded,
+                "listening-stats-calculation-toggle") { calculationExpanded = !calculationExpanded }
+        }
+        if (calculationExpanded) item("calculation") {
+            FluidListGroup(glass = true) {
+                FluidListRow(title = stringResource(R.string.listening_stats_minutes),
+                    subtitle = stringResource(R.string.listening_stats_minutes_detail), disclosure = false)
+                FluidListDivider()
+                FluidListRow(title = stringResource(R.string.listening_stats_artists),
+                    subtitle = stringResource(R.string.listening_stats_artist_note), disclosure = false)
+                FluidListDivider()
+                FluidListRow(title = stringResource(R.string.listening_stats_period),
+                    subtitle = stringResource(R.string.listening_stats_range, time(period.from), time(period.until), period.zone.id),
+                    meta = stats?.let { stringResource(R.string.listening_stats_loaded, time(it.loadedAt)) }, disclosure = false)
+            }
         }
         if (stats != null) {
             item("receipts-header") {
-                FluidSectionHeader(stringResource(R.string.listening_stats_receipts),
-                    detail = stringResource(R.string.listening_stats_receipts_detail))
+                DetailToggle(stringResource(R.string.listening_stats_receipts), importsExpanded,
+                    "listening-stats-imports-toggle") { importsExpanded = !importsExpanded }
             }
-            item("receipts") {
+            if (importsExpanded) item("receipts") {
+                FluidSectionFootnote(stringResource(R.string.listening_stats_receipts_detail))
                 FluidListGroup(Modifier.testTag("listening-stats-receipts-anchor"), glass = true) {
                     if (stats.recentReceipts.isEmpty()) FluidListRow(
                         title = stringResource(R.string.listening_stats_no_imports),
@@ -464,38 +483,53 @@ private fun MonthStep(next: Boolean, enabled: Boolean, onClick: () -> Unit) {
     }
 }
 
-/**
- * The month's headline. The song is the title and the count supports it; the accent arrives as a
- * wash over the pane, which keeps it the same sheet of glass as its neighbours.
- */
+/** A real cover leads the month, with the title and count readable beside it or below it. */
 @Composable
-private fun SongOfTheMonth(name: String, artist: String, plays: String) {
-    val accent = MaterialTheme.colorScheme.primary
+private fun SongOfTheMonth(track: CatalogTrack, plays: String) {
     val locale = LocalConfiguration.current.locales[0]
-    val largeText = LocalDensity.current.fontScale >= 1.5f
+    val scale = LocalDensity.current.fontScale
     FluidListGroup(Modifier.testTag("listening-stats-song"), glass = true) {
-        Column(
-            Modifier
-                .fillMaxWidth()
-                .background(Brush.linearGradient(listOf(accent.copy(alpha = 0.16f), Color.Transparent)))
-                .padding(PanePadding),
-            verticalArrangement = Arrangement.spacedBy(14.dp),
-        ) {
-            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(12.dp)) {
-                StatsTile()
-                Text(stringResource(R.string.listening_stats_song).uppercase(locale),
-                    style = FluidTextStyles.uppercaseCaption,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier.weight(1f).semantics { heading() })
+        Column(Modifier.fillMaxWidth().padding(PanePadding), verticalArrangement = Arrangement.spacedBy(16.dp)) {
+            Text(stringResource(R.string.listening_stats_song).uppercase(locale),
+                style = FluidTextStyles.uppercaseCaption,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                modifier = Modifier.semantics { heading() })
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val stacked = maxWidth / scale < 280.dp
+                val coverSize = if (stacked) 136.dp else 112.dp
+                val cover: @Composable () -> Unit = {
+                    Artwork(track.artworkUrl, track.name,
+                        Modifier.size(coverSize).testTag("listening-stats-song-cover"),
+                        corner = FluidRadius.Card, decodeSize = coverSize)
+                }
+                val words: @Composable () -> Unit = {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Text(track.name, style = MaterialTheme.typography.headlineSmall)
+                        Text(track.artist, style = MaterialTheme.typography.bodyLarge,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text(plays, style = FluidTextStyles.numeric, color = MaterialTheme.colorScheme.primary)
+                    }
+                }
+                if (stacked) Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
+                    cover()
+                    words()
+                } else Row(horizontalArrangement = Arrangement.spacedBy(16.dp), verticalAlignment = Alignment.CenterVertically) {
+                    cover()
+                    Box(Modifier.weight(1f)) { words() }
+                }
             }
-            Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                Text(name, style = if (largeText) MaterialTheme.typography.headlineSmall
-                    else MaterialTheme.typography.headlineMedium)
-                Text(artist, style = MaterialTheme.typography.bodyLarge,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant)
-            }
-            Text(plays, style = FluidTextStyles.numeric)
         }
+    }
+}
+
+@Composable
+private fun DetailToggle(title: String, expanded: Boolean, tag: String, onClick: () -> Unit) {
+    val detailState = stringResource(if (expanded) R.string.listening_stats_hide_details else R.string.listening_stats_show_details)
+    FluidListGroup(glass = true) {
+        FluidListRow(title = title, subtitle = "", disclosure = false,
+            modifier = Modifier.testTag(tag).semantics { stateDescription = detailState },
+            badge = { Icon(if (expanded) PhosphorIcons.Regular.CaretUp else PhosphorIcons.Regular.CaretDown, null) },
+            onClick = onClick)
     }
 }
 
@@ -522,7 +556,9 @@ private fun StatsTotals(plays: String, minutes: String) {
 private fun Metric(value: String, label: String, modifier: Modifier = Modifier) {
     FluidListGroup(modifier, glass = true) {
         Column(Modifier.padding(PanePadding), verticalArrangement = Arrangement.spacedBy(2.dp)) {
-            Text(value, style = FluidTextStyles.largeNumeric)
+            Text(value, style = FluidTextStyles.largeNumeric,
+                color = if (label == stringResource(R.string.listening_stats_plays)) MaterialTheme.colorScheme.primary
+                    else MaterialTheme.colorScheme.tertiary)
             Text(label, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
         }
     }
@@ -555,13 +591,18 @@ private fun RankedDivider(roomy: Boolean) {
  * underneath, where nothing has to share a line with a long name.
  */
 @Composable
-private fun RankedRow(rank: String, name: String, detail: String?, plays: String, roomy: Boolean) {
+private fun RankedRow(rank: String, name: String, detail: String?, plays: String, roomy: Boolean,
+    artwork: CatalogTrack? = null) {
     if (roomy) FluidListRow(
         title = name,
         subtitle = detail.orEmpty(),
         leading = {
-            Text(rank, style = FluidTextStyles.numeric, color = MaterialTheme.colorScheme.onSurfaceVariant,
-                textAlign = TextAlign.Center, modifier = Modifier.widthIn(min = 24.dp))
+            Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(10.dp)) {
+                Text(rank, style = FluidTextStyles.numeric, color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    textAlign = TextAlign.Center, modifier = Modifier.widthIn(min = 24.dp))
+                if (artwork != null) Artwork(artwork.artworkUrl, artwork.name, Modifier.size(44.dp),
+                    corner = FluidRadius.Small, decodeSize = 44.dp)
+            }
         },
         leadingTile = false,
         badge = {
@@ -572,6 +613,10 @@ private fun RankedRow(rank: String, name: String, detail: String?, plays: String
         title = stringResource(R.string.listening_stats_rank, rank, name),
         subtitle = detail ?: plays,
         meta = if (detail != null) plays else null,
+        leading = if (artwork == null) null else ({
+            Artwork(artwork.artworkUrl, artwork.name, Modifier.size(44.dp), corner = FluidRadius.Small, decodeSize = 44.dp)
+        }),
+        leadingTile = false,
         disclosure = false,
     )
 }

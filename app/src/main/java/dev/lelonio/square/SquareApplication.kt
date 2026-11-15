@@ -109,7 +109,7 @@ class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost, c
     val spotifySignedIn: Boolean
         get() = tokenStore.isLoggedIn ||
             dev.lelonio.square.auth.EngineCredentials.exist(this)
-    val recentStore: RecentStore by lazy { RecentStore(this) }
+    val recentStore: RecentStore by lazy { RecentStore(this, listeningHistory) }
     val listeningHistory by lazy { dev.lelonio.square.data.ListeningRepository(this) }
     val accountLocalData by lazy {
         dev.lelonio.square.data.AccountLocalDataCoordinator(
@@ -177,7 +177,7 @@ class SquareApplication : Application(), dev.lelonio.square.playback.CoreHost, c
      * watch read and write the same set. See [dev.lelonio.square.data.LikedTracks].
      */
     val likedTracks: dev.lelonio.square.data.LikedTracks by lazy {
-        dev.lelonio.square.data.LikedTracks(gateway)
+        dev.lelonio.square.data.LikedTracks(gateway, accountLocalData)
     }
 
     /** The phone half of the watch remote; idle unless a watch runs the companion. */

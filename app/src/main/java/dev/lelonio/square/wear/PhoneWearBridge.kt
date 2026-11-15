@@ -37,6 +37,9 @@ import dev.pampa.fluidify.wear.protocol.WearPaths
 import dev.pampa.fluidify.wear.protocol.artKeyOf
 import dev.pampa.fluidify.wear.protocol.logic.StateCoalescer
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.currentCoroutineContext
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -57,6 +60,7 @@ import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * The phone half of the watch remote.
@@ -94,6 +98,8 @@ class PhoneWearBridge(private val app: SquareApplication) {
     private var publishJob: Job? = null
     private var publishDue = Long.MAX_VALUE
     private var observing: Job? = null
+    private val airPodsBatteryProjection = AirPodsBatteryProjection()
+    private var airPodsBattery: AirPodsBatteryObserver? = null
 
     /** A controller held only to wake the service for a command; see [ensurePlayer]. */
     private var waker: MediaController? = null
@@ -104,6 +110,16 @@ class PhoneWearBridge(private val app: SquareApplication) {
      * wrist) both used to see no waker, and each built a controller, one of which was never released.
      */
     private val wakerLock = Mutex()
+    private val playbackRequests = AtomicInteger()
+
+    /** Idle teardown must not race a watch command, query, connection or file transfer. */
+    internal val keepsPlaybackAlive: Boolean
+        get() = waker != null || wakerLock.isLocked || playbackRequests.get() > 0 || files.isTransferring
+
+    internal suspend fun <T> withPlaybackUse(block: suspend () -> T): T = PlaybackService.connections.withClient {
+        playbackRequests.incrementAndGet()
+        try { block() } finally { playbackRequests.decrementAndGet() }
+    }
 
     /** The service's browse tree, for the radio; set by PlaybackService. */
     var browseTree: dev.lelonio.square.playback.MediaBrowseTree? = null
@@ -174,22 +190,30 @@ class PhoneWearBridge(private val app: SquareApplication) {
      * the 404 the tests found. Through the playback service when it runs, which republishes the
      * queue as something the device can resolve first; directly otherwise.
      */
-    private suspend fun transferTo(deviceId: String): Boolean {
+    private suspend fun transferTo(deviceId: String, session: I11WearRequestSession): Boolean {
+        val caller = currentCoroutineContext()
+        val done = CompletableDeferred<Boolean>()
+        val lease = dev.lelonio.square.data.ConnectCommandLease(session.networkPermit(),
+            current = { caller[Job]?.isActive != false && done.isActive && session.isOnlineCurrent() },
+            admission = { enter -> session.use { enter() } })
+      try {
+        lease.check()
         // The list here only changes when the account pushes a cluster update, and nothing would
         // ask for one: a watch that had just appeared stayed missing for the whole wait. One
         // request is enough to have the account answer with the current list. (The watch now asks
         // only once the account has acknowledged it, so the wait is normally already over.)
         if (RemoteConnect.devices.value.none { it.id == deviceId }) {
-            withContext(Dispatchers.IO) { runCatching { NativeBridge.refreshCluster() } }
+            withContext(Dispatchers.IO) { lease.dispatch { NativeBridge.refreshCluster() } }
         }
         withTimeoutOrNull(DEVICE_LISTED_WAIT_MS) {
-            RemoteConnect.devices.first { devices -> devices.any { it.id == deviceId } }
+            RemoteConnect.devices.first { devices -> lease.check(); devices.any { it.id == deviceId } }
         }
-        val done = CompletableDeferred<Boolean>()
-        if (RemoteConnect.request(RemoteConnect.TransferRequest.To(deviceId, done))) {
+        lease.check()
+        if (RemoteConnect.request(RemoteConnect.TransferRequest.To(deviceId, lease, done))) {
             return withTimeoutOrNull(TRANSFER_WAIT_MS) { done.await() } ?: false
         }
-        return withContext(Dispatchers.IO) { RemoteConnect.transferTo(deviceId) }
+        return withContext(Dispatchers.IO) { RemoteConnect.transferTo(deviceId, lease) }
+      } finally { done.complete(false) }
     }
 
     /**
@@ -221,8 +245,8 @@ class PhoneWearBridge(private val app: SquareApplication) {
     private var lastNotificationShowing: Boolean? = null
 
     /** The answer for a track the shared set does not know about, while it is current. */
-    private var likedLookup: Pair<String, Boolean?>? = null
-    private var likedJob: Job? = null
+    @Volatile private var likedLookup: Pair<String, Boolean?>? = null
+    @Volatile private var likedJob: Job? = null
 
     private val listener = object : Player.Listener {
         override fun onEvents(player: Player, events: Player.Events) {
@@ -293,6 +317,8 @@ class PhoneWearBridge(private val app: SquareApplication) {
         attached = CompletableDeferred()
         observing?.cancel()
         observing = null
+        airPodsBattery?.close()
+        airPodsBattery = null
         publishJob?.cancel()
         // The last word: nothing is playing here any more.
         scope.launch { publishNow(force = false) }
@@ -300,6 +326,10 @@ class PhoneWearBridge(private val app: SquareApplication) {
 
     /** Re-publishes when something outside the player changes what the watch should show. */
     private fun startObserving() {
+        if (airPodsBattery == null) {
+            airPodsBattery = AirPodsBatteryObserver(scope, app.airPodsRuntime, app.accountLocalData,
+                airPodsBatteryProjection) { changed(urgent = true) }
+        }
         if (observing?.isActive == true) return
         observing = scope.launch {
             combine(
@@ -421,6 +451,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
             seq = seq.incrementAndGet(),
             sentAtEpochMs = now,
             source = if (elsewhere) PlaybackSource.CONNECT_REMOTE else PlaybackSource.PHONE,
+            airPodsBattery = if (elsewhere) null else airPodsBattery?.snapshot(),
             track = TrackInfo(
                 uri = uri,
                 title = (metadata.title ?: item.mediaMetadata.title)?.toString().orEmpty(),
@@ -530,6 +561,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
     /** The heart for [uri]: known, looked up once, or unknown (null) while the lookup runs. */
     private fun likedFor(uri: String): Boolean? {
         if (!uri.startsWith("spotify:track:")) return null
+        val access = app.accountLocalData.capture() ?: return null
         if (uri in app.likedTracks.state.value) return true
         likedLookup?.takeIf { it.first == uri }?.let { return it.second }
         likedLookup = uri to null
@@ -542,10 +574,10 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 delay(LIKED_RETRY_MS)
                 answer = withContext(Dispatchers.IO) { app.likedTracks.isLiked(uri) }
             }
-            if (likedLookup?.first == uri) {
-                likedLookup = uri to answer
-                changed(urgent = true)
+            val published = app.accountLocalData.use(access) {
+                if (likedLookup?.first == uri) { likedLookup = uri to answer; true } else false
             }
+            if (published) changed(urgent = true)
         }
         return null
     }
@@ -616,7 +648,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
         }
         withContext(Dispatchers.Main.immediate) { publishNow(force = true) }
         // Who is signed in, so a watch that missed a sign-out still hears of it.
-        auth.publishAccount()
+        auth.publishAccount(force = true)
         // Download requests made while the watch was away.
         watchDownloads.flushPending(nodeId)
     }
@@ -638,12 +670,18 @@ class PhoneWearBridge(private val app: SquareApplication) {
 
     /** A command from the watch at [nodeId]. Applies it and acknowledges it. */
     suspend fun onCommand(nodeId: String, envelope: CommandEnvelope) {
-        val access = app.accountLocalData.captureRequest(envelope.accountSession) ?: run {
+        handleCommand(nodeId, envelope)
+    }
+
+    private suspend fun handleCommand(nodeId: String, envelope: CommandEnvelope) {
+        link.noteWatchSeen()
+        val access = WearCommandAccess.capture(app.accountLocalData, envelope) ?: run {
             val ack = CommandAck(envelope.id, false, error = "account-changed")
             link.send(nodeId, WearPaths.ACK, WearCodec.encode(CommandAck.serializer(), ack))
+            refreshWatchAccount()
             return
         }
-        link.noteWatchSeen()
+        val session = I11WearRequestSession(app.accountLocalData, access)
         val requestedPlaying = withContext(Dispatchers.Main.immediate) {
             when (envelope.command) {
                 Command.Play -> true
@@ -655,21 +693,43 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 else -> null
             }
         }
-        val result = catchingNonCancel { withContext(Dispatchers.Main.immediate) {
-            app.accountLocalData.use(access) { Unit }
-            apply(envelope.command, access)
-        } }
+        val result = try {
+            catchingNonCancel {
+                i11WearCommandResult(envelope.command, COMMAND_WAIT_MS) {
+                    withPlaybackUse {
+                        withContext(Dispatchers.Main.immediate) { apply(envelope.command, session) }
+                    }
+                }
+            }
+        } catch (cancelled: CancellationException) {
+            currentCoroutineContext().ensureActive()
+            // Account/domain rejection is not cancellation of this live listener callback.
+            Result.success(if (session.isCurrent()) commandFailure(envelope.command) else "account-changed")
+        }
         val failure = result.exceptionOrNull()
         // The detail stays here, and only its kind: an exception's message can carry a URI or a
         // token, and it is not the watch's to read. The watch is sent a stable code.
         if (failure != null) Log.w(TAG, "command ${envelope.command::class.simpleName} failed: ${failure.javaClass.simpleName}")
-        val error = if (failure != null) AckErrors.INTERNAL else result.getOrNull()
+        val error = if (failure != null) commandFailure(envelope.command) else result.getOrNull()
         // Player callbacks can arrive after the acknowledgement. Its snapshot must already carry
         // the accepted play/pause state so the wrist does not briefly bounce back to the old one.
-        if (!app.accountLocalData.isCurrent(access)) return
+        if (!session.isCurrent()) {
+            val ack = CommandAck(envelope.id, false, error = "account-changed")
+            link.send(nodeId, WearPaths.ACK, WearCodec.encode(CommandAck.serializer(), ack))
+            refreshWatchAccount()
+            return
+        }
         val appliedSeq = if (error == null) withContext(Dispatchers.Main.immediate) { publishNow(force = true, requestedPlaying) } else null
         val ack = CommandAck(id = envelope.id, ok = error == null, error = error, appliedSeq = appliedSeq, sentAtEpochMs = System.currentTimeMillis())
         link.send(nodeId, WearPaths.ACK, WearCodec.encode(CommandAck.serializer(), ack))
+    }
+
+    /** Repair a stale watch's correlation without replaying its rejected command. */
+    internal fun refreshWatchAccount() {
+        scope.launch {
+            catchingNonCancel { auth.publishAccount(force = true) }
+                .onFailure { Log.w(TAG, "watch account refresh failed: ${it.javaClass.simpleName}") }
+        }
     }
 
     /**
@@ -684,50 +744,53 @@ class PhoneWearBridge(private val app: SquareApplication) {
     }
 
     /** Applies [command]; returns an error string, or null when it was applied. Main thread. */
-    private suspend fun apply(command: Command, access: dev.lelonio.square.data.AccountLocalDataCoordinator.Access): String? {
+    private suspend fun apply(command: Command, session: I11WearRequestSession): String? {
+        val needsOnline = command is Command.SetLiked || command is Command.AddToPlaylist ||
+            command is Command.PlayContext || command is Command.AddToQueue ||
+            command is Command.StartRadio || command is Command.Transfer ||
+            (command is Command.SetVolume && ConnectVolume.routesRemotely(command.deviceId))
+        val access = if (needsOnline) {
+            session.onlineAccess(ENGINE_COMMAND_WAIT_MS) { engineReady(it, session::bootstrapCurrent) } ?: return commandFailure(command)
+        } else session.access()
         app.accountLocalData.use(access) { Unit }
         when (command) {
             is Command.SetLiked -> {
                 // A write to the account, which needs the engine's session: a phone the watch
                 // woke has none until its service is up.
-                app.accountLocalData.requireOnline(access)
-                if (!engineReady(ENGINE_COMMAND_WAIT_MS)) return AckErrors.LIKE
-                app.accountLocalData.requireOnline(access)
-                val written = catchingNonCancel { app.likedTracks.set(command.uri, command.liked) }
-                    .onFailure { Log.w(TAG, "like not written: ${it.message}") }
+                val written = catchingNonCancel {
+                    session.onlineIO { NativeBridge.setLiked(command.uri, command.liked) }
+                }
                 if (written.isFailure) return AckErrors.LIKE
-                if (likedLookup?.first == command.uri) likedLookup = command.uri to command.liked
+                session.use {
+                    app.likedTracks.recordConfirmed(command.uri, command.liked)
+                    if (likedLookup?.first == command.uri) likedLookup = command.uri to command.liked
+                }
                 return null
             }
             is Command.AddToPlaylist -> {
-                app.accountLocalData.requireOnline(access)
-                if (!engineReady(ENGINE_COMMAND_WAIT_MS)) return AckErrors.PLAYLIST
-                val written = withContext(Dispatchers.IO) {
-                    app.accountLocalData.requireOnline(access)
-                    catchingNonCancel { NativeBridge.addToPlaylist(command.playlistUri, command.trackUri) }
-                }.onFailure { Log.w(TAG, "not added to the playlist: ${it.message}") }
+                val written = catchingNonCancel {
+                    session.onlineIO { NativeBridge.addToPlaylist(command.playlistUri, command.trackUri) }
+                }
                 return if (written.isSuccess) null else AckErrors.PLAYLIST
             }
             is Command.SetVolume -> {
-                ConnectVolume.set(app, command.level, command.deviceId)
+                val applied = ConnectVolume.set(app, command.level, command.deviceId, session::isCurrent,
+                    networkPermit = if (needsOnline) session.networkPermit() else null) {
+                    action -> session.use(action)
+                }
+                if (!applied) return AckErrors.INTERNAL
                 changed(urgent = true)
                 return null
             }
             is Command.Transfer -> {
                 val here = command.deviceId == PHONE_DEVICE_ID || RemoteConnect.isThisPhone(command.deviceId)
                 if (here) {
-                    // False when nothing is listening for it (the playback service is not up):
-                    // said as a failure rather than acknowledged with nothing happening.
-                    if (!RemoteConnect.request(RemoteConnect.TransferRequest.Here)) {
-                        wakePlayback()
-                        withTimeoutOrNull(LISTENER_WAIT_MS) {
-                            while (!RemoteConnect.request(RemoteConnect.TransferRequest.Here)) delay(ENGINE_POLL_MS)
-                            true
-                        } ?: return AckErrors.TRANSFER
-                    }
-                    return null
+                    // A flow subscriber is only delivery. The service completes this request
+                    // after the requested track is playing through the phone's renderer.
+                    if (ensurePlayer() == null) return AckErrors.TRANSFER
+                    return if (RemoteConnect.requestHere(session::isOnlineCurrent)) null else AckErrors.TRANSFER
                 }
-                return if (transferTo(command.deviceId)) null else AckErrors.TRANSFER
+                return if (transferTo(command.deviceId, session)) null else AckErrors.TRANSFER
             }
             is Command.SetPinned -> {
                 if (app.pinnedPlaylists.isPinned(command.uri) != command.pinned) app.pinnedPlaylists.toggle(command.uri)
@@ -747,18 +810,19 @@ class PhoneWearBridge(private val app: SquareApplication) {
             else -> Unit
         }
         val player = ensurePlayer() ?: return AckErrors.PHONE_UNAVAILABLE
-        app.accountLocalData.use(access) { Unit }
-        // These read the catalogue through the engine's session, which a phone the watch has just
-        // woken does not have yet: waited for, within the watch's patience, then tried anyway.
-        if (command is Command.PlayContext || command is Command.AddToQueue || command is Command.StartRadio) {
-            app.accountLocalData.requireOnline(access)
-            engineReady(ENGINE_COMMAND_WAIT_MS)
+        val needsRestoredQueue = command == Command.Play || command == Command.TogglePlay ||
+            command == Command.Next || command == Command.Previous || command is Command.PlayQueueIndex ||
+            command is Command.SeekTo || command is Command.SetShuffle || command is Command.SetRepeat
+        if (needsRestoredQueue && !session.awaitRestoredQueue(QUEUE_WAIT_MS) { player.mediaItemCount > 0 }) {
+            return AckErrors.EMPTY
         }
-        app.accountLocalData.use(access) { Unit }
+        val commandAccess = session.access() // Same-binding LOCAL -> verified ONLINE may finish while binding.
+        app.accountLocalData.use(commandAccess) { Unit }
+        if (needsOnline) app.accountLocalData.requireOnline(commandAccess)
         when (command) {
-            Command.Play -> playWhenLoaded(player, access)
+            Command.Play -> playRestored(player, session)
             Command.Pause -> player.pause()
-            Command.TogglePlay -> if (player.isPlaying || player.playWhenReady) player.pause() else playWhenLoaded(player, access)
+            Command.TogglePlay -> if (player.isPlaying || player.playWhenReady) player.pause() else playRestored(player, session)
             Command.Next -> if (!dev.lelonio.square.playback.PlaybackTransport.skip(player, forward = true)) {
                 return if (player.mediaItemCount > 0 && !RemoteConnect.elsewhereActive.value) AckErrors.END_OF_QUEUE else AckErrors.NOTHING_TO_SKIP
             }
@@ -777,7 +841,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
                     ?: (0 until player.mediaItemCount).firstOrNull { player.getMediaItemAt(it).mediaId == command.uri }
                     ?: return AckErrors.NOT_IN_QUEUE
                 player.seekTo(index, 0)
-                playWhenLoaded(player, access)
+                playRestored(player, session)
             }
             is Command.StartRadio -> {
                 val tree = browseTree ?: return AckErrors.PHONE_UNAVAILABLE
@@ -786,7 +850,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
             }
             is Command.PlayContext -> {
                 val tracks = withContext(Dispatchers.IO) { app.spotifyBackend.tracksOf(command.contextUri) }
-                app.accountLocalData.requireOnline(access)
+                app.accountLocalData.requireOnline(commandAccess)
                 if (tracks.isEmpty()) return AckErrors.EMPTY
                 val start = command.startTrackUri?.let { uri -> tracks.indexOfFirst { it.uri == uri } }?.takeIf { it >= 0 } ?: 0
                 player.setMediaItems(
@@ -802,7 +866,7 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 val track = withContext(Dispatchers.IO) {
                     dev.lelonio.square.data.Catalog.tracks(listOf(command.uri)).firstOrNull()
                 } ?: return AckErrors.NOT_FOUND
-                app.accountLocalData.requireOnline(access)
+                app.accountLocalData.requireOnline(commandAccess)
                 player.addMediaItem(track.toQueueItem(playNext = true))
             }
             else -> return AckErrors.UNSUPPORTED
@@ -810,19 +874,12 @@ class PhoneWearBridge(private val app: SquareApplication) {
         return null
     }
 
-    /**
-     * Play, after the restored queue has had a moment to arrive.
-     *
-     * A service woken by the watch restores the saved queue asynchronously; a
-     * play() issued before it lands has nothing to play and is lost.
-     */
-    private suspend fun playWhenLoaded(player: Player, access: dev.lelonio.square.data.AccountLocalDataCoordinator.Access) {
-        withTimeoutOrNull(QUEUE_WAIT_MS) {
-            while (player.mediaItemCount == 0) delay(100)
+    /** The caller has awaited the saved queue under this request's account authority. */
+    private fun playRestored(player: Player, session: I11WearRequestSession) {
+        session.use {
+            if (player.playbackState == Player.STATE_IDLE) player.prepare()
+            player.play()
         }
-        app.accountLocalData.use(access) { Unit }
-        if (player.playbackState == Player.STATE_IDLE) player.prepare()
-        player.play()
     }
 
     /**
@@ -847,16 +904,25 @@ class PhoneWearBridge(private val app: SquareApplication) {
      * watch's commands do; inside a budget, because the watch is waiting for the answer and an
      * answer that comes after its timeout is no answer at all.
      */
-    suspend fun engineReady(budgetMs: Long): Boolean {
+    suspend fun engineReady(budgetMs: Long, isCurrent: () -> Boolean = { true }): Boolean {
+        if (!isCurrent()) return false
+        val permit = runCatching { dev.lelonio.square.data.SpotifyNetworkPolicy.capture() }.getOrNull() ?: return false
         fun connected() = runCatching { NativeBridge.isConnected }.getOrDefault(false)
-        if (connected()) return true
+        if (connected()) return isCurrent()
         return withTimeoutOrNull(budgetMs) {
+            if (!isCurrent()) return@withTimeoutOrNull false
             wakePlayback()
+            if (!isCurrent()) return@withTimeoutOrNull false
             // Asked as well, for a service that is up with its engine stopped; a background start
             // can be refused, and binding above is what counts.
             runCatching { dev.lelonio.square.playback.PlaybackService.connect(app) }
-            while (!connected()) delay(ENGINE_POLL_MS)
-            true
+            while (!connected()) {
+                if (!isCurrent()) return@withTimeoutOrNull false
+                permit.check()
+                delay(ENGINE_POLL_MS)
+            }
+            permit.check()
+            isCurrent()
         } ?: false
     }
 
@@ -873,6 +939,13 @@ class PhoneWearBridge(private val app: SquareApplication) {
      * arriving meanwhile saw "none" and made another.
      */
     private suspend fun ensurePlayer(): Player? {
+        return withTimeoutOrNull(ATTACH_WAIT_MS) {
+            PlaybackService.connections.withClient { acquirePlayer() }
+        }
+    }
+
+    /** Called only while a client lease excludes idle retirement. */
+    private suspend fun acquirePlayer(): Player? {
         player?.let { return it }
         wakerLock.withLock {
             if (waker == null) {
@@ -890,10 +963,15 @@ class PhoneWearBridge(private val app: SquareApplication) {
                 }
             }
         }
-        return withTimeoutOrNull(ATTACH_WAIT_MS) { attached.await() }
+        return attached.await()
     }
 
     init {
+        app.accountLocalData.observe {
+            likedJob?.cancel()
+            likedLookup = null
+            scope.launch { changed(urgent = true) }
+        }
         scope.launch {
             app.accountLocalData.access.collect { access -> auth.publishAccount(access != null) }
         }
@@ -923,8 +1001,17 @@ class PhoneWearBridge(private val app: SquareApplication) {
         /** How long what the system said about the media notification is trusted; see [notificationProbe]. */
         private const val NOTIFICATION_PROBE_TTL_MS = 1_000L
 
-        /** For a playback service just woken to start listening for a transfer. */
-        private const val LISTENER_WAIT_MS = 2_000L
+        /** Finish the operation before the listener's 9 s callback deadline, including negative ack. */
+        private const val COMMAND_WAIT_MS = 8_000L
+
+        internal fun commandFailure(command: Command): String = when (command) {
+            is Command.SetLiked -> AckErrors.LIKE
+            is Command.AddToPlaylist -> AckErrors.PLAYLIST
+            is Command.Transfer -> AckErrors.TRANSFER
+            is Command.PlayContext -> AckErrors.CONTEXT
+            is Command.StartRadio -> AckErrors.RADIO
+            else -> AckErrors.INTERNAL
+        }
 
         /** What this phone build can do for a watch. Grows with each milestone. */
         val PHONE_FEATURES: Set<String> = setOf(

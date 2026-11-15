@@ -17,6 +17,12 @@ import dev.lelonio.square.ui.navigation.PlaylistReadTicket
 import dev.lelonio.square.ui.requests.AccountAccessTransitions
 import dev.lelonio.square.ui.requests.RequestOwnership
 import dev.lelonio.square.ui.requests.SearchRequestCoordinator
+import dev.lelonio.square.ui.requests.I07FeedRequests
+import dev.lelonio.square.ui.requests.I07FeedSection
+import dev.lelonio.square.ui.requests.I07FeedStatus
+import dev.lelonio.square.ui.requests.I07FeedAvailability
+import dev.lelonio.square.ui.requests.I07LatestRequest
+import dev.lelonio.square.ui.requests.I07RequestProof
 import dev.lelonio.square.R
 import dev.lelonio.square.data.Catalog
 import dev.lelonio.square.data.SpotifyNetworkPolicy
@@ -56,6 +62,7 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.drop
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 
@@ -212,77 +219,76 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         /** Playlists and albums the account played last, on any device. */
         val jumpBackIn: List<SearchItem> = emptyList(),
         val loading: Boolean = false,
+        val sections: Map<I07FeedSection, I07FeedStatus> = emptyMap(),
+        val availability: I07FeedAvailability = I07FeedAvailability.AVAILABLE,
     )
 
     private val _feed = MutableStateFlow(FeedState())
     val feed: StateFlow<FeedState> = _feed.asStateFlow()
     private var feedJob: Job? = null
 
-    /**
-     * Loads the feed, quietly.
-     *
-     * Each section is fetched on its own and a failure drops just that section:
-     * top artists need the `user-top-read` scope, and an account that connected
-     * its application before that scope was asked for answers 403 there while
-     * everything else still works. One combined call would lose the lot.
-     */
-    fun loadFeed() {
-        if (!container.webApi.isReady || feedJob?.isActive == true) return
-        if (_feed.value.newReleases.isNotEmpty()) return
-
-        _feed.value = _feed.value.copy(loading = true)
-        feedJob = viewModelScope.launch {
-            val releases = runCatching {
-                container.api.newReleases().albums?.items.orEmpty().mapNotNull { album ->
-                    SearchItem(
-                        uri = album.uri ?: return@mapNotNull null,
-                        title = album.name,
-                        subtitle = album.artists.joinToString(", ") { it.name },
-                        artworkUrl = album.images.firstOrNull()?.url,
-                    )
-                }
-            }.onFailure { android.util.Log.w(TAG, "new releases unavailable: ${describe(it)}") }
-                .getOrDefault(emptyList())
-
-            val artists = runCatching {
-                container.api.topArtists().items.mapNotNull { artist ->
-                    SearchItem(
-                        uri = artist.uri ?: return@mapNotNull null,
-                        title = artist.name,
-                        subtitle = string(R.string.artist),
-                        artworkUrl = artist.images.firstOrNull()?.url,
-                    )
-                }
-            }.onFailure { android.util.Log.w(TAG, "top artists unavailable: ${describe(it)}") }
-                .getOrDefault(emptyList())
-
-            val onRepeat = topTracks("short_term")
-            val allTime = topTracks("long_term")
-
-            // Built from the artists the account actually listens to rather
-            // than from the catalogue-wide new releases above: those are the
-            // same for everyone, and half of them are records the account would
-            // never open.
-            val fresh = freshFromArtists(artists)
-
-            val jumpBackIn = jumpBackIn()
-
+    private val feedRequests by lazy {
+        I07FeedRequests(viewModelScope, publish = { value ->
             _feed.value = FeedState(
-                newReleases = releases,
-                topArtists = artists,
-                topTracks = onRepeat,
-                allTimeTracks = allTime,
-                fromYourArtists = fresh,
-                jumpBackIn = jumpBackIn,
-                loading = false,
+                newReleases = value.newReleases, topArtists = value.topArtists,
+                topTracks = value.topTracks, allTimeTracks = value.allTimeTracks,
+                fromYourArtists = value.fromYourArtists, jumpBackIn = value.jumpBackIn,
+                loading = value.loading, sections = value.sections, availability = value.availability,
             )
-        }
+        }, now = android.os.SystemClock::elapsedRealtime)
     }
 
-    private suspend fun topTracks(range: String): List<CatalogTrack> = runCatching {
+    /** Failed sections remain retryable; a successful empty section is a complete answer. */
+    fun loadFeed(force: Boolean = false) {
+        if (SpotifyNetworkPolicy.manual.value || dev.lelonio.square.playback.OfflineMode.active.value) {
+            feedRequests.unavailable(I07FeedAvailability.OFFLINE)
+            return
+        }
+        if (!container.webApi.isReady) {
+            feedRequests.unavailable(I07FeedAvailability.NEEDS_SETUP)
+            return
+        }
+        val accounts = container.accountLocalData
+        val access = accounts.captureOnline() ?: run {
+            feedRequests.unavailable(I07FeedAvailability.OFFLINE)
+            return
+        }
+        val permit = runCatching { SpotifyNetworkPolicy.capture() }.getOrElse { return }
+        val webGeneration = container.webApi.tokens.generation
+        val proof = I07RequestProof.online(accounts, access, permit) {
+            container.webApi.tokens.generation == webGeneration
+        }
+        feedJob = runCatching {
+            feedRequests.load(proof, I07FeedRequests.Readers(
+                verify = {
+                    // Separate Web API credentials must also belong to this listener.
+                    val profile = container.api.me()
+                    proof.ensureCurrent()
+                    if (profile.id != access.account.id) {
+                        rejectWebApiIdentity()
+                        throw dev.lelonio.square.auth.WebApiAccount.IdentityMismatch()
+                    }
+                },
+                releases = {
+                    container.api.newReleases().albums?.items.orEmpty().mapNotNull { album ->
+                        SearchItem(album.uri ?: return@mapNotNull null, album.name,
+                            album.artists.joinToString(", ") { it.name }, album.images.firstOrNull()?.url)
+                    }
+                },
+                artists = {
+                    container.api.topArtists().items.mapNotNull { artist ->
+                        SearchItem(artist.uri ?: return@mapNotNull null, artist.name,
+                            string(R.string.artist), artist.images.firstOrNull()?.url)
+                    }
+                },
+                topTracks = { topTracks("short_term") }, allTime = { topTracks("long_term") },
+                fromArtists = { freshFromArtists(it, proof) }, recentContexts = { jumpBackIn() },
+            ), force)
+        }.getOrNull()
+    }
+
+    private suspend fun topTracks(range: String): List<CatalogTrack> =
         container.api.topTracks(timeRange = range).items.map { it.toCatalogTrack() }
-    }.onFailure { android.util.Log.w(TAG, "top tracks ($range) unavailable: ${describe(it)}") }
-        .getOrDefault(emptyList())
 
     /**
      * Records from the account's own artists, newest first.
@@ -292,12 +298,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * older than a year is dropped — "new from artists you listen to" that
      * opens on a 2019 album is just a discography.
      */
-    private suspend fun freshFromArtists(artists: List<SearchItem>): List<SearchItem> {
+    private suspend fun freshFromArtists(artists: List<SearchItem>, proof: I07RequestProof): List<SearchItem> {
         val cutoff = java.time.LocalDate.now().minusMonths(12).toString()
         return artists.take(FRESH_ARTISTS).flatMap { artist ->
-            runCatching {
-                container.api.artistAlbums(artist.uri.substringAfterLast(':'), limit = 6).items
-            }.getOrDefault(emptyList())
+            currentCoroutineContext().ensureActive()
+            proof.ensureCurrent()
+            container.api.artistAlbums(artist.uri.substringAfterLast(':'), limit = 6).items
+                .also { proof.ensureCurrent() }
         }
             .filter { (it.releaseDate ?: "") >= cutoff }
             .sortedByDescending { it.releaseDate }
@@ -322,9 +329,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * already in the rootlist — so those two are shown and anything else (an
      * editorial playlist, a radio) is left out rather than guessed at.
      */
-    private suspend fun jumpBackIn(): List<SearchItem> = runCatching {
+    private suspend fun jumpBackIn(): List<SearchItem> {
         val mine = (_state.value as? UiState.Ready)?.playlists.orEmpty().associateBy { it.uri }
-        container.api.recentlyPlayed().items.mapNotNull { play ->
+        return container.api.recentlyPlayed().items.mapNotNull { play ->
             val context = play.context?.uri
             when {
                 context != null && mine.containsKey(context) -> mine[context]?.let {
@@ -344,8 +351,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 else -> null
             }
         }.distinctBy { it.uri }.take(FEED_ROW)
-    }.onFailure { android.util.Log.w(TAG, "play history unavailable: ${describe(it)}") }
-        .getOrDefault(emptyList())
+    }
 
     /** The Spotify Connect device picker. */
     data class DevicesState(
@@ -583,97 +589,106 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         _resumeHere.emit(ResumeHere(tracks, index, context, remote.positionMs))
     }
 
-    /**
-     * Moves one device's volume, this phone's included.
-     *
-     * Written straight into the list as well as sent, because the cluster
-     * answers a beat later and a slider that waits for the account to agree
-     * with it springs back under the finger.
-     */
+    private val deviceVolumeRevisions = java.util.concurrent.ConcurrentHashMap<String, Long>()
+
+    /** Publishes accepted levels only; a rejected write keeps the confirmed cluster level. */
     fun setDeviceVolume(deviceId: String, raw: Int) {
         val clamped = raw.coerceIn(0, MAX_VOLUME)
-        _devices.value = _devices.value.copy(
-            devices = _devices.value.devices.map { device ->
-                if (device.id == deviceId) device.copy(volume = clamped) else device
-            },
-        )
-        viewModelScope.launch(Dispatchers.IO) {
-            if (dev.lelonio.square.data.RemoteConnect.isThisPhone(deviceId)) {
-                runCatching { NativeBridge.volume = clamped }
-                    .onFailure { android.util.Log.w(TAG, "own volume: ${describe(it)}") }
-            } else {
-                dev.lelonio.square.data.RemoteConnect.setVolume(deviceId, clamped)
+        val accounts = container.accountLocalData
+        val access = accounts.capture() ?: return
+        val network = runCatching { SpotifyNetworkPolicy.capture() }.getOrNull()
+        val revision = (deviceVolumeRevisions[deviceId] ?: 0L) + 1
+        deviceVolumeRevisions[deviceId] = revision
+        fun current() = accounts.isCurrent(access) && deviceVolumeRevisions[deviceId] == revision
+        viewModelScope.launch {
+            val applied = try {
+                withContext(Dispatchers.IO) {
+                    if (!current()) false
+                    else if (dev.lelonio.square.data.RemoteConnect.isThisPhone(deviceId)) {
+                        accounts.use(access) {
+                            if (!current()) return@use false
+                            NativeBridge.volume = clamped
+                            true
+                        }
+                    } else dev.lelonio.square.data.RemoteConnect.setVolume(deviceId, clamped,
+                        checkNotNull(network) { "Volume network request unavailable" },
+                        admission = { enter -> accounts.use(access) {
+                            check(current()) { "Volume request superseded" }
+                            accounts.requireOnline(access)
+                            enter()
+                        } },
+                    )
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                currentCoroutineContext().ensureActive()
+                false
+            } catch (_: Exception) { false }
+            if (!current()) return@launch
+            accounts.use(access) {
+                _devices.value = if (applied) _devices.value.copy(
+                    devices = _devices.value.devices.map { device ->
+                        if (device.id == deviceId) device.copy(volume = clamped) else device
+                    }, error = null,
+                ) else _devices.value.copy(error = string(R.string.wf_i11_volume_failed))
             }
         }
     }
 
-    fun transferPlayback(deviceId: String, positionMs: Long = 0L) = viewModelScope.launch {
-        if (_devices.value.switchingTo != null) return@launch
-        _devices.value = _devices.value.copy(switchingTo = deviceId)
-        try {
-            switchTo(deviceId, positionMs)
-        } finally {
-            _devices.value = _devices.value.copy(switchingTo = null)
+    fun transferPlayback(deviceId: String, positionMs: Long = 0L) {
+        val accounts = container.accountLocalData
+        val access = accounts.captureOnline() ?: return
+        val permit = runCatching { SpotifyNetworkPolicy.capture() }.getOrNull() ?: return
+        viewModelScope.launch {
+            if (_devices.value.switchingTo != null) return@launch
+            val caller = currentCoroutineContext()
+            val lease = dev.lelonio.square.data.accountConnectLease(accounts, access, permit,
+                current = { caller[kotlinx.coroutines.Job]?.isActive != false })
+            if (!lease.isCurrent()) return@launch
+            _devices.value = _devices.value.copy(switchingTo = deviceId)
+            try {
+                switchTo(deviceId, positionMs, access, lease)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                currentCoroutineContext().ensureActive()
+            } catch (failure: Exception) {
+                if (lease.isCurrent()) _devices.value = _devices.value.copy(error = describe(failure))
+            } finally {
+                _devices.value = _devices.value.copy(switchingTo = null)
+            }
         }
     }
 
-    private suspend fun switchTo(deviceId: String, positionMs: Long) {
-        val devices = dev.lelonio.square.data.RemoteConnect.devices.value
-        android.util.Log.i(TAG, "device chosen: $deviceId, ${devices.size} known")
-        // Asked of the engine rather than looked up in the list: the list is
-        // filled by cluster updates and is empty until the first one arrives,
-        // and a handover chosen in that window took the wrong road entirely.
+    private suspend fun switchTo(deviceId: String, positionMs: Long,
+        access: dev.lelonio.square.data.AccountLocalDataCoordinator.Access,
+        lease: dev.lelonio.square.data.ConnectCommandLease,
+    ) {
+        lease.check()
         if (dev.lelonio.square.data.RemoteConnect.isThisPhone(deviceId)) {
-            takeBackPlayback().join()
+            dev.lelonio.square.data.RemoteConnect.requestHere(lease::isCurrent)
             return
         }
-        // The queue is republished as the playlist it came from first, so
-        // whatever carries the handover has something resolvable to carry; see
-        // NativeBridge.publishContext.
         if (!dev.lelonio.square.data.RemoteConnect.elsewhereActive.value) {
             val before = NativeBridge.stateAcks
             val republished = withContext(Dispatchers.IO) {
-                runCatching { SpotifyNetworkPolicy.capture().dispatch { NativeBridge.publishContext(positionMs.toInt()) } }
-                    .onFailure { android.util.Log.w(TAG, "context not republished: $it") }
-                    .getOrDefault(false)
+                lease.dispatch { NativeBridge.publishContext(positionMs.toInt()) }
             }
-            // Only when something actually changed does Spotify need to see it
-            // first, and then exactly until it has answered. A queue that
-            // already carried its playlist goes over at once, which is nearly
-            // every handover.
             if (republished) dev.lelonio.square.data.RemoteConnect.awaitStatePublished(before)
+            lease.check()
         }
-
-        // Spotify's own transfer, when the account has an application to ask it
-        // with. The dealer command below is the same word without the state:
-        // its `data` field is the playback being moved, and building that is
-        // Spotify's job in this call. Sent without it, the device does become
-        // active and has nothing to play, which is a progress bar advancing over
-        // silence and controls that answer to nothing.
         if (!container.webApi.isReady) {
             withContext(Dispatchers.IO) {
-                dev.lelonio.square.data.RemoteConnect.transferTo(deviceId)
+                dev.lelonio.square.data.RemoteConnect.transferTo(deviceId, lease)
             }
             return
         }
-
-        runCatching { container.api.transferPlayback(TransferRequestDto(listOf(deviceId))) }
-            .onSuccess {
-                // Spotify reports the move a beat after acknowledging it, so the
-                // list is re-read rather than edited optimistically.
-                delay(TRANSFER_SETTLE_MS)
-                // Named, not assumed: a transfer that lands on a device which
-                // then sits there paused is the one failure this cannot see
-                // from here, and asking the device by name to play costs one
-                // request that is harmless when it is playing already.
-                runCatching { container.api.play(deviceId) }
-                    .onFailure { android.util.Log.i(TAG, "play on $deviceId: ${describe(it)}") }
-                refreshDevices()
-            }
-            .onFailure {
-                android.util.Log.e(TAG, "transfer failed: ${chain(it)}", it)
-                _devices.value = _devices.value.copy(error = describe(it))
-            }
+        val api = dev.lelonio.square.data.accountWriteApi(container.accountLocalData, access,
+            container.webApi.tokens, "user-modify-playback-state", lease.permit)
+        lease.check()
+        api.transferPlayback(TransferRequestDto(listOf(deviceId)))
+        delay(TRANSFER_SETTLE_MS)
+        lease.check()
+        api.play(deviceId)
+        lease.check()
+        refreshDevices()
     }
 
     /**
@@ -704,6 +719,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
          */
         val liked: Boolean = false,
         val error: String? = null,
+        internal val revision: Long = 0,
+        internal val accountSession: String? = null,
     )
 
     private val _addToPlaylist = MutableStateFlow(AddToPlaylistState())
@@ -714,7 +731,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      *   shows the same picker in its own panel and would otherwise get both.
      */
     fun openAddToPlaylist(trackUri: String?, trackTitle: String, asSheet: Boolean = true) {
-        _addToPlaylist.value = AddToPlaylistState(
+      container.accountLocalData.locked {
+        val account = container.accountLocalData.capture()
+        _addToPlaylist.update { previous -> AddToPlaylistState(
+            revision = previous.revision + 1,
+            accountSession = account?.requestSession,
             open = asSheet,
             trackUri = trackUri,
             trackTitle = trackTitle,
@@ -727,18 +748,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // ones this account may add to, and offering the others is a row
             // that fails with "not yours" after the tap.
             playlists = (_state.value as? UiState.Ready)?.playlists.orEmpty()
-                .filter { it.uri.startsWith("spotify:playlist:") && it.editable == true }
+                .let { rows -> dev.lelonio.square.ui.library.editableCollectionDestinations(
+                    rows, account?.account?.id) }
                 .map { it.copy(name = it.name.ifBlank { string(R.string.unnamed) }) },
             liked = trackUri != null && trackUri in _liked.value,
             // No Web API condition: every write here goes through the access
             // point (see addToPlaylist), so a missing developer app is no
             // reason to refuse the sheet.
             error = if (trackUri?.startsWith("spotify:track:") != true) string(R.string.track_cannot_be_added) else null,
-        )
+        ) }
+      }
     }
 
     fun closeAddToPlaylist() {
-        _addToPlaylist.value = _addToPlaylist.value.copy(open = false)
+        _addToPlaylist.update { it.copy(open = false, busy = null, revision = it.revision + 1) }
     }
 
     /**
@@ -751,72 +774,60 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     fun addToPlaylist(playlist: CatalogPlaylist) {
         val current = _addToPlaylist.value
-        val trackUri = current.trackUri ?: return
-        if (current.busy != null) return
-        // Liked Songs is in this list like any other, and is the one entry that
-        // is not a playlist: it is the account's library, saved to by its own
-        // endpoint. Picking it is what puts the heart on the track, and picking
-        // anything else is what puts the tick there.
+        val trackUri = current.trackUri?.takeIf { it.startsWith("spotify:track:") } ?: return
+        if (current.busy != null || current.playlists.none { it.uri == playlist.uri }) return
+        val generation = current.revision + 1
+        val sameSession = current.accountSession != null &&
+            current.accountSession == container.accountLocalData.captureOnline()?.requestSession
+        val lease = if (sameSession) dev.lelonio.square.ui.library.CollectionWriteLease.capture(container.accountLocalData) else null
+        if (lease == null) {
+            _addToPlaylist.compareAndSet(current, current.copy(error = string(R.string.add_failed, playlist.name)))
+            return
+        }
         val toLibrary = playlist.uri.endsWith(":collection")
-        // Picking Liked Songs when the track is already there takes it out
-        // again: the heart is the one mark in this list that can be undone,
-        // and pressing it twice is how everything else undoes a like.
         val unsaving = toLibrary && current.liked
-
-        _addToPlaylist.value =
-            current.copy(busy = playlist.uri, done = null, removed = null, error = null)
+        if (!_addToPlaylist.compareAndSet(current,
+                current.copy(revision = generation, busy = playlist.uri, done = null, removed = null, error = null))) return
         viewModelScope.launch {
-            runCatching {
-                when {
-                    // Both through the access point, for the same reason the
-                    // playlist write is; see native/src/collection.rs.
-                    unsaving -> withContext(Dispatchers.IO) {
-                        SpotifyNetworkPolicy.capture().dispatch { NativeBridge.setLiked(trackUri, false) }
-                    }
-                    toLibrary -> withContext(Dispatchers.IO) {
-                        SpotifyNetworkPolicy.capture().dispatch { NativeBridge.setLiked(trackUri, true) }
-                    }
-                    // Through the access point, not the Web API, which cannot
-                    // do this at all: the listener's own registered application
-                    // is refused it outright and the shared client id is out of
-                    // quota. See native/src/playlists.rs for the measurements.
-                    else -> withContext(Dispatchers.IO) {
-                        SpotifyNetworkPolicy.capture().dispatch { NativeBridge.addToPlaylist(playlist.uri, trackUri) }
+            try {
+                withContext(Dispatchers.IO) {
+                    lease.dispatch {
+                        if (toLibrary) NativeBridge.setLiked(trackUri, !unsaving)
+                        else NativeBridge.addToPlaylist(playlist.uri, trackUri)
                     }
                 }
-            }
-                .onSuccess {
-                    _addToPlaylist.value = _addToPlaylist.value.copy(
-                        busy = null,
-                        done = if (unsaving) null else playlist.name,
-                        removed = if (unsaving) playlist.name else null,
-                        liked = toLibrary && !unsaving,
-                    )
-                    // Known at once, rather than when that playlist is next
-                    // read: the tick is about the track, and the track is in a
-                    // playlist from this moment.
-                    if (unsaving) _liked.value = _liked.value - trackUri
-                    else if (toLibrary) _liked.value = _liked.value + trackUri
+                currentCoroutineContext().ensureActive()
+                lease.confirm {
+                    // I11's shared confirmation method also clears an earlier negative lookup.
+                    if (toLibrary) container.likedTracks.recordConfirmed(trackUri, !unsaving)
                     else _inPlaylists.value = _inPlaylists.value + trackUri
-                    // The detail screen holds a list resolved before this track
-                    // was in it; if that is the playlist just written to, read
-                    // it again.
+                    _addToPlaylist.update { shown -> if (shown.revision == generation) shown.copy(
+                            busy = null,
+                            done = if (unsaving) null else playlist.name,
+                            removed = if (unsaving) playlist.name else null,
+                            liked = if (toLibrary) !unsaving else shown.liked,
+                        ) else shown }
                     invalidateContext(playlist.uri)
                     if (_playlist.value.uri == playlist.uri) openPlaylist(playlist)
                 }
-                .onFailure { failure ->
-                    val said = spotifySays(failure)
-                    android.util.Log.e(TAG, "add to playlist failed: ${chain(failure)} / $said", failure)
-                    _addToPlaylist.value = _addToPlaylist.value.copy(
-                        busy = null,
-                        error = when {
-                            unsaving -> string(R.string.remove_failed, playlist.name)
-                            (failure as? retrofit2.HttpException)?.code() == 403 ->
-                                whyForbidden(said)
-                            else -> string(R.string.add_failed, playlist.name)
-                        },
-                    )
-                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                currentCoroutineContext().ensureActive()
+                if (!lease.accountCurrent()) return@launch
+                val said = spotifySays(failure)
+                android.util.Log.e(TAG, "add to playlist failed: ${chain(failure)} / $said", failure)
+                _addToPlaylist.update { shown -> if (shown.revision == generation) shown.copy(
+                    busy = null,
+                    error = when {
+                        unsaving -> string(R.string.remove_failed, playlist.name)
+                        (failure as? retrofit2.HttpException)?.code() == 403 -> whyForbidden(said)
+                        else -> string(R.string.add_failed, playlist.name)
+                    },
+                ) else shown }
+            } finally {
+                _addToPlaylist.update { shown -> dev.lelonio.square.ui.library.finishCollectionPickerAttempt(
+                    shown, generation, playlist.uri, string(R.string.wf_root_collection_unconfirmed)) }
+            }
         }
     }
 
@@ -842,6 +853,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         playlistEntries.entry(id, CatalogPlaylist(uri.orEmpty(), "")).state.asStateFlow()
     internal fun playlistPageMemory(id: String) = playlistEntries.memory(id)
     internal fun isCurrentPlaylistEntry(id: String) = playlistEntries.activeId == id
+    internal fun enqueueReadyCollection(id: String, enqueue: (List<CatalogTrack>) -> Unit): Boolean {
+        if (!isCurrentPlaylistEntry(id)) return false
+        val tracks = _playlist.value.collectionQueueTracks() ?: return false
+        enqueue(tracks)
+        return true
+    }
     internal fun releasePlaylistEntry(id: String) = playlistEntries.release(id)
     internal fun selectPlaylistEntry(id: String?, uri: String? = null, authority: String? = null) =
         playlistSelection.select(id, uri, authority)
@@ -861,15 +878,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         network.also { it.check() }
                     private suspend fun writer(): dev.lelonio.square.data.SpotifyApi {
                         val permit = permission()
-                        return withContext(Dispatchers.IO) {
-                            accounts.requireOnline(access)
-                            check(container.activeBackend === backend) { "Playlist source changed" }
-                            val token = permit.dispatch { NativeBridge.webToken(dev.lelonio.square.data.PLAYLIST_EDIT_SCOPES) }
-                                ?: container.webApi.tokens.validAccessToken(permit)
-                            accounts.requireOnline(access)
-                            permit.check()
-                            dev.lelonio.square.data.playlistWriteApi(token, permit) { accounts.requireOnline(access) }
-                        }
+                        accounts.requireOnline(access)
+                        check(container.activeBackend === backend) { "Playlist source changed" }
+                        return dev.lelonio.square.data.accountWriteApi(accounts, access, container.webApi.tokens,
+                            dev.lelonio.square.data.PLAYLIST_EDIT_SCOPES, permit)
                     }
                     override suspend fun create(name: String): CatalogPlaylist {
                         permission()
@@ -879,7 +891,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                         accounts.requireOnline(access)
                         check(user.id == access.account.id) { "Spotify profile belongs to another account" }
                         val created = writer().createPlaylist(user.id, dev.lelonio.square.data.PlaylistDetailsDto(name))
-                        return CatalogPlaylist(created.uri, created.name, created.images.firstOrNull()?.url)
+                        return dev.lelonio.square.backend.createdSpotifyPlaylist(created, user.id)
                     }
                     override suspend fun rename(uri: String, name: String) {
                         accounts.requireOnline(access)
@@ -940,6 +952,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
          */
         val needsSetup: Boolean = false,
         val resultScope: SearchResultScope = SearchResultScope.ONLINE,
+        val retryAvailable: Boolean = false,
     )
 
     private val _search = MutableStateFlow(SearchState())
@@ -958,23 +971,50 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             container.downloads.read(access) { _search.value = SearchState(
                 query = value.query, loading = value.loading, results = value.results,
                 error = value.error?.let(::describe), needsSetup = value.needsSetup,
-                resultScope = value.resultScope,
+                resultScope = value.resultScope, retryAvailable = value.retryAvailable,
             ) }
         },
         debounceMs = SEARCH_DEBOUNCE_MS,
+        onlineAllowed = { !SpotifyNetworkPolicy.manual.value &&
+            !dev.lelonio.square.playback.OfflineMode.active.value &&
+            searchAccess?.let(container.accountLocalData::isOnlineCurrent) == true },
     )
 
-    fun onSearchQuery(query: String) {
-        val access = container.accountLocalData.capture() ?: return
+    fun onSearchQuery(query: String) = submitSearch(query, retry = false)
+
+    fun retrySearch() {
+        if (_search.value.loading || _search.value.query.isBlank()) return
+        submitSearch(_search.value.query, retry = true)
+    }
+
+    fun retrySearchIfNeeded() {
+        if (!SpotifyNetworkPolicy.manual.value && !dev.lelonio.square.playback.OfflineMode.active.value &&
+            _search.value.retryAvailable) retrySearch()
+    }
+
+    private fun submitSearch(query: String, retry: Boolean) {
+        val accounts = container.accountLocalData
+        val access = accounts.capture() ?: run {
+            searchRequests.invalidate()
+            _search.value = SearchState(query = query)
+            return
+        }
         searchAccess = access
         val backend = container.activeBackend
-        searchJob = searchRequests.submit(query, dev.lelonio.square.playback.OfflineMode.active.value ||
-            !container.accountLocalData.isOnlineCurrent(access)) {
+        val offline = SpotifyNetworkPolicy.manual.value || dev.lelonio.square.playback.OfflineMode.active.value ||
+            !accounts.isOnlineCurrent(access)
+        val permit = if (offline) null else runCatching { SpotifyNetworkPolicy.capture() }.getOrNull()
+        val reader: suspend () -> dev.lelonio.square.backend.SearchOutcome = {
+            accounts.requireOnline(access)
+            val network = checkNotNull(permit)
+            network.check()
             backend.searchOutcome(query, SearchLabels(
-                artist = string(R.string.artist), album = string(R.string.album),
-                playlist = string(R.string.playlist),
-            ))
+                artist = string(R.string.artist), album = string(R.string.album), playlist = string(R.string.playlist),
+            )).also { accounts.requireOnline(access); network.check() }
         }
+        val publication: (() -> Unit) -> Unit = { write -> accounts.use(access, write) }
+        searchJob = if (retry) searchRequests.retryWithAdmission(offline || permit == null, publication, reader)
+            else searchRequests.submitWithAdmission(query, offline || permit == null, publication, reader)
     }
 
     /** The user's own Spotify application, used for search. */
@@ -1017,11 +1057,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         return granted.containsAll(SpotifyOAuth.WEB_API_SCOPES)
     }
 
+    private fun webApiIdentityMessage(): String? = when (container.webApi.identityProblem) {
+        dev.lelonio.square.auth.WebApiAccount.IdentityProblem.VERIFY_AGAIN -> string(R.string.wf_i10_identity_verify)
+        dev.lelonio.square.auth.WebApiAccount.IdentityProblem.DIFFERENT_ACCOUNT -> string(R.string.wf_i10_identity_mismatch)
+        dev.lelonio.square.auth.WebApiAccount.IdentityProblem.NATIVE_ACCOUNT_REQUIRED -> string(R.string.wf_i10_identity_native)
+        null -> null
+    }
+
+    fun webApiReadyForArtist(): Boolean = container.webApi.isReady
+
+    fun artistNeedsWebApi(uri: String): Boolean = dev.lelonio.square.ui.library.i09ArtistNeedsWebApi(
+        uri, container.webApi.isReady,
+        if (container.accountLocalData.capture() != null) container.downloads.owners.value.keys else emptySet(),
+    )
+
     private val _webApi = MutableStateFlow(
         WebApiState(
             clientId = container.webApi.clientId.value.orEmpty(),
             connected = container.webApi.isReady,
             incomplete = container.webApi.isReady && !grantIsComplete(),
+            error = webApiIdentityMessage(),
         ),
     )
     val webApi: StateFlow<WebApiState> = _webApi.asStateFlow()
@@ -1052,10 +1107,35 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         webApiJob = null
     }
 
+    fun cancelWebApiSetup() {
+        cancelWebApiAuthorization()
+        invalidateWebPersonalData()
+        container.webApi.disconnect()
+        _webApi.value = _webApi.value.copy(connecting = false, connected = false,
+            error = string(R.string.wf_i10_login_cancelled))
+    }
+
+    private fun invalidateWebPersonalData() {
+        savedAlbumsJob?.cancel()
+        followedArtistsJob?.cancel()
+        _savedAlbums.value = emptyList()
+        _followedArtists.value = emptyList()
+        feedRequests.invalidate()
+    }
+
+    private fun rejectWebApiIdentity() {
+        invalidateWebPersonalData()
+        container.webApi.disconnect()
+        _webApi.value = _webApi.value.copy(connected = false, connecting = false,
+            error = string(R.string.wf_i10_identity_mismatch))
+    }
+
     fun onWebApiClientIdChange(value: String) {
         if (value == _webApi.value.clientId) return
         cancelWebApiAuthorization()
-        _webApi.value = _webApi.value.copy(clientId = value, connecting = false, error = null)
+        invalidateWebPersonalData()
+        if (container.webApi.tokens.isLoggedIn || _webApi.value.connecting) container.webApi.disconnect()
+        _webApi.value = _webApi.value.copy(clientId = value, connected = false, connecting = false, error = null)
     }
 
     /**
@@ -1075,15 +1155,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 return@launch
             }
 
-            _webApi.value = _webApi.value.copy(connecting = true, error = null, expired = false)
+            if (SpotifyNetworkPolicy.manual.value || dev.lelonio.square.playback.OfflineMode.active.value) {
+                _webApi.value = _webApi.value.copy(error = string(R.string.wf_i10_web_offline))
+                return@launch
+            }
+            if (container.accountLocalData.captureOnline() == null) {
+                _webApi.value = _webApi.value.copy(error = string(R.string.wf_i10_identity_native))
+                return@launch
+            }
+            invalidateWebPersonalData()
+            _webApi.value = _webApi.value.copy(connecting = true, connected = false, error = null, expired = false)
             container.webApi.setClientId(clientId)
             try {
                 // Only the session that opened the browser may accept its eventual answer.
-                val accepted = container.webApi.tokens.authorizeIfCurrent {
+                val permit = SpotifyNetworkPolicy.capture()
+                val accepted = container.webApi.authorizeIfCurrent(
+                    identify = { token -> SpotifyOAuth.candidateAccountId(token, permit) },
+                ) {
                     SpotifyOAuth.authorize(
                         getApplication(),
                         clientId = clientId,
                         scopes = SpotifyOAuth.WEB_API_SCOPES,
+                        networkPermit = permit,
                     )
                 }
                 if (!accepted || attempt != webApiAttempt) return@launch
@@ -1093,8 +1186,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     incomplete = !grantIsComplete(),
                 )
                 _search.value = _search.value.copy(needsSetup = false)
-                // The feed could not have loaded before this point.
-                loadFeed()
+                // New Web API authority also invalidates a formerly complete feed.
+                feedRequests.invalidate()
+                loadFeed(force = true)
+                loadSavedAlbums()
+                loadFollowedArtists()
+                loadProfile()
                 // Re-run whatever the user had already typed.
                 _search.value.query.takeIf { q -> q.isNotBlank() }?.let(::onSearchQuery)
             } catch (error: kotlinx.coroutines.CancellationException) {
@@ -1102,7 +1199,13 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } catch (error: Exception) {
                 if (attempt == webApiAttempt) {
                     android.util.Log.e(TAG, "web api login failed: ${chain(error)}", error)
-                    _webApi.value = _webApi.value.copy(error = describe(error))
+                    _webApi.value = _webApi.value.copy(connected = false, error = when (error) {
+                        is SpotifyOAuth.AuthorizationDenied -> string(R.string.wf_i10_login_denied)
+                        is java.net.SocketTimeoutException -> string(R.string.wf_i10_login_timeout)
+                        is dev.lelonio.square.auth.WebApiAccount.IdentityMismatch -> string(R.string.wf_i10_identity_mismatch)
+                        is dev.lelonio.square.auth.WebApiAccount.NativeAccountRequired -> string(R.string.wf_i10_identity_native)
+                        else -> string(R.string.wf_i10_web_failed)
+                    })
                 }
             } finally {
                 if (attempt == webApiAttempt) _webApi.value = _webApi.value.copy(connecting = false)
@@ -1111,6 +1214,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     fun disconnectWebApi() {
+        invalidateWebPersonalData()
         cancelWebApiAuthorization()
         container.webApi.disconnect()
         _webApi.value = _webApi.value.copy(connecting = false, connected = false, incomplete = false,
@@ -1195,12 +1299,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return@launch
         }
         _addFriend.value = AddFriend.WORKING
-        runCatching { container.api.followArtists(type = "user", ids = id) }
+        val access = container.accountLocalData.captureOnline() ?: return@launch
+        runCatching {
+            dev.lelonio.square.data.accountWriteApi(container.accountLocalData, access,
+                container.webApi.tokens, "user-follow-modify").followArtists(type = "user", ids = id)
+        }
             .onSuccess {
-                _addFriend.value = AddFriend.DONE
-                loadFriends()
+                container.accountLocalData.use(access) { _addFriend.value = AddFriend.DONE; loadFriends() }
             }
             .onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                container.accountLocalData.requireOnline(access)
                 android.util.Log.w(TAG, "could not follow $id: ${describe(it)}")
                 _addFriend.value = AddFriend.FAILED
             }
@@ -1274,11 +1383,6 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         container.recentStore.tracks.map { tracks ->
             tracks.filter { container.activeBackend.owns(it.uri) }
         }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
-
-    /** Called when a track starts, to keep the home page's history current. */
-    fun recordPlayed(track: CatalogTrack) = viewModelScope.launch {
-        container.recentStore.record(track)
-    }
 
     /**
      * Songs found by searching and played, newest first.
@@ -1447,8 +1551,17 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // out. Collected rather than left to the screens, because the state
         // this rebuilds is the one they all read.
         viewModelScope.launch {
-            dev.lelonio.square.playback.OfflineMode.reason.collect {
+            dev.lelonio.square.playback.OfflineMode.reason.collect { reason ->
                 if (!container.spotifySignedIn) return@collect
+                if (reason != null) {
+                    feedRequests.unavailable(I07FeedAvailability.OFFLINE)
+                    homeShelfRequests.invalidate()
+                    cancelRadio()
+                    val page = _playlist.value
+                    page.uri?.takeIf { it.startsWith("spotify:") }?.let {
+                        openPlaylist(CatalogPlaylist(it, page.name, page.artworkUrl))
+                    }
+                }
                 inFlight?.cancel()
                 inFlight = launchRefresh()
             }
@@ -1484,11 +1597,28 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private val _loginWaiting = MutableStateFlow(false)
+    val loginWaiting = _loginWaiting.asStateFlow()
     private var loginJob: Job? = null
+
+    fun cancelLogIn() {
+        if (!_loginWaiting.value) return
+        accountGeneration++
+        loginJob?.cancel()
+        loginJob = null
+        _loginWaiting.value = false
+        _state.value = UiState.Failed(string(R.string.wf_i10_login_cancelled))
+    }
     private var accountCleanup: Job? = null
     private var accountGeneration = 0L
 
     fun logIn(): Job {
+        cancelWebApiAuthorization()
+        invalidateWebPersonalData()
+        container.webApi.disconnect()
+        _webApi.value = _webApi.value.copy(connecting = false, connected = false, error = null)
+        _loginWaiting.value = true
+        invalidateDiscoveryRequests()
         val previousContextAccess = container.accountLocalData.capture()
         container.accountLocalData.revoke()
         val replacingAccount = PlaybackService.disconnectAccount()
@@ -1520,6 +1650,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 kotlinx.coroutines.currentCoroutineContext().ensureActive()
                 if (attempt != accountGeneration ||
                     !container.tokenStore.saveIfCurrent(expected, answer)) return@launch
+                _loginWaiting.value = false
                 PlaybackService.authenticatedAccount()
                 PlaybackService.connect(getApplication())
                 refresh()
@@ -1528,13 +1659,22 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } catch (error: Exception) {
                 if (attempt == accountGeneration) {
                     android.util.Log.e(TAG, "login failed: ${chain(error)}", error)
-                    _state.value = UiState.Failed(describe(error))
+                    _state.value = UiState.Failed(string(when (error) {
+                        is SpotifyOAuth.AuthorizationDenied -> R.string.wf_i10_login_denied
+                        is java.net.SocketTimeoutException -> R.string.wf_i10_login_timeout
+                        else -> R.string.wf_i10_login_failed
+                    }))
                 }
+            } finally {
+                if (attempt == accountGeneration) _loginWaiting.value = false
             }
         }.also { loginJob = it }
     }
 
     fun logOut() {
+        _loginWaiting.value = false
+        invalidateWebPersonalData()
+        invalidateDiscoveryRequests()
         val previousContextAccess = container.accountLocalData.capture()
         container.accountLocalData.revoke()
         container.downloadQueue.stop()
@@ -1593,6 +1733,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     /** Starts over on the newly chosen source; see the note in `init`. */
     private fun reload() {
+        invalidateDiscoveryRequests()
         searchRequests.invalidate()
         playlistRequests.invalidate()
         playlistJob?.cancel()
@@ -1638,6 +1779,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 }
                 return@launch // no engine wait, username lookup, provider call or consent
             }
+            // Recovery of the open page does not depend on an unrelated library read succeeding.
+            recoverPlaylistIfAvailable()
             _state.value = UiState.Loading
             try {
                 val ready = UiState.Ready(access.account.id, playlists())
@@ -1649,6 +1792,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 loadProfile()
                 loadMissingCovers()
                 loadHomeShelves()
+                loadFeed()
+                recoverPlaylistIfAvailable()
+                retrySearchIfNeeded()
                 loadFriends()
                 loadFollowedArtists()
                 loadSavedAlbums()
@@ -1730,7 +1876,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 artworkUrl = dev.lelonio.square.ui.components.DOWNLOADS_COVER,
             )
         }
-        val everything = listOfNotNull(shelf) + labelled
+        val everything = withLocalFiles(listOfNotNull(shelf) + labelled)
         if (everything.isEmpty()) return@read null
 
         android.util.Log.i(TAG, "offline library: ${everything.size} downloaded")
@@ -1742,7 +1888,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         // And the phone's own files belong here as much as they do online.
         UiState.Ready(
             displayName = profile.getString("name:${access.namespace}", null) ?: access.account.id,
-            playlists = withLocalFiles(everything),
+            playlists = everything,
             avatarUrl = profile.getString("avatar:${access.namespace}", null),
             offline = true,
         )
@@ -1787,15 +1933,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             .mapNotNull { uri -> container.downloads.labelOf(uri)?.let {
                 CatalogPlaylist(uri = uri, name = it.name, artworkUrl = it.artworkUrl)
             } }
-        val rest = playlists.filterNot { it.uri == LocalLibrary.CONTEXT_URI || it.uri.startsWith("downloads:legacy:") } + archived
-        if (!container.preferences.showLocalFiles.value) return rest
-        return listOf(
+        val localShelf = if (container.preferences.showLocalFiles.value) {
             CatalogPlaylist(
                 uri = LocalLibrary.CONTEXT_URI,
                 name = string(R.string.local_files),
                 artworkUrl = LocalLibrary.COVER,
-            ),
-        ) + rest
+            )
+        } else null
+        return dev.lelonio.square.ui.library.projectLibraryCollections(playlists, archived, localShelf)
     }
 
     /** Whether the phone's own music has a shelf; off until asked for. */
@@ -1851,13 +1996,18 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private fun loadProfile(): Job? {
         val access = container.accountLocalData.captureOnline() ?: return null
+        val proof = dev.lelonio.square.auth.I10WebReadProof.capture(container.accountLocalData, container.webApi.tokens) ?: return null
         return viewModelScope.launch {
         if (!container.webApi.isReady) return@launch
-        runCatching { container.api.me() }
+        runCatching { proof.ensureCurrent(); container.api.me() }
             .onSuccess { profile ->
                 container.accountLocalData.requireOnline(access)
-                if (profile.id != access.account.id) return@onSuccess
-                container.downloads.read(access) {
+                proof.ensureCurrent()
+                if (profile.id != access.account.id) {
+                    rejectWebApiIdentity()
+                    return@onSuccess
+                }
+                proof.publish { container.downloads.read(access) {
                 // The largest image and not the smallest.
                 //
                 // Spotify returns `images` biggest first, so `last` was the
@@ -1887,8 +2037,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     .putString("name:${access.namespace}", name ?: access.account.id)
                     .putString("avatar:${access.namespace}", avatar).commit())
                 }
+            } }
+            .onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                android.util.Log.w(TAG, "profile unavailable: ${describe(it)}")
             }
-            .onFailure { android.util.Log.w(TAG, "profile unavailable: ${describe(it)}") }
     }
     }
 
@@ -1908,12 +2061,44 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      * when it will not, and the caller then leaves the queue alone rather than
      * playing something the listener did not choose.
      */
+    private val _radioRequest = MutableStateFlow(I07LatestRequest.State())
+    internal val radioRequest = _radioRequest.asStateFlow()
+    private var radioJob: Job? = null
+    private val radioRequests by lazy {
+        I07LatestRequest<List<CatalogTrack>>(viewModelScope, { _radioRequest.value = it })
+    }
+
+    fun cancelRadio() { radioRequests.invalidate(); radioJob = null }
+
+    internal fun startRadio(trackUri: String, selectionCurrent: () -> Boolean, play: (List<CatalogTrack>) -> Unit) {
+        val accounts = container.accountLocalData
+        val access = accounts.captureOnline()
+        if (access == null || SpotifyNetworkPolicy.manual.value || dev.lelonio.square.playback.OfflineMode.active.value) {
+            radioRequests.unavailable(trackUri)
+            return
+        }
+        val permit = runCatching { SpotifyNetworkPolicy.capture() }.getOrElse {
+            radioRequests.unavailable(trackUri); return
+        }
+        val proof = I07RequestProof.online(accounts, access, permit, selectionCurrent)
+        radioJob = radioRequests.start(trackUri, proof, read = {
+            val station = "spotify:station:track:${trackUri.substringAfterLast(':')}"
+            val uris = Catalog.contextTrackUris(station)
+            proof.ensureCurrent()
+            Catalog.tracks(uris, permit)
+        }, useful = { it.isNotEmpty() }, accept = play)
+    }
+
+    /** Compatibility for existing readers; UI uses startRadio's owned request. */
     suspend fun radioFor(trackUri: String): List<CatalogTrack> {
-        val id = trackUri.substringAfterLast(':')
-        val station = "spotify:station:track:$id"
-        return runCatching { Catalog.tracks(Catalog.contextTrackUris(station)) }
-            .onFailure { android.util.Log.w(TAG, "no station for $trackUri: ${describe(it)}") }
-            .getOrDefault(emptyList())
+        val access = container.accountLocalData.captureOnline() ?: return emptyList()
+        if (dev.lelonio.square.playback.OfflineMode.active.value) return emptyList()
+        val permit = SpotifyNetworkPolicy.capture()
+        val proof = I07RequestProof.online(container.accountLocalData, access, permit)
+        proof.ensureCurrent()
+        val uris = Catalog.contextTrackUris("spotify:station:track:${trackUri.substringAfterLast(':')}")
+        proof.ensureCurrent()
+        return Catalog.tracks(uris, permit).also { proof.ensureCurrent() }
     }
 
     /** How the detail screen sorts its tracks; remembered between visits. */
@@ -2054,13 +2239,15 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         container.accountLocalData.use(access) { target.value = page.copy(saved = !was) }
         runCatching {
-            container.accountLocalData.requireOnline(access)
+            val api = dev.lelonio.square.data.accountWriteApi(container.accountLocalData, access,
+                container.webApi.tokens, if (uri.startsWith("spotify:album:")) "user-library-modify"
+                    else dev.lelonio.square.data.PLAYLIST_EDIT_SCOPES)
             when {
                 uri.startsWith("spotify:album:") ->
-                    if (was) container.api.removeAlbums(id) else container.api.saveAlbums(id)
+                    if (was) api.removeAlbums(id) else api.saveAlbums(id)
 
                 else ->
-                    if (was) container.api.unfollowPlaylist(id) else container.api.followPlaylist(id)
+                    if (was) api.unfollowPlaylist(id) else api.followPlaylist(id)
             }
         }
             .onSuccess {
@@ -2141,27 +2328,39 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     val homeShelves: StateFlow<List<HomeShelf>> = _homeShelves.asStateFlow()
 
-    private fun loadHomeShelves() = viewModelScope.launch {
-        val keys = container.pathfinderKeys
-        keys.refresh()
-        val shelves = withContext(Dispatchers.IO) {
-            runCatching {
-                SpotifyHome.parse(
-                    SpotifyNetworkPolicy.capture().dispatch { NativeBridge.homeFeed(
-                        java.util.TimeZone.getDefault().id,
-                        java.util.Locale.getDefault().language,
-                        keys.home,
-                        keys.appVersion,
-                    ) },
-                )
+    private var homeShelvesJob: Job? = null
+    private val homeShelfRequests by lazy { I07LatestRequest<List<HomeShelf>>(viewModelScope) }
+
+    private fun loadHomeShelves() {
+        val accounts = container.accountLocalData
+        val access = accounts.captureOnline() ?: return
+        if (SpotifyNetworkPolicy.manual.value || dev.lelonio.square.playback.OfflineMode.active.value) return
+        val permit = runCatching { SpotifyNetworkPolicy.capture() }.getOrElse { return }
+        val proof = I07RequestProof.online(accounts, access, permit)
+        homeShelvesJob = homeShelfRequests.start("home", proof, read = {
+            val keys = container.pathfinderKeys
+            proof.ensureCurrent()
+            keys.refresh()
+            proof.ensureCurrent()
+            withContext(Dispatchers.IO) {
+                proof.ensureCurrent()
+                SpotifyHome.parse(permit.dispatch {
+                    NativeBridge.homeFeed(java.util.TimeZone.getDefault().id,
+                        java.util.Locale.getDefault().language, keys.home, keys.appVersion)
+                })
             }
-                .onFailure { android.util.Log.i(TAG, "no personalised home: ${describe(it)}") }
-                .getOrDefault(emptyList())
-        }
-        if (shelves.isNotEmpty()) {
-            android.util.Log.i(TAG, "home: ${shelves.size} shelves from the gateway")
+        }, accept = { shelves ->
+            // Successful empty responses replace old shelves too.
             _homeShelves.value = shelves
-        }
+        })
+    }
+
+    private fun invalidateDiscoveryRequests() {
+        feedRequests.invalidate()
+        homeShelfRequests.invalidate()
+        cancelRadio()
+        homeShelvesJob = null
+        _homeShelves.value = emptyList()
     }
 
     private val _inPlaylists = MutableStateFlow<Set<String>>(emptySet())
@@ -2324,7 +2523,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 size > CONTEXT_CACHE_SIZE
         }
 
-    fun openPlaylist(playlist: CatalogPlaylist) {
+    private fun deferPlaylist(playlist: CatalogPlaylist, message: String) {
+        playlistRequests.invalidate()
+        playlistJob?.cancel()
+        playlistJob = null
+        publishPlaylist(PlaylistState(uri = playlist.uri, name = playlist.name,
+            artworkUrl = playlist.artworkUrl, kind = kindOf(playlist.uri), loading = false,
+            loadingMore = false, error = message))
+        playlistSelection.awaitAvailability()
+    }
+
+    private fun recoverPlaylistIfAvailable() {
+        if (SpotifyNetworkPolicy.manual.value || dev.lelonio.square.playback.OfflineMode.active.value ||
+            container.accountLocalData.captureOnline() == null) return
+        playlistSelection.recoverActive()
+    }
+
+    fun openPlaylist(playlist: CatalogPlaylist) = openPlaylistSource(playlist, forceOnline = false)
+
+    /** An explicit source retry can leave the orphan's local index and join the ordinary fenced read. */
+    fun retryPlaylistDownloadSource(page: PlaylistState) {
+        val uri = page.uri ?: return
+        val access = container.accountLocalData.capture() ?: return
+        if (_playlist.value !== page || SpotifyNetworkPolicy.manual.value ||
+            !container.accountLocalData.isOnlineCurrent(access) || uri !in container.downloads.incompleteOwners.value) return
+        openPlaylistSource(CatalogPlaylist(uri, page.name, page.artworkUrl), forceOnline = true)
+    }
+
+    private fun openPlaylistSource(playlist: CatalogPlaylist, forceOnline: Boolean) {
         playlistEdits.detailOpened()
         // Reopening one counts as opening it, and that is exactly the playlist
         // the home page should keep at the front.
@@ -2337,7 +2563,21 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             openLocalFiles(playlist)
             return
         }
-        val access = container.accountLocalData.capture() ?: return
+        val access = container.accountLocalData.capture() ?: run {
+            deferPlaylist(playlist, string(R.string.wf_i07_playlist_waiting))
+            return
+        }
+
+        // Downloads that are no longer saved/followed still belong to this phone.
+        val knownCollectionUris = ((_state.value as? UiState.Ready)?.playlists.orEmpty().map { it.uri } +
+            savedAlbums.value.map { it.uri } + followedArtists.value.map { it.uri }).toSet()
+        if (!forceOnline && dev.lelonio.square.ui.library.i09ShouldOpenStoredCollection(
+                playlist.uri, container.downloads.owners.value.keys, knownCollectionUris,
+                artistWebApiReady = container.webApi.isReady)) {
+            openDownloadedContext(playlist)
+            playlistEntries.completed(playlistEntries.pending())
+            return
+        }
 
         // The songs downloaded on their own. Answered from the index, which is
         // the point of it: this shelf has to open with no connection, and there
@@ -2353,13 +2593,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             return
         }
 
-        if (container.downloadSettings.offlineMode.value &&
+        if ((SpotifyNetworkPolicy.manual.value || container.downloadSettings.offlineMode.value) &&
             container.downloads.owners.value[playlist.uri] == null) {
-            playlistRequests.invalidate()
-            playlistJob?.cancel()
-            publishPlaylist(PlaylistState(uri = playlist.uri, name = playlist.name,
-                artworkUrl = playlist.artworkUrl, kind = kindOf(playlist.uri), loading = false,
-                error = string(R.string.offline_banner_manual)))
+            container.downloads.read(access) {
+                deferPlaylist(playlist, string(R.string.offline_banner_manual))
+            }
             return
         }
 
@@ -2376,6 +2614,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 playlistEntries.completed(playlistEntries.pending())
                 return
             }
+            container.downloads.read(access) {
+                deferPlaylist(playlist, string(R.string.wf_i07_playlist_waiting))
+            }
             return // A local receipt never authorises an online context lookup.
         }
 
@@ -2386,6 +2627,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val ticket = PlaylistReadTicket(playlistRequests.begin(), container.accountLocalData,
             access, playlistEdits.readVersion(), _playlist,
             onReady = { playlistEntries.completed(readingEntry) })
+        // Register before publishing even a cached page. The keep action can then join this
+        // source during cache/snapshot checks as well as during progressive track resolution.
+        val downloadSource = if (kind != DetailKind.ARTIST && playlist.uri.startsWith("spotify:")) {
+            try { collectionDownloadReads.begin(playlist.uri, access) }
+            catch (_: SpotifyNetworkPolicy.Offline) { null }
+        } else null
         // Reassigned when the picture arrives late; every state published below
         // is built from this, so filling it in one place is what stops a later
         // write from taking the picture back off the screen.
@@ -2395,6 +2642,8 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 ?: playlist.name,
             artworkUrl = playlist.artworkUrl,
             kind = kind,
+            mine = (_state.value as? UiState.Ready)?.playlists?.firstOrNull { it.uri == playlist.uri }
+                ?.owner?.let { it == access.account.id },
         )
 
         val cacheKey = playlistContextCaches.memoryKey(playlist.uri, access)
@@ -2407,6 +2656,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         playlistJob = viewModelScope.launch {
             ticket.bind(currentCoroutineContext()[Job])
+            currentCoroutineContext()[Job]?.invokeOnCompletion { failure ->
+                downloadSource?.let { source ->
+                    source.fail(failure ?: IllegalStateException("Collection read ended without a complete source"))
+                    collectionDownloadReads.release(source)
+                }
+            }
             // Opened by URI alone, from a tap on the player's text: there was no
             // row to take the picture from. Asked for alongside the track list
             // rather than before it, since the list is what the page is for.
@@ -2487,9 +2742,11 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                 } else if (cached.isNotEmpty() && isUnchanged(playlist.uri, entry?.snapshotId)) {
                     // Nothing to do: one small request said the copy on screen
                     // is the current one.
+                    ensurePlaylistRequest(ticket)
+                    downloadSource?.complete(cached)
                     publishRequestedPlaylist(ticket, base.copy(tracks = cached, loadingMore = false))
                 } else {
-                    loadContextInto(base, playlist.uri, showProgress = cached.isEmpty(), ticket = ticket)
+                    loadContextInto(base, playlist.uri, showProgress = cached.isEmpty(), ticket = ticket, source = downloadSource)
                 }
             }
                 .onFailure {
@@ -2663,10 +2920,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
+    private val collectionDownloadReads = dev.lelonio.square.ui.library.CollectionDownloadReads()
+
+    /** Retry only this owner's missing files; keep membership, read fences and completed files. */
+    fun retryPlaylistDownloads(page: PlaylistState) {
+        val uri = page.uri ?: return
+        val access = container.accountLocalData.capture() ?: return
+        if (_playlist.value !== page || !container.accountLocalData.isOnlineCurrent(access)) return
+        val permit = try { SpotifyNetworkPolicy.capture() } catch (_: SpotifyNetworkPolicy.Offline) { return }
+        viewModelScope.launch {
+            try {
+                permit.check()
+                val retried = container.downloads.retryOwnerFailed(access, uri)
+                permit.check() // MANUAL on/off while waiting must not revive this retry.
+                if (retried && container.accountLocalData.isOnlineCurrent(access)) DownloadService.start(getApplication())
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) {
+                android.util.Log.w(TAG, "collection retry did not start: ${describe(failure)}")
+            }
+        }
+    }
+
     fun toggleDownload(page: PlaylistState) {
         val uri = page.uri ?: return
-        if (page.tracks.isEmpty() || _playlist.value !== page) return
+        if ((page.tracks.isEmpty() && uri !in container.downloads.owners.value) || _playlist.value !== page) return
         val access = container.accountLocalData.capture() ?: return
+        // Capture the producer synchronously with the page/selection; never attach a later read.
+        val source = collectionDownloadReads.current(uri, access)
+        val sourceComplete = !page.loading && !page.loadingMore && page.error == null
         viewModelScope.launch {
             container.downloads.read(access) { Unit }
             if (container.downloads.owners.value.containsKey(uri)) {
@@ -2678,21 +2959,34 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             } else if (page.kind == DetailKind.ARTIST) {
                 askAboutArtist(page, access)
             } else {
-                container.downloads.setOwner(
-                    access = access,
-                    ownerUri = uri,
-                    tracks = page.tracks,
-                    label = DownloadStore.OwnerLabel(
-                        name = page.name,
-                        artworkUrl = page.artworkUrl,
-                        kind = when (page.kind) {
-                            DetailKind.ALBUM -> DownloadStore.KIND_ALBUM
-                            DetailKind.ARTIST -> DownloadStore.KIND_ARTIST
-                            DetailKind.PLAYLIST -> DownloadStore.KIND_PLAYLIST
-                        },
-                    ),
-                )
-                DownloadService.start(getApplication())
+                if (page.error != null || (!sourceComplete && source == null)) return@launch
+                try {
+                    val result = collectionDownloadReads.keep(
+                        store = container.downloads,
+                        access = access,
+                        uri = uri,
+                        tracks = page.tracks,
+                        label = DownloadStore.OwnerLabel(
+                            name = page.name,
+                            artworkUrl = page.artworkUrl,
+                            kind = when (page.kind) {
+                                DetailKind.ALBUM -> DownloadStore.KIND_ALBUM
+                                DetailKind.ARTIST -> DownloadStore.KIND_ARTIST
+                                DetailKind.PLAYLIST -> DownloadStore.KIND_PLAYLIST
+                            },
+                        ),
+                        sourceComplete = sourceComplete,
+                        source = source,
+                        queued = { DownloadService.start(getApplication()) },
+                    )
+                    if (result == DownloadStore.OwnerRefreshResult.MEMBERSHIP) {
+                        sweepOrphans(access)
+                        if (container.downloads.pending().isNotEmpty()) DownloadService.start(getApplication())
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+                catch (failure: Exception) {
+                    android.util.Log.i(TAG, "collection download retains incomplete source: ${describe(failure)}")
+                }
             }
         }
     }
@@ -3107,36 +3401,46 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         ticket.update { current -> mergePlaylist(current, playlistEdits.mergeDetailRead(value, ticket.version)) }
     }
 
-    private suspend fun loadContextInto(base: PlaylistState, uri: String, showProgress: Boolean, ticket: PlaylistReadTicket) {
-        ensurePlaylistRequest(ticket)
+    private suspend fun loadContextInto(
+        base: PlaylistState, uri: String, showProgress: Boolean, ticket: PlaylistReadTicket,
+        source: dev.lelonio.square.ui.library.CollectionDownloadReads.Read?,
+    ) {
         val access = ticket.access
-        val downloadRefresh = access?.let { container.downloads.beginOwnerRefresh(it, uri) }
-        val paged = runCatching { pagedTracks(base, uri, showProgress, ticket) }
-            .onFailure {
-                if (it is kotlinx.coroutines.CancellationException) throw it
-                ensurePlaylistRequest(ticket)
-                android.util.Log.w(TAG, "paged read failed: ${describe(it)}")
+        try {
+            ensurePlaylistRequest(ticket)
+            val downloadRefresh = access?.let { container.downloads.beginOwnerRefresh(it, uri) }
+            val paged = runCatching { pagedTracks(base, uri, showProgress, ticket) }
+                .onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    ensurePlaylistRequest(ticket)
+                    android.util.Log.w(TAG, "paged read failed: ${describe(it)}")
+                }
+                .getOrNull()
+
+            val tracks = paged ?: accessPointTracks(base, uri, showProgress, ticket)
+
+            ensurePlaylistRequest(ticket)
+            source?.complete(tracks)
+            publishRequestedPlaylist(ticket, base.copy(tracks = tracks, loadingMore = false))
+
+            // Stamped with the version it was read from, so the next open can ask
+            // one question instead of reading it all again. Without a stamp the
+            // entry still saves — it just gets refreshed silently every time.
+            val snapshotId = snapshotOf(uri)
+            currentCoroutineContext().ensureActive()
+            ensurePlaylistRequest(ticket)
+            val cacheAccess = access ?: return
+            container.accountLocalData.use(cacheAccess) {
+                contextCache[playlistContextCaches.memoryKey(uri, cacheAccess)] = ContextCacheStore.Entry(tracks, snapshotId)
+                rememberMembership(uri, tracks)
             }
-            .getOrNull()
-
-        val tracks = paged ?: accessPointTracks(base, uri, showProgress, ticket)
-
-        publishRequestedPlaylist(ticket, base.copy(tracks = tracks, loadingMore = false))
-
-        // Stamped with the version it was read from, so the next open can ask
-        // one question instead of reading it all again. Without a stamp the
-        // entry still saves — it just gets refreshed silently every time.
-        val snapshotId = snapshotOf(uri)
-        currentCoroutineContext().ensureActive()
-        ensurePlaylistRequest(ticket)
-        val cacheAccess = access ?: return
-        container.accountLocalData.use(cacheAccess) {
-            contextCache[playlistContextCaches.memoryKey(uri, cacheAccess)] = ContextCacheStore.Entry(tracks, snapshotId)
-            rememberMembership(uri, tracks)
+            playlistContextCaches.disk(cacheAccess).write(uri, tracks, snapshotId)
+            ensurePlaylistRequest(ticket)
+            followDownload(uri, tracks, downloadRefresh)
+        } catch (failure: Throwable) {
+            source?.fail(failure)
+            throw failure
         }
-        playlistContextCaches.disk(cacheAccess).write(uri, tracks, snapshotId)
-        ensurePlaylistRequest(ticket)
-        followDownload(uri, tracks, downloadRefresh)
     }
 
     /**
@@ -3233,6 +3537,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         val id = uri.substringAfterLast(':')
         val loaded = mutableListOf<CatalogTrack>()
         var offset = 0
+        var expected = 0
         while (true) {
             val page = container.api.playlistTracks(id, limit = WEB_API_PAGE, offset = offset)
             // Episodes and delisted tracks come back as a null track, and
@@ -3245,13 +3550,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     ?.toCatalogTrack(item.addedAt)
             }
             offset += page.items.size
+            expected = maxOf(expected, page.total)
+            val more = page.next != null || offset < expected
+            check(!more || page.items.isNotEmpty()) { "Playlist pagination stopped before completion" }
             if (showProgress) {
                 publishRequestedPlaylist(ticket, base.copy(
                     tracks = loaded.toList(),
-                    loadingMore = offset < page.total,
+                    loadingMore = more,
                 ))
             }
-            if (page.items.isEmpty() || offset >= page.total) return loaded
+            if (!more) return loaded
         }
     }
 
@@ -3263,6 +3571,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     ): List<CatalogTrack> {
         val loaded = mutableListOf<CatalogTrack>()
         var offset = 0
+        var expected = 0
         while (true) {
             val page = container.api.savedTracks(limit = WEB_API_LIBRARY_PAGE, offset = offset)
             // The same rule as a playlist's pages: anything the engine could
@@ -3273,13 +3582,16 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
                     ?.toCatalogTrack(saved.addedAt)
             }
             offset += page.items.size
+            expected = maxOf(expected, page.total)
+            val more = page.next != null || offset < expected
+            check(!more || page.items.isNotEmpty()) { "Playlist pagination stopped before completion" }
             if (showProgress) {
                 publishRequestedPlaylist(ticket, base.copy(
                     tracks = loaded.toList(),
-                    loadingMore = offset < page.total,
+                    loadingMore = more,
                 ))
             }
-            if (page.items.isEmpty() || offset >= page.total) return loaded
+            if (!more) return loaded
         }
     }
 
@@ -3331,7 +3643,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
     private suspend fun loadArtist(uri: String, ticket: PlaylistReadTicket): ArtistPage {
         if (!container.webApi.isReady) {
-            error(string(R.string.artist_needs_app))
+            error(string(R.string.wf_i10_artist_requirement))
         }
         val id = uri.substringAfterLast(':')
         val tracks = container.api.artistTopTracks(id).tracks.map { it.toCatalogTrack() }
@@ -3446,8 +3758,9 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
 
         container.accountLocalData.use(access) { target.value = page.copy(following = !was) }
         runCatching {
-            container.accountLocalData.requireOnline(access)
-            if (was) container.api.unfollowArtists(ids = id) else container.api.followArtists(ids = id)
+            val api = dev.lelonio.square.data.accountWriteApi(container.accountLocalData, access,
+                container.webApi.tokens, "user-follow-modify")
+            if (was) api.unfollowArtists(ids = id) else api.followArtists(ids = id)
         }
             .onSuccess { container.accountLocalData.use(access) { loadFollowedArtists() } }
             .onFailure {
@@ -3474,7 +3787,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
      */
     val savedAlbums: StateFlow<List<CatalogPlaylist>> = _savedAlbums.asStateFlow()
 
-    fun loadSavedAlbums() = viewModelScope.launch {
+    private var savedAlbumsJob: Job? = null
+
+    fun loadSavedAlbums(): Job? {
+        savedAlbumsJob?.cancel()
+        if (!container.webApi.isReady) { _savedAlbums.value = emptyList(); return null }
+        val proof = dev.lelonio.square.auth.I10WebReadProof.capture(container.accountLocalData, container.webApi.tokens)
+            ?: return null
+        return viewModelScope.launch {
         if (!container.webApi.isReady) {
             _savedAlbums.value = emptyList()
             return@launch
@@ -3485,7 +3805,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // Offset-paged, unlike the artists: walked to the end for the same
             // reason, which is that a first page is not a library.
             while (true) {
+                proof.ensureCurrent()
                 val page = container.api.savedAlbums(limit = ALBUM_PAGE, offset = offset)
+                currentCoroutineContext().ensureActive()
+                proof.ensureCurrent()
                 gathered += page.items.mapNotNull { saved ->
                     CatalogPlaylist(
                         uri = saved.album.uri ?: return@mapNotNull null,
@@ -3498,8 +3821,12 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             gathered
         }
-            .onSuccess { _savedAlbums.value = it }
-            .onFailure { android.util.Log.w(TAG, "saved albums unavailable: ${describe(it)}") }
+            .onSuccess { value -> proof.publish { _savedAlbums.value = value } }
+            .onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                android.util.Log.w(TAG, "saved albums unavailable: ${describe(it)}")
+            }
+        }.also { savedAlbumsJob = it }
     }
 
     private val _followedArtists = MutableStateFlow<List<SearchItem>>(emptyList())
@@ -3507,7 +3834,14 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     /** The artists this account follows, for the library. */
     val followedArtists: StateFlow<List<SearchItem>> = _followedArtists.asStateFlow()
 
-    fun loadFollowedArtists() = viewModelScope.launch {
+    private var followedArtistsJob: Job? = null
+
+    fun loadFollowedArtists(): Job? {
+        followedArtistsJob?.cancel()
+        if (!container.webApi.isReady) { _followedArtists.value = emptyList(); return null }
+        val proof = dev.lelonio.square.auth.I10WebReadProof.capture(container.accountLocalData, container.webApi.tokens)
+            ?: return null
+        return viewModelScope.launch {
         if (!container.webApi.isReady) {
             _followedArtists.value = emptyList()
             return@launch
@@ -3518,7 +3852,10 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             // Cursor-paged, and an account can follow hundreds: walk it to the
             // end rather than showing the first page and calling it the list.
             while (true) {
+                proof.ensureCurrent()
                 val page = container.api.followedArtists(after = after).artists
+                currentCoroutineContext().ensureActive()
+                proof.ensureCurrent()
                 gathered += page.items.mapNotNull { artist ->
                     SearchItem(
                         uri = artist.uri ?: return@mapNotNull null,
@@ -3531,17 +3868,20 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
             }
             gathered.sortedBy { it.title.lowercase() }
         }
-            .onSuccess { _followedArtists.value = it }
+            .onSuccess { value -> proof.publish { _followedArtists.value = value } }
             .onFailure {
+                if (it is kotlinx.coroutines.CancellationException) throw it
+                proof.ensureCurrent()
                 android.util.Log.w(TAG, "followed artists unavailable: ${describe(it)}")
                 // 403 here has one cause: an application connected before the
                 // follow permissions were asked for. The token is valid and
                 // will never be allowed to read this, so the way out is the
                 // same one an expired session takes — sign in again, once.
                 if (describe(it).contains("403")) {
-                    _webApi.value = _webApi.value.copy(expired = true)
+                    proof.publish { _webApi.value = _webApi.value.copy(expired = true) }
                 }
             }
+        }.also { followedArtistsJob = it }
     }
 
     private fun kindOf(uri: String): DetailKind = when {
@@ -3679,12 +4019,26 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     // are invalidated by the main-thread collector below.
     private val localDataTransitions = AccountAccessTransitions(container.accountLocalData)
     private val localDataObservation = localDataTransitions.observe { observed, answered ->
+        _addToPlaylist.update { shown -> dev.lelonio.square.ui.library.revokeCollectionPicker(
+            shown, observed?.requestSession, string(R.string.wf_root_collection_unconfirmed)) }
+        if (!answered) {
+            savedAlbumsJob?.cancel()
+            followedArtistsJob?.cancel()
+            _savedAlbums.value = emptyList()
+            _followedArtists.value = emptyList()
+        }
+        _webApi.value = _webApi.value.copy(connected = container.webApi.isReady,
+            connecting = false, error = webApiIdentityMessage())
         // A change made on the main thread reaches the collector below before it reaches
         // this: the StateFlow resumes it inline, so the Home load for this very access is
         // already running. Cancelling it here left the page on "Connecting" after an online
         // verification, with nothing to ask again. What the collector started stays; what
         // the previous access owned is revoked either way.
         if (!answered) {
+            listOf(feedJob, homeShelvesJob, radioJob).forEach { it?.cancel() }
+            _feed.value = FeedState()
+            _homeShelves.value = emptyList()
+            _radioRequest.value = I07LatestRequest.State()
             inFlight?.cancel()
             _state.value = UiState.Connecting
             _legacyDownloadChoice.value = null
@@ -3698,7 +4052,7 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
     }
 
     private val manualNetworkObservation = SpotifyNetworkPolicy.observe { offline ->
-        if (offline) listOf(inFlight, searchJob, playlistJob, feedJob, videoLookup, devicesJob)
+        if (offline) listOf(inFlight, searchJob, playlistJob, feedJob, homeShelvesJob, radioJob, videoLookup, devicesJob)
             .forEach { it?.cancel() }
     }
 
@@ -3706,18 +4060,27 @@ class MainViewModel(app: Application) : AndroidViewModel(app) {
         viewModelScope.launch {
             SpotifyNetworkPolicy.manual.collect { offline ->
                 if (offline) {
+                    feedRequests.unavailable(I07FeedAvailability.OFFLINE)
+                    homeShelfRequests.invalidate()
+                    cancelRadio()
                     playlistRequests.invalidate()
                     searchRequests.invalidate()
                     val open = _playlist.value
                     if (open.uri?.startsWith("spotify:") == true && container.downloads.owners.value[open.uri] == null) {
                         _playlist.value = open.copy(loading = false, loadingMore = false,
                             error = string(R.string.offline_banner_manual))
+                        playlistSelection.awaitAvailability()
                     }
+                    onSearchQuery(_search.value.query)
                 }
             }
         }
         viewModelScope.launch {
             localDataTransitions.collect { access ->
+                invalidateWebPersonalData()
+                _webApi.value = _webApi.value.copy(connected = container.webApi.isReady,
+                    connecting = false, error = webApiIdentityMessage())
+                invalidateDiscoveryRequests()
                 searchRequests.invalidate()
                 playlistRequests.invalidate()
                 searchAccess = null

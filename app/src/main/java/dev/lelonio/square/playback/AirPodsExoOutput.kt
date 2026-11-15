@@ -138,7 +138,7 @@ internal class AirPodsFocusedExoPlayer(
             } else if (!ducked) {
                 duckBaseline?.let { delegate.volume = it }; duckBaseline = null
             }
-        })
+        }, isPlaybackIntended = { delegate.playWhenReady })
     private val focusObservation = focus.observeAirPodsFocus {
         output.focusBlocked = focus.foreignAttenuationActive
         output.foreignFocus()

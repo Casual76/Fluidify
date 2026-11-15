@@ -136,6 +136,16 @@ class PreferencesStore(context: Context) {
         prefs.edit().putBoolean(KEY_CANVAS, value).apply()
     }
 
+    private val _keepPlayerScreenOn = MutableStateFlow(prefs.getBoolean(KEY_PLAYER_SCREEN_ON, false))
+
+    /** Opt-in only; fullscreen also requires actual playback and foreground. */
+    val keepPlayerScreenOn: StateFlow<Boolean> = _keepPlayerScreenOn.asStateFlow()
+
+    fun setKeepPlayerScreenOn(value: Boolean) {
+        _keepPlayerScreenOn.value = value
+        prefs.edit().putBoolean(KEY_PLAYER_SCREEN_ON, value).apply()
+    }
+
     /**
      * The name and the picture the account was last seen wearing.
      *
@@ -244,6 +254,7 @@ class PreferencesStore(context: Context) {
         const val KEY_THEME = "theme_mode"
         const val KEY_LOCAL_FILES = "show_local_files"
         const val KEY_CANVAS = "canvas"
+        const val KEY_PLAYER_SCREEN_ON = "keep_player_screen_on"
         const val KEY_TRACK_SORT = "track_sort"
         const val KEY_TRACK_DESC = "track_sort_descending"
         const val KEY_DEVICE_ID = "device_id"

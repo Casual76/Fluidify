@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i07_playlist_waiting">Unavailable for now. It will load when the connection returns.</string>
+    <string name="wf_i07_search_retry">Try again</string>
+    <string name="wf_i07_feed_retry">Some suggestions are unavailable. Try again</string>
+    <string name="wf_i07_radio_waiting">Preparing radio… Tap to cancel.</string>
+    <string name="wf_i07_radio_failed">Radio is unavailable. Try again from the player. Tap to dismiss.</string>
+    <string name="wf_i07_radio_offline">Radio needs a connection. Tap to dismiss.</string>
+</resources>

@@ -42,6 +42,8 @@ import dev.antigravity.fluidengine.ui.fluid.fluidRowPressable
 import dev.lelonio.square.R
 import dev.lelonio.square.airpods.AacpStage
 import dev.lelonio.square.airpods.CommandProperty
+import dev.lelonio.square.airpods.runtime.android.ControlChannelRecovery
+import dev.lelonio.square.airpods.runtime.android.platform.PlatformResult
 import dev.lelonio.square.airpods.protocol.AirPodsProperties
 import dev.lelonio.square.airpods.protocol.PropertySpec
 
@@ -68,6 +70,8 @@ internal fun AirPodsUiState.connectionSummary(): Int = when {
     !bluetoothGranted -> R.string.airpods_reason_bluetooth_permission
     suppressed -> R.string.airpods_feature_stopped
     !profileConnected -> R.string.airpods_feature_disconnected
+    controlRecovery == ControlChannelRecovery.WAITING -> R.string.airpods_ui_aacp_error
+    controlRecovery == ControlChannelRecovery.RECONNECTING -> R.string.airpods_feature_connecting
     domain.stage == AacpStage.ERROR -> R.string.airpods_ui_aacp_error
     controlsReady -> R.string.airpods_feature_connected
     domain.stage in connectingStages -> R.string.airpods_feature_connecting
@@ -79,6 +83,23 @@ internal fun AirPodsUiState.connectionKind(): StatusKind = when (connectionSumma
     R.string.airpods_feature_connecting -> StatusKind.Waiting
     R.string.airpods_ui_aacp_error -> StatusKind.Problem
     else -> StatusKind.Neutral
+}
+
+internal fun CallGestureAccess.summary(): Int = when {
+    granted -> R.string.wf_i03_call_access_granted
+    !readPhoneState && !answerPhoneCalls -> R.string.wf_i03_call_access_both_missing
+    !readPhoneState -> R.string.wf_i03_call_access_phone_missing
+    else -> R.string.wf_i03_call_access_answer_missing
+}
+
+internal data class AudioRequestPresentation(val message: Int, val kind: StatusKind, val offerSettings: Boolean = false)
+
+/** Submitted and queued requests cannot paint a confirmed connection. */
+internal fun PlatformResult.presentation(): AudioRequestPresentation = when (this) {
+    PlatformResult.RequestAccepted -> AudioRequestPresentation(R.string.wf_i03_audio_submitted, StatusKind.Neutral)
+    PlatformResult.Queued -> AudioRequestPresentation(R.string.wf_i03_audio_waiting, StatusKind.Waiting)
+    is PlatformResult.SettingsRequired -> AudioRequestPresentation(R.string.wf_i03_audio_settings, StatusKind.Problem, true)
+    is PlatformResult.Denied -> AudioRequestPresentation(R.string.wf_i03_audio_denied, StatusKind.Problem, true)
 }
 
 /**

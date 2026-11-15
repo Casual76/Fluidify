@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i03_call_gestures">Gesti chiamata</string>
+    <string name="wf_i03_call_access_granted">Entrambi gli accessi chiamata concessi</string>
+    <string name="wf_i03_call_access_both_missing">Consenti stato telefono e risposta alle chiamate</string>
+    <string name="wf_i03_call_access_phone_missing">Manca l’accesso allo stato telefono</string>
+    <string name="wf_i03_call_access_answer_missing">Manca l’accesso per rispondere alle chiamate</string>
+    <string name="wf_i03_allow_call_access">Consenti accessi</string>
+    <string name="wf_i03_audio_submitted">Richiesta audio inviata</string>
+    <string name="wf_i03_audio_waiting">In attesa di Android…</string>
+    <string name="wf_i03_audio_settings">Prosegui nelle impostazioni Bluetooth</string>
+    <string name="wf_i03_audio_denied">Richiesta audio non disponibile. Controlla le impostazioni Bluetooth.</string>
+    <string name="wf_i03_choose_pair">Scegli le tue AirPods</string>
+    <string name="wf_i03_verify_pair_note">Il nome Bluetooth è solo un’etichetta. Verifica il dispositivo selezionato.</string>
+</resources>

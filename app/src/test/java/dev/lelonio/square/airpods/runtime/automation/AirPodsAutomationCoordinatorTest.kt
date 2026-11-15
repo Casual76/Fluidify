@@ -277,12 +277,24 @@ class AirPodsAutomationCoordinatorTest {
             assertTrue(lease in r.cancelled)
         }
     }
-    @Test fun unattributedVolumeAndEndingBeforeWriteObservationForfeitRestore() {
+    @Test fun matchingLevelAloneCannotRestoreButReceiptAfterConversationEndCan() {
         val r = Rig(duck()); r.ca(true); r.advance(300)
         r.observe { it.copy(volume = MediaVolume(20, 100)) }; r.ca(false); r.advance(300)
         assertEquals(1, r.sent.size); assertFalse(r.status().volumeOwned)
+        r.advance(2_000); r.confirmVolume(); r.advance(300)
+        assertEquals("late receipt cannot resurrect expired ownership", 1, r.sent.size)
         val q = Rig(duck()); q.ca(true); q.advance(150); q.ca(false); q.confirmVolume(); q.advance(1_000)
-        assertEquals(1, q.sent.size); assertFalse(q.status().volumeOwned)
+        assertEquals(listOf(35, 50), q.sent.map { it.volume }); q.confirmVolume()
+        assertFalse(q.status().volumeOwned); assertFalse(q.status().rampActive)
+    }
+    @Test fun explicitManualVolumeAtRequestedLevelRevokesBeforeDelayedOwnReceipt() {
+        val r = Rig(duck()); r.ca(true); r.advance(150)
+        assertEquals(35, r.sent.single().volume)
+        r.observe { it.copy(volume = MediaVolume(35, 100), volumeOverride = true) }
+        assertFalse(r.status().volumeOwned); assertFalse(r.status().rampActive)
+        r.observe { it.copy(volumeOverride = false) }
+        r.confirmVolume(); r.ca(false); r.advance(300)
+        assertEquals("matching manual volume cannot be reclaimed by our late receipt", 1, r.sent.size)
     }
     @Test fun foreignDuckAndMissingVolumeDoNotAttenuate() {
         for (foreign in listOf(false, true)) {
@@ -317,7 +329,7 @@ class AirPodsAutomationCoordinatorTest {
         assertEquals(1, r.count(MediaAction.PAUSE)); assertEquals(1, r.count(MediaAction.SET_VOLUME))
     }
 
-    @Test fun newConversationDuringRestoreReusesBaselineAndCancelsUnobservedRestore() {
+    @Test fun newConversationDuringRestoreReusesBaselineAndWaitsForUnobservedRestore() {
         val r = Rig(duck()); r.ca(true); r.advance(300); r.confirmVolume()
         r.ca(false); r.advance(150); r.confirmVolume()
         assertEquals(35, r.sent.last().volume)
@@ -325,8 +337,12 @@ class AirPodsAutomationCoordinatorTest {
         r.ca(false); r.advance(150) // unobserved restore write
         val count = r.sent.size; val lease = r.status().lease
         r.ca(true); r.advance(500)
-        assertEquals(count, r.sent.size); assertTrue(lease in r.cancelled)
-        assertFalse(r.status().volumeOwned)
+        assertEquals(count, r.sent.size); assertEquals(lease, r.status().lease)
+        r.confirmVolume(); r.advance(300); r.confirmVolume()
+        assertEquals(20, r.sent.last().volume)
+        r.ca(false); r.advance(300); r.confirmVolume()
+        assertEquals(50, r.sent.last().volume)
+        assertFalse(r.status().volumeOwned); assertFalse(r.status().rampActive)
     }
 
     @Test fun earUnknownDoesNotCancelIndependentConversationDuck() {
@@ -472,7 +488,7 @@ class AirPodsAutomationCoordinatorTest {
         }
     }
 
-    @Test fun overrideOrManualIntentInsideWindowStillRevokes() {
+    @Test fun transportOverrideInsideWindowPreservesVolumeButManualVolumeIntentStillRevokes() {
         for (manual in listOf(false, true)) {
             val r = Rig(duck().copy(conversationPause = true)); r.ownedPauseAndDuck()
             r.ca(false); r.coordinator.onDispatched(r.sent.last(), accepted = true)
@@ -481,7 +497,14 @@ class AirPodsAutomationCoordinatorTest {
             if (manual) r.coordinator.onManualIntent()
             else r.observe { it.copy(playback = Playback.PLAYING, transportOverride = true) }
             r.advance(1_000)
-            assertEquals("manual=$manual", count, r.sent.size); assertFalse(r.status().volumeOwned)
+            assertEquals("manual=$manual", count + if (manual) 0 else 1, r.sent.size)
+            if (!manual) {
+                assertEquals(50, r.sent.last().volume)
+                r.confirmVolume()
+            }
+            assertFalse(r.status().volumeOwned)
+            assertFalse(r.status().rampActive)
+            assertEquals(1, r.count(MediaAction.PLAY))
         }
     }
 

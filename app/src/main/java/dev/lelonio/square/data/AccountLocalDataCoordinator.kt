@@ -27,11 +27,11 @@ class AccountLocalDataCoordinator internal constructor(
         val origin: Origin,
         internal val history: HistoryAccess? = null,
         internal val epoch: Long? = null,
+        /** Preserved through idle and LOCAL -> ONLINE verification of the same binding/history generation. */
+        val requestSession: String = UUID.randomUUID().toString(),
     ) {
         val account = HistoryAccount(binding.canonical)
         internal val namespace = localAccountKey(account)
-        /** Opaque current-process correlation, never an online/provider proof. */
-        val requestSession: String = UUID.randomUUID().toString()
     }
 
     private val mutable = MutableStateFlow<Access?>(null)
@@ -39,7 +39,11 @@ class AccountLocalDataCoordinator internal constructor(
     private val observers = mutableListOf<(Access?) -> Unit>()
 
     init {
-        authority.observe { authority.locked { changeLocked(null) } }
+        authority.observe { authority.locked {
+            // Reconfirming the same durable binding is not a logout between LOCAL and ONLINE.
+            // Revocation/new lineage still clears observers synchronously before it can be replaced.
+            if (mutable.value?.binding != authority.binding()) changeLocked(null)
+        } }
         authority.locked {
             authority.binding()?.let { changeLocked(Access(this, it, Origin.LOCAL)) }
         }
@@ -70,7 +74,9 @@ class AccountLocalDataCoordinator internal constructor(
                 return@locked true
             }
             val binding = authority.confirm(proof, canonical) ?: run { return@locked false }
-            changeLocked(Access(this, binding, Origin.ONLINE, history, epoch))
+            val continuing = old?.takeIf { it.origin == Origin.LOCAL && it.binding == binding }
+            changeLocked(Access(this, binding, Origin.ONLINE, history, epoch,
+                requestSession = continuing?.requestSession ?: UUID.randomUUID().toString()))
             true
         }
     }
@@ -118,14 +124,19 @@ class AccountLocalDataCoordinator internal constructor(
             authority.invalidate()
             return null
         }
-        if (current.origin == Origin.ONLINE &&
-            (history != current.history || nativeEpoch() != current.epoch)) {
-            if (history == null || nativeEpoch() != current.epoch) {
+        if (current.origin != Origin.ONLINE) return current
+        val epoch = nativeEpoch()
+        val ready = nativeReady()
+        if (history != current.history || epoch != current.epoch || !ready) {
+            if (history == null || epoch != current.epoch) {
                 authority.invalidate()
                 return null
             }
             // History recording/delete generations do not erase local files or enable recording.
-            changeLocked(Access(this, current.binding, Origin.LOCAL))
+            // Idle/network loss revokes ONLINE proof, while the same durable account keeps its wire correlation.
+            val sameAccountBecameUnavailable = !ready && history == current.history
+            changeLocked(Access(this, current.binding, Origin.LOCAL,
+                requestSession = if (sameAccountBecameUnavailable) current.requestSession else UUID.randomUUID().toString()))
             return mutable.value
         }
         return current

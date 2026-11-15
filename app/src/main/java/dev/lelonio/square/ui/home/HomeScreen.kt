@@ -187,6 +187,7 @@ fun HomeScreen(
      */
     shelves: List<dev.lelonio.square.data.HomeShelf> = emptyList(),
     airPods: dev.lelonio.square.ui.airpods.AirPodsUiBinding? = null,
+    onSetupWebApi: () -> Unit = onOpenSettings,
 ) {
     when (state) {
         MainViewModel.UiState.LoggedOut -> Centered {
@@ -389,7 +390,8 @@ fun HomeScreen(
                 // are a second, worse answer to the same question, printed
                 // underneath the first. They keep their own chips, so nothing
                 // is lost — only the pile on the front page.
-                val ownFeed = shelves.isEmpty()
+                val visibleShelves = shelves.filter { it.items.isNotEmpty() }
+                val ownFeed = visibleShelves.isEmpty()
                 val showReleases = (current == Feed.ALL && ownFeed) || current == Feed.RELEASES
                 val showArtists = (current == Feed.ALL && ownFeed) || current == Feed.ARTISTS
                 val showLibrary = (current == Feed.ALL && ownFeed) || current == Feed.LIBRARY
@@ -397,6 +399,8 @@ fun HomeScreen(
                 val columns = artistColumns
                 val showForYou = (current == Feed.ALL && ownFeed) || current == Feed.FOR_YOU
                 val filter = current
+                val notice = i10HomeNotice(I10HomeFilter.valueOf(current.name), feed,
+                    visibleShelves.isNotEmpty(), playlists.isNotEmpty(), recent.isNotEmpty())
 
                 LazyColumn(
                     Modifier
@@ -481,8 +485,8 @@ fun HomeScreen(
                 // API round trip a second or two behind, and without a
                 // placeholder the page arrived in two halves and shifted under
                 // whatever was being read.
-                if (filter == Feed.ALL) {
-                    shelves.forEach { shelf ->
+                if (filter == Feed.ALL || filter == Feed.FOR_YOU) {
+                    visibleShelves.forEach { shelf ->
                         item(contentType = "shelf") { Heading(shelf.title) }
                         item(contentType = "shelf") {
                             Carousel(shelf.items, key = { it.uri }) { entry ->
@@ -492,7 +496,8 @@ fun HomeScreen(
                     }
                 }
 
-                if (showForYou && feed.topTracks.isEmpty() && feed.loading) {
+                if (showForYou && feed.topTracks.isEmpty() &&
+                    feed.sections[dev.lelonio.square.ui.requests.I07FeedSection.TOP_TRACKS] == dev.lelonio.square.ui.requests.I07FeedStatus.LOADING) {
                     item(contentType = "skeleton") {
                         SkeletonSection(tileWidth = 152.dp, tileHeight = 152.dp)
                     }
@@ -507,7 +512,8 @@ fun HomeScreen(
                     }
                 }
 
-                if (showForYou && feed.jumpBackIn.isEmpty() && feed.loading) {
+                if (showForYou && feed.jumpBackIn.isEmpty() &&
+                    feed.sections[dev.lelonio.square.ui.requests.I07FeedSection.RECENT_CONTEXTS] == dev.lelonio.square.ui.requests.I07FeedStatus.LOADING) {
                     item(contentType = "skeleton") {
                         SkeletonSection(tileWidth = 152.dp, tileHeight = 152.dp)
                     }
@@ -534,7 +540,8 @@ fun HomeScreen(
                     }
                 }
 
-                if (showReleases && feed.newReleases.isEmpty() && feed.loading) {
+                if (showReleases && feed.newReleases.isEmpty() &&
+                    feed.sections[dev.lelonio.square.ui.requests.I07FeedSection.RELEASES] == dev.lelonio.square.ui.requests.I07FeedStatus.LOADING) {
                     item(contentType = "skeleton") {
                         SkeletonSection(tileWidth = 0.dp, tileHeight = 200.dp, card = true)
                     }
@@ -567,7 +574,8 @@ fun HomeScreen(
                     }
                 }
 
-                if (showArtists && feed.topArtists.isEmpty() && feed.loading) {
+                if (showArtists && feed.topArtists.isEmpty() &&
+                    feed.sections[dev.lelonio.square.ui.requests.I07FeedSection.ARTISTS] == dev.lelonio.square.ui.requests.I07FeedStatus.LOADING) {
                     item(contentType = "skeleton") {
                         SkeletonSection(tileWidth = 120.dp, tileHeight = 120.dp, round = true)
                     }
@@ -638,6 +646,40 @@ fun HomeScreen(
                     }
                 }
 
+                if (notice != null) item(key = "filter-status", contentType = "status") {
+                    Column(
+                        Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 20.dp),
+                        horizontalAlignment = Alignment.CenterHorizontally,
+                        verticalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        Text(
+                            stringResource(when (notice) {
+                                I10HomeNotice.LOADING -> R.string.wf_i10_home_loading
+                                I10HomeNotice.SETUP -> R.string.wf_i10_home_setup
+                                I10HomeNotice.OFFLINE -> R.string.wf_i10_home_offline
+                                I10HomeNotice.FAILED -> R.string.wf_i10_home_failed
+                                I10HomeNotice.PENDING -> R.string.wf_i10_home_pending
+                                I10HomeNotice.EMPTY -> R.string.wf_i10_home_empty
+                            }),
+                            style = MaterialTheme.typography.bodyMedium, color = InkDim,
+                            textAlign = TextAlign.Center,
+                        )
+                        if (notice == I10HomeNotice.SETUP || notice == I10HomeNotice.FAILED || notice == I10HomeNotice.PENDING) {
+                            dev.antigravity.fluidengine.ui.fluid.FluidButton(
+                                text = stringResource(if (notice == I10HomeNotice.SETUP) R.string.wf_i10_setup else R.string.wf_i07_feed_retry),
+                                onClick = if (notice == I10HomeNotice.SETUP) onSetupWebApi else onRetry,
+                                style = dev.antigravity.fluidengine.ui.fluid.FluidButtonStyle.Plain,
+                            )
+                        }
+                        if (filter != Feed.ALL) {
+                            dev.antigravity.fluidengine.ui.fluid.FluidButton(
+                                text = stringResource(R.string.wf_i10_show_all),
+                                onClick = { filterName = Feed.ALL.name },
+                                style = dev.antigravity.fluidengine.ui.fluid.FluidButtonStyle.Plain,
+                            )
+                        }
+                    }
+                }
                 item(contentType = "tail") { Box(Modifier.height(24.dp)) }
                 }
                 }

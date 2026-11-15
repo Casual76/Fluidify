@@ -124,6 +124,8 @@ class DownloadStore internal constructor(
         val failures: Map<String, Failure> = emptyMap(),
         val ownerOccurrences: Map<String, List<OwnerOccurrence>> = emptyMap(),
         val legacyOwnerUris: Map<String, String> = emptyMap(),
+        /** A user requested this owner while its source was still being read. */
+        val incompleteOwners: Set<String> = emptySet(),
     )
 
     /** One atomic document owns every namespace and the legacy assignment decision. */
@@ -171,6 +173,10 @@ class DownloadStore internal constructor(
         get() = _owners.asStateFlow()
     private val _owners = MutableStateFlow<Map<String, List<String>>>(emptyMap())
 
+    /** Collection metadata can change without changing its track membership. */
+    private val _ownerLabels = MutableStateFlow<Map<String, OwnerLabel>>(emptyMap())
+    val ownerLabels: StateFlow<Map<String, OwnerLabel>> = _ownerLabels.asStateFlow()
+
     /** Downloads in flight, as a fraction. Never persisted. */
     val progress: StateFlow<Map<String, Float>> = _progress.asStateFlow()
 
@@ -190,6 +196,10 @@ class DownloadStore internal constructor(
      */
     private val _ownerStates = MutableStateFlow<Map<String, OwnerState>>(emptyMap())
     val ownerStates: StateFlow<Map<String, OwnerState>> = _ownerStates.asStateFlow()
+
+    private val _incompleteOwners = MutableStateFlow<Set<String>>(emptySet())
+    /** Known tracks are retained, but these collections have no complete source snapshot yet. */
+    val incompleteOwners: StateFlow<Set<String>> = _incompleteOwners.asStateFlow()
 
     private val ownerRefreshFences = mutableMapOf<String, Any>()
 
@@ -332,7 +342,9 @@ class DownloadStore internal constructor(
         val failures = _failures.value
 
         val done = wanted.count(files::containsKey)
-        if (done == wanted.size) return OwnerState.Complete
+        if (done == wanted.size) return if (ownerUri in _index.value.incompleteOwners) {
+            OwnerState.Partial(done, wanted.size)
+        } else OwnerState.Complete
         if (ownerUri.startsWith("downloads:legacy:")) return OwnerState.Partial(done, wanted.size)
 
         val running = wanted.filter(progress::containsKey)
@@ -437,14 +449,15 @@ class DownloadStore internal constructor(
     }
 
     fun labelOf(ownerUri: String): OwnerLabel? = accounts.locked {
-        accounts.capture()?.let {
-            _index.value.labels[ownerUri] ?: if (ownerUri in _index.value.owners) when (ownerUri) {
-                SINGLES -> OwnerLabel(appContext.getString(dev.lelonio.square.R.string.downloaded_tracks))
-                LIKED -> OwnerLabel(appContext.getString(dev.lelonio.square.R.string.liked_songs))
-                else -> null
-            } else null
-        }
+        accounts.capture()?.let { ownerLabel(_index.value, ownerUri) }
     }
+
+    private fun ownerLabel(index: Index, ownerUri: String): OwnerLabel? = index.labels[ownerUri]
+        ?: if (ownerUri in index.owners) when (ownerUri) {
+            SINGLES -> OwnerLabel(appContext.getString(dev.lelonio.square.R.string.downloaded_tracks))
+            LIKED -> OwnerLabel(appContext.getString(dev.lelonio.square.R.string.liked_songs))
+            else -> null
+        } else null
 
     fun totalBytes(): Long = accounts.locked {
         if (accounts.capture() == null) 0L else _files.value.values.sumOf { it.bytes }
@@ -505,12 +518,17 @@ class DownloadStore internal constructor(
                 val current = _index.value
                 ownerRefreshFences[uri] = Any()
                 if (current.owners[uri] != tracks.map { it.uri }) {
-                    replaceOwnerLocked(uri, tracks, label)
+                    replaceOwnerLocked(uri, tracks, label, resetFailures = false)
                     return@mutate OwnerRefreshResult.MEMBERSHIP
                 }
                 val occurrences = tracks.map { OwnerOccurrence(it.uri, it.addedAt) }
-                if (occurrencesFor(current, uri) == occurrences) return@mutate OwnerRefreshResult.UNCHANGED
-                commit(current.copy(ownerOccurrences = current.ownerOccurrences + (uri to occurrences)))
+                val labels = if (label != null) current.labels + (uri to label) else current.labels
+                if (occurrencesFor(current, uri) == occurrences && uri !in current.incompleteOwners &&
+                    labels == current.labels) {
+                    return@mutate OwnerRefreshResult.UNCHANGED
+                }
+                commit(current.copy(ownerOccurrences = current.ownerOccurrences + (uri to occurrences),
+                    incompleteOwners = current.incompleteOwners - uri, labels = labels))
                 OwnerRefreshResult.METADATA
             }
         } catch (cancelled: CancellationException) {
@@ -536,6 +554,24 @@ class DownloadStore internal constructor(
         replaceOwnerLocked(ownerUri, tracks, label)
     }
 
+    /**
+     * Explicit keep plus its refresh fence in ONE transaction. The caller may already be reading
+     * this source, before this owner existed. Only that keep's token may finish its partial list;
+     * removal, another explicit keep, another accepted refresh or an account change revokes it.
+     */
+    suspend fun keepOwnerFromRead(
+        access: AccountLocalDataCoordinator.Access,
+        ownerUri: String,
+        tracks: List<CatalogTrack>,
+        label: OwnerLabel?,
+        sourceComplete: Boolean,
+        consent: () -> Boolean = { true },
+    ): OwnerRefreshToken = mutate(access) {
+        check(consent()) { "Source read was revoked" }
+        replaceOwnerLocked(ownerUri, tracks, label, sourceComplete = sourceComplete)
+        OwnerRefreshToken(this, ownerUri, ownerRefreshFences.getValue(ownerUri), access, consent)
+    }
+
     private fun reusableFiles(uris: Collection<String>): Map<String, FileRecord> {
         val shared = book.assets
         return uris.mapNotNull { uri ->
@@ -543,7 +579,13 @@ class DownloadStore internal constructor(
         }.toMap()
     }
 
-    private fun replaceOwnerLocked(ownerUri: String, tracks: List<CatalogTrack>, label: OwnerLabel?) {
+    private fun replaceOwnerLocked(
+        ownerUri: String,
+        tracks: List<CatalogTrack>,
+        label: OwnerLabel?,
+        sourceComplete: Boolean = true,
+        resetFailures: Boolean = true,
+    ) {
         ownerRefreshFences[ownerUri] = Any()
         val current = _index.value
         commit(
@@ -556,7 +598,9 @@ class DownloadStore internal constructor(
                 labels = label?.let { current.labels + (ownerUri to it) } ?: current.labels,
                 // Asking again is the listener saying "try this", so the record
                 // of past failures for these tracks goes.
-                failures = current.failures - tracks.map { it.uri }.toSet(),
+                failures = if (resetFailures) current.failures - tracks.map { it.uri }.toSet() else current.failures,
+                incompleteOwners = if (sourceComplete) current.incompleteOwners - ownerUri
+                    else current.incompleteOwners + ownerUri,
             ),
         )
     }
@@ -614,6 +658,7 @@ class DownloadStore internal constructor(
                 ownerOccurrences = current.ownerOccurrences - ownerUri,
                 labels = current.labels - ownerUri,
                 legacyOwnerUris = current.legacyOwnerUris - ownerUri,
+                incompleteOwners = current.incompleteOwners - ownerUri,
             ),
         )
     }
@@ -669,6 +714,16 @@ class DownloadStore internal constructor(
         }
     }
 
+    /** Explicit collection retry without replacing membership or revoking an in-progress source read. */
+    suspend fun retryOwnerFailed(access: AccountLocalDataCoordinator.Access, ownerUri: String): Boolean = mutate(access) {
+        val current = _index.value
+        val wanted = current.owners[ownerUri]?.toSet() ?: return@mutate false
+        val missingFailures = current.failures.keys.filter { it in wanted && it !in current.files }.toSet()
+        if (missingFailures.isEmpty()) return@mutate false
+        commit(current.copy(failures = current.failures - missingFailures))
+        true
+    }
+
     /** Forgets past failures so [pending] offers those tracks again. */
     suspend fun retryFailed(access: AccountLocalDataCoordinator.Access) = mutate(access) {
         commit(_index.value.copy(failures = emptyMap()))
@@ -698,7 +753,8 @@ class DownloadStore internal constructor(
         deleteAudio: (String) -> Unit,
     ) = mutate(access) {
         ownerRefreshFences.clear()
-        commit(_index.value.copy(owners = emptyMap(), ownerOccurrences = emptyMap(), labels = emptyMap(), legacyOwnerUris = emptyMap()))
+        commit(_index.value.copy(owners = emptyMap(), ownerOccurrences = emptyMap(), labels = emptyMap(),
+            legacyOwnerUris = emptyMap(), incompleteOwners = emptySet()))
         _progress.value = emptyMap()
         pruneLocked(access, deleteAudio)
     }
@@ -799,7 +855,11 @@ class DownloadStore internal constructor(
         _index.value = effective
         _files.value = effective.files
         _owners.value = index.owners
+        _ownerLabels.value = index.owners.keys.mapNotNull { uri ->
+            ownerLabel(effective, uri)?.let { uri to it }
+        }.toMap()
         _failures.value = index.failures
+        _incompleteOwners.value = index.incompleteOwners
         updateOwnerStates()
     }
 

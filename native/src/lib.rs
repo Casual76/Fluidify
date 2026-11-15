@@ -5,6 +5,7 @@
 //! boundary is either a primitive or a UTF-8 string, so there is no shared
 //! ownership to reason about.
 
+mod recovery_policy;
 mod catalog;
 mod collection;
 mod downloads;

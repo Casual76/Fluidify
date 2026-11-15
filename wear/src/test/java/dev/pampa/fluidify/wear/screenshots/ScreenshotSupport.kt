@@ -133,6 +133,7 @@ class FakeControls(snapshot: PlaybackSnapshot?, link: LinkStatus = LinkStatus.CO
         MutableStateFlow(NowPlaying(snapshot?.let { ReceivedSnapshot(it, Now) }, link))
     override val errors: SharedFlow<String> = MutableSharedFlow()
     override fun togglePlay() = Unit
+    override fun setPlaying(playing: Boolean) = Unit
     override fun next() = Unit
     override fun previous() = Unit
     override fun seekTo(positionMs: Long) = Unit

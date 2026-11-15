@@ -25,6 +25,13 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.platform.testTag
+import dev.lelonio.square.ui.library.I09CollectionSearch
+import dev.lelonio.square.ui.library.i09FilterCollectionsByName
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
@@ -71,76 +78,7 @@ fun AddToPlaylistSheet(
         presentation = dev.antigravity.fluidengine.ui.fluid.FluidGlassModalPresentation.Sheet,
         paneTitle = stringResource(R.string.add_to_playlist),
     ) {
-        Column(Modifier.padding(vertical = 18.dp)) {
-            Text(
-                stringResource(R.string.add_to_playlist),
-                style = MaterialTheme.typography.titleLarge,
-                color = GlassInk,
-                modifier = Modifier.padding(start = 22.dp, end = 22.dp),
-            )
-            Text(
-                // Says what is being added: the sheet can outlive the track
-                // that opened it, since playback carries on underneath.
-                state.trackTitle,
-                style = MaterialTheme.typography.bodyMedium,
-                color = GlassInkDim,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 2.dp, bottom = 12.dp),
-            )
-
-            if (state.error != null) {
-                Text(
-                    state.error,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.error,
-                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
-                )
-            }
-
-            if (state.done != null || state.removed != null) {
-                Text(
-                    if (state.removed != null) {
-                        stringResource(R.string.removed_from, state.removed.orEmpty())
-                    } else {
-                        stringResource(R.string.added_to, state.done.orEmpty())
-                    },
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 8.dp),
-                )
-            }
-
-            if (state.playlists.isEmpty()) {
-                Text(
-                    stringResource(R.string.no_playlists_in_account),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = GlassInkDim,
-                    modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
-                )
-            } else {
-                Column(
-                    Modifier
-                        .heightIn(max = 360.dp)
-                        .verticalScroll(rememberScrollState()),
-                    verticalArrangement = Arrangement.spacedBy(2.dp),
-                ) {
-                    state.playlists.forEach { playlist ->
-                        PlaylistRow(
-                            playlist = playlist,
-                            busy = state.busy == playlist.uri,
-                            added = state.done == playlist.name,
-                            // Liked Songs is the one row that knows where
-                            // the track already is, and the one a second
-                            // press takes it out of.
-                            liked = state.liked && playlist.uri.endsWith(":collection"),
-                            enabled = state.trackUri != null && state.busy == null,
-                            onClick = { onSelect(playlist) },
-                        )
-                    }
-                }
-            }
-        }
+        PlaylistPicker(state = state, onSelect = onSelect)
     }
 }
 
@@ -155,6 +93,8 @@ fun PlaylistPicker(
     state: MainViewModel.AddToPlaylistState,
     onSelect: (CatalogPlaylist) -> Unit,
 ) {
+            var query by remember(state.open, state.trackUri) { mutableStateOf("") }
+            val shown = remember(state.playlists, query) { i09FilterCollectionsByName(state.playlists, query) }
             Column(Modifier.padding(vertical = 18.dp)) {
                 Text(
                     stringResource(R.string.add_to_playlist),
@@ -171,6 +111,12 @@ fun PlaylistPicker(
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 2.dp, bottom = 12.dp),
+                )
+
+                I09CollectionSearch(
+                    query = query, onQueryChange = { query = it },
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 22.dp, vertical = 8.dp)
+                        .testTag("wf_i09_picker_search"),
                 )
 
                 if (state.error != null) {
@@ -195,9 +141,10 @@ fun PlaylistPicker(
                     )
                 }
 
-                if (state.playlists.isEmpty()) {
+                if (shown.isEmpty()) {
                     Text(
-                        stringResource(R.string.no_playlists_in_account),
+                        stringResource(if (state.playlists.isEmpty()) R.string.no_playlists_in_account
+                            else R.string.wf_i09_no_results),
                         style = MaterialTheme.typography.bodyMedium,
                         color = GlassInkDim,
                         modifier = Modifier.padding(horizontal = 22.dp, vertical = 12.dp),
@@ -209,7 +156,7 @@ fun PlaylistPicker(
                             .verticalScroll(rememberScrollState()),
                         verticalArrangement = Arrangement.spacedBy(2.dp),
                     ) {
-                        state.playlists.forEach { playlist ->
+                        shown.forEach { playlist ->
                             PlaylistRow(
                                 playlist = playlist,
                                 busy = state.busy == playlist.uri,

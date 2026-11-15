@@ -160,8 +160,8 @@ class AirPodsOnboardingModalTest {
         val image = requireNotNull(android.graphics.BitmapFactory.decodeFile(file.path))
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
         try {
-            for (id in listOf(R.string.airpods_host_absent, R.string.airpods_feature_exclusive_summary,
-                R.string.airpods_ui_setup)) {
+            for (id in listOf(R.string.airpods_host_absent, R.string.airpods_feature_diagnostics_group,
+                R.string.airpods_ui_connect_setup)) {
                 val bounds = compose.onNodeWithText(label(id)).fetchSemanticsNode().boundsInRoot
                 val left = ((bounds.left - root.left) * image.width / root.width).toInt().coerceIn(0, image.width - 1)
                 val top = ((bounds.top - root.top) * image.height / root.height).toInt().coerceIn(0, image.height - 1)
@@ -174,7 +174,7 @@ class AirPodsOnboardingModalTest {
                     maximumContrast = maxOf(maximumContrast, contrast)
                     if (contrast >= 4.5) inkPixels++
                 }
-                // Three plain text nodes on an opaque, uniform page floor. A few raster
+                // Three visible text nodes on an opaque, uniform page floor. A few raster
                 // specks cannot stand in for visible glyphs; no source style is assumed.
                 println("HOST_TEXT_RASTER $name $id max=$maximumContrast ink=$inkPixels bounds=$bounds")
                 assertTrue("Host text contrast $name $id: max=$maximumContrast ink=$inkPixels",

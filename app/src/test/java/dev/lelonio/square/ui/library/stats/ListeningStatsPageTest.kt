@@ -36,6 +36,23 @@ class ListeningStatsPageTest {
         }
     }
 
+    @Test fun songHasCoverAndExpandedSummaryKeepsLongExplanationsBehindTheirOwnDisclosures() {
+        showReady()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("listening-stats-song-cover"))
+        compose.onNodeWithTag("listening-stats-song-cover").assertIsDisplayed()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("listening-stats-details-toggle"))
+        compose.onNodeWithTag("listening-stats-details-toggle").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("listening-stats-calculation-toggle"))
+        compose.onNodeWithTag("listening-stats-receipts-anchor").assertDoesNotExist()
+        compose.onNodeWithTag("listening-stats-calculation-toggle").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasText("Period and data update"))
+        compose.onNodeWithText("Period and data update").assertExists()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("listening-stats-imports-toggle"))
+        compose.onNodeWithTag("listening-stats-imports-toggle").performClick()
+        compose.onNode(hasScrollAction()).performScrollToNode(hasTestTag("listening-stats-receipts-anchor"))
+        compose.onNodeWithTag("listening-stats-receipts-anchor").assertExists()
+    }
+
     @Test fun monthButtonsRemainUsableAndCannotAdvancePastCurrentMonth() {
         var previous = 0
         var next = 0

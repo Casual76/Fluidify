@@ -48,6 +48,9 @@ import dev.lelonio.square.ui.navigation.rememberPlaylistListState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import com.adamglin.phosphoricons.regular.Warning
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.draw.alpha
@@ -182,6 +185,17 @@ fun PlaylistScreen(
      * hides is the per-row mark: see [trackDownload].
      */
     downloadState: OwnerState = OwnerState.None,
+    /** True until the entire source membership has been read successfully. */
+    downloadSourceIncomplete: Boolean = false,
+    /** Unlike OwnerState.None, this also represents an existing empty owner. */
+    downloadOwnerPresent: Boolean = downloadState !is OwnerState.None,
+    /** Failed files in this owner, and whether any of their retries are still scheduled. */
+    downloadFailures: Int = 0,
+    downloadRetryPending: Boolean = false,
+    /** Explicit retry of this owner's failed files; never removes/recreates the owner. */
+    onRetryDownload: (() -> Unit)? = null,
+    /** Explicit online source read, separate from retrying the known missing files. */
+    onRetryDownloadSource: (() -> Unit)? = null,
     onToggleDownload: () -> Unit = {},
     /** False where a download makes no sense, such as the local files shelf. */
     canDownload: Boolean = false,
@@ -236,6 +250,12 @@ fun PlaylistScreen(
     /** Entry-owned text; never serialised into Navigation's saved-state Bundle. */
     pageMemory: PlaylistPageMemory = remember(state.uri) { PlaylistPageMemory() },
 ) {
+    val downloadPhase = i09DownloadPhase(downloadState, downloadSourceIncomplete, state.loading || state.loadingMore, downloadOwnerPresent)
+    val downloadStatus = i09DownloadStatus(downloadState, downloadPhase, downloadFailures, downloadRetryPending)
+    // Existing owners remain removable, including a source that failed before yielding any rows.
+    val showDownload = canDownload || downloadOwnerPresent || downloadSourceIncomplete
+    val allowDownload = downloadOwnerPresent || downloadSourceIncomplete ||
+        (canDownload && state.error == null && state.tracks.isNotEmpty())
     var query by pageMemory::query
     var searching by pageMemory::searching
     var searchReady by pageMemory::searchReady
@@ -540,8 +560,12 @@ fun PlaylistScreen(
             },
             searching = searching,
             downloadState = downloadState,
+            downloadPhase = downloadPhase,
+            downloadStatus = downloadStatus,
+            downloadError = downloadFailures > 0,
             onToggleDownload = onToggleDownload,
-            canDownload = canDownload,
+            canDownload = showDownload,
+            downloadEnabled = allowDownload,
             watchKept = watchKept,
             onToggleWatch = onToggleWatch,
         )
@@ -637,6 +661,31 @@ fun PlaylistScreen(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(horizontal = 24.dp, vertical = 6.dp),
                     )
+                }
+            }
+
+            if (showDownload && downloadStatus != null) {
+                item(key = "wf_i09_download_status", contentType = "downloadStatus") {
+                    Column(Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp)) {
+                        Text(downloadStatus, style = MaterialTheme.typography.bodySmall,
+                            color = if (downloadFailures > 0) MaterialTheme.colorScheme.error
+                                else MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.testTag("wf_i09_download_status"))
+                        if (downloadPhase == I09DownloadPhase.INCOMPLETE && !offline && onRetryDownloadSource != null) {
+                            dev.antigravity.fluidengine.ui.fluid.FluidButton(
+                                stringResource(R.string.wf_i09_retry_source), onRetryDownloadSource,
+                                grip = dev.antigravity.fluidengine.ui.fluid.FluidPressGrip.YieldsToScroll,
+                                modifier = Modifier.testTag("wf_i09_retry_source"),
+                            )
+                        }
+                        if (downloadFailures > 0 && !offline && onRetryDownload != null) {
+                            dev.antigravity.fluidengine.ui.fluid.FluidButton(
+                                stringResource(R.string.wf_i09_retry_download), onRetryDownload,
+                                grip = dev.antigravity.fluidengine.ui.fluid.FluidPressGrip.YieldsToScroll,
+                                modifier = Modifier.testTag("wf_i09_retry_download"),
+                            )
+                        }
+                    }
                 }
             }
 
@@ -943,8 +992,12 @@ private fun DetailHeader(
     playing: Boolean,
     onToggleSearch: () -> Unit,
     downloadState: OwnerState,
+    downloadPhase: I09DownloadPhase,
+    downloadStatus: String?,
+    downloadError: Boolean,
     onToggleDownload: () -> Unit,
     canDownload: Boolean,
+    downloadEnabled: Boolean,
     watchKept: Boolean? = null,
     onToggleWatch: () -> Unit = {},
 ) {
@@ -1080,6 +1133,10 @@ private fun DetailHeader(
                 if (canDownload) {
                     DownloadAction(
                         state = downloadState,
+                        phase = downloadPhase,
+                        status = downloadStatus,
+                        hasFailure = downloadError,
+                        enabled = downloadEnabled,
                         size = 52.dp,
                         onClick = onToggleDownload,
                     )
@@ -1152,16 +1209,16 @@ private fun DetailHeader(
                     modifier = Modifier.size(20.dp),
                 )
             }
-            Text(
-                name,
-                style = MaterialTheme.typography.titleMedium,
-                color = dev.lelonio.square.ui.theme.Ink,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 6.dp),
-            )
+            Column(Modifier.weight(1f).padding(horizontal = 6.dp)) {
+                Text(name, style = MaterialTheme.typography.titleMedium,
+                    color = dev.lelonio.square.ui.theme.Ink,
+                    maxLines = 1, overflow = TextOverflow.Ellipsis)
+                if (canDownload && downloadStatus != null) {
+                    Text(downloadStatus, style = MaterialTheme.typography.labelSmall,
+                        color = dev.lelonio.square.ui.theme.InkDim,
+                        maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+            }
             IconButton(onClick = onToggleSearch, enabled = barActive) {
                 Icon(
                     if (searching) PhosphorIcons.Regular.X else PhosphorIcons.Fill.MagnifyingGlass,
@@ -1179,20 +1236,25 @@ private fun DetailHeader(
                 )
             }
             if (canDownload) {
-                val downloaded = downloadState is OwnerState.Complete ||
-                    downloadState is OwnerState.Partial
+                val downloaded = downloadPhase == I09DownloadPhase.COMPLETE
+                val kept = downloadState !is OwnerState.None || downloadPhase != I09DownloadPhase.NONE
                 val busy = downloadState is OwnerState.Running
-                IconButton(onClick = onToggleDownload, enabled = barActive) {
+                IconButton(onClick = onToggleDownload, enabled = barActive && downloadEnabled,
+                    modifier = Modifier.semantics { stateDescription = downloadStatus.orEmpty() }) {
                     Icon(
                         when {
                             busy -> PhosphorIcons.Fill.Stop
                             downloaded -> PhosphorIcons.Fill.ArrowCircleDown
+                            downloadPhase == I09DownloadPhase.PARTIAL || downloadPhase == I09DownloadPhase.INCOMPLETE ->
+                                PhosphorIcons.Regular.Warning
                             else -> PhosphorIcons.Regular.ArrowCircleDown
                         },
                         contentDescription = stringResource(
-                            if (downloaded || busy) R.string.remove_download else R.string.download,
+                            if (kept) R.string.remove_download else R.string.download,
                         ),
-                        tint = if (downloaded || busy) {
+                        tint = if (downloadError) {
+                            MaterialTheme.colorScheme.error
+                        } else if (downloaded || busy) {
                             MaterialTheme.colorScheme.primary
                         } else {
                             dev.lelonio.square.ui.theme.Ink
@@ -1432,18 +1494,6 @@ private fun CircleAction(
 }
 
 /**
- * The download button, in its three states.
- *
- * Built beside [CircleAction] rather than out of it because the middle state is
- * not an icon: a ring around the glass says how far along the page is, and the
- * glyph inside becomes a stop, since tapping it now gives the download back.
- *
- * `Partial` draws as complete on purpose. It means every track that can be
- * fetched has been, and the ones left are not available on this account — which
- * is finished, as far as this button can act on it. The count lives in the
- * downloads panel, where it can be explained.
- */
-/**
  * The little mark in a row that says this song is here.
  *
  * Nothing at all until a download exists for the track. That is the whole rule:
@@ -1461,7 +1511,7 @@ private fun DownloadMark(state: DownloadState) {
     // Queued deliberately draws nothing. A playlist of four hundred songs would
     // otherwise sprout four hundred marks the instant the button is pressed,
     // which says "all downloaded" a good ten minutes before it is true.
-    if (state !is DownloadState.Done && running == null) return
+    if (state !is DownloadState.Done && state !is DownloadState.Failed && running == null) return
 
     val accent = MaterialTheme.colorScheme.primary
     Box(
@@ -1471,6 +1521,11 @@ private fun DownloadMark(state: DownloadState) {
         contentAlignment = Alignment.Center,
     ) {
         when {
+            state is DownloadState.Failed -> Icon(
+                PhosphorIcons.Regular.Warning,
+                contentDescription = stringResource(R.string.wf_i09_file_failed),
+                tint = MaterialTheme.colorScheme.error, modifier = Modifier.size(14.dp),
+            )
             state is DownloadState.Done -> Icon(
                 PhosphorIcons.Fill.ArrowCircleDown,
                 contentDescription = stringResource(R.string.downloaded),
@@ -1525,18 +1580,47 @@ private fun DownloadMark(state: DownloadState) {
 }
 
 @Composable
+private fun i09DownloadStatus(
+    state: OwnerState, phase: I09DownloadPhase, failures: Int, retryPending: Boolean,
+): String? {
+    val count = when (state) {
+        is OwnerState.Partial -> stringResource(R.string.wf_i09_download_count, state.done, state.total)
+        is OwnerState.Running -> stringResource(R.string.wf_i09_download_count, state.done, state.total)
+        else -> null
+    }
+    val scope = when (phase) {
+        I09DownloadPhase.READING -> stringResource(R.string.wf_i08_download_reading)
+        I09DownloadPhase.INCOMPLETE -> stringResource(R.string.wf_i08_download_incomplete)
+        I09DownloadPhase.COMPLETE -> stringResource(R.string.downloaded)
+        I09DownloadPhase.PARTIAL -> stringResource(R.string.wf_i09_partial)
+        else -> null
+    }
+    val failure = if (failures > 0) stringResource(
+        if (retryPending) R.string.wf_i09_retry_pending else R.string.wf_i09_download_failed, failures,
+    ) else null
+    return listOfNotNull(count, scope, failure).takeIf { it.isNotEmpty() }?.joinToString(" · ")
+}
+
+@Composable
 private fun DownloadAction(
     state: OwnerState,
+    phase: I09DownloadPhase,
+    status: String?,
+    hasFailure: Boolean,
+    enabled: Boolean,
     size: androidx.compose.ui.unit.Dp,
     onClick: () -> Unit,
 ) {
     val accent = MaterialTheme.colorScheme.primary
     val running = state as? OwnerState.Running
-    val kept = state is OwnerState.Complete || state is OwnerState.Partial
+    val complete = phase == I09DownloadPhase.COMPLETE
+    val incomplete = phase == I09DownloadPhase.PARTIAL || phase == I09DownloadPhase.INCOMPLETE
+    val kept = state !is OwnerState.None || phase != I09DownloadPhase.NONE
     val lit = kept || running != null
 
     val tint by androidx.compose.animation.animateColorAsState(
-        if (lit) accent else dev.lelonio.square.ui.theme.Ink,
+        if (hasFailure) MaterialTheme.colorScheme.error else if (complete || running != null) accent
+            else dev.lelonio.square.ui.theme.Ink,
         label = "download action",
     )
     // Eased, so a ring that jumps a track at a time still reads as travel.
@@ -1549,7 +1633,9 @@ private fun DownloadAction(
     Box(contentAlignment = Alignment.Center) {
         GlassButton(
             onClick = onClick,
+            isInteractive = enabled,
             modifier = Modifier
+                .semantics { stateDescription = status.orEmpty() }
                 .size(size)
                 .border(0.6.dp, dev.lelonio.square.ui.theme.glassEdge(0.30f), CircleShape),
             contentHeight = size,
@@ -1558,7 +1644,8 @@ private fun DownloadAction(
             Icon(
                 when {
                     running != null -> PhosphorIcons.Fill.Stop
-                    kept -> PhosphorIcons.Fill.ArrowCircleDown
+                    complete -> PhosphorIcons.Fill.ArrowCircleDown
+                    incomplete -> PhosphorIcons.Regular.Warning
                     else -> PhosphorIcons.Regular.ArrowCircleDown
                 },
                 contentDescription = stringResource(

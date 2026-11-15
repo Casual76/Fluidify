@@ -54,6 +54,7 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
         val access = app.accountLocalData.captureRequest(request.accountSession)
         if (access == null) {
             reply(nodeId, RpcResponse(request.id, false, error = "account-changed", accountSession = request.accountSession), null)
+            bridge.refreshWatchAccount()
             return
         }
         // What the question asks for, held to what the phone allows: a negative count or an
@@ -63,7 +64,7 @@ class WearRpcHandler(private val app: SquareApplication, private val bridge: Pho
         // Not a child of this call: much of an answer is blocking native and network work that no
         // timeout can interrupt, and a child would hold the reply until it ended. Raced instead,
         // and left to finish on its own when it loses (a Home built late is still kept for next time).
-        val work = answers.async { answer(access, method) }
+        val work = answers.async { bridge.withPlaybackUse { answer(access, method) } }
         val response = try {
             val payload = withTimeoutOrNull(budgetFor(method)) { work.await() }
             if (payload != null || work.isCompleted) {

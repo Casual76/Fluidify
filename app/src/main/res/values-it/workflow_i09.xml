@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i09_search">Cerca raccolta</string>
+    <string name="wf_i09_clear">Cancella ricerca</string>
+    <string name="wf_i09_close">Chiudi ricerca</string>
+    <string name="wf_i09_no_results">Nessuna raccolta trovata</string>
+    <string name="wf_i09_download_collection">Raccolta scaricata</string>
+    <string name="wf_i09_download_count">%1$d di %2$d scaricati</string>
+    <string name="wf_i09_partial">Download incompleto</string>
+    <string name="wf_i09_retry_download">Riprova i download mancanti</string>
+    <string name="wf_i09_file_failed">Download non riuscito</string>
+    <string name="wf_i09_retry_pending">%1$d non riusciti · riprova prevista</string>
+    <string name="wf_i09_download_failed">%1$d non riusciti</string>
+    <string name="wf_i09_retry_source">Completa raccolta</string>
+</resources>

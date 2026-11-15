@@ -6,6 +6,7 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.scrollBy
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -20,11 +21,22 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.State
 import androidx.compose.runtime.derivedStateOf
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameMillis
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.scrollBy
+import androidx.compose.ui.semantics.scrollToIndex
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.draw.blur
 import androidx.compose.ui.draw.drawWithContent
@@ -41,8 +53,10 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.lelonio.square.data.Lyrics
+import dev.lelonio.square.R
 import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.flow.collectLatest
+import kotlinx.coroutines.launch
 import kotlin.math.abs
 
 /** A clipped lyric pane retains scroll/animation state, while its rows lose input authority. */
@@ -68,11 +82,29 @@ fun LyricsView(
     showTranslation: Boolean = false,
     /** Tablet: keep the current verse near the transport, with context below. */
     controlsAbove: Boolean = false,
+    /** The source document: adding a translation must not reset manual reading. */
+    scrollIdentity: Any = lyrics,
     onSeek: (Long) -> Unit,
 ) {
     // Keyed on the lyrics, so a new track starts at its first line. Kept across
     // the change, the list stayed wherever the previous song was left.
-    val listState = remember(lyrics) { androidx.compose.foundation.lazy.LazyListState() }
+    val listState = remember(scrollIdentity) { androidx.compose.foundation.lazy.LazyListState() }
+    var following by remember(scrollIdentity) { mutableStateOf(true) }
+    val interactionEnabled = LocalLyricInteractionEnabled.current
+    val scrollScope = androidx.compose.runtime.rememberCoroutineScope()
+    val latestInteraction = androidx.compose.runtime.rememberUpdatedState(interactionEnabled)
+    val latestSynced = androidx.compose.runtime.rememberUpdatedState(lyrics.synced)
+    val manualScroll = remember(scrollIdentity) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                // Touch/wheel/keyboard input suspends follow. The centring animation
+                // uses SideEffect, so it cannot suspend itself.
+                if (source == NestedScrollSource.UserInput && available.y != 0f &&
+                    latestInteraction.value && latestSynced.value) following = false
+                return Offset.Zero
+            }
+        }
+    }
     val position = rememberSmoothPosition(positionMs, isPlaying)
 
     // Derived, so the clock invalidates this view only when the answer changes.
@@ -93,14 +125,14 @@ fun LyricsView(
     // A plain array rather than snapshot state: nothing on screen depends on
     // it, and making it observable would recompose the list to record a fact
     // only the effect below ever reads.
-    val placed = remember(lyrics) { BooleanArray(1) }
+    val placed = remember(scrollIdentity) { BooleanArray(1) }
 
     val tabletAnchorPx = with(LocalDensity.current) { 80.dp.roundToPx() }
     // The phone centres the verse. Below the tablet transport, one preceding
     // line is enough context: centring in the entire remaining height left a
     // large gap between the controls and the words being sung.
-    androidx.compose.runtime.LaunchedEffect(lyrics, activeLine, controlsAbove, tabletAnchorPx) {
-        if (activeLine < 0) return@LaunchedEffect
+    androidx.compose.runtime.LaunchedEffect(lyrics, activeLine, controlsAbove, tabletAnchorPx, following) {
+        if (activeLine < 0 || !following) return@LaunchedEffect
         // The effect runs before the list has been measured, so on the first
         // pass the viewport is still nothing high and centring on it would
         // land the line at the top of the screen. Wait for a real height.
@@ -111,6 +143,7 @@ fun LyricsView(
                 // layoutInfo can publish from a measurement. A scroll forces another measure;
                 // yield to the next frame so it cannot re-enter the layout that reported it.
                 withFrameMillis { }
+                if (!following) return@collectLatest
                 val offset = if (controlsAbove) {
                     -minOf(tabletAnchorPx, height / 4)
                 } else {
@@ -128,47 +161,79 @@ fun LyricsView(
             }
     }
 
-    LazyColumn(
-        state = listState,
-        modifier = modifier
-            .fillMaxSize()
-            // Fades the ends instead of cutting lines off square. DstIn needs
-            // its own layer, otherwise the mask would erase what is behind the
-            // list as well.
-            .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
-            .drawWithContent {
-                drawContent()
-                val topFade = if (controlsAbove) (16.dp.toPx() / size.height).coerceIn(0f, .18f) else .18f
-                val bottomFade = if (controlsAbove) (24.dp.toPx() / size.height).coerceIn(0f, .18f) else .18f
-                drawRect(
-                    brush = Brush.verticalGradient(
-                        0f to Color.Transparent,
-                        topFade to Color.Black,
-                        (1f - bottomFade) to Color.Black,
-                        1f to Color.Transparent,
-                    ),
-                    blendMode = BlendMode.DstIn,
+    Box(modifier.fillMaxSize()) {
+        LazyColumn(
+            state = listState,
+            userScrollEnabled = interactionEnabled,
+            modifier = Modifier
+                .fillMaxSize()
+                .testTag("wf_i13_lyrics_list")
+                .nestedScroll(manualScroll)
+                .semantics {
+                    if (interactionEnabled) {
+                        // Semantic scroll requests are manual reading too. They can call
+                        // scrollToItem directly, without a pointer/nested-scroll event.
+                        scrollBy { _, y ->
+                            if (lyrics.synced && y != 0f) following = false
+                            scrollScope.launch { listState.scrollBy(y) }
+                            true
+                        }
+                        scrollToIndex { index ->
+                            if (index !in lyrics.lines.indices) false else {
+                                if (lyrics.synced) following = false
+                                scrollScope.launch { listState.scrollToItem(index) }
+                                true
+                            }
+                        }
+                    }
+                }
+                // Fades the ends instead of cutting lines off square. DstIn needs
+                // its own layer, otherwise the mask would erase what is behind the
+                // list as well.
+                .graphicsLayer(compositingStrategy = CompositingStrategy.Offscreen)
+                .drawWithContent {
+                    drawContent()
+                    val topFade = if (controlsAbove) (16.dp.toPx() / size.height).coerceIn(0f, .18f) else .18f
+                    val bottomFade = if (controlsAbove) (24.dp.toPx() / size.height).coerceIn(0f, .18f) else .18f
+                    drawRect(
+                        brush = Brush.verticalGradient(
+                            0f to Color.Transparent,
+                            topFade to Color.Black,
+                            (1f - bottomFade) to Color.Black,
+                            1f to Color.Transparent,
+                        ),
+                        blendMode = BlendMode.DstIn,
+                    )
+                },
+            contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = if (controlsAbove) 12.dp else 40.dp),
+        ) {
+            itemsIndexed(lyrics.lines) { index, line ->
+                val isActive = index == activeLine
+                LyricRow(
+                    text = line.text,
+                    // Real timings where the source has them; see the lyrics package.
+                    words = line.words,
+                    translation = line.translation.takeIf { showTranslation },
+                    // The clock itself, not a reading of it: only the line being
+                    // sung unwraps it, so the eight rows around it never subscribe
+                    // to a number that moves every frame.
+                    positionMs = position,
+                    distance = if (activeLine < 0 || !following) 0 else abs(index - activeLine),
+                    isActive = isActive,
+                    unsynced = !lyrics.synced,
+                    manualReading = !following,
+                    // Only the line being sung pays for this; the rest are drawn
+                    // plain.
+                    onClick = { line.startTimeMs?.let { following = true; onSeek(it) } },
                 )
-            },
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(vertical = if (controlsAbove) 12.dp else 40.dp),
-    ) {
-        itemsIndexed(lyrics.lines) { index, line ->
-            val isActive = index == activeLine
-            LyricRow(
-                text = line.text,
-                // Real timings where the source has them; see the lyrics package.
-                words = line.words,
-                translation = line.translation.takeIf { showTranslation },
-                // The clock itself, not a reading of it: only the line being
-                // sung unwraps it, so the eight rows around it never subscribe
-                // to a number that moves every frame.
-                positionMs = position,
-                distance = if (activeLine < 0) 0 else abs(index - activeLine),
-                isActive = isActive,
-                unsynced = !lyrics.synced,
-                // Only the line being sung pays for this; the rest are drawn
-                // plain.
-                onClick = { line.startTimeMs?.let(onSeek) },
+            }
+        }
+        if (!following && lyrics.synced && interactionEnabled) {
+            dev.antigravity.fluidengine.ui.fluid.FluidButton(
+                text = stringResource(R.string.wf_i13_follow_song),
+                onClick = { following = true },
+                style = dev.antigravity.fluidengine.ui.fluid.FluidButtonStyle.Plain,
+                modifier = Modifier.align(Alignment.BottomCenter).padding(bottom = 6.dp),
             )
         }
     }
@@ -236,6 +301,7 @@ private fun LyricRow(
     distance: Int,
     isActive: Boolean,
     unsynced: Boolean,
+    manualReading: Boolean,
     onClick: () -> Unit,
 ) {
     val springSpec = spring<Float>(
@@ -249,7 +315,7 @@ private fun LyricRow(
     // only ever reach a layer block. Read there instead and a line change costs
     // eight redraws rather than eight recompositions a frame.
     val scale = animateFloatAsState(
-        targetValue = if (isActive) 1f else 0.90f,
+        targetValue = if (isActive || manualReading) 1f else 0.90f,
         animationSpec = springSpec,
         label = "lyricScale",
     )
@@ -258,7 +324,7 @@ private fun LyricRow(
     // without the rest disappearing.
     val fade = animateFloatAsState(
         targetValue = when {
-            unsynced -> 1f
+            unsynced || manualReading -> 1f
             isActive -> 1f
             else -> (0.62f - distance * 0.12f).coerceAtLeast(0.22f)
         },

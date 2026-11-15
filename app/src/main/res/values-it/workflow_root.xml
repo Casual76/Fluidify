@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_root_collection_unconfirmed">Operazione non confermata. Controlla la raccolta prima di riprovare.</string>
+    <string name="wf_root_queue_remaining">Restano %1$s</string>
+    <string name="wf_root_queue_until_cycle">%1$s al prossimo giro</string>
+    <string name="wf_root_queue_until_track">%1$s alla ripetizione del brano</string>
+    <string name="wf_root_queue_at_least">almeno %1$s</string>
+    <string name="wf_root_queue_unknown">Durata non disponibile</string>
+    <string name="wf_root_enqueue_album">Accoda album</string>
+    <string name="wf_root_enqueue_collection">Aggiungi alla coda</string>
+    <string name="wf_root_queue_loading">Caricamento brani…</string>
+    <string name="wf_root_queue_added">Aggiunto alla coda</string>
+    <string name="wf_root_queue_failed">Impossibile accodare i brani. Riprova.</string>
+    <string name="wf_root_queue_empty">Nessun brano disponibile da accodare</string>
+</resources>

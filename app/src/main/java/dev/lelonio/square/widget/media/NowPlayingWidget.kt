@@ -15,12 +15,16 @@ import coil.imageLoader
 import coil.request.ImageRequest
 import coil.size.Scale
 import dev.lelonio.square.playback.PlaybackService
+import dev.lelonio.square.playback.i06WithLeasedController
+import dev.lelonio.square.playback.I06_WIDGET_TRANSPORT
+import dev.lelonio.square.playback.I06_WIDGET_ACTION
+import dev.lelonio.square.playback.I06_WIDGET_ACCOUNT_EPOCH
+import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.guava.await
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
@@ -287,32 +291,41 @@ object NowPlayingWidgetBridge {
      */
     fun command(context: Context, action: MediaControlAction, onDone: () -> Unit) {
         val app = context.applicationContext
+        // Capture before waiting, so logout/relogin cannot redirect this button to another account.
+        val accountEpoch = PlaybackService.mediaAccountEpoch
         scope.launch(Dispatchers.Main.immediate) {
             try {
-                val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
-                val controller = withTimeoutOrNull(CONNECT_TIMEOUT_MS) {
-                    runCatching {
-                        MediaController.Builder(app, token).buildAsync().await()
-                    }.getOrNull()
-                } ?: return@launch
-                try {
-                    when (action) {
-                        MediaControlAction.TogglePlayPause ->
-                            if (controller.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)) {
-                                if (controller.playWhenReady) controller.pause() else controller.play()
-                            }
-
-                        MediaControlAction.Next -> if (controller.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)) controller.seekToNextMediaItem()
-                        MediaControlAction.Previous -> if (controller.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)) controller.seekToPreviousMediaItem()
+                i06WithLeasedController(
+                    PlaybackService.connections,
+                    CONNECT_TIMEOUT_MS,
+                    connect = {
+                        val token = SessionToken(app, ComponentName(app, PlaybackService::class.java))
+                        MediaController.Builder(app, token).buildAsync()
+                    },
+                    release = { MediaController.releaseFuture(it) },
+                    isCurrent = { PlaybackService.mediaAccountEpoch == accountEpoch },
+                ) { controller ->
+                    check(controller.isConnected)
+                    val args = Bundle().apply {
+                        putLong(I06_WIDGET_ACCOUNT_EPOCH, accountEpoch)
+                        putString(I06_WIDGET_ACTION, when (action) {
+                            MediaControlAction.TogglePlayPause -> "toggle"
+                            MediaControlAction.Next -> "next"
+                            MediaControlAction.Previous -> "previous"
+                        })
                     }
-                    // Nothing is written back from here. A controller that has only just connected
-                    // does not necessarily have the session's queue yet, so what it would report in
-                    // this instant is "nothing playing" — which would empty a card that was showing
-                    // a track, in answer to a button press. The service's own listener pushes the
-                    // moment the command lands.
-                } finally {
-                    controller.release()
+                    val result = controller.sendCustomCommand(
+                        androidx.media3.session.SessionCommand(I06_WIDGET_TRANSPORT, Bundle.EMPTY), args).await()
+                    check(result.resultCode == androidx.media3.session.SessionResult.RESULT_SUCCESS) {
+                        "Widget command rejected: ${result.resultCode}"
+                    }
+                    // The service pushes its real state when the command lands. A newly connected
+                    // controller must not replace the card with its transient empty timeline.
                 }
+            } catch (_: Exception) {
+                val strings = (app as dev.lelonio.square.SquareApplication).language.wrap(app)
+                android.widget.Toast.makeText(strings, dev.lelonio.square.R.string.wf_i06_widget_unavailable,
+                    android.widget.Toast.LENGTH_LONG).show()
             } finally {
                 onDone()
             }

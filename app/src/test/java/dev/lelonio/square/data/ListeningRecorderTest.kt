@@ -22,7 +22,11 @@ import java.lang.reflect.Proxy
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [35])
 class ListeningRecorderTest {
-    @Test fun serviceCallbacksSeparateSameUriRepeatsAndExcludeRemoteAudio() = runTest {
+    @Test fun serviceCallbacksSeparateSameUriRepeatsAndExcludeRemoteAudio() = exercise("spotify:track:one")
+
+    @Test fun realLocalPlaybackFeedsTheSameAccountArchiveAndRecentProjection() = exercise("local:track:42")
+
+    private fun exercise(uri: String) = runTest {
         val context = ApplicationProvider.getApplicationContext<Context>()
         context.getSharedPreferences("listening-controls", 0).edit().clear().commit()
         val db = Room.inMemoryDatabaseBuilder(context, ListeningDatabase::class.java).build()
@@ -30,7 +34,7 @@ class ListeningRecorderTest {
         history.connect(HistoryAccount("recorder"))
         var remote = false
         val listeners = mutableListOf<Player.Listener>()
-        val item = MediaItem.Builder().setMediaId("spotify:track:one")
+        val item = MediaItem.Builder().setMediaId(uri)
             .setMediaMetadata(MediaMetadata.Builder().setTitle("One").setArtist("Artist").build()).build()
         val player = Proxy.newProxyInstance(Player::class.java.classLoader, arrayOf(Player::class.java)) { _, method, args ->
             when (method.name) {
@@ -58,6 +62,8 @@ class ListeningRecorderTest {
             val access = history.session.value.access!!
             val records = history.records(access, 0, 100_000).records
             assertEquals(2, records.size)
+            assertTrue(records.all { it.track.uri == uri })
+            assertEquals(listOf(uri), history.recentArchiveTracks(access, history.archiveChanges.value).map { it.uri })
             assertNotEquals(records[0].id, records[1].id)
             assertEquals(4_000L, history.aggregate(access, 0, 100_000).measuredLocalMs)
             assertEquals(2L, history.aggregate(access, 0, 100_000).localCountedPlays)

@@ -101,7 +101,7 @@ class AirPodsUiReuseTest {
         val opened = mutableListOf<AirPodsSettingsPage>()
         mount { AirPodsSettingsContent(uiFixture(), {}, onOpen = opened::add) }
         val behindRows = AirPodsSettingsPage.entries - AirPodsSettingsPage.Main -
-            AirPodsSettingsPage.LongPressLeft - AirPodsSettingsPage.LongPressRight
+            AirPodsSettingsPage.LongPressLeft - AirPodsSettingsPage.LongPressRight - AirPodsSettingsPage.Setup
         for (page in behindRows) compose.onNodeWithTag("airpods-open-$page").performScrollTo().performClick()
         compose.onNodeWithTag("airpods-gesture-LEFT").performScrollTo().performClick()
         compose.onNodeWithTag("airpods-gesture-RIGHT").performScrollTo().performClick()
@@ -117,9 +117,18 @@ class AirPodsUiReuseTest {
         compose.onAllNodesWithText(label(R.string.airpods_feature_connected)).assertCountEquals(0)
         for (mode in 1..4) compose.onNodeWithTag("airpods-mode-$mode").assertDoesNotExist()
         compose.onAllNodes(isToggleable()).assertCountEquals(0)
-        // What the pair needs first stays reachable, and so does leaving.
+        // Initial connection stays reachable when the feature is not ready.
         compose.onNodeWithTag("airpods-open-${AirPodsSettingsPage.Setup}").performScrollTo().assertHasClickAction()
         compose.onNodeWithText(label(R.string.airpods_feature_forget)).performScrollTo().assertExists()
+    }
+
+    @Test fun readyDeviceShowsDiagnosticsWithoutServiceSetupOrRepeatedForgetDescription() {
+        mount { AirPodsSettingsContent(uiFixture(), {}) }
+        compose.onNodeWithTag("airpods-open-${AirPodsSettingsPage.Setup}").assertDoesNotExist()
+        compose.onNodeWithTag("airpods-open-${AirPodsSettingsPage.Diagnostics}").performScrollTo().assertHasClickAction()
+        compose.onNodeWithText(label(R.string.airpods_feature_forget)).performScrollTo().assertExists()
+        compose.onAllNodesWithText(label(R.string.airpods_feature_forget_summary)).assertCountEquals(0)
+        compose.onAllNodesWithText(label(R.string.airpods_feature_exclusive_summary)).assertCountEquals(0)
     }
 
     @Test fun withTheGatePassedThereIsNoGateNoticeAndTheReceivedModeIsTheThumb() {

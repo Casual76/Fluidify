@@ -49,7 +49,7 @@ class AirPodsControlService : Service() {
     }
     internal fun finishFromOwner() { Handler(Looper.getMainLooper()).post { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() } }
     override fun onDestroy() {
-        attachedOwner?.let { owner -> owner.serviceDestroyed(this); AirPodsServiceOwnerRegistry.serviceEnded(owner, attachedStopAction) }
+        attachedOwner?.let { owner -> AirPodsServiceOwnerRegistry.serviceEnded(owner, attachedStopAction); owner.serviceDestroyed(this) }
         super.onDestroy()
     }
     companion object {

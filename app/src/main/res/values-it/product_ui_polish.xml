@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_ui_connect_setup">Collega AirPods</string>
+    <string name="listening_stats_partial_compact">Alcuni ascolti possono mancare. Il mese non è completo.</string>
+    <string name="listening_stats_recording_compact">È la scelta attuale; in precedenza poteva essere diversa.</string>
+    <string name="listening_stats_local_source">Ascolti locali, inclusi quelli riconciliati con Spotify</string>
+    <string name="listening_stats_spotify_source">Ascolti solo Spotify</string>
+    <string name="listening_stats_calculation">Come vengono calcolati i numeri</string>
+    <string name="listening_stats_period">Periodo e aggiornamento dei dati</string>
+</resources>

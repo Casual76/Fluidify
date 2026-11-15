@@ -4,6 +4,7 @@ import dev.antigravity.fluidengine.ui.fluid.FluidMotion
 import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -24,6 +25,20 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.semantics.CustomAccessibilityAction
+import androidx.compose.ui.semantics.ProgressBarRangeInfo
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.customActions
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.progressBarRangeInfo
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.setProgress
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
@@ -36,6 +51,7 @@ import dev.lelonio.square.R
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.ui.input.pointer.positionChange
+import kotlin.math.roundToInt
 
 /**
  * How much of the singing to take away.
@@ -126,6 +142,20 @@ fun KaraokeDial(
     // happening at all. This is between the two, and what keeps the bottom from
     // being a cliff is the step to silence below, not the sensitivity.
     val travelPx = with(density) { OPEN_HEIGHT.toPx() } * 1.25f
+    val label = stringResource(R.string.karaoke)
+    val valueLabel = stringResource(R.string.wf_i13_karaoke_value, (amount.coerceIn(0f, 1f) * 100).roundToInt())
+    val moreLabel = stringResource(R.string.wf_i13_karaoke_more)
+    val lessLabel = stringResource(R.string.wf_i13_karaoke_less)
+    val offLabel = stringResource(R.string.wf_i13_karaoke_off)
+    val accessibleChange: (Float) -> Boolean = { value ->
+        if (!value.isFinite()) false else {
+            val bounded = value.coerceIn(0f, 1f).let { if (it < OFF_BELOW) 0f else it }
+            if (bounded == latest.value) false else {
+                change(bounded)
+                true
+            }
+        }
+    }
 
     Box(
         modifier
@@ -141,6 +171,44 @@ fun KaraokeDial(
             // what made it look bolted on. The engine's, since that is what the
             // controls beside it are made of; see playerControlGlass.
             .playerControlGlass(dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape)
+            .semantics(mergeDescendants = true) {
+                contentDescription = label
+                stateDescription = valueLabel
+                progressBarRangeInfo = ProgressBarRangeInfo(amount.coerceIn(0f, 1f), 0f..1f)
+                onClick {
+                    open = !open
+                    openNow.value = open
+                    lastTouch = System.currentTimeMillis()
+                    true
+                }
+                setProgress { accessibleChange(it) }
+                customActions = listOf(
+                    CustomAccessibilityAction(moreLabel) { accessibleChange(latest.value + 0.1f) },
+                    CustomAccessibilityAction(lessLabel) { accessibleChange(latest.value - 0.1f) },
+                    CustomAccessibilityAction(offLabel) { accessibleChange(0f) },
+                )
+            }
+            .onKeyEvent { event ->
+                val requested = when (event.key) {
+                    Key.DirectionUp, Key.DirectionRight -> latest.value + 0.1f
+                    Key.DirectionDown, Key.DirectionLeft -> latest.value - 0.1f
+                    Key.MoveHome -> 0f
+                    Key.MoveEnd -> 1f
+                    else -> null
+                }
+                if (requested != null) {
+                    if (event.type == KeyEventType.KeyDown) accessibleChange(requested)
+                    true
+                } else if (event.key == Key.Enter || event.key == Key.Spacebar || event.key == Key.NumPadEnter) {
+                    if (event.type == KeyEventType.KeyUp) {
+                        open = !open
+                        openNow.value = open
+                        lastTouch = System.currentTimeMillis()
+                    }
+                    true
+                } else false
+            }
+            .focusable()
             // The touch is claimed the moment it lands, before anything else
             // can decide what it was.
             //
@@ -249,7 +317,7 @@ fun KaraokeDial(
         Icon(
             if (amount > 0f) PhosphorIcons.Fill.MicrophoneStage
             else PhosphorIcons.Regular.MicrophoneStage,
-            contentDescription = stringResource(R.string.karaoke),
+            contentDescription = null,
             // The page's ink throughout: the filled glyph is what says it is
             // on, and a coloured one competed with the artwork behind it.
             tint = GlassInk,

@@ -1,0 +1,5 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i08_download_reading">Lettura della raccolta completa?</string>
+    <string name="wf_i08_download_incomplete">Raccolta incompleta. Aprila online per completare la lettura.</string>
+</resources>

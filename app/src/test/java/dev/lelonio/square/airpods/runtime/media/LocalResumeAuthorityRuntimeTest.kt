@@ -354,7 +354,7 @@ class LocalResumeAuthorityRuntimeTest {
         }
     }
 
-    @Test fun manualInterventionAroundOwnPlayStillRevokesRestore() {
+    @Test fun manualTransportAroundOwnPlayPreservesVolumeButConsentOrVolumeStillRevokes() {
         // 0 notification/MediaSession pause, 1 seek, 2 app command, 3 foreign track playing,
         // 4 consent revoked, 5 user pause before the engine confirmed our PLAY, 6 manual volume.
         for (kind in 0..6) {
@@ -363,6 +363,7 @@ class LocalResumeAuthorityRuntimeTest {
                 r.ownedPauseAndDuckThenResume()
                 if (kind != 5) r.emit("playing")
                 val sent = r.env.executed.size
+                val target = r.provider.read(pair)!!.target
                 when (kind) {
                     0 -> r.provider.sessionPlayer.pause()
                     1 -> r.provider.sessionPlayer.seekTo(1_000)
@@ -373,8 +374,13 @@ class LocalResumeAuthorityRuntimeTest {
                     else -> assertTrue(r.core.manualVolume(6))
                 }
                 r.idle(800)
-                assertTrue("kind=$kind", r.env.executed.drop(sent).none { it == MediaAction.SET_VOLUME })
-                assertEquals("kind=$kind", if (kind == 6) 6 else 4, r.volume())
+                val restores = kind != 4 && kind != 6
+                assertEquals("kind=$kind", restores,
+                    r.env.executed.drop(sent).any { it == MediaAction.SET_VOLUME })
+                assertEquals("kind=$kind", if (kind == 6) 6 else if (restores) 10 else 4, r.volume())
+                assertEquals("manual transport cannot trigger another automatic command",
+                    listOf(MediaAction.PAUSE, MediaAction.PLAY), r.transportSent())
+                if (restores) assertEquals("same session/account/renderer route", target, r.provider.read(pair)!!.target)
             } finally { r.close() }
         }
     }

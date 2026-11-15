@@ -172,9 +172,12 @@ class AndroidCompanionRegistry(private val context: Context, private val facts: 
 /** Stable lifetime identity is shared across callback sources, never derived from callback IDs. */
 class ConnectionLifetimes {
     private var next = 0L
-    private val active = mutableMapOf<PairAddress, String>()
+    private data class Link(val id: String, val ordinal: Long)
+    private val active = mutableMapOf<PairAddress, Link>()
     @Synchronized fun observe(address: PairAddress, connected: Boolean): String? {
         if (!connected) { active.remove(address); return null }
-        return active.getOrPut(address) { "link-${++next}" }
+        return active.getOrPut(address) { val ordinal = Math.addExact(next, 1L); next = ordinal; Link("link-$ordinal", ordinal) }.id
     }
+    /** Issued by this process for the currently observed real connection, never by a callback. */
+    @Synchronized fun ordinal(address: PairAddress): Long? = active[address]?.ordinal
 }

@@ -1,0 +1,11 @@
+Nuova beta di Fluidify per telefono e Wear OS.
+
+- Interventi sulla riconnessione delle AirPods, sul ripristino di pausa e volume dopo una conversazione e sulla chiusura dei servizi quando non servono.
+- Comandi dell'orologio e passaggio della musica fra dispositivi rivisti; batteria delle AirPods visibile dal polso.
+- Cerca una raccolta per nome nella Libreria e quando aggiungi un brano a una playlist.
+- La coda mostra quanto ascolto resta, tenendo conto della ripetizione. Puoi accodare un album intero dopo i brani aggiunti a mano.
+- Cronologia completa degli ascolti conservati per l'account, con ricerca per titolo e artista.
+- Nuova preferenza per tenere acceso lo schermo durante la riproduzione nel player aperto a tutto schermo, inizialmente disattivata.
+- Pannello AirPods sopra il player, testi, navigazione, download e accesso all'account rivisti.
+
+Beta da provare nell'uso quotidiano: la suite automatica Android e le prove fisiche con cuffie e orologio non sono ancora completate. La versione stabile resta disponibile.

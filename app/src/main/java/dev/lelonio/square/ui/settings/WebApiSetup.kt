@@ -24,25 +24,22 @@ import dev.lelonio.square.ui.MainViewModel
 import dev.lelonio.square.ui.components.GlassButton
 
 /**
- * One-time setup for the Web API.
- *
- * This screen exists because of a hard constraint rather than a preference:
- * playback must authenticate as librespot's shared client id — no other id is
- * accepted by the access point — and that same id has no Web API quota left,
- * since every librespot-based client on earth spends it. Search therefore needs
- * an application the user owns.
+ * Optional registered application used by the existing artist and personal-data readers.
+ * Gateway search also works without it. The actual prerequisite is reachable from
+ * Home filters and artist navigation, with the registered redirect shown verbatim.
  */
 @Composable
 internal fun WebApiSetup(
     state: MainViewModel.WebApiState,
     onClientIdChange: (String) -> Unit,
     onConnect: () -> Unit,
+    onCancel: () -> Unit = {},
 ) {
     val clipboard = LocalClipboardManager.current
     Column(Modifier.padding(horizontal = 24.dp, vertical = 12.dp)) {
-        Text(stringResource(R.string.turn_on_search), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
+        Text(stringResource(R.string.wf_i10_web_api_title), style = MaterialTheme.typography.labelLarge, color = MaterialTheme.colorScheme.primary)
         Text(
-            stringResource(R.string.web_api_explainer),
+            stringResource(R.string.wf_i10_web_api_explainer),
             style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(top = 8.dp),
@@ -68,7 +65,7 @@ internal fun WebApiSetup(
             }
         }
 
-        WebApiSetupInline(state, onClientIdChange, onConnect)
+        WebApiSetupInline(state, onClientIdChange, onConnect, onCancel)
 
     }
 }
@@ -85,8 +82,20 @@ internal fun WebApiSetupInline(
     state: MainViewModel.WebApiState,
     onClientIdChange: (String) -> Unit,
     onConnect: () -> Unit,
+    onCancel: () -> Unit = {},
 ) {
+    val uriHandler = androidx.compose.ui.platform.LocalUriHandler.current
     Column {
+        Text(
+            stringResource(R.string.wf_i10_same_account),
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(top = 8.dp),
+        )
+        TextButton(onClick = {
+            // A real setup destination from every entry, including an artist result.
+            uriHandler.openUri("https://developer.spotify.com/dashboard")
+        }) { Text(stringResource(R.string.wf_i10_open_dashboard)) }
         OutlinedTextField(
             value = state.clientId,
             onValueChange = onClientIdChange,
@@ -120,6 +129,12 @@ internal fun WebApiSetupInline(
             } else {
                 Text(stringResource(R.string.connect), style = MaterialTheme.typography.titleMedium)
             }
+        }
+        if (state.connecting) {
+            dev.antigravity.fluidengine.ui.fluid.FluidButton(
+                text = stringResource(R.string.wf_i10_cancel_wait), onClick = onCancel,
+                style = dev.antigravity.fluidengine.ui.fluid.FluidButtonStyle.Plain,
+            )
         }
     }
 }

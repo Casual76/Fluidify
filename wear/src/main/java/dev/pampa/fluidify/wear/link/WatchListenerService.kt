@@ -78,6 +78,7 @@ class WatchListenerService : WearableListenerService() {
      */
     private fun onAccount(account: dev.pampa.fluidify.wear.protocol.AccountState) {
         if (!app.link.accountSessions.accept(account)) return
+        app.state.observeAirPodsBatteryAccount(account)
         app.downloads.onPhoneAccount(explicit = true)
         val auth = app.standalone.auth
         val phone = app.link.accountSessions.capture()
@@ -118,6 +119,7 @@ class WatchListenerService : WearableListenerService() {
                 ?.let { app.link.onAuthGrant(it) }
             // The phone signed out: so does the watch, and its own playback stops first.
             WearPaths.AUTH_LOGOUT -> {
+                app.state.observeAirPodsBatteryAccount(dev.pampa.fluidify.wear.protocol.AccountState(false))
                 app.link.accountSessions.clear()
                 app.downloads.authority.revoke()
                 app.scope.launch { app.accountGone(null) }

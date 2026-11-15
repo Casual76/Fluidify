@@ -44,6 +44,11 @@ interface ListeningDao {
     @Query("DELETE FROM listens WHERE service=:s AND account=:a AND id=:id") fun remove(s: String, a: String, id: String)
     @Query("SELECT * FROM listens WHERE service=:s AND account=:a AND playedAt>=:from AND playedAt<:until ORDER BY playedAt DESC,id DESC LIMIT :limit OFFSET :offset")
     fun page(s: String, a: String, from: Long, until: Long, limit: Int, offset: Int): List<ListenRow>
+    // Existing (service, account, playedAt) index; stable id tie-break, no schema/data rewrite.
+    @Query("SELECT * FROM listens WHERE service=:s AND account=:a ORDER BY playedAt DESC,id DESC LIMIT :limit")
+    fun archiveHead(s: String, a: String, limit: Int): List<ListenRow>
+    @Query("SELECT * FROM listens WHERE service=:s AND account=:a AND playedAt<=:at AND (playedAt<:at OR id<:id) ORDER BY playedAt DESC,id DESC LIMIT :limit")
+    fun archiveAfter(s: String, a: String, at: Long, id: String, limit: Int): List<ListenRow>
     @Query("SELECT song, MIN(trackJson) AS trackJson, COUNT(*) AS plays, SUM(CASE WHEN measuredMs IS NOT NULL THEN 1 ELSE 0 END) AS localPlays, SUM(CASE WHEN measuredMs IS NULL THEN 1 ELSE 0 END) AS importedPlays FROM listens WHERE service=:s AND account=:a AND qualified=1 AND playedAt>=:from AND playedAt<:until GROUP BY song ORDER BY plays DESC,song ASC")
     fun counts(s: String, a: String, from: Long, until: Long): List<TrackHistoryCount>
     @Query("SELECT COALESCE(SUM(MIN(untilAt,:until)-MAX(fromAt,:from)),0) FROM measured_intervals WHERE service=:s AND account=:a AND untilAt>:from AND fromAt<:until")

@@ -249,6 +249,7 @@ object Routes {
     const val SEARCH = "search"
     const val LIBRARY = "library"
     const val LISTENING_STATS = "listening-stats"
+    const val LISTENING_HISTORY = "listening-history"
     const val PLAYLIST = PlaylistDestination.route
     const val SETTINGS = "settings"
     const val AIRPODS = "airpods"
@@ -323,6 +324,8 @@ fun SquareApp(
     onPlay: (List<CatalogTrack>, Int, String?, Boolean, String, Long) -> Unit,
     /** Appends one track to the end of the queue; see the swipe gesture on rows. */
     onEnqueue: (CatalogTrack) -> Unit,
+    /** Inserts a complete collection as one FIFO block ahead of the context continuation. */
+    onEnqueueAll: (List<CatalogTrack>) -> Unit,
     /**
      * Incremented when something outside the app asks for the player — the
      * notification, for now. A counter, so a second request while the player is
@@ -340,6 +343,13 @@ fun SquareApp(
     shortcut: Pair<String, Int>? = null,
     viewModel: MainViewModel = viewModel(),
 ) {
+    val radioRequest by viewModel.radioRequest.collectAsStateWithLifecycle()
+    val playSelection: (List<CatalogTrack>, Int, String?, Boolean, String, Long) -> Unit =
+        { tracks, index, uri, asContext, label, position ->
+            viewModel.cancelRadio()
+            onPlay(tracks, index, uri, asContext, label, position)
+        }
+    DisposableEffect(viewModel) { onDispose { viewModel.cancelRadio() } }
     val state by viewModel.state.collectAsStateWithLifecycle()
     val playlistEntryRevision by viewModel.playlistEntryRevision.collectAsStateWithLifecycle()
     val playlistEditFeedback by viewModel.playlistEditFeedback.collectAsStateWithLifecycle()
@@ -350,16 +360,25 @@ fun SquareApp(
     // which is a handful of entries, while the rows are answered one at a time
     // out of [files] and [progress] — see DownloadStore.ownerStates.
     val downloadOwners by viewModel.downloads.ownerStates.collectAsStateWithLifecycle()
+    val incompleteDownloadOwners by viewModel.downloads.incompleteOwners.collectAsStateWithLifecycle()
     val watchDownloads by viewModel.watchDownloads.collectAsStateWithLifecycle()
     val canHandoffToWatch by viewModel.canHandoffToWatch.collectAsStateWithLifecycle()
     val downloadedFiles by viewModel.downloads.files.collectAsStateWithLifecycle()
     val downloadProgress by viewModel.downloads.progress.collectAsStateWithLifecycle()
+    val downloadMembership by viewModel.downloads.owners.collectAsStateWithLifecycle()
+    val downloadLabels by viewModel.downloads.ownerLabels.collectAsStateWithLifecycle()
+    val downloadFailures by viewModel.downloads.failures.collectAsStateWithLifecycle()
+    val downloadCollectionFallback = stringResource(R.string.wf_i09_download_collection)
+    val downloadLibraryCollections = remember(downloadMembership, downloadLabels, downloadCollectionFallback) {
+        dev.lelonio.square.ui.library.i09DownloadOwnerCollections(
+            downloadMembership.keys, downloadLabels, downloadCollectionFallback,
+        )
+    }
     // Which songs were asked for on their own, so the row menu can offer the
     // opposite of what is already true. A track downloaded only because its
     // playlist was still reads as downloaded; removing it there would be a lie,
     // since the playlist still claims it.
-    val downloadSingles = viewModel.downloads.owners
-        .collectAsStateWithLifecycle().value[dev.lelonio.square.data.DownloadStore.SINGLES]
+    val downloadSingles = downloadMembership[dev.lelonio.square.data.DownloadStore.SINGLES]
         .orEmpty()
 
     // The shelf for songs kept on their own, and only when there are some. It
@@ -435,7 +454,7 @@ fun SquareApp(
     // belongs to the track rather than to the act of playing it.
     LaunchedEffect(Unit) {
         viewModel.resumeHere.collect { resume ->
-            onPlay(
+            playSelection(
                 resume.tracks,
                 resume.index,
                 resume.contextUri,
@@ -453,6 +472,10 @@ fun SquareApp(
     val remotePosition = rememberRemotePositionMs(remote)
     val positionMs = if (remote != null) remotePosition else localPosition
     val displayedQueue = rememberDisplayedPlaybackQueue(player)
+    val queueTiming = remember(displayedQueue.timing, playback.durationMs) {
+        displayedQueue.timing?.withCurrentDuration(playback.durationMs)
+    }
+    LaunchedEffect(playback.mediaId, remote?.deviceId, displayedQueue) { viewModel.cancelRadio() }
 
     // Video keeps playing when the app leaves the foreground, surface or no
     // surface. Switching back to the audio-only stream would be tidier, but the
@@ -482,6 +505,7 @@ fun SquareApp(
     val search by viewModel.search.collectAsStateWithLifecycle()
     val searchHistory by viewModel.searchHistory.collectAsStateWithLifecycle()
     val webApi by viewModel.webApi.collectAsStateWithLifecycle()
+    val loginWaiting by viewModel.loginWaiting.collectAsStateWithLifecycle()
     val reverb by AudioEffects.reverb.collectAsStateWithLifecycle()
     val feed by viewModel.feed.collectAsStateWithLifecycle()
     val playlistOrder by viewModel.playlistOrder.collectAsStateWithLifecycle()
@@ -561,6 +585,10 @@ fun SquareApp(
     // for the app's own copy of the glass library, on every frame the app drew.
     // That second renderer is gone: one glass, the engine's.
     val pageGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
+    // Fullscreen player is outside pageGlass. Modals above it must sample the player,
+    // otherwise their blurred scrim replaces it with the library underneath.
+    val playerModalGlass = dev.antigravity.fluidengine.ui.fluid.rememberGlassBackdrop()
+    var playerAirPodsSettings by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf(false) }
 
     /**
      * The artwork wash on its own, with nothing of the pages on top of it.
@@ -713,22 +741,6 @@ fun SquareApp(
     var barHeight by remember { mutableStateOf(BottomBarHeight) }
     val density = LocalDensity.current
 
-    // Recorded here rather than at the tap: this fires for auto-advance and for
-    // controls outside the app too, so the history matches what was actually
-    // heard instead of only what was tapped.
-    LaunchedEffect(playback.mediaId) {
-        val uri = playback.mediaId ?: return@LaunchedEffect
-        viewModel.recordPlayed(
-            CatalogTrack(
-                uri = uri,
-                name = playback.title,
-                artist = playback.artist,
-                durationMs = playback.durationMs,
-                artworkUrl = playback.artworkUrl,
-            ),
-        )
-    }
-
     var canvas by remember { mutableStateOf<CanvasClip?>(null) }
 
     // Fetched per track, like the lyrics. Most tracks have none, so a null is an
@@ -736,6 +748,9 @@ fun SquareApp(
     // Canvas is Spotify's own, served by its access point: on another source
     // there is nobody to ask.
     val canvasEnabled by preferences.canvasEnabled.collectAsStateWithLifecycle()
+    val keepPlayerScreenOn by preferences.keepPlayerScreenOn.collectAsStateWithLifecycle()
+    val i13PlayerBackEnabled = !playerAirPodsSettings && !modalHost.isPresenting &&
+        !morphMenu.isOpen && !showTutorial && onboarded
 
     LaunchedEffect(playback.mediaId, canvasEnabled) {
         val uri = playback.mediaId
@@ -920,6 +935,7 @@ fun SquareApp(
                 positionMs = positionMs,
                 onTogglePlay = { player.togglePlay() },
                 onNext = {
+                    viewModel.cancelRadio()
                     if (spotifyVideoOn) {
                         dev.lelonio.square.backend.spotify.SpotifyVideoMode.skip(forward = true)
                     } else {
@@ -927,6 +943,7 @@ fun SquareApp(
                     }
                 },
                 onPrevious = {
+                    viewModel.cancelRadio()
                     if (spotifyVideoOn) {
                         dev.lelonio.square.backend.spotify.SpotifyVideoMode.skip(forward = false)
                     } else {
@@ -960,6 +977,10 @@ fun SquareApp(
 
     androidx.compose.runtime.CompositionLocalProvider(
         LocalUpdateController provides updateController,
+        dev.lelonio.square.ui.player.LocalQueueDurationSource provides
+            queueTiming?.takeIf { remote == null && displayedQueue.isCurrent() }?.let {
+                dev.lelonio.square.ui.player.QueueDurationSource(it, positionMs, playback.speed)
+            },
         dev.antigravity.fluidengine.ui.fluid.LocalFluidGlassModalHostState provides modalHost,
         dev.antigravity.fluidengine.ui.fluid.LocalGlassBackdrop provides pageGlass,
         // The ambient canvas: the ground, recorded *before* the page stands on
@@ -1041,11 +1062,32 @@ fun SquareApp(
                 }
                 val route = currentEntry?.destination?.route
                 val navigationAuthority = viewModel.playlistAuthority()
+                var i10WebApiRequest by remember(navigationAuthority) {
+                    mutableStateOf<dev.lelonio.square.ui.settings.I10WebApiRequest?>(null)
+                }
                 val openPlaylist: (CatalogPlaylist) -> Unit = { requested ->
                     if (navigationAuthority == viewModel.playlistAuthority()) {
-                        navController.openPlaylist(viewModel, requested)
+                        if (viewModel.artistNeedsWebApi(requested.uri)) {
+                            i10WebApiRequest = dev.lelonio.square.ui.settings.I10WebApiRequest(requested)
+                        } else navController.openPlaylist(viewModel, requested)
                     }
                 }
+                dev.lelonio.square.ui.settings.I10WebApiAccess(
+                    request = i10WebApiRequest, state = webApi,
+                    onClientIdChange = viewModel::onWebApiClientIdChange,
+                    onConnect = { if (i10WebApiRequest != null) viewModel.connectWebApi() },
+                    onCancel = { if (i10WebApiRequest != null) viewModel.cancelWebApiSetup() },
+                    onDismiss = {
+                        if (i10WebApiRequest != null && webApi.connecting) viewModel.cancelWebApiSetup()
+                        i10WebApiRequest = null
+                    },
+                    onOpenArtist = { artist ->
+                        if (i10WebApiRequest?.artist == artist && navigationAuthority == viewModel.playlistAuthority() && viewModel.webApiReadyForArtist()) {
+                            i10WebApiRequest = null
+                            navController.openPlaylist(viewModel, artist)
+                        }
+                    },
+                )
                 PlaylistNavigationBinding(
                     controller = navController, revision = playlistEntryRevision, fallback = Routes.HOME,
                     select = viewModel::selectPlaylistEntry, release = viewModel::releasePlaylistEntry,
@@ -1092,6 +1134,8 @@ fun SquareApp(
                 // lit again, by a different route.
                 var activeTab by rememberSaveable { mutableStateOf(Routes.HOME) }
                 LaunchedEffect(route) {
+                    if (route == Routes.HOME) viewModel.loadFeed()
+                    if (route == Routes.SEARCH) viewModel.retrySearchIfNeeded()
                     if (route == Routes.HOME || route == Routes.LIBRARY) {
                         activeTab = route
                     }
@@ -1387,16 +1431,16 @@ fun SquareApp(
                                 contentPadding = listPadding,
                                 ground = groundGlass,
                                 onLogIn = viewModel::logIn,
-                                onRetry = { viewModel.refresh() },
+                                onRetry = { viewModel.loadFeed(force = true); viewModel.refresh() },
                                 onLogOut = viewModel::logOut,
                                 onOpenPlaylist = { openPlaylist(it) },
                                 playlistOrder = playlistOrder,
                                 recent = recent,
                                 onPlayRecent = { tracks, index ->
-                                    onPlay(tracks, index, null, false, playAgainLabel, 0L)
+                                    playSelection(tracks, index, null, false, playAgainLabel, 0L)
                                 },
                                 onPlayFeed = { tracks, index, label ->
-                                    onPlay(tracks, index, null, false, label, 0L)
+                                    playSelection(tracks, index, null, false, label, 0L)
                                 },
                                 feed = feed,
                                 onOpenItem = { item ->
@@ -1404,8 +1448,9 @@ fun SquareApp(
                                         CatalogPlaylist(item.uri, item.title, item.artworkUrl))
                                 },
                                 shelves = homeShelves,
+                                onSetupWebApi = { i10WebApiRequest = dev.lelonio.square.ui.settings.I10WebApiRequest() },
                                 onPlayTrending = { tracks, index ->
-                                    onPlay(tracks, index, null, false, trendingLabel, 0L)
+                                    playSelection(tracks, index, null, false, trendingLabel, 0L)
                                 },
                                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                                 friends = friends,
@@ -1423,13 +1468,16 @@ fun SquareApp(
                             SearchScreen(
                                 state = search,
                                 webApi = webApi,
+                                onRetrySearch = viewModel::retrySearch,
+                                retryOnline = !offlineNow && !dev.lelonio.square.data.SpotifyNetworkPolicy.manual.value,
                                 contentPadding = listPadding,
                                 nowPlayingUri = playback.mediaId,
                                 onClientIdChange = viewModel::onWebApiClientIdChange,
                                 onConnectWebApi = { viewModel.connectWebApi() },
+                                onCancelWebApi = viewModel::cancelWebApiSetup,
                                 onPlayTrack = { tracks, index ->
                                     tracks.getOrNull(index)?.let(viewModel::recordSearchPlay)
-                                    onPlay(tracks, index, null, false, searchLabel, 0L)
+                                    playSelection(tracks, index, null, false, searchLabel, 0L)
                                 },
                                 history = searchHistory,
                                 onClearHistory = viewModel::clearSearchHistory,
@@ -1461,6 +1509,7 @@ fun SquareApp(
                                 onOpenPlaylist = { openPlaylist(it) },
                                 onOpenSettings = { navController.navigate(Routes.SETTINGS) },
                                 onOpenListeningStats = { navController.navigate(Routes.LISTENING_STATS) },
+                                onOpenListeningHistory = { navController.navigate(Routes.LISTENING_HISTORY) },
                                 playlistOrder = playlistOrder,
                                 pinned = pinnedPlaylists,
                                 canEdit = viewModel.canEditPlaylists,
@@ -1520,13 +1569,26 @@ fun SquareApp(
                                 },
                                 artists = followedArtists,
                                 albums = savedAlbums,
-                                downloaded = downloadOwners.keys,
+                                downloaded = downloadMembership.keys,
                                 downloadedSongs = downloadedSongsShelf,
+                                downloadedCollections = downloadLibraryCollections,
                                 webApiConnected = webApi.connected,
                                 onConnectWebApi = { viewModel.connectWebApi() },
                                 onOpenArtist = { artist ->
                                     openPlaylist(
                                         CatalogPlaylist(artist.uri, artist.title, artist.artworkUrl))
+                                },
+                            )
+                        }
+
+                        fluidifyComposable(Routes.LISTENING_HISTORY) {
+                            dev.lelonio.square.ui.library.history.ListeningHistoryRoute(
+                                repository = (context.applicationContext as dev.lelonio.square.SquareApplication).listeningHistory,
+                                onBack = { navController.popBackStack() },
+                                contentPadding = listPadding,
+                                onPlayTrack = { track ->
+                                    playSelection(listOf(track), 0, null, false,
+                                        context.getString(R.string.wf_i14_title), 0L)
                                 },
                             )
                         }
@@ -1559,6 +1621,7 @@ fun SquareApp(
                                 deviceName = android.os.Build.MODEL ?: "Android",
                                 onClientIdChange = viewModel::onWebApiClientIdChange,
                                 onConnectWebApi = viewModel::connectWebApi,
+                                onCancelWebApi = viewModel::cancelWebApiSetup,
                                 onDisconnectWebApi = viewModel::disconnectWebApi,
                                 onLogOut = viewModel::logOut,
                                 onShowTutorial = { showTutorial = true },
@@ -1594,6 +1657,10 @@ fun SquareApp(
                             val shareLabel = stringResource(R.string.copy_link)
                             val playLabel = stringResource(R.string.play)
                             val queueLabel = stringResource(R.string.add_to_queue)
+                            val queueCollectionLabel = stringResource(
+                                if (playlist.kind == MainViewModel.DetailKind.ALBUM)
+                                    R.string.wf_root_enqueue_album else R.string.wf_root_enqueue_collection,
+                            )
                             val addToPlaylistLabel = stringResource(R.string.add_to_playlist)
                             val removeLabel = stringResource(R.string.remove_from_playlist)
                             val downloadLabel = stringResource(R.string.download)
@@ -1611,7 +1678,7 @@ fun SquareApp(
                                 isCurrentContext = playlist.uri != null &&
                                     playback.contextUri == playlist.uri && playback.hasItem,
                                 start = { tracks, index, asContext ->
-                                    onPlay(tracks, index, playlist.uri, asContext, source, 0L)
+                                    playSelection(tracks, index, playlist.uri, asContext, source, 0L)
                                 },
                                 togglePlayback = {
                                     if (remote != null) {
@@ -1622,6 +1689,13 @@ fun SquareApp(
                                     } else player?.togglePlay()
                                 },
                             )
+                            val collectionFailures = remember(playlist.uri, downloadMembership, downloadFailures,
+                                downloadedFiles, offlineNow) {
+                                dev.lelonio.square.ui.library.i09DownloadFailures(
+                                    downloadMembership[playlist.uri].orEmpty(), downloadFailures,
+                                    downloadedFiles.keys, !offlineNow,
+                                )
+                            }
                             SquareTheme(seed = detailAccent) {
                                 PlaylistScreen(
                                     state = playlist,
@@ -1695,7 +1769,13 @@ fun SquareApp(
                                     downloadState = playlist.uri
                                         ?.let { downloadOwners[it] }
                                         ?: dev.lelonio.square.data.OwnerState.None,
+                                    downloadSourceIncomplete = playlist.uri in incompleteDownloadOwners,
                                     onToggleDownload = { viewModel.toggleDownload(playlist) },
+                                    downloadOwnerPresent = playlist.uri in downloadMembership,
+                                    downloadFailures = collectionFailures.count,
+                                    downloadRetryPending = collectionFailures.retryPending,
+                                    onRetryDownload = { viewModel.retryPlaylistDownloads(playlist) },
+                                    onRetryDownloadSource = { viewModel.retryPlaylistDownloadSource(playlist) },
                                     // Only once a watch with downloads has spoken; see WatchDownloadsRemote.
                                     watchKept = if (watchDownloads != null) {
                                         playlist.uri?.let { uri -> watchDownloads?.owners?.any { it.uri == uri } } ?: false
@@ -1707,9 +1787,9 @@ fun SquareApp(
                                     // else. The local files shelf is already on
                                     // the phone, and an empty page has nothing
                                     // to fetch.
-                                    canDownload = playlist.uri
-                                        ?.startsWith("spotify:") == true &&
-                                        playlist.tracks.isNotEmpty(),
+                                    canDownload = playlist.uri in downloadMembership ||
+                                        (playlist.uri?.startsWith("spotify:") == true &&
+                                            playlist.tracks.isNotEmpty() && playlist.error == null),
                                     offline = offlineNow,
                                     onLeaveOffline = {
                                         viewModel.downloadSettings.setOfflineMode(false)
@@ -1722,6 +1802,10 @@ fun SquareApp(
                                                 dev.lelonio.square.data.DownloadState.Running(
                                                     downloadProgress.getValue(track.uri),
                                                 )
+                                            downloadFailures.containsKey(track.uri) ->
+                                                dev.lelonio.square.data.DownloadState.Failed(
+                                                    downloadFailures.getValue(track.uri).reason,
+                                                )
                                             else -> dev.lelonio.square.data.DownloadState.None
                                         }
                                     },
@@ -1732,7 +1816,7 @@ fun SquareApp(
                                                 dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
                                                     label = playLabel,
                                                     icon = PhosphorIcons.Fill.Play,
-                                                ) { onPlay(listOf(track), 0, null, false, "", 0L) },
+                                                ) { playSelection(listOf(track), 0, null, false, "", 0L) },
                                             )
                                             add(
                                                 dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
@@ -1812,6 +1896,14 @@ fun SquareApp(
                                         val editable = !uri.endsWith(":collection") &&
                                             playlist.mine != false
                                         val actions = buildList {
+                                            if (playlist.collectionQueueTracks() != null) add(
+                                                dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
+                                                    label = queueCollectionLabel,
+                                                    icon = PhosphorIcons.Regular.Queue,
+                                                ) {
+                                                    viewModel.enqueueReadyCollection(entry.id, onEnqueueAll)
+                                                },
+                                            )
                                             add(
                                                 dev.antigravity.fluidengine.ui.fluid.FluidContextAction(
                                                     label = shareLabel,
@@ -2060,10 +2152,12 @@ fun SquareApp(
                                     }
                                 },
                                 onNext = {
+                                    viewModel.cancelRadio()
                                     if (remote != null) onRemote(RemoteConnect::next)
                                     else player?.seekToNextMediaItem()
                                 },
                                 onPrevious = {
+                                    viewModel.cancelRadio()
                                     if (remote != null) onRemote(RemoteConnect::previous)
                                     else player?.seekToPreviousMediaItem()
                                 },
@@ -2167,6 +2261,7 @@ fun SquareApp(
                                 BarSearchField(
                                     query = search.query,
                                     onQuery = viewModel::onSearchQuery,
+                                    onSubmit = viewModel::retrySearch,
                                     modifier = fieldModifier,
                                 )
                             }
@@ -2265,7 +2360,10 @@ fun SquareApp(
                 }
 
                 // And the queue's three, shared the same way.
-                val onPlayQueueItemAction: (Int) -> Unit = displayedQueue::select
+                val onPlayQueueItemAction: (Int) -> Unit = { index ->
+                    viewModel.cancelRadio()
+                    displayedQueue.select(index)
+                }
                 val onRemoveQueueItemAction: (Int) -> Unit = displayedQueue::remove
                 val onMoveQueueItemAction: (Int, Int) -> Unit = displayedQueue::move
 
@@ -2491,10 +2589,12 @@ fun SquareApp(
                                     }
                                 },
                                 onNext = {
+                                    viewModel.cancelRadio()
                                     if (remote != null) onRemote(RemoteConnect::next)
                                     else player?.seekToNextMediaItem()
                                 },
                                 onPrevious = {
+                                    viewModel.cancelRadio()
                                     if (remote != null) onRemote(RemoteConnect::previous)
                                     else player?.seekToPreviousMediaItem()
                                 },
@@ -2504,7 +2604,9 @@ fun SquareApp(
                 }
 
                 if (playback.hasItem && chrome > 0.01f) {
-                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = chrome }) {
+                    Box(Modifier.fillMaxSize().graphicsLayer { alpha = chrome }
+                        .then(if (pillHidden && (modalHost.isOnScreen || morphMenu.isOnScreen))
+                            Modifier.glassBackdropSource(playerModalGlass) else Modifier)) {
                     // Dark while a Canvas is playing, whatever the phone is set to.
                     //
                     // A Canvas is a video, darkened for the controls to be legible on it, so the
@@ -2561,6 +2663,7 @@ fun SquareApp(
 
                     NowPlayingSheet(
                         progress = expand,
+                        backEnabled = i13PlayerBackEnabled,
                         pillBounds = pillBoundsState,
                         // The page it is leaving, which is what a window growing
                         // out of that page has to refract.
@@ -2664,6 +2767,8 @@ fun SquareApp(
                             PlayerScreen(
                                 airPods = airPodsHost.binding,
                                 state = playerState,
+                                keepScreenOn = keepPlayerScreenOn,
+                                backEnabled = i13PlayerBackEnabled,
                                 positionMs = positionMs,
                                 onCanvasVisible = { canvasVisible = it },
                                 videoFileId = videoFileId,
@@ -2696,6 +2801,7 @@ fun SquareApp(
                                     }
                                 },
                                 onNext = {
+                                    viewModel.cancelRadio()
                                     if (remote != null) onRemote(RemoteConnect::next)
                                     // Skipping is about the song: a video has
                                     // nowhere of its own to go, and the queue
@@ -2708,6 +2814,7 @@ fun SquareApp(
                                     }
                                 },
                                 onPrevious = {
+                                    viewModel.cancelRadio()
                                     if (remote != null) onRemote(RemoteConnect::previous)
                                     else if (spotifyVideoOn) {
                                         dev.lelonio.square.backend.spotify
@@ -2747,11 +2854,19 @@ fun SquareApp(
                                     ?.takeIf { it.startsWith("spotify:track:") }
                                     ?.let { uri ->
                                         {
-                                            scope.launch {
-                                                val tracks = viewModel.radioFor(uri)
-                                                if (tracks.isNotEmpty()) {
-                                                    onPlay(tracks, 0, null, false, radioLabel, 0L)
-                                                }
+                                            val capturedRemote = remote
+                                            val capturedQueue = displayedQueue
+                                            viewModel.startRadio(uri, selectionCurrent = {
+                                                if (capturedRemote != null) {
+                                                    dev.lelonio.square.data.RemoteConnect.elsewhereActive.value &&
+                                                        dev.lelonio.square.data.RemoteConnect.playback.value?.let {
+                                                            it.deviceId == capturedRemote.deviceId && it.uri == uri
+                                                        } == true
+                                                } else !dev.lelonio.square.data.RemoteConnect.elsewhereActive.value &&
+                                                    capturedQueue.isCurrent() &&
+                                                    capturedQueue.entries.firstOrNull { it.isCurrent }?.uri == uri
+                                            }) { tracks ->
+                                                playSelection(tracks, 0, null, false, radioLabel, 0L)
                                             }
                                             Unit
                                         }
@@ -2892,6 +3007,11 @@ fun SquareApp(
                     )
                 }
 
+                dev.lelonio.square.ui.requests.I07RadioFeedback(
+                    radioRequest, viewModel::cancelRadio,
+                    Modifier.align(Alignment.TopCenter).padding(top = statusBar + 8.dp, start = 16.dp, end = 16.dp),
+                )
+
                 dev.lelonio.square.ui.playlist.PlaylistEditAlert(
                     playlistEditFeedback.firstOrNull(), viewModel::dismissPlaylistEditFeedback,
                 )
@@ -2996,7 +3116,7 @@ fun SquareApp(
                     if (menu != null) {
                         TrackSheetAction(stringResource(R.string.play), PhosphorIcons.Fill.Play) {
                             trackMenu = null
-                            onPlay(listOf(menu.track), 0, null, false, "", 0L)
+                            playSelection(listOf(menu.track), 0, null, false, "", 0L)
                         }
                         TrackSheetAction(stringResource(R.string.add_to_queue), PhosphorIcons.Regular.Queue) {
                             trackMenu = null
@@ -3055,7 +3175,7 @@ fun SquareApp(
                     onPlay = {
                         val track = sharedTrack ?: return@SharedTrackCard
                         sharedTrack = null
-                        onPlay(listOf(track), 0, null, false, "", 0L)
+                        playSelection(listOf(track), 0, null, false, "", 0L)
                     },
                     onAddToPlaylist = {
                         val track = sharedTrack ?: return@SharedTrackCard
@@ -3083,15 +3203,26 @@ fun SquareApp(
                 // can sit on top of is not a modal — but under the onboarding,
                 // which nothing may cover.
                 dev.lelonio.square.ui.airpods.host.AirPodsHostQuick(airPodsHost) {
-                    navController.navigate(Routes.AIRPODS)
+                    if (pillHidden) playerAirPodsSettings = true
+                    else navController.navigate(Routes.AIRPODS)
+                }
+                dev.lelonio.square.ui.airpods.AirPodsPlayerSettingsOverlay(
+                    visible = playerAirPodsSettings,
+                    onDismiss = { playerAirPodsSettings = false },
+                    ground = groundGlass,
+                ) { close, backdrop ->
+                    dev.lelonio.square.ui.airpods.host.AirPodsHostPage(
+                        host = airPodsHost, padding = settingsPadding,
+                        backdrop = backdrop, active = true, onBack = close,
+                    )
                 }
                 dev.antigravity.fluidengine.ui.fluid.FluidGlassModalHost(
                     state = modalHost,
-                    backdrop = pageGlass,
+                    backdrop = if (pillHidden) playerModalGlass else pageGlass,
                 )
                 dev.antigravity.fluidengine.ui.fluidphysics.FluidMorphMenuHost(
                     state = morphMenu,
-                    backdrop = pageGlass,
+                    backdrop = if (pillHidden) playerModalGlass else pageGlass,
                 )
 
                 // The guide asked for again from the settings closes on a back
@@ -3114,6 +3245,9 @@ fun SquareApp(
                             webApi = webApi,
                             onOpenAirPods = openAirPods,
                             onLogIn = viewModel::logIn,
+                            loginWaiting = loginWaiting,
+                            onCancelLogIn = viewModel::cancelLogIn,
+                            onCancelWebApi = viewModel::cancelWebApiSetup,
                             onClientIdChange = viewModel::onWebApiClientIdChange,
                             onConnectWebApi = { viewModel.connectWebApi() },
                             language = language,
@@ -3528,6 +3662,7 @@ private fun savedPlaybackSeed(context: android.content.Context): PlaybackState? 
 private fun BarSearchField(
     query: String,
     onQuery: (String) -> Unit,
+    onSubmit: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val focus = remember { FocusRequester() }
@@ -3546,6 +3681,8 @@ private fun BarSearchField(
         BasicTextField(
             value = query,
             onValueChange = onQuery,
+            keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(imeAction = androidx.compose.ui.text.input.ImeAction.Search),
+            keyboardActions = androidx.compose.foundation.text.KeyboardActions(onSearch = { onSubmit() }),
             singleLine = true,
             textStyle = MaterialTheme.typography.bodyLarge.copy(color = Ink),
             cursorBrush = androidx.compose.ui.graphics.SolidColor(Ink),

@@ -259,11 +259,24 @@ class Corrective8MediaRuntimeTest {
     @Test fun identicalReapplyStillRereadsManualOverrideAndRevokesResume() {
         for (external in listOf(false, true)) {
             val r = Rig(external); r.pause()
+            r.now++ // Model a newly issued manual PAUSE, not the exact previous source state.
             r.env.manualPause() // Do not drain observer: configure must perform its own fresh read.
             r.core.configure(all.copy()); r.queue.drain()
             r.core.ear(EarState.BOTH); r.queue.drain()
             assertEquals(listOf(MediaAction.PAUSE), r.actions())
         }
+    }
+
+    @Test fun identicalReapplyAfterSamePausedSourceRedeliveryPreservesOwnedResume() {
+        val r = Rig(external = true); r.pause()
+        val sourceTimestamp = r.now
+        r.now += 600_000
+        val target = r.env.read().single().target
+        r.env.provider.playbackObserved(target, Playback.PAUSED, sourceTimestamp)
+        r.env.observer?.invoke() // Leave it queued; configure must perform its own fresh read.
+        r.core.configure(all.copy()); r.queue.drain()
+        r.core.ear(EarState.BOTH); r.queue.drain()
+        assertEquals(listOf(MediaAction.PAUSE, MediaAction.PLAY), r.actions())
     }
 
     @Test fun targetAccountRouteCallAndPermissionChangesStillRevokeOwnedPause() {

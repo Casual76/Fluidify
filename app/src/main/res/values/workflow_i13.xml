@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i13_follow_song">Follow song</string>
+    <string name="wf_i13_translation_failed">Translation unavailable</string>
+    <string name="wf_i13_retry_translation">Retry translation</string>
+    <string name="wf_i13_translation_unchanged">No additional translation</string>
+    <string name="wf_i13_translation_loading">Translating</string>
+    <string name="wf_i13_on">On</string>
+    <string name="wf_i13_off">Off</string>
+    <string name="wf_i13_move_up">Move earlier</string>
+    <string name="wf_i13_move_down">Move later</string>
+    <string name="wf_i13_queue_position">%1$d of %2$d</string>
+    <string name="wf_i13_karaoke_value">Vocal reduction: %1$d%%</string>
+    <string name="wf_i13_karaoke_more">Reduce vocals more</string>
+    <string name="wf_i13_karaoke_less">Reduce vocals less</string>
+    <string name="wf_i13_karaoke_off">Turn karaoke off</string>
+    <string name="wf_i13_screen_on">Keep screen on</string>
+    <string name="wf_i13_screen_on_note">While the fullscreen player is open and music is playing</string>
+</resources>

@@ -9,6 +9,13 @@ import android.os.Bundle
 import androidx.annotation.RequiresApi
 import dev.lelonio.square.data.RemoteConnect
 import dev.lelonio.square.data.RemoteDevice
+import dev.lelonio.square.SquareApplication
+import dev.lelonio.square.data.accountConnectLease
+import dev.lelonio.square.data.ConnectCommandLease
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -42,6 +49,13 @@ class ConnectRouteProvider : MediaRoute2ProviderService() {
 
     /** The one routing session there can be: playback is on one device at a time. */
     private var sessionInfo: RoutingSessionInfo? = null
+    private val transferRevision = java.util.concurrent.atomic.AtomicLong()
+
+    private fun captureLease(current: () -> Boolean = { true }): ConnectCommandLease? = runCatching {
+        val accounts = (application as SquareApplication).accountLocalData
+        val access = accounts.captureOnline() ?: return@runCatching null
+        accountConnectLease(accounts, access, current = { scope.isActive && current() })
+    }.getOrNull()
 
     override fun onCreate() {
         super.onCreate()
@@ -142,8 +156,9 @@ class ConnectRouteProvider : MediaRoute2ProviderService() {
     override fun onDiscoveryPreferenceChanged(preference: RouteDiscoveryPreference) {
         publish(RemoteConnect.devices.value)
         // And the account's own picture, fresh: the panel is open.
+        val lease = captureLease() ?: return
         scope.launch(Dispatchers.IO) {
-            runCatching { dev.lelonio.square.nativecore.NativeBridge.refreshCluster() }
+            runCatching { lease.dispatch { dev.lelonio.square.nativecore.NativeBridge.refreshCluster() } }
         }
     }
 
@@ -160,13 +175,7 @@ class ConnectRouteProvider : MediaRoute2ProviderService() {
             notifyRequestFailed(requestId, REASON_ROUTE_NOT_AVAILABLE)
             return
         }
-        // Answered now, moved next: the switcher wants an answer at once, and
-        // the account reports the move a beat later, which is when the list
-        // above catches up.
-        val info = sessionOf(device)
-        sessionInfo = info
-        notifySessionCreated(requestId, info)
-        RemoteConnect.request(RemoteConnect.TransferRequest.To(routeId))
+        transfer(requestId, device, create = true)
     }
 
     override fun onTransferToRoute(requestId: Long, sessionId: String, routeId: String) {
@@ -175,10 +184,36 @@ class ConnectRouteProvider : MediaRoute2ProviderService() {
             notifyRequestFailed(requestId, REASON_ROUTE_NOT_AVAILABLE)
             return
         }
-        val info = sessionOf(device)
-        sessionInfo = info
-        notifySessionUpdated(info)
-        RemoteConnect.request(RemoteConnect.TransferRequest.To(routeId))
+        transfer(requestId, device, create = false)
+    }
+
+    private fun transfer(requestId: Long, device: RemoteDevice, create: Boolean) {
+        val revision = transferRevision.incrementAndGet()
+        val done = CompletableDeferred<Boolean>()
+        val lease = captureLease { transferRevision.get() == revision && done.isActive }
+        if (lease == null) {
+            notifyRequestFailed(requestId, REASON_ROUTE_NOT_AVAILABLE)
+            return
+        }
+        scope.launch {
+            val applied = try {
+                withTimeoutOrNull(15_000) {
+                    lease.check()
+                    RemoteConnect.request(RemoteConnect.TransferRequest.To(device.id, lease, done)) && done.await()
+                } == true
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                kotlinx.coroutines.currentCoroutineContext().let { context ->
+                    if (context[Job]?.isActive == false) throw cancelled
+                }
+                false
+            } finally { done.complete(false) }
+            if (!applied) notifyRequestFailed(requestId, REASON_ROUTE_NOT_AVAILABLE)
+            else {
+                val info = sessionOf(device)
+                sessionInfo = info
+                if (create) notifySessionCreated(requestId, info) else notifySessionUpdated(info)
+            }
+        }
     }
 
     /**
@@ -186,9 +221,14 @@ class ConnectRouteProvider : MediaRoute2ProviderService() {
      * the same way it does when the app's own picker names this device.
      */
     override fun onReleaseSession(requestId: Long, sessionId: String) {
+        transferRevision.incrementAndGet()
+        val lease = captureLease() ?: run {
+            notifyRequestFailed(requestId, REASON_ROUTE_NOT_AVAILABLE)
+            return
+        }
         sessionInfo = null
         notifySessionReleased(sessionId)
-        RemoteConnect.request(RemoteConnect.TransferRequest.Here)
+        scope.launch { RemoteConnect.requestHere(lease::isCurrent) }
     }
 
     override fun onSelectRoute(requestId: Long, sessionId: String, routeId: String) =
@@ -198,13 +238,24 @@ class ConnectRouteProvider : MediaRoute2ProviderService() {
         onReleaseSession(requestId, sessionId)
 
     override fun onSetRouteVolume(requestId: Long, routeId: String, volume: Int) {
-        scope.launch(Dispatchers.IO) {
-            RemoteConnect.setVolume(routeId, rawOf(volume))
+        val lease = captureLease() ?: run {
+            notifyRequestFailed(requestId, REASON_ROUTE_NOT_AVAILABLE)
+            return
+        }
+        scope.launch {
+            val applied = kotlinx.coroutines.withContext(Dispatchers.IO) {
+                runCatching { RemoteConnect.setVolume(routeId, rawOf(volume), lease.permit, lease::admit) }
+                    .getOrDefault(false)
+            }
+            if (!applied) notifyRequestFailed(requestId, REASON_ROUTE_NOT_AVAILABLE)
         }
     }
 
     override fun onSetSessionVolume(requestId: Long, sessionId: String, volume: Int) {
-        val routeId = sessionInfo?.selectedRoutes?.firstOrNull() ?: return
+        val routeId = sessionInfo?.selectedRoutes?.firstOrNull() ?: run {
+            notifyRequestFailed(requestId, REASON_ROUTE_NOT_AVAILABLE)
+            return
+        }
         onSetRouteVolume(requestId, routeId, volume)
     }
 

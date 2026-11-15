@@ -53,7 +53,7 @@ pub fn rootlist() -> EngineResult<String> {
         let me = session.username();
         let mut playlists: Vec<Value> = Vec::new();
         let mut from = 0usize;
-        for _ in 0..ROOTLIST_MAX_PAGES {
+        loop {
             let bytes = session
                 .spclient()
                 .get_rootlist(from, Some(ROOTLIST_PAGE))
@@ -64,6 +64,9 @@ pub fn rootlist() -> EngineResult<String> {
                 .map_err(|e| format!("rootlist was not a SelectedListContent: {e}"))?;
 
             let contents = list.contents;
+            if contents.pos() < 0 || contents.pos() as usize != from {
+                return Err("rootlist incomplete: unexpected page offset".into());
+            }
             let count = contents.items.len();
             playlists.extend(
                 contents
@@ -95,10 +98,10 @@ pub fn rootlist() -> EngineResult<String> {
                         })
                     }),
             );
-            if !contents.truncated() || count == 0 {
-                break;
+            match crate::recovery_policy::next_page(from, count, contents.truncated())? {
+                Some(next) => from = next,
+                None => break,
             }
-            from += count;
         }
 
         log::info!("rootlist returned {} playlists", playlists.len());
@@ -106,9 +109,8 @@ pub fn rootlist() -> EngineResult<String> {
     })
 }
 
-/// Entries asked for at a time, and how many pages at most: 2000 entries.
+/// Raw entries per page; folders count toward the offset too.
 const ROOTLIST_PAGE: usize = 250;
-const ROOTLIST_MAX_PAGES: usize = 8;
 
 /// Lyrics for a track, as the access point's own JSON.
 ///

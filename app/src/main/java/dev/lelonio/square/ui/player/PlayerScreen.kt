@@ -49,6 +49,7 @@ import androidx.compose.ui.semantics.CustomAccessibilityAction
 import androidx.compose.ui.semantics.onClick
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.liveRegion
 import androidx.compose.ui.platform.testTag
 import com.adamglin.phosphoricons.regular.TextAlignLeft
 import com.adamglin.phosphoricons.regular.Info
@@ -315,8 +316,13 @@ fun PlayerScreen(
     /** Whether the sound is coming out of another of the account's devices. */
     onAnotherDevice: Boolean = false,
     airPods: dev.lelonio.square.ui.airpods.AirPodsUiBinding? = null,
+    /** The persisted opt-in; fullscreen/playing/lifecycle gates live in this player. */
+    keepScreenOn: Boolean = false,
+    /** False while a host overlay owns Back, including AirPods settings. */
+    backEnabled: Boolean = true,
 ) {
     val motionPolicy = dev.antigravity.fluidengine.ui.fluid.LocalFluidMotionPolicy.current
+    I13PlayerScreenOn(keepScreenOn, state.isPlaying && !state.isBuffering, playerOpen)
     // Font-scale changes recreate the Activity even when ordinary window resizes do not.
     var panel by rememberSaveable { mutableStateOf(PlayerPanel.NONE) }
     val queueScroll = androidx.compose.foundation.lazy.rememberLazyListState()
@@ -346,10 +352,15 @@ fun PlayerScreen(
      */
     var immersive by rememberSaveable { mutableStateOf(false) }
 
-    // Out of immersion before out of the player. The sheet's own handler is
-    // registered further out, so this one is asked first, which is the order
-    // the screen is read in.
-    androidx.activity.compose.BackHandler(enabled = immersive) { immersive = false }
+    // Inner content before immersion, and both before the sheet's collapse.
+    I13PlayerBackHandler(panel, immersive, enabled = backEnabled,
+        onClosePanel = { panel = PlayerPanel.NONE },
+        onExitImmersive = { immersive = false })
+    val closeDevices by rememberUpdatedState(onCloseDevices)
+    DisposableEffect(panel == PlayerPanel.DEVICES) {
+        val wasDevices = panel == PlayerPanel.DEVICES
+        onDispose { if (wasDevices) closeDevices() }
+    }
 
     // A panel and immersion are opposite requests: one asks for more on screen,
     // the other for less. Opening one has to end the other, or the panel would
@@ -2421,12 +2432,9 @@ internal fun LyricsStage(
     expandSignal: Int,
     modifier: Modifier = Modifier,
     controlsAbove: Boolean = false,
+    translate: suspend (List<String>, String) -> List<String>? =
+        dev.lelonio.square.backend.lyrics.Translate::lines,
 ) {
-    // Off when a song starts: turning it on is asking to read this one.
-    var translated by androidx.compose.runtime.saveable.rememberSaveable(lyrics) {
-        androidx.compose.runtime.mutableStateOf(false)
-    }
-
     // The language the app itself is read in, which is the one to translate
     // into — not the phone's, when the two have been made to differ on purpose.
     val context = androidx.compose.ui.platform.LocalContext.current
@@ -2436,32 +2444,13 @@ internal fun LyricsStage(
         language.language()
     }
 
-    // What the translator answered for this song, once it has been asked.
-    // Kept per song, so turning the toggle off and on again costs nothing.
-    var machine by remember(lyrics) {
-        androidx.compose.runtime.mutableStateOf<List<String>?>(null)
+    val translationScope = androidx.compose.runtime.rememberCoroutineScope()
+    val translator = remember(lyrics, target, translate) {
+        lyrics?.let { I13LyricsTranslation(it, target, translationScope, translate) }
     }
-    var translating by remember(lyrics) { androidx.compose.runtime.mutableStateOf(false) }
-
-    // A document that ships its own translation is already answered; anything
-    // else is put through the translator the first time it is asked for.
-    // Asked once per song. It is a walk over every line of the lyric, and the
-    // answer cannot change while the song is the same one.
-    val hasOwn = remember(lyrics) {
-        lyrics?.lines.orEmpty().any { !it.translation.isNullOrBlank() }
-    }
-
-    androidx.compose.runtime.LaunchedEffect(lyrics, translated) {
-        if (!translated || lyrics == null || hasOwn || machine != null) return@LaunchedEffect
-        translating = true
-        machine = runCatching {
-            dev.lelonio.square.backend.lyrics.Translate.lines(
-                lyrics.lines.map { it.text },
-                target,
-            )
-        }.getOrNull()
-        translating = false
-    }
+    DisposableEffect(translator) { onDispose { translator?.dispose() } }
+    val translation = translator?.state?.collectAsStateWithLifecycle()?.value ?: I13TranslationState()
+    val machine = translation.machine
 
     val shown = remember(lyrics, machine) {
         val answers = machine
@@ -2490,7 +2479,8 @@ internal fun LyricsStage(
                 lyrics = shown ?: lyrics,
                 positionMs = positionMs,
                 isPlaying = isPlaying,
-                showTranslation = translated,
+                showTranslation = translation.enabled,
+                scrollIdentity = lyrics,
                 controlsAbove = controlsAbove,
                 onSeek = onSeek,
                 // Keep words out of the translation/karaoke control column.
@@ -2508,9 +2498,9 @@ internal fun LyricsStage(
         // there is always something behind the switch.
         if (lyrics != null) {
             TranslationToggle(
-                on = translated,
-                busy = translating,
-                onChange = { translated = it },
+                on = translation.enabled,
+                busy = translation.busy,
+                onChange = { translator?.setEnabled(it) },
                 modifier = Modifier
                     // Above the karaoke dial, in the same column: the two are
                     // the panel's controls, and a second one loose on the other
@@ -2518,6 +2508,27 @@ internal fun LyricsStage(
                     .align(Alignment.BottomEnd)
                     .padding(end = 6.dp, bottom = 56.dp),
             )
+        }
+
+        if (translation.failed || (translation.enabled && translation.unchanged)) {
+            Column(
+                Modifier.align(Alignment.TopStart).padding(start = 12.dp, end = 64.dp, top = 6.dp),
+            ) {
+                Text(
+                    stringResource(if (translation.failed) R.string.wf_i13_translation_failed
+                        else R.string.wf_i13_translation_unchanged),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = GlassInk,
+                    modifier = Modifier.semantics {
+                        liveRegion = androidx.compose.ui.semantics.LiveRegionMode.Polite
+                    },
+                )
+                if (translation.failed) dev.antigravity.fluidengine.ui.fluid.FluidButton(
+                    text = stringResource(R.string.wf_i13_retry_translation),
+                    onClick = { translator?.setEnabled(true) },
+                    style = dev.antigravity.fluidengine.ui.fluid.FluidButtonStyle.Plain,
+                )
+            }
         }
 
         KaraokeDial(

@@ -52,6 +52,7 @@ internal class DisplayedPlaybackQueue(
     private val currentIndex = owner?.currentMediaItemIndex ?: 0
     val hasNext: Boolean = owner?.hasNextMediaItem() == true
     val hasPrevious: Boolean = owner?.hasPreviousMediaItem() == true
+    val timing: PlaybackQueueTiming? = owner?.let { PlaybackQueueTiming.capture(it) }
     val entries: List<QueueEntry> = owner?.let { p ->
         (currentIndex.coerceAtLeast(0) until p.mediaItemCount).map { index ->
             val item = p.getMediaItemAt(index)
@@ -98,7 +99,8 @@ internal fun rememberDisplayedPlaybackQueue(sessionPlayer: Player?): DisplayedPl
         val listener = object : Player.Listener {
             override fun onEvents(player: Player, events: Player.Events) {
                 if (events.containsAny(Player.EVENT_TIMELINE_CHANGED, Player.EVENT_MEDIA_ITEM_TRANSITION,
-                        Player.EVENT_REPEAT_MODE_CHANGED, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED)) refresh()
+                        Player.EVENT_REPEAT_MODE_CHANGED, Player.EVENT_SHUFFLE_MODE_ENABLED_CHANGED,
+                        Player.EVENT_PLAYBACK_PARAMETERS_CHANGED)) refresh()
             }
         }
         source?.addListener(listener)

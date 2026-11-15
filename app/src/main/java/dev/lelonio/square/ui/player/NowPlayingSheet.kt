@@ -104,6 +104,8 @@ fun NowPlayingSheet(
      * nothing on screen ever had.
      */
     startCornerRadius: Dp? = null,
+    /** Host modals/overlays own Back before the fullscreen sheet. */
+    backEnabled: Boolean = true,
     /**
      * The artwork wash under the player, which is also the window's floor.
      *
@@ -202,7 +204,7 @@ fun NowPlayingSheet(
         // hand and comes back if the hand changes its mind. Only part of the
         // travel is given to the preview — a gesture that could finish the
         // journey on its own would leave nothing for the commit to do.
-        PredictiveBackHandler(enabled = contentLive) { events ->
+        PredictiveBackHandler(enabled = contentLive && backEnabled) { events ->
             try {
                 events.collect { event ->
                     progress.snapTo(1f - BACK_PREVIEW * event.progress.coerceIn(0f, 1f))

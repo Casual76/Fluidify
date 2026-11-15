@@ -52,6 +52,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.pluralStringResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.foundation.lazy.LazyRow
@@ -199,8 +200,12 @@ fun LibraryScreen(
      * among the playlists everywhere else.
      */
     downloadedSongs: CatalogPlaylist? = null,
+    /** Account-scoped download owners, including collections no longer saved/followed. */
+    downloadedCollections: List<CatalogPlaylist> = emptyList(),
     /** Optional until the isolated listening-stats design is accepted. */
     onOpenListeningStats: (() -> Unit)? = null,
+    /** Retained account listens, independent of the collection filters/search. */
+    onOpenListeningHistory: (() -> Unit)? = null,
     /** The listener explicitly forbids Spotify traffic; retry must not imply leaving this mode. */
     manualOffline: Boolean = false,
 ) {
@@ -267,6 +272,10 @@ fun LibraryScreen(
                 mutableStateOf(Order.entries.firstOrNull { it.key == view.order } ?: Order.RECENT)
             }
             var filter by remember { mutableStateOf(Filter.ALL) }
+            var query by remember { mutableStateOf("") }
+            val matchingArtists = remember(artists, query) {
+                artists.filter { i09CollectionNameMatches(it.title, query) }
+            }
             var descending by remember { mutableStateOf(view.descending) }
             val onOrderChosen: (Order) -> Unit = {
                 order = it
@@ -314,16 +323,16 @@ fun LibraryScreen(
                 Filter.PLAYLISTS -> state.playlists
                 Filter.ALBUMS -> albums
                 Filter.ARTISTS -> artistItems
-                // Everything with a download, whatever kind it is, plus the
-                // loose songs. Drawn from the same lists as the other chips, so
-                // a downloaded playlist keeps its cover, its pin and its place.
-                Filter.DOWNLOADS -> listOfNotNull(downloadedSongs) +
-                    (state.playlists + albums + artistItems)
-                        .filter { downloaded.contains(it.uri) }
+                // The index is authoritative for kept collections. It also contains
+                // albums/artists/playlists never saved or followed on Spotify.
+                Filter.DOWNLOADS -> i09DownloadedCollections(
+                    state.playlists + albums + artistItems, downloaded,
+                    downloadedCollections, downloadedSongs,
+                )
             }
 
             fun sortedFor(which: Filter): List<CatalogPlaylist> {
-                val shown = shownFor(which)
+                val shown = i09FilterCollectionsByName(shownFor(which), query)
                 return when (order) {
                     Order.RECENT -> shown.sortedByRecentlyOpened(playlistOrder)
                     Order.NAME -> shown.sortedWith(
@@ -354,7 +363,7 @@ fun LibraryScreen(
 
             val playlists = remember(
                 state.playlists, albums, artistItems, filter, downloaded, downloadedSongs,
-                playlistOrder, pinned, order, descending,
+                playlistOrder, pinned, order, descending, query, downloadedCollections,
             ) { sortedFor(filter) }
 
             // Hoisted out of the swap below, so the heading can read the
@@ -449,7 +458,7 @@ fun LibraryScreen(
                 val playlists = remember(
                     state.playlists, albums, artistItems, shownFilter,
                     playlistOrder, pinned, order, descending,
-                    downloaded, downloadedSongs,
+                    downloaded, downloadedSongs, downloadedCollections, query,
                 ) { sortedFor(shownFilter) }
                 when (layout) {
                     Layout.GRID -> LazyVerticalGrid(
@@ -487,6 +496,8 @@ fun LibraryScreen(
                                 onOrder = { onOrderChosen(it) },
                                 onFilter = { filter = it },
                                 sortActions = sortActions,
+                                query = query,
+                                onQueryChange = { query = it },
                             )
                         }
 
@@ -501,15 +512,30 @@ fun LibraryScreen(
                             )
                         }
 
+                        onOpenListeningHistory?.let { openHistory ->
+                            item(span = { GridItemSpan(maxLineSpan) }, key = "listening-history") {
+                                dev.lelonio.square.ui.library.history.ListeningHistoryLibraryEntry(openHistory)
+                            }
+                        }
+
                         onOpenListeningStats?.let { openStats ->
                             item(span = { GridItemSpan(maxLineSpan) }, key = "listening-stats") {
                                 dev.lelonio.square.ui.library.stats.ListeningStatsLibraryEntry(openStats)
                             }
                         }
 
-                        if (artists.isNotEmpty() && shownFilter == Filter.ALL) {
+                        if (matchingArtists.isNotEmpty() && shownFilter == Filter.ALL) {
                             item(span = { GridItemSpan(maxLineSpan) }, key = "artists") {
-                                ArtistShelf(artists, onOpenArtist)
+                                ArtistShelf(matchingArtists, onOpenArtist)
+                            }
+                        }
+
+                        if (query.isNotBlank() && playlists.isEmpty() &&
+                            (shownFilter != Filter.ALL || matchingArtists.isEmpty())) {
+                            item(span = { GridItemSpan(maxLineSpan) }, key = "search-empty") {
+                                Text(stringResource(R.string.wf_i09_no_results),
+                                    style = MaterialTheme.typography.bodyMedium, color = InkDim,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
                             }
                         }
 
@@ -544,6 +570,8 @@ fun LibraryScreen(
                                 onOrder = { onOrderChosen(it) },
                                 onFilter = { filter = it },
                                 sortActions = sortActions,
+                                query = query,
+                                onQueryChange = { query = it },
                             )
                         }
 
@@ -556,6 +584,14 @@ fun LibraryScreen(
                                 onConnectWebApi = onConnectWebApi,
                                 filter = shownFilter,
                             )
+                        }
+
+                        onOpenListeningHistory?.let { openHistory ->
+                            item(key = "listening-history") {
+                                dev.lelonio.square.ui.library.history.ListeningHistoryLibraryEntry(
+                                    openHistory, Modifier.padding(top = 8.dp, bottom = 14.dp),
+                                )
+                            }
                         }
 
                         onOpenListeningStats?.let { openStats ->
@@ -571,8 +607,17 @@ fun LibraryScreen(
                             }
                         }
 
-                        if (artists.isNotEmpty() && shownFilter == Filter.ALL) {
-                            item(key = "artists") { ArtistShelf(artists, onOpenArtist) }
+                        if (matchingArtists.isNotEmpty() && shownFilter == Filter.ALL) {
+                            item(key = "artists") { ArtistShelf(matchingArtists, onOpenArtist) }
+                        }
+
+                        if (query.isNotBlank() && playlists.isEmpty() &&
+                            (shownFilter != Filter.ALL || matchingArtists.isEmpty())) {
+                            item(key = "search-empty") {
+                                Text(stringResource(R.string.wf_i09_no_results),
+                                    style = MaterialTheme.typography.bodyMedium, color = InkDim,
+                                    modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
+                            }
                         }
 
                         items(playlists, key = { it.uri }) { playlist ->
@@ -664,6 +709,8 @@ private fun Header(
     onFilter: (Filter) -> Unit,
     /** The sort, as the rows of the menu the sort button becomes. */
     sortActions: () -> List<dev.antigravity.fluidengine.ui.fluid.FluidContextAction>,
+    query: String,
+    onQueryChange: (String) -> Unit,
 ) {
     Column(Modifier.fillMaxWidth()) {
         Row(
@@ -683,6 +730,12 @@ private fun Header(
             }
 
         }
+
+        I09CollectionSearch(
+            query = query, onQueryChange = onQueryChange,
+            modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 8.dp)
+                .testTag("wf_i09_library_search"),
+        )
 
         // The chips say what is being shown; the sort sits at the end of the
         // same row as a menu, because it is a choice among three that is made

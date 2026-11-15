@@ -28,6 +28,8 @@ data class SavedPlayback(
     val contextLabel: String = "",
     val listeningOccurrenceId: String? = null,
     val historyContinuity: String? = null,
+    /** Occurrence that began the round, indexed in the saved effective playback order. */
+    val cycleAnchorIndex: Int = 0,
 )
 
 /** Continuity requires the explicit playback token and the still-valid history fence. */

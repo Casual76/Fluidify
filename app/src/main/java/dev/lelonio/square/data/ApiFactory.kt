@@ -53,6 +53,7 @@ object ApiFactory {
             .addInterceptor(AuthInterceptor(tokens, sessionToken))
             .addInterceptor(RateLimitInterceptor())
             .addNetworkInterceptor(SpotifyNetworkInterceptor(networkAttempt = true))
+            .addNetworkInterceptor(dev.lelonio.square.auth.I10WebRequestGuard.NetworkInterceptor())
             .connectTimeout(15, TimeUnit.SECONDS)
             .readTimeout(30, TimeUnit.SECONDS)
             .apply {
@@ -154,7 +155,18 @@ object ApiFactory {
                 response.close()
             }
 
-            return chain.proceed(send(stripped, stored(permit)))
+            val expected = tokens.generation
+            val guard = try { tokens.requestGuard(expected) }
+                catch (error: Exception) { throw IOException("Web API identity unavailable", error) }
+            val guarded = stripped.newBuilder().tag(dev.lelonio.square.auth.I10WebRequestGuard::class.java,
+                dev.lelonio.square.auth.I10WebRequestGuard(guard)).build()
+            val response = chain.proceed(send(guarded, stored(permit, expected)))
+            try { guard(); permit.check() }
+            catch (error: Exception) {
+                response.close()
+                throw IOException("Web API session changed", error)
+            }
+            return response
         }
 
         private fun send(request: okhttp3.Request, token: String) =
@@ -170,8 +182,8 @@ object ApiFactory {
          * its own thread, which takes the whole process down instead of failing
          * the one call.
          */
-        private fun stored(permit: SpotifyNetworkPolicy.Permit): String = try {
-            runBlocking { tokens.validAccessToken(permit) }
+        private fun stored(permit: SpotifyNetworkPolicy.Permit, expected: Long): String = try {
+            runBlocking { tokens.validAccessToken(permit, expectedGeneration = expected) }
         } catch (e: IOException) {
             throw e
         } catch (e: Exception) {

@@ -5,6 +5,7 @@ import dev.antigravity.fluidengine.ui.fluid.FluidSpinner
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusable
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
@@ -24,6 +25,19 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
+import androidx.compose.ui.semantics.toggleableState
+import androidx.compose.ui.state.ToggleableState
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.dp
 import com.adamglin.PhosphorIcons
@@ -56,6 +70,9 @@ fun TranslationToggle(
     var pressed by remember { mutableStateOf(false) }
     val change by rememberUpdatedState(onChange)
     val state by rememberUpdatedState(on)
+    val label = stringResource(R.string.translation)
+    val status = stringResource(if (busy) R.string.wf_i13_translation_loading
+        else if (on) R.string.wf_i13_on else R.string.wf_i13_off)
 
     // Gives under the finger, like every other control in the player.
     val grip by animateFloatAsState(
@@ -79,6 +96,20 @@ fun TranslationToggle(
             .clip(dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape)
             // The dial's material, which is the buttons'; see playerControlGlass.
             .playerControlGlass(dev.antigravity.fluidengine.ui.fluid.FluidCapsuleShape)
+            .semantics(mergeDescendants = true) {
+                role = Role.Switch
+                contentDescription = label
+                stateDescription = status
+                toggleableState = if (on) ToggleableState.On else ToggleableState.Off
+                onClick { change(!state); true }
+            }
+            .onKeyEvent { event ->
+                if (event.key == Key.Enter || event.key == Key.NumPadEnter || event.key == Key.Spacebar) {
+                    if (event.type == KeyEventType.KeyUp) change(!state)
+                    true
+                } else false
+            }
+            .focusable()
             // Claimed in the first pass, for the reason the dial beside it
             // does: the lyrics behind this scroll, and the player above it
             // closes on a drag, so a touch left unconsumed becomes theirs.
@@ -120,7 +151,7 @@ fun TranslationToggle(
         } else {
             Icon(
                 if (on) PhosphorIcons.Fill.Translate else PhosphorIcons.Regular.Translate,
-                contentDescription = stringResource(R.string.translation),
+                contentDescription = null,
                 // The page's ink throughout, as the dial is: the filled glyph
                 // is what says it is on, and a coloured one competes with the
                 // artwork.

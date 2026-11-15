@@ -36,6 +36,7 @@ import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.clearAndSetSemantics
 import androidx.compose.ui.semantics.onClick
+import androidx.compose.ui.semantics.onLongClick
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -134,6 +135,8 @@ fun PlayerScreen(
     onAddToPlaylist: (() -> Unit)? = null,
     /** Whether the controls are on screen; see [PlayerChrome]. Without one they always are. */
     chrome: PlayerChrome? = null,
+    /** Shortcut; the visible Headphones row is also in the song options. */
+    onAirPodsBattery: (() -> Unit)? = null,
 ) {
     val nowState = controls.nowPlaying.collectAsStateWithLifecycle()
     // The volume follows the phone's by itself (see VolumeControl): nothing to sync from here.
@@ -291,6 +294,7 @@ fun PlayerScreen(
                     onOutput = onOutput,
                     likes = LikeActions(controls, confirmUnlike = onUnlike ?: { controls.setLiked(false) }),
                     onAddToPlaylist = onAddToPlaylist,
+                    onAirPodsBattery = onAirPodsBattery,
                     modifier = Modifier.graphicsLayer { alpha = controlsAlpha() },
                 )
             }
@@ -538,6 +542,7 @@ private fun Transport(
 ) {
     val hasTrack by remember { derivedStateOf { nowState.value.snapshot?.track != null } }
     val playing by remember { derivedStateOf { nowState.value.snapshot?.let { it.isPlaying || it.playWhenReady } == true } }
+    val shouldPlay = !playing
     CompositionLocalProvider(LocalLayoutDirection provides LayoutDirection.Ltr) {
         Row(
             verticalAlignment = Alignment.CenterVertically,
@@ -552,7 +557,7 @@ private fun Transport(
                 enabled = hasTrack,
             ) { Icon(PhosphorIcons.Fill.SkipBack, contentDescription = null, modifier = Modifier.size(FluidWearDimens.IconMedium)) }
             FluidGlassDisc(
-                onClick = controls::togglePlay,
+                onClick = { controls.setPlaying(shouldPlay) },
                 backdrop = backdrop,
                 grip = FluidPressGrip.YieldsToScroll,
                 contentDescription = stringResource(if (playing) R.string.pause else R.string.play),
@@ -595,8 +600,10 @@ private fun ArcActions(
     onOutput: () -> Unit,
     likes: LikeActions,
     onAddToPlaylist: (() -> Unit)?,
+    onAirPodsBattery: (() -> Unit)?,
     modifier: Modifier = Modifier,
 ) {
+    val batteryLabel = stringResource(R.string.wf_i15_battery_action)
     val deviceKind by remember { derivedStateOf { nowState.value.snapshot?.device?.kind } }
     val liked by remember { derivedStateOf { nowState.value.snapshot?.liked == true } }
     val likeable by remember { derivedStateOf { nowState.value.snapshot?.track.likeable() } }
@@ -607,6 +614,10 @@ private fun ArcActions(
     ) {
         FluidGlassDisc(
             onClick = onOutput,
+            onLongClick = onAirPodsBattery,
+            modifier = onAirPodsBattery?.let { open ->
+                Modifier.semantics { onLongClick(label = batteryLabel) { open(); true } }
+            } ?: Modifier,
             backdrop = backdrop,
             grip = FluidPressGrip.YieldsToScroll,
             contentDescription = stringResource(R.string.audio_output),

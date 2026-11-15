@@ -183,6 +183,7 @@ object SpotifyOAuth {
      * the saved tokens rather than back off and try again.
      */
     class SessionExpired(message: String) : IllegalStateException(message)
+    class AuthorizationDenied : IllegalStateException("Spotify authorization denied")
 
     /**
      * Runs the full interactive flow: opens a Custom Tab, waits for Spotify to
@@ -195,8 +196,9 @@ object SpotifyOAuth {
         context: Context,
         clientId: String = CLIENT_ID,
         scopes: List<String> = SCOPES,
+        networkPermit: dev.lelonio.square.data.SpotifyNetworkPolicy.Permit? = null,
     ): Tokens = withContext(Dispatchers.IO) {
-        val permission = dev.lelonio.square.data.SpotifyNetworkPolicy.capture()
+        val permission = networkPermit ?: dev.lelonio.square.data.SpotifyNetworkPolicy.capture()
         val verifier = randomVerifier()
         val challenge = challengeFor(verifier)
         val state = randomState()
@@ -234,12 +236,33 @@ object SpotifyOAuth {
             val callback = Uri.parse("http://127.0.0.1$target")
             android.util.Log.i(TAG, "redirect received")
             check(callback.getQueryParameter("state") == state) { "OAuth state mismatch — request was not ours" }
-            val code = callback.getQueryParameter("code")
-                ?: error("authorization denied: ${callback.getQueryParameter("error")}")
+            val code = callback.getQueryParameter("code") ?: run {
+                if (callback.getQueryParameter("error") == "access_denied") throw AuthorizationDenied()
+                error("Spotify authorization was not completed")
+            }
             code to redirectUri
         }
         // The listener is released before the token HTTP exchange as well.
         exchangeCode(code, verifier, redirectUri, clientId, permission)
+    }
+
+    /** Verify only the candidate credential, without saving it or using a stored-token fallback. */
+    internal suspend fun candidateAccountId(
+        accessToken: String,
+        permit: dev.lelonio.square.data.SpotifyNetworkPolicy.Permit = dev.lelonio.square.data.SpotifyNetworkPolicy.capture(),
+    ): String = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url("https://api.spotify.com/v1/me")
+            .header("Authorization", "Bearer $accessToken")
+            .tag(dev.lelonio.square.data.SpotifyNetworkPolicy.Permit::class.java, permit).build()
+        permit.check()
+        // Same bounded, single-attempt transport as OAuth; never log candidate tokens or bodies.
+        http.newCall(request).execute().use { response ->
+            permit.check()
+            check(response.isSuccessful) { "Spotify identity verification failed (${response.code})" }
+            JSONObject(response.body?.string().orEmpty()).getString("id").also {
+                check(it.isNotBlank()) { "Spotify identity missing" }
+            }
+        }
     }
 
     /** Trades a refresh token for a fresh access token. */

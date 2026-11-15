@@ -53,6 +53,14 @@ class PlayQueue {
 
     var currentIndex: Int = 0
 
+    /** Occurrence that began this round, retained through edits and shuffle. */
+    var cycleAnchorIndex: Int = 0
+        private set
+
+    fun restoreCycleAnchor(index: Int) {
+        cycleAnchorIndex = index.coerceIn(0, maxOf(0, _items.lastIndex))
+    }
+
     /** Unshuffled queue, kept so the order can be restored exactly. */
     private var originalOrder: List<Track>? = null
 
@@ -79,6 +87,7 @@ class PlayQueue {
 
         _items.clear()
         _items.addAll(order.map(original::get))
+        cycleAnchorIndex = order.indexOf(cycleAnchorIndex).coerceAtLeast(0)
         originalOrder = original
         originalIndices = order
     }
@@ -87,6 +96,7 @@ class PlayQueue {
         _items.clear()
         _items.addAll(tracks)
         currentIndex = startIndex.coerceIn(0, maxOf(0, _items.lastIndex))
+        cycleAnchorIndex = currentIndex
         clearShuffle()
     }
 
@@ -105,6 +115,8 @@ class PlayQueue {
             val rest = original.indices.filter { it != currentIndex }.shuffled()
             val order = listOf(currentIndex) + rest
 
+            cycleAnchorIndex = order.indexOf(cycleAnchorIndex).coerceAtLeast(0)
+
             _items.clear()
             _items.addAll(order.map(original::get))
             originalOrder = original
@@ -115,9 +127,11 @@ class PlayQueue {
             // Index, not track identity: a playlist may hold the same track more
             // than once, and searching would land on the wrong copy.
             val restored = originalIndices?.getOrNull(currentIndex) ?: 0
+            val restoredAnchor = originalIndices?.getOrNull(cycleAnchorIndex) ?: 0
             _items.clear()
             _items.addAll(original)
             currentIndex = restored.coerceIn(0, maxOf(0, _items.lastIndex))
+            cycleAnchorIndex = restoredAnchor.coerceIn(0, maxOf(0, _items.lastIndex))
             clearShuffle()
         }
     }
@@ -147,6 +161,7 @@ class PlayQueue {
 
         _items.addAll(at, tracks)
         if (at <= currentIndex) currentIndex += tracks.size
+        if (at <= cycleAnchorIndex && _items.size > tracks.size) cycleAnchorIndex += tracks.size
         if (originalIndices?.size != _items.size) clearShuffle()
     }
 
@@ -180,6 +195,7 @@ class PlayQueue {
         }
 
         _items.addAll(at, marked)
+        if (at <= cycleAnchorIndex && _items.size > marked.size) cycleAnchorIndex += marked.size
 
         // The queue is no longer the context in its own order, so it must not
         // be handed to the engine as one: played that way Spotify supplies the
@@ -220,6 +236,11 @@ class PlayQueue {
         }
 
         _items.subList(from, to).clear()
+        cycleAnchorIndex = when {
+            cycleAnchorIndex >= to -> cycleAnchorIndex - (to - from)
+            cycleAnchorIndex >= from -> from.takeIf { it < _items.size } ?: 0
+            else -> cycleAnchorIndex
+        }.coerceIn(0, maxOf(0, _items.lastIndex))
         currentIndex = when {
             currentIndex >= to -> currentIndex - (to - from)
             currentIndex >= from -> from
@@ -236,6 +257,7 @@ class PlayQueue {
         val moved = ArrayList(_items.subList(from, to))
         val target = newIndex.coerceIn(0, _items.size - moved.size)
         val current = currentIndex
+        val anchor = cycleAnchorIndex
 
         _items.subList(from, to).clear()
         _items.addAll(target, moved)
@@ -264,6 +286,13 @@ class PlayQueue {
             target + (current - from)
         } else {
             var shifted = if (current >= to) current - moved.size else current
+            if (shifted >= target) shifted += moved.size
+            shifted
+        }.coerceIn(0, maxOf(0, _items.lastIndex))
+        cycleAnchorIndex = if (anchor in from until to) {
+            target + (anchor - from)
+        } else {
+            var shifted = if (anchor >= to) anchor - moved.size else anchor
             if (shifted >= target) shifted += moved.size
             shifted
         }.coerceIn(0, maxOf(0, _items.lastIndex))
@@ -297,11 +326,18 @@ class PlayQueue {
         // dropped every time.
         val tracks = ArrayList<Track>(mediaItems.size)
         var chosen = 0
+        var suppliedAnchor: Int? = null
         mediaItems.forEachIndexed { position, item ->
             if (position == startIndex) chosen = tracks.size
-            toTrack(item)?.let(tracks::add)
+            toTrack(item)?.let { track ->
+                if (item.mediaMetadata.extras?.getBoolean(dev.lelonio.square.ui.EXTRA_QUEUE_CYCLE_ANCHOR) == true) {
+                    suppliedAnchor = tracks.size
+                }
+                tracks.add(track)
+            }
         }
         replace(tracks, chosen)
+        suppliedAnchor?.let(::restoreCycleAnchor)
     }
 
     /**

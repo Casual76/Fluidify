@@ -24,12 +24,18 @@ object PlaybackAirPodsMediaBridge : LocalAirPodsMediaBridge {
     private var provider: LocalAirPodsMediaBridge? = null
     private var subscription: Closeable? = null
     private var generation = 0L
+    private var retainedAutomation: MediaTarget? = null
+    private var latestReadTarget: MediaTarget? = null
+    /** Set only by the live policy lease, never by a renderer's lingering pause receipt. */
+    internal val keepsPlaybackAlive: Boolean get() = provider != null && retainedAutomation != null
     private val observers = linkedSetOf<() -> Unit>()
 
     internal fun attach(value: LocalAirPodsMediaBridge): Closeable {
         val mine = ++generation
         subscription?.close()
         (provider as? Closeable)?.close()
+        retainedAutomation = null
+        latestReadTarget = null
         provider = value
         subscription = value.observe { if (generation == mine) changed() }
         changed()
@@ -38,13 +44,20 @@ object PlaybackAirPodsMediaBridge : LocalAirPodsMediaBridge {
                 ++generation
                 subscription?.close(); subscription = null
                 provider = null
+                retainedAutomation = null
+                latestReadTarget = null
                 (value as? Closeable)?.close()
                 changed()
             }
         }
     }
     internal fun changed() { observers.toList().forEach { runCatching { it() } } }
+    override fun retainAutomation(target: MediaTarget?) {
+        if (target == null) retainedAutomation = null
+        else if (provider != null && target == latestReadTarget) retainedAutomation = target
+    }
     override fun read(pair: PairAddress): MediaCandidate? = runCatching { provider?.read(pair) }.getOrNull()
+        .also { latestReadTarget = it?.target }
     override fun observe(changed: () -> Unit): Closeable {
         observers.add(changed)
         return Closeable { observers.remove(changed) }
@@ -175,7 +188,8 @@ internal class PlaybackAirPodsProvider(
         if (current != lastVolume) revokeVolume()
         lastVolume = current
     }
-    private fun manualTransport() { revokeTransport(); revokeVolume(); signal() }
+    // Transport and STREAM_MUSIC have independent intent and receipt lifetimes.
+    private fun manualTransport() { revokeTransport(); signal() }
     val sessionPlayer: Player = object : ForwardingPlayer(raw) {
         override fun play() { manualTransport(); super.play() }
         override fun pause() { manualTransport(); super.pause() }
@@ -245,7 +259,7 @@ internal class PlaybackAirPodsProvider(
     }
     private val routeObserver = output?.observeAirPodsRouting(::postRouteChange)
     private val exoRouteObserver = exoOutput?.observeRoute(::postRouteChange)
-    private val exoCommandObserver = exoOutput?.observeCommand { revokeTransport(); revokeVolume(); signal() }
+    private val exoCommandObserver = exoOutput?.observeCommand { manualTransport() }
     private val exoObserver = exoOutput?.observe { handler.post { signal() } }
     private val commandObserver = (raw as? LibrespotPlayer)?.observeAirPodsCommands {
         if (!ownTransport) manualTransport()

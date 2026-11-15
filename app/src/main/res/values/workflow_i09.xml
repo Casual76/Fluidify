@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i09_search">Find a collection</string>
+    <string name="wf_i09_clear">Clear search</string>
+    <string name="wf_i09_close">Close search</string>
+    <string name="wf_i09_no_results">No collections found</string>
+    <string name="wf_i09_download_collection">Downloaded collection</string>
+    <string name="wf_i09_download_count">%1$d of %2$d downloaded</string>
+    <string name="wf_i09_partial">Download incomplete</string>
+    <string name="wf_i09_retry_download">Retry missing downloads</string>
+    <string name="wf_i09_file_failed">Download failed</string>
+    <string name="wf_i09_retry_pending">%1$d failed · retry pending</string>
+    <string name="wf_i09_download_failed">%1$d failed</string>
+    <string name="wf_i09_retry_source">Finish loading collection</string>
+</resources>

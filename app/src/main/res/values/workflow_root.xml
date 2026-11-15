@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_root_collection_unconfirmed">Action not confirmed. Check the collection before trying again.</string>
+    <string name="wf_root_queue_remaining">%1$s left</string>
+    <string name="wf_root_queue_until_cycle">%1$s until the next round</string>
+    <string name="wf_root_queue_until_track">%1$s until this song repeats</string>
+    <string name="wf_root_queue_at_least">at least %1$s</string>
+    <string name="wf_root_queue_unknown">Duration unavailable</string>
+    <string name="wf_root_enqueue_album">Add album to queue</string>
+    <string name="wf_root_enqueue_collection">Add to queue</string>
+    <string name="wf_root_queue_loading">Loading songs…</string>
+    <string name="wf_root_queue_added">Added to queue</string>
+    <string name="wf_root_queue_failed">Could not add these songs. Try again.</string>
+    <string name="wf_root_queue_empty">No songs available to add</string>
+</resources>

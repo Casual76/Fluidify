@@ -111,6 +111,8 @@ fun rememberAirPodsHostBinding(): AirPodsHostBinding {
             host.refreshCandidates()
             launch { host.owner?.state?.collect { host.refresh() } }
             launch { host.owner?.runtime?.collect { host.refresh() } }
+            // Cold profile completion can require Settings after the original dispatch returned.
+            launch { host.owner?.audioResult?.collect { host.refresh() } }
             launch { host.owner?.volume?.collect { host.refresh() } }
             launch { host.owner?.diagnostics?.records?.collect { host.refresh() } }
             // Refresh durable configuration and battery age while UI is started; never reconnect.

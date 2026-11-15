@@ -69,14 +69,42 @@ class C6ResumeCorrelationTest {
     // Corrective-7 contract change (prepared, not executed): an UNKNOWN that the platform marks as
     // an interruption (stop/error/skip/seek/none) keeps revoking exactly as before; a transitional
     // UNKNOWN (BUFFERING/CONNECTING) inside the bound of our own correlated PLAY no longer does.
-    @Test fun duplicatePauseOrInterruptionWhileResumePendingRevokesIt() {
+    @Test fun freshPauseOrInterruptionWhileResumePendingRevokesIt() {
         for (event in listOf(Playback.PAUSED, Playback.UNKNOWN)) {
             val r = Rig(); val target = r.ownResume(); val before = r.read()
+            r.now++ // A new source event, distinct from re-delivery of the confirmed PAUSED state.
             r.provider.playbackObserved(target, event, r.now, interruption = event == Playback.UNKNOWN)
             assertTrue(r.read().transportRevision > before.transportRevision)
             val revoked = r.read().transportRevision
             assertTrue(r.playing(target).transportRevision > revoked)
         }
+    }
+
+    @Test fun identicalPausedSourceRedeliveryWhileResumePendingKeepsExpectedPlay() {
+        val r = Rig(); val target = r.ownResume(); val before = r.read()
+        val sourceTimestamp = r.now
+        r.now += 500 // Later delivery of the same source state is not a new manual PAUSE.
+        r.provider.playbackObserved(target, Playback.PAUSED, sourceTimestamp)
+        assertEquals(before.transportRevision, r.read().transportRevision)
+        val after = r.playing(target)
+        assertEquals(before.transportRevision, after.transportRevision)
+        assertEquals(8L, after.correlatedVolumeEffect)
+    }
+
+    @Test fun untimestampedPauseWhileResumePendingStillRevokesExpectedPlay() {
+        val r = Rig(); val target = r.ownResume(); val before = r.read()
+        r.provider.playbackObserved(target, Playback.PAUSED)
+        assertTrue(r.read().transportRevision > before.transportRevision)
+        val revoked = r.read().transportRevision
+        assertTrue(r.playing(target).transportRevision > revoked)
+    }
+
+    @Test fun explicitInterruptionWithOlderRetainedTimestampCannotHideAsStaleState() {
+        val r = Rig(); val target = r.ownResume(); val before = r.read()
+        r.provider.playbackObserved(target, Playback.UNKNOWN, r.now - 1, interruption = true)
+        assertTrue(r.read().transportRevision > before.transportRevision)
+        val revoked = r.read().transportRevision
+        assertTrue(r.playing(target).transportRevision > revoked)
     }
 
     @Test fun transitionalUnknownInsideBoundKeepsOwnResumeUntilPlaying() {

@@ -22,11 +22,13 @@ class TokenStore internal constructor(
     private val clock: () -> Long,
     private val localAuthority: LocalSpotifyAuthority? = null,
     private val refreshAdmitted: (suspend (String, String, dev.lelonio.square.data.SpotifyNetworkPolicy.Permit) -> SpotifyOAuth.Tokens)? = null,
+    private val captureAccessGuard: (() -> (() -> Unit))? = null,
 ) {
     constructor(
         context: Context,
         fileName: String = FILE_NAME,
         clientId: () -> String = { SpotifyOAuth.CLIENT_ID },
+        captureAccessGuard: (() -> (() -> Unit))? = null,
     ) : this(
         EncryptedSharedPreferences.create(
             context, fileName,
@@ -38,6 +40,7 @@ class TokenStore internal constructor(
         clientId, { token, client -> SpotifyOAuth.refresh(token, client) }, System::currentTimeMillis,
         if (fileName == FILE_NAME) LocalSpotifyAuthority.forContext(context) else null,
         { token, client, permit -> SpotifyOAuth.refresh(token, client, permit) },
+        captureAccessGuard,
     )
 
     private class Control {
@@ -56,7 +59,7 @@ class TokenStore internal constructor(
     }
 
     /** New authentication replaces the whole session; refresh commits never call this. */
-    fun save(tokens: SpotifyOAuth.Tokens) = synchronized(control) {
+    fun save(tokens: SpotifyOAuth.Tokens) = withIdentityLock {
         changeIdentity {
             control.generation++
             write(tokens, replace = true)
@@ -64,9 +67,13 @@ class TokenStore internal constructor(
     }
 
     /** Authorisation callers can reject answers from an abandoned login. */
-    fun saveIfCurrent(expected: Long, tokens: SpotifyOAuth.Tokens): Boolean = synchronized(control) {
-        if (control.generation != expected) return@synchronized false
+    fun saveIfCurrent(expected: Long, tokens: SpotifyOAuth.Tokens): Boolean =
+        saveIfCurrent(expected, tokens) {}
+
+    internal fun saveIfCurrent(expected: Long, tokens: SpotifyOAuth.Tokens, beforeSave: () -> Unit): Boolean = withIdentityLock {
+        if (control.generation != expected) return@withIdentityLock false
         changeIdentity {
+            beforeSave()
             control.generation++
             write(tokens, replace = true)
         }
@@ -78,7 +85,7 @@ class TokenStore internal constructor(
         val request = synchronized(control) { control.generation to clientId() }
         val answer = authorize()
         currentCoroutineContext().ensureActive()
-        return synchronized(control) {
+        return withIdentityLock {
             clientId() == request.second && saveIfCurrent(request.first, answer)
         }
     }
@@ -86,7 +93,7 @@ class TokenStore internal constructor(
     fun clear(): Boolean = invalidate { }
 
     /** Mutate the client identity under the very same monitor as token checks/commits. */
-    internal fun invalidate(changeClient: () -> Unit): Boolean = synchronized(control) {
+    internal fun invalidate(changeClient: () -> Unit): Boolean = withIdentityLock {
         changeIdentity {
             control.generation++
             val result = prefs.edit().clear().commit()
@@ -95,9 +102,27 @@ class TokenStore internal constructor(
         }
     }
 
-    suspend fun validAccessToken(networkPermit: dev.lelonio.square.data.SpotifyNetworkPolicy.Permit? = null): String {
-        // Capture before waiting: an old waiter must not silently borrow a new account.
-        val expected = generation
+    /** Pin a Web API call to the verified native identity and this token generation.
+     * The external guard runs outside the token monitor; it never performs I/O.
+     */
+    internal fun requestGuard(expected: Long = generation): () -> Unit {
+        val identity = captureAccessGuard?.invoke()
+        val guard: () -> Unit = {
+            synchronized(control) { checkGeneration(expected) }
+            identity?.invoke()
+            synchronized(control) { checkGeneration(expected) }
+        }
+        guard()
+        return guard
+    }
+
+    suspend fun validAccessToken(
+        networkPermit: dev.lelonio.square.data.SpotifyNetworkPolicy.Permit? = null,
+        expectedGeneration: Long? = null,
+    ): String {
+        // An external request may predate service bootstrap as well as the refresh mutex.
+        val expected = expectedGeneration ?: generation
+        val guard = requestGuard(expected)
         val networkRevision = networkPermit?.revision ?: dev.lelonio.square.data.SpotifyNetworkPolicy.revision
         return control.refresh.withLock {
             val request = synchronized(control) {
@@ -109,6 +134,7 @@ class TokenStore internal constructor(
                 throw dev.lelonio.square.data.SpotifyNetworkPolicy.Offline()
             }
             val permission = networkPermit ?: dev.lelonio.square.data.SpotifyNetworkPolicy.capture()
+            guard()
             val tokens = try {
                 // No JVM monitor is held during network suspension.
                 refreshAdmitted?.invoke(request.first, request.second, permission)
@@ -116,7 +142,8 @@ class TokenStore internal constructor(
             } catch (e: SpotifyOAuth.SessionExpired) {
                 // A revoked request cannot turn a user network choice into logout.
                 permission.check()
-                synchronized(control) {
+                guard()
+                withIdentityLock {
                     checkGeneration(expected, request.second)
                     changeIdentity {
                         control.generation++
@@ -126,6 +153,7 @@ class TokenStore internal constructor(
                 }
                 throw e
             }
+            guard()
             val answer = synchronized(control) {
                 checkGeneration(expected, request.second)
                 // The admitted refresh may have rotated its credential. Keep that rotation
@@ -135,8 +163,13 @@ class TokenStore internal constructor(
             }
             permission.check()
             answer
-        }
+        }.also { guard() }
     }
+
+    /** Account observers may read tokens inline. All identity mutations take account before token. */
+    private fun <T> withIdentityLock(block: () -> T): T =
+        if (localAuthority != null) localAuthority.locked { synchronized(control) { block() } }
+        else synchronized(control) { block() }
 
     private fun <T> changeIdentity(change: () -> T): T =
         if (localAuthority != null) localAuthority.invalidateBefore(change) else change()
@@ -147,13 +180,13 @@ class TokenStore internal constructor(
         }
     }
     private fun write(tokens: SpotifyOAuth.Tokens, replace: Boolean) {
-        prefs.edit().apply {
+        check(prefs.edit().apply {
             if (replace) clear()
             putString(KEY_ACCESS, tokens.accessToken)
             tokens.refreshToken?.let { putString(KEY_REFRESH, it) }
             putLong(KEY_EXPIRES_AT, tokens.expiresAtMillis)
             if (tokens.scope.isNotEmpty()) putString(KEY_SCOPE, tokens.scope)
-        }.commit()
+        }.commit()) { "Could not persist Spotify credentials" }
     }
     private fun currentIfFresh(): String? {
         val token = prefs.getString(KEY_ACCESS, null) ?: return null

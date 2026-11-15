@@ -307,7 +307,20 @@ class LocalControls(
         runCatching { context.stopService(android.content.Intent(context, WatchPlaybackService::class.java)) }
     }
 
-    override fun togglePlay() = withController { if (it.isPlaying) it.pause() else it.play() }
+    /**
+     * A confirmed consumer owns playback now. Release only this watch's session/service:
+     * controller.pause() can already target that remote consumer through a Connect projection.
+     */
+    fun stopAfterTransfer() {
+        resume = null
+        pending.clear()
+        disconnect()
+        runCatching { context.stopService(android.content.Intent(context, WatchPlaybackService::class.java)) }
+    }
+
+    override fun togglePlay() = setPlaying(nowPlaying.value.snapshot?.let { !it.isPlaying && !it.playWhenReady } ?: true)
+
+    override fun setPlaying(playing: Boolean) = withController { if (playing) it.play() else it.pause() }
 
     override fun next() = withController { it.seekToNext() }
 

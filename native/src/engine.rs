@@ -291,6 +291,8 @@ static CURRENT_DURATION_MS: std::sync::atomic::AtomicU32 = std::sync::atomic::At
 /// `(sequence, uri)`: the watchdog spawned by [`load_queue`] checks that the
 /// same load is still pending when its time is up, so a later load does not
 /// have an earlier one's watchdog fire on it.
+static TRANSPORT_INTENT: crate::recovery_policy::TransportIntent = crate::recovery_policy::TransportIntent::new();
+
 static LOAD_EXPECT: Mutex<Option<(u64, String)>> = Mutex::new(None);
 static LOAD_SEQ: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
 
@@ -2360,6 +2362,10 @@ pub fn load_queue_owned(
         }
     }
 
+    // Lock order is transport intention -> engine, also used by delayed recovery.
+    let intent_guard = TRANSPORT_INTENT.advance();
+    let intent = *intent_guard;
+
     // Read before the request takes the list: what the load asks for is also
     // what the output waits for, and what the watchdog below looks for.
     let wanted = uris.get(index as usize).cloned().unwrap_or_default();
@@ -2491,7 +2497,7 @@ pub fn load_queue_owned(
     match sent {
         Ok(()) => {
             SPIRC_KNOWS.store(true, Ordering::SeqCst);
-            watch_load(sequence, uris, index, start_playing, position_ms, restore_nonce);
+            watch_load(sequence, intent, uris, index, start_playing, position_ms, restore_nonce);
             Ok(())
         }
         Err(e) => {
@@ -2518,12 +2524,13 @@ pub fn load_queue_owned(
 /// things at a player that will not move. This waits [`LOAD_ACK`] for the
 /// player to say it is loading the track, and when it does not, gives the
 /// player the track itself and has the device rebuilt.
-fn watch_load(sequence: u64, uris: Vec<String>, index: u32, play: bool, position_ms: u32, restore_nonce: Option<String>) {
+fn watch_load(sequence: u64, intent: u64, uris: Vec<String>, index: u32, play: bool, position_ms: u32, restore_nonce: Option<String>) {
     let Ok(handle) = runtime_handle() else { return };
     let Ok(lease) = online_lease() else { return; };
     handle.spawn(async move {
         tokio::select! { biased; _ = lease.revoked() => return, _ = tokio::time::sleep(LOAD_ACK) => () }
         if lease.check().is_err() { return; }
+        let Some(intent_guard) = TRANSPORT_INTENT.admit(intent) else { return; };
         let pending = LOAD_EXPECT
             .lock()
             .map(|expect| expect.as_ref().is_some_and(|(seq, _)| *seq == sequence))
@@ -2554,6 +2561,7 @@ fn watch_load(sequence: u64, uris: Vec<String>, index: u32, play: bool, position
         if let Err(e) = local_load_owned(&uris, index, play, position_ms, restore_nonce) {
             log::error!("direct load failed as well: {e}");
         }
+        drop(intent_guard);
         let _ = reconnect(true);
     });
 }
@@ -2709,7 +2717,7 @@ fn transport(
 /// shut when the time is up, nothing moved, and the engine moves the queue
 /// itself from the copy it holds — forward or back, as asked, wrapping when
 /// the account's repeat says so — and has the device rebuilt.
-fn watch_skip(before: String, forward: bool) {
+fn watch_skip(before: String, forward: bool, intent: u64) {
     if before.is_empty() {
         return;
     }
@@ -2718,6 +2726,7 @@ fn watch_skip(before: String, forward: bool) {
     handle.spawn(async move {
         tokio::select! { biased; _ = lease.revoked() => return, _ = tokio::time::sleep(LOAD_ACK) => () }
         if lease.check().is_err() { return; }
+        let Some(intent_guard) = TRANSPORT_INTENT.admit(intent) else { return; };
         if PLAYBACK_ARMED.load(Ordering::SeqCst) || current_uri() != before {
             return;
         }
@@ -2756,6 +2765,7 @@ fn watch_skip(before: String, forward: bool) {
                 let _ = with_engine(|engine| engine.player.stop());
             }
         }
+        drop(intent_guard);
         let _ = reconnect(true);
     });
 }
@@ -2842,6 +2852,7 @@ pub fn playing_here() -> EngineResult<String> {
 }
 
 pub fn play() -> EngineResult<()> {
+    let _intent_guard = TRANSPORT_INTENT.advance();
     // Nothing happens here while the music is somewhere else. A play that
     // arrives then is Android's, not the listener's: focus coming back, a
     // service waking. The listener's own play is sent to the device that is
@@ -2863,6 +2874,7 @@ pub fn play() -> EngineResult<()> {
 }
 
 pub fn pause() -> EngineResult<()> {
+    let _intent_guard = TRANSPORT_INTENT.advance();
     // The sound stops here, before anything is asked of the network.
     //
     // A pause is a message to the Connect task, and that task also talks to
@@ -2878,10 +2890,12 @@ pub fn pause() -> EngineResult<()> {
 }
 
 pub fn stop() -> EngineResult<()> {
+    let _intent_guard = TRANSPORT_INTENT.advance();
     // Disconnecting rather than stopping the player: it tells the account this
     // device has given up playback, which is what makes it disappear from the
     // device list instead of lingering as a paused phantom. The fallback does
     // stop the player, because a stop that leaves audio running is not a stop.
+    let _ = with_engine(|engine| engine.player.stop());
     let result = transport("stop", |e| e.spirc()?.disconnect(true), |e| e.player.stop());
     // Whatever the device believed about the queue, it is not playing it now.
     SPIRC_KNOWS.store(false, Ordering::SeqCst);
@@ -2889,6 +2903,7 @@ pub fn stop() -> EngineResult<()> {
 }
 
 pub fn seek(position_ms: u32) -> EngineResult<()> {
+    let _intent_guard = TRANSPORT_INTENT.advance();
     if is_adopted() {
         with_engine(|e| e.spirc()?.set_position_ms(position_ms))?
             .map_err(|e| format!("seek failed: {e}"))
@@ -2906,23 +2921,25 @@ pub fn seek(position_ms: u32) -> EngineResult<()> {
 // does not send these without a device that knows the track — it pushes the
 // queue instead — so the fallback is for a device that dies between the two.
 pub fn next() -> EngineResult<()> {
+    let intent_guard = TRANSPORT_INTENT.advance();
     let before = current_uri();
     leaving();
     let through_device = is_adopted() && !elsewhere_active();
     transport("next", |e| e.spirc()?.next(), |e| e.player.stop())?;
     if through_device {
-        watch_skip(before, true);
+        watch_skip(before, true, *intent_guard);
     }
     Ok(())
 }
 
 pub fn previous() -> EngineResult<()> {
+    let intent_guard = TRANSPORT_INTENT.advance();
     let before = current_uri();
     leaving();
     let through_device = is_adopted() && !elsewhere_active();
     transport("previous", |e| e.spirc()?.prev(), |e| e.player.stop())?;
     if through_device {
-        watch_skip(before, false);
+        watch_skip(before, false, *intent_guard);
     }
     Ok(())
 }
@@ -2957,6 +2974,7 @@ fn leaving() {
 /// that was on screen: the alternative is handing over something that does not
 /// play at all.
 pub fn publish_context(position_ms: u32) -> EngineResult<bool> {
+    let _intent_guard = TRANSPORT_INTENT.advance();
     let current = current_uri();
     if current.is_empty() {
         return Ok(false);
@@ -3013,6 +3031,7 @@ pub fn publish_context(position_ms: u32) -> EngineResult<bool> {
 /// listener to tell the request from a request that was lost. The queue on
 /// screen catches up afterwards, from the state this load publishes.
 pub fn resume_here(context_uri: &str, track_uri: &str, position_ms: u32) -> EngineResult<()> {
+    let _intent_guard = TRANSPORT_INTENT.advance();
     if track_uri.is_empty() {
         return Err("nothing to resume".into());
     }
@@ -3054,6 +3073,7 @@ pub fn resume_here(context_uri: &str, track_uri: &str, position_ms: u32) -> Engi
 /// a command sent from a device to itself goes out to the access point and
 /// comes back refused. Activating is the same thing done directly.
 pub fn take_over() -> EngineResult<()> {
+    let _intent_guard = TRANSPORT_INTENT.advance();
     with_engine(|e| e.spirc()?.activate())?.map_err(|e| format!("could not take over: {e}"))
 }
 
@@ -3065,6 +3085,7 @@ pub fn take_over() -> EngineResult<()> {
 /// pulling the phone's song onto its own speaker. Ignored (by librespot) if this device is
 /// already the active one.
 pub fn pull_playback() -> EngineResult<()> {
+    let _intent_guard = TRANSPORT_INTENT.advance();
     with_engine(|e| e.spirc()?.transfer(None))?.map_err(|e| format!("could not pull playback: {e}"))
 }
 

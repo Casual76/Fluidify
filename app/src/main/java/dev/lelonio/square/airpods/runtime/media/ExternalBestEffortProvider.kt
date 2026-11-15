@@ -26,39 +26,53 @@ class ExternalBestEffortProvider(private val clock: AutomationClock) {
     private var volume: Request? = null
     private var pauseCorrelation: Long? = null
     private var volumeCorrelation: Long? = null
+    // The arbiter must still own this exact target; a lingering C6 receipt alone is insufficient.
+    private var retainedVolumeTarget: MediaTarget? = null
     private var transportRevision = 0L
     private var volumeRevision = 0L
     private var lastPlayback: Playback? = null
+    private var lastStateUpdatedAt: Long? = null
     private var lastVolume: Int? = null
     private data class Request(val target: MediaTarget, val id: Long, val epoch: Long,
         val deadline: Long, val value: Int? = null, val started: Long = 0)
 
     fun configure(value: Boolean) { enabled = value; invalidate() }
+    fun retainAutomation(value: MediaTarget?) { retainedVolumeTarget = value?.takeIf { it == target } }
     fun invalidate() {
         epoch++; target = null; route = null; historical = false
         pause = null; resume = null; volume = null; pauseCorrelation = null; volumeCorrelation = null
-        lastPlayback = null; lastVolume = null
+        lastPlayback = null; lastStateUpdatedAt = null; lastVolume = null
+        retainedVolumeTarget = null
         transportRevision++; volumeRevision++
     }
 
     fun candidates(raw: List<MediaCandidate>, facts: ExternalMediaFacts): List<MediaCandidate> {
-        // Retain only our own pause history, with the same complete target identity and route.
-        // Callback handling rereads here before correlating PAUSED, so pending history matters too.
-        val retained = if (historical) raw.singleOrNull {
+        // Pause history and live volume ownership have separate lifetimes. A manual pause
+        // cannot inherit resume authority, but can retain the same C6 route for volume only.
+        // Callback handling rereads before correlation, so bounded pending history matters too.
+        val volumeHistory = hasVolumeHistory()
+        val retained = if (historical || volumeHistory) raw.singleOrNull {
             !it.local && it.target.copy(routeId = facts.routeKey) == target
         }?.target else null
         val only = selectMediaCandidate(raw, retained)
         val external = only?.takeIf { !it.local && it.unavailableReason != "REMOTE_PLAYBACK" &&
             it.unavailableReason != "UNKNOWN_PLAYBACK_TYPE" }
         val identity = external?.target?.copy(routeId = facts.routeKey)
-        // Our own correlated PLAY may pass through a transitional state (BUFFERING) before
-        // streaming resumes; only inside its bound does that keep the historical evidence.
+        // Profile and MediaSession callbacks are independent: PAUSE may stop A2DP first,
+        // and PLAY may report PLAYING before A2DP restarts. Keep the same historical target
+        // only inside the existing command bound while those observations converge.
         val valid = enabled && facts.permitted && facts.exactPairConnected &&
             facts.systemRouteCoherent && !facts.callActive && external != null &&
             (facts.exactPairStreaming || historical && target == identity &&
-                (external.playback == Playback.PAUSED || external.playback == Playback.UNKNOWN && resumeInFlight()))
+                (external.playback == Playback.PAUSED ||
+                    external.playback == Playback.PLAYING && (pauseInFlight() || resumeInFlight()) ||
+                    external.playback == Playback.UNKNOWN && resumeInFlight()) ||
+                volumeHistory && target == identity && external.playback == Playback.PAUSED)
         if (!valid || target != null && (target != identity || route != facts.routeKey)) invalidate()
         if (valid && identity != null) { target = identity; route = facts.routeKey }
+        if (valid && facts.exactPairStreaming && lastPlayback == Playback.PLAYING && resume != null) {
+            resume = null; historical = false
+        }
         if (facts.foreignDuckActive) {
             volume = null; volumeCorrelation = null; volumeRevision++
         }
@@ -115,6 +129,25 @@ class ExternalBestEffortProvider(private val clock: AutomationClock) {
         return r.target == target && r.epoch == epoch && clock.nowMillis() < r.deadline
     }
 
+    private fun pauseInFlight(): Boolean {
+        val p = pause ?: return false
+        return p.target == target && p.epoch == epoch && clock.nowMillis() < p.deadline
+    }
+
+    private fun hasVolumeHistory(): Boolean = retainedVolumeTarget != null && retainedVolumeTarget == target &&
+        (volumeCorrelation != null || volume?.let {
+            it.target == target && it.epoch == epoch && clock.nowMillis() < it.deadline
+        } == true)
+
+    /** Explicit gesture, including same-state commands with no callback. Volume is independent. */
+    fun manualTransport(valueTarget: MediaTarget) {
+        if (enabled && target == valueTarget) transportIntervened()
+    }
+
+    private fun transportIntervened() {
+        transportRevision++; pauseCorrelation = null; pause = null; resume = null; historical = false
+    }
+
     /**
      * Callback is correlation only; capture target from registration, never infer command origin.
      * interruption: the platform state is a stop/error/skip/seek/none, never a transition into
@@ -126,9 +159,25 @@ class ExternalBestEffortProvider(private val clock: AutomationClock) {
         val p = pause
         val r = resume
         val pending = p ?: r
+        val updatedAt = stateUpdatedAt?.takeIf { it > 0 }
+        // The platform explicitly identified a stop/error/skip/seek/none. Its timestamp can
+        // still be copied from the previous state; it is never a duplicate or our PLAY ACK.
+        if (interruption) {
+            transportIntervened()
+            lastPlayback = playback
+            lastStateUpdatedAt = updatedAt
+            return
+        }
         // Reject a demonstrably pre-request state delivered late by the controller. Some apps
         // omit this timestamp: arrival then remains an explicit C6 assumption, never causality.
         if (pending != null && stateUpdatedAt != null && stateUpdatedAt > 0 && stateUpdatedAt < pending.started) return
+        if (updatedAt != null && lastStateUpdatedAt?.let { updatedAt < it } == true) return
+        // A controller may re-deliver its unchanged PAUSED state during a long conversation.
+        // An unchanged state and positive source timestamp qualify for C6 duplicate suppression.
+        // A new PAUSE with a fresh/missing timestamp revokes; a manual PAUSE republished with
+        // both fields unchanged is unobservable through this best-effort public callback.
+        if (updatedAt != null &&
+            updatedAt == lastStateUpdatedAt && lastPlayback == playback) return
         if (p != null && p.target == target && p.epoch == epoch &&
             clock.nowMillis() < p.deadline && playback == Playback.PAUSED) {
             pauseCorrelation = p.id; pause = null
@@ -136,16 +185,18 @@ class ExternalBestEffortProvider(private val clock: AutomationClock) {
             clock.nowMillis() < r.deadline && playback == Playback.PLAYING) {
             // Only retain the existing volume authority through this expected transition.
             // No local receipt, new pause ownership or new route evidence is created.
-            resume = null; historical = false
-        } else if (!interruption && playback == Playback.UNKNOWN && resumeInFlight()) {
+            // Keep the original, bounded expectation until A2DP also confirms streaming.
+            // A MediaSession PLAYING callback alone does not establish that route.
+        } else if (playback == Playback.UNKNOWN && resumeInFlight()) {
             // Transitional report (BUFFERING/CONNECTING) of our own correlated PLAY: it neither
             // consumes the expectation nor counts as an intervention. Still inference, never a
             // receipt: a PAUSED, an interruption or the deadline revoke exactly as before.
-        } else if (interruption || lastPlayback != playback || playback == Playback.PAUSED) {
-            // Duplicate PAUSED is conservatively treated as an observable intervention.
-            transportRevision++; pauseCorrelation = null; pause = null; resume = null; historical = false
+        } else if (lastPlayback != playback || playback == Playback.PAUSED) {
+            // A fresh PAUSED source timestamp, or one unavailable for comparison, intervenes.
+            transportIntervened()
         }
         lastPlayback = playback
+        lastStateUpdatedAt = updatedAt
     }
 
     /** Actual STREAM_MUSIC observation, not PlaybackInfo volume and not an optimistic write. */

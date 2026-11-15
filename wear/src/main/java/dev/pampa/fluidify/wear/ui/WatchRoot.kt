@@ -64,6 +64,7 @@ import dev.pampa.fluidify.wear.ui.player.PlayerChrome
 import dev.pampa.fluidify.wear.ui.player.rememberPlayerChrome
 import dev.pampa.fluidify.wear.ui.player.rememberPlayerChromeDrag
 import dev.pampa.fluidify.wear.ui.player.PlayerScreen
+import dev.pampa.fluidify.wear.ui.player.AirPodsBatteryScreen
 import dev.pampa.fluidify.wear.ui.player.UnlikeDialog
 import dev.pampa.fluidify.wear.ui.player.WatchAmbientSurface
 import dev.pampa.fluidify.wear.ui.player.WatchLightActivity
@@ -284,6 +285,7 @@ fun WatchRoot(
                                                                     onUnlike = askUnlike,
                                                                     onAddToPlaylist = addToPlaylist,
                                                                     chrome = chrome,
+                                                                    onAirPodsBattery = { go(AIRPODS_BATTERY) },
                                                                 )
                                                             }
                                                             else -> MoreScreen(
@@ -328,8 +330,10 @@ fun WatchRoot(
                                 onOpenContext = open,
                                 onRadio = toPlayer,
                                 onAddToPlaylist = addToPlaylist,
+                                onAirPodsBattery = { go(AIRPODS_BATTERY) },
                             )
                         }
+                        composable(AIRPODS_BATTERY) { AirPodsBatteryScreen(app.controls) }
                         composable("$ADD_TO_PLAYLIST?track={track}&title={title}") { entry ->
                             AddToPlaylistScreen(
                                 app = app,
@@ -511,6 +515,7 @@ private fun addToPlaylistRoute(track: String, title: String) = "$ADD_TO_PLAYLIST
 
 private const val HOME = "home"
 private const val ESSENTIALS = "essentials"
+private const val AIRPODS_BATTERY = "airpods-battery"
 private const val QUEUE = "queue"
 private const val OUTPUT = "output"
 private const val SLEEP = "sleep"

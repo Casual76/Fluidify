@@ -49,6 +49,8 @@ data class PlaybackSnapshot(
     val systemMediaControls: Boolean? = null,
     /** What plays after [track], so a skip on the watch can show it before the phone confirms. */
     val nextTrack: TrackInfo? = null,
+    /** Optional phone-observed telemetry. Older peers omit/ignore it without changing playback. */
+    val airPodsBattery: AirPodsBatterySnapshot? = null,
 )
 
 @Serializable

@@ -99,15 +99,24 @@ fun OnboardingScreen(
     onLanguage: (String) -> Unit,
     onFinish: () -> Unit,
     onOpenAirPods: () -> Unit,
+    loginWaiting: Boolean = state is MainViewModel.UiState.Loading,
+    onCancelLogIn: () -> Unit = {},
+    onCancelWebApi: () -> Unit = {},
 ) {
     var step by remember { mutableIntStateOf(0) }
     val loggedIn = state is MainViewModel.UiState.Ready
+
+    val leaveStep = {
+        if (loginWaiting) onCancelLogIn()
+        if (webApi.connecting) onCancelWebApi()
+    }
+    val finish = { leaveStep(); onFinish() }
 
     // The back button walks the steps back, as the arrow at the top does. The
     // overlay below swallows every touch meant for the app under it, and it
     // used to let the back through: a back in the middle of the guide acted on
     // the page underneath, or left the app.
-    androidx.activity.compose.BackHandler(enabled = step > 0) { step-- }
+    androidx.activity.compose.BackHandler(enabled = step > 0) { leaveStep(); step-- }
     val last = STEP_COUNT - 1
 
     val statusBar = WindowInsets.statusBars.asPaddingValues().calculateTopPadding()
@@ -142,12 +151,12 @@ fun OnboardingScreen(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 if (step > 0) {
-                    GlassButton(onClick = { step-- }) {
+                    GlassButton(onClick = { leaveStep(); step-- }) {
                         Icon(PhosphorIcons.Regular.ArrowLeft, contentDescription = stringResource(R.string.back))
                     }
                 }
                 Spacer(Modifier.weight(1f))
-                TextButton(onClick = onFinish) {
+                TextButton(onClick = finish) {
                     Text(stringResource(if (step == last) R.string.close else R.string.skip), color = InkDim)
                 }
             }
@@ -178,11 +187,13 @@ fun OnboardingScreen(
                         0 -> Welcome(language, onLanguage)
                         1 -> LogIn(
                             loggedIn = loggedIn,
-                            connecting = state is MainViewModel.UiState.Loading,
+                            connecting = loginWaiting,
+                            error = (state as? MainViewModel.UiState.Failed)?.message,
+                            onCancel = onCancelLogIn,
                             onLogIn = onLogIn,
                         )
                         2 -> Dashboard(redirectUri = webApi.redirectUri)
-                        3 -> ClientId(webApi, onClientIdChange, onConnectWebApi)
+                        3 -> ClientId(webApi, onClientIdChange, onConnectWebApi, onCancelWebApi)
                         else -> Done()
                     }
                     Spacer(Modifier.height(28.dp))
@@ -191,7 +202,7 @@ fun OnboardingScreen(
 
             dev.antigravity.fluidengine.ui.fluid.FluidButton(
                 text = stringResource(R.string.airpods_entry_settings),
-                onClick = onOpenAirPods,
+                onClick = { leaveStep(); onOpenAirPods() },
                 modifier = Modifier.fillMaxWidth().padding(horizontal = 26.dp)
                     .heightIn(min = 48.dp).testTag("onboarding-airpods-entry"),
                 style = dev.antigravity.fluidengine.ui.fluid.FluidButtonStyle.Plain,
@@ -213,7 +224,7 @@ fun OnboardingScreen(
                 )
                 Spacer(Modifier.weight(1f))
                 GlassButton(
-                    onClick = { if (step == last) onFinish() else step++ },
+                    onClick = { leaveStep(); if (step == last) onFinish() else step++ },
                     tint = MaterialTheme.colorScheme.primary,
                     contentHeight = 52.dp,
                     contentPadding = 26.dp,
@@ -250,6 +261,8 @@ private fun Welcome(language: String, onLanguage: (String) -> Unit) {
 private fun LogIn(
     loggedIn: Boolean,
     connecting: Boolean,
+    error: String?,
+    onCancel: () -> Unit,
     onLogIn: () -> Unit,
 ) {
     StepTitle(stringResource(R.string.onboarding_login_title))
@@ -260,6 +273,10 @@ private fun LogIn(
     if (loggedIn) {
         DoneRow(stringResource(R.string.onboarding_login_done))
     } else {
+        if (error != null) {
+            Text(error, style = MaterialTheme.typography.bodyMedium,
+                color = MaterialTheme.colorScheme.error, modifier = Modifier.padding(bottom = 12.dp))
+        }
         GlassButton(
             onClick = { if (!connecting) onLogIn() },
             tint = MaterialTheme.colorScheme.primary,
@@ -271,6 +288,12 @@ private fun LogIn(
                 Text(stringResource(R.string.log_in_with_spotify), style = MaterialTheme.typography.titleMedium)
             }
         }
+    }
+    if (connecting) {
+        dev.antigravity.fluidengine.ui.fluid.FluidButton(
+            text = stringResource(R.string.wf_i10_cancel_wait), onClick = onCancel,
+            style = dev.antigravity.fluidengine.ui.fluid.FluidButtonStyle.Plain,
+        )
     }
 }
 
@@ -343,6 +366,7 @@ private fun ClientId(
     webApi: MainViewModel.WebApiState,
     onClientIdChange: (String) -> Unit,
     onConnectWebApi: () -> Unit,
+    onCancelWebApi: () -> Unit,
 ) {
     StepTitle(stringResource(R.string.onboarding_paste_title))
     if (webApi.connected) {
@@ -354,7 +378,7 @@ private fun ClientId(
         // The same form the settings screen shows, so what is learned here is
         // where it stays.
         Box(Modifier.padding(top = 8.dp, start = 0.dp)) {
-            WebApiSetupInline(webApi, onClientIdChange, onConnectWebApi)
+            WebApiSetupInline(webApi, onClientIdChange, onConnectWebApi, onCancelWebApi)
 
         }
         Note(stringResource(R.string.onboarding_paste_error))

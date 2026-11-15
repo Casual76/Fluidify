@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_ui_connect_setup">Connect AirPods</string>
+    <string name="listening_stats_partial_compact">Some listens may be missing. This is not a complete month.</string>
+    <string name="listening_stats_recording_compact">Your current setting; earlier recording may differ.</string>
+    <string name="listening_stats_local_source">Local listens, including matched Spotify listens</string>
+    <string name="listening_stats_spotify_source">Spotify-only listens</string>
+    <string name="listening_stats_calculation">How the numbers are calculated</string>
+    <string name="listening_stats_period">Period and data update</string>
+</resources>

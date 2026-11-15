@@ -29,6 +29,10 @@ object AirPodsAndroidRuntime {
     fun get(): AirPodsAndroidController? = installed
 }
 
+/** Observable independently of optional diagnostics. WAITING needs a real reconnect or a new
+ * user opening; RECONNECTING is only an admitted attempt, never a hardware success receipt. */
+enum class ControlChannelRecovery { NONE, WAITING, RECONNECTING }
+
 data class AndroidRuntimeState(
     val active: Boolean = false,
     val verifying: Boolean = false,
@@ -36,6 +40,7 @@ data class AndroidRuntimeState(
     val productConformance: Boolean = false,
     val mediaAvailable: Boolean = false,
     val failure: String? = null, // fixed symbolic codes only; never exception text
+    val controlRecovery: ControlChannelRecovery = ControlChannelRecovery.NONE,
 )
 
 /** All UI functions are process-local; no binder or exported command surface. Call suspending
@@ -100,6 +105,13 @@ class AirPodsAndroidController internal constructor(
     private var presenceEpoch = 0L
     private var pendingPresence: PendingPresence? = null
     private var readiness: AutoCloseable? = null
+    private data class PendingAutomaticStart(val pair: PairAddress, val consent: Long,
+        val epoch: Long, val ingress: StartIngress)
+    private var pendingAutomaticStart: PendingAutomaticStart? = null
+    private var automaticReadiness: AutoCloseable? = null
+    private fun invalidateAutomaticStart() {
+        pendingAutomaticStart = null; automaticReadiness?.close(); automaticReadiness = null
+    }
     private class PendingFunctionalStart(val pair: PairAddress, val consent: Long, val actionCurrent: () -> Boolean) {
         val ready = CompletableDeferred<Boolean>()
     }
@@ -113,6 +125,9 @@ class AirPodsAndroidController internal constructor(
     private var openingReadiness: AutoCloseable? = null
     // Set only around gate.attempt(APP_OPEN), never retained by an established session.
     private var startingAppOpening: PendingAppOpening? = null
+    // A failure while this foreground epoch was already visible cannot turn another callback
+    // from that same opening into a retry. Boolean visibility itself never acquires an owner.
+    private var controlFailureForegroundEpoch: Long? = null
     private fun invalidateAppOpening() = synchronized(gate) {
         pendingAppOpening?.ready?.complete(false); pendingAppOpening = null
         openingReadiness?.close(); openingReadiness = null
@@ -152,6 +167,7 @@ class AirPodsAndroidController internal constructor(
     private fun invalidatePresence() = synchronized(gate) {
         invalidateExplicitStart()
         invalidateAppOpening()
+        invalidateAutomaticStart()
         presenceEpoch++; pendingPresence = null; readiness?.close(); readiness = null
         pendingFunctionalStart?.ready?.complete(false); pendingFunctionalStart = null
         functionalReadiness?.close(); functionalReadiness = null
@@ -280,6 +296,10 @@ class AirPodsAndroidController internal constructor(
     // count mirrored for waiters that hold neither lock nor gate. Declared before init on purpose.
     private val retiringMedia = mutableListOf<AirPodsMediaPort>()
     private val retiringCount = MutableStateFlow(0)
+    // A stopped foreground service must finish before its replacement can claim the registry.
+    // Otherwise its queued stopSelf()/onDestroy can tear down the newly admitted owner.
+    private val retiringServices = mutableSetOf<AirPodsControlService>()
+    private val retiringServiceCount = MutableStateFlow(0)
     private val migrationLock = Mutex()
     @Volatile private var migrationReady = false
     private suspend fun migrate(): Boolean = migrationLock.withLock {
@@ -332,11 +352,19 @@ class AirPodsAndroidController internal constructor(
     }
     suspend fun selectPair(address: PairAddress): Result<Unit> = withContext(Dispatchers.IO) {
         if (!migrate()) return@withContext Result.failure(IllegalStateException("MIGRATION_FAILED"))
+        // Selecting the current row is confirmation, including during a pending acquisition.
+        // Do this before invalidating presence, platform work, observation or any consent.
+        synchronized(gate) {
+            val data = store.snapshot().getOrElse { return@withContext Result.failure(it) }
+            if (data.selectedPair == address) return@withContext Result.success(Unit)
+        }
         // Stop/lifecycle: a live owner is stopped as its own step, so its queued media teardown is
         // confirmed off-gate. The selection below then finds no ticket and never waits for main.
         if (ticket != null && stopControls(SuppressReason.USER_STOP) is GateResult.Denied)
             return@withContext Result.failure(IllegalStateException("CLEANUP_FAILED"))
         synchronized(gate) {
+            val data = store.snapshot().getOrElse { return@synchronized Result.failure(it) }
+            if (data.selectedPair == address) return@synchronized Result.success(Unit)
             invalidatePresence()
             if (ticket != null && gate.stop(SuppressReason.USER_STOP) is GateResult.Denied)
                 return@synchronized Result.failure<Unit>(IllegalStateException("CLEANUP_FAILED"))
@@ -344,7 +372,11 @@ class AirPodsAndroidController internal constructor(
                 return@synchronized Result.failure<Unit>(IllegalStateException("CLEANUP_FAILED"))
             observation = null
             cancelPlatform(); calls.reset()
-            store.select(address).onSuccess { companion.explicitSetupSelected() }
+            store.select(address).onSuccess {
+                controlFailureForegroundEpoch = null
+                mutableRuntime.value = AndroidRuntimeState(productConformance = productConformance())
+                companion.explicitSetupSelected()
+            }
         }
     }
     fun setSetupVisible(visible: Boolean) {
@@ -551,8 +583,8 @@ class AirPodsAndroidController internal constructor(
                 // A stale completion must not replace a later Stop or another action's diagnosis.
                 if (pendingExplicitStart === pending) {
                     if (result is GateResult.Denied) fail("ADMISSION_${result.reason}")
-                    else if (result is GateResult.Started && mutableRuntime.value.failure?.let {
-                            it.startsWith("ADMISSION_") || it.startsWith("COMPANION_") } == true)
+                    else if (result is GateResult.Started && mutableRuntime.value.controlRecovery == ControlChannelRecovery.NONE &&
+                        mutableRuntime.value.failure?.let { it.startsWith("ADMISSION_") || it.startsWith("COMPANION_") } == true)
                         mutableRuntime.value = mutableRuntime.value.copy(failure = null)
                 }
             }
@@ -806,26 +838,101 @@ class AirPodsAndroidController internal constructor(
                 ConnectionPurpose.PRODUCT -> productConformance()
             })
     }
-    private fun admit(ingress: StartIngress, purpose: ConnectionPurpose, prepareProfile: Boolean = true): GateResult {
+    private fun admit(ingress: StartIngress, purpose: ConnectionPurpose, prepareProfile: Boolean = true): GateResult { synchronized(gate) {
         if (!migrationReady) return GateResult.Denied(GateReason.PERSISTENCE_FAILED)
         val data = store.snapshot().getOrElse { return GateResult.Denied(GateReason.PERSISTENCE_FAILED) }
         val address = data.selectedPair ?: return GateResult.Denied(GateReason.SETUP_REQUIRED)
         if (prepareProfile) facts.prepare()
         val connected = facts.connected(address)
         val id = lifetimes.observe(address, connected) ?: "disconnected"
-        val backgroundAllowed = ingress == StartIngress.COMPANION && observation != null &&
-            data.pairs[address]?.host?.fluidifyBackgroundEnabled == true &&
-            Build.VERSION.SDK_INT >= 31 && context.checkSelfPermission(android.Manifest.permission.REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND) == android.content.pm.PackageManager.PERMISSION_GRANTED
-        return gate.attempt(ingress, ConnectionAdmission(address, id, facts.bonded(address), facts.permitted(), connected,
+        val backgroundAllowed = backgroundStartAllowed(ingress, data, address)
+        val foregroundAtStart = (visibility as? AirPodsForegroundState)?.captureForeground()
+        val result = gate.attempt(ingress, ConnectionAdmission(address, id, facts.bonded(address), facts.permitted(), connected,
             visibility.value || backgroundAllowed, buildFingerprint, data.start.consentGeneration, purpose,
-            setupVisible && visibility.value, if (testPermit != null) false else productConformance()),
+            setupVisible && visibility.value, if (testPermit != null) false else productConformance(),
+            connectionOrdinal = lifetimes.ordinal(address)),
+            recoveryOpening = startingAppOpening?.epoch?.takeIf { it != controlFailureForegroundEpoch },
             acquisitionCurrent = { startingAppOpening?.let(::appOpeningCurrent) != false &&
                 startingExplicitStart?.let(::explicitStartCurrent) != false })
+        if (result == GateResult.Denied(GateReason.START_FAILED)) recordControlFailure("CONTROL_START_FAILED", foregroundAtStart)
+        else if (result is GateResult.Started && mutableRuntime.value.controlRecovery == ControlChannelRecovery.WAITING)
+            mutableRuntime.value = mutableRuntime.value.copy(controlRecovery = ControlChannelRecovery.RECONNECTING)
+        return result
+    } }
+    private fun backgroundStartAllowed(ingress: StartIngress, data: AirPodsRuntimeData, address: PairAddress): Boolean {
+        if (ingress !in setOf(StartIngress.COMPANION, StartIngress.RECEIVER) ||
+            data.pairs[address]?.host?.fluidifyBackgroundEnabled != true || Build.VERSION.SDK_INT < 31 ||
+            context.checkSelfPermission(android.Manifest.permission.REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND) != android.content.pm.PackageManager.PERMISSION_GRANTED) return false
+        val registered = observation ?: return false
+        // A Bluetooth receiver can arrive after Companion's appearance callback. The exemption
+        // belongs to this current own association, rather than to the name of the last callback.
+        return companion.validateCallback(registered.callbackGeneration, address, registered.association.id) is CompanionResult.Trigger
     }
-    internal suspend fun refresh(ingress: StartIngress, allowAcquisition: Boolean = true) { synchronized(gate) {
-        if (!migrationReady || disposed) return@synchronized
+    private fun automaticStartCurrent(pending: PendingAutomaticStart): Boolean {
+        val data = store.snapshot().getOrNull() ?: return false
+        return !disposed && pendingAutomaticStart == pending && pending.epoch == presenceEpoch &&
+            data.selectedPair == pending.pair && data.start.enabled && !data.start.suppressUntilExplicitResume &&
+            data.start.consentGeneration == pending.consent
+    }
+    /** One real Bluetooth/Companion event may await a profile proxy or an old owner's cleanup.
+     * Neither condition consumes a connection attempt. There is no timer or retry of a start. */
+    private fun automaticAdmission(ingress: StartIngress, prepareProfile: Boolean = true): GateResult? {
+        val data = store.snapshot().getOrNull() ?: return GateResult.Denied(GateReason.PERSISTENCE_FAILED)
+        val pair = data.selectedPair ?: return GateResult.Denied(GateReason.SETUP_REQUIRED)
+        if (ingress == StartIngress.RECEIVER && observation == null && data.start.enabled &&
+            !data.start.suppressUntilExplicitResume && data.pairs[pair]?.host?.fluidifyBackgroundEnabled == true &&
+            productConformance() && data.pairs[pair]?.verification?.conformanceBuild == buildFingerprint &&
+            facts.permitted() && facts.bonded(pair) && gate.platformAuthorization(pair, data.start.consentGeneration) == null) {
+            registerObservation() // restore the opted-in own association after process recreation
+        }
+        if (prepareProfile) facts.prepare()
+        val connection = facts.connection(pair)
+        if (connection == ProfileConnection.DISCONNECTED) {
+            lifetimes.observe(pair, false)
+            invalidateAutomaticStart()
+            return GateResult.Denied(GateReason.NOT_CONNECTED)
+        }
+        val pending = PendingAutomaticStart(pair, data.start.consentGeneration, presenceEpoch, ingress)
+        if (connection == ProfileConnection.UNRESOLVED) {
+            if (!visibility.value && !backgroundStartAllowed(ingress, data, pair)) return GateResult.Denied(GateReason.FGS_DENIED)
+            if (pendingAutomaticStart == pending && automaticReadiness != null) return null
+            invalidateAutomaticStart(); pendingAutomaticStart = pending
+            val registration = facts.whenProfileReady { processScope.launch { synchronized(gate) {
+                if (!automaticStartCurrent(pending)) return@synchronized
+                invalidateAutomaticStart()
+                // A terminal unresolved callback consumes this event; a later real event may try.
+                if (facts.connection(pair) != ProfileConnection.UNRESOLVED) automaticAdmission(ingress, prepareProfile = false)
+            } } }
+            if (pendingAutomaticStart == pending) {
+                automaticReadiness = registration
+                if (registration == null) pendingAutomaticStart = null
+            } else registration?.close()
+            return null
+        }
+        val result = admit(ingress, if (qualificationAuthority != null) ConnectionPurpose.QUALIFICATION_TEST else ConnectionPurpose.PRODUCT, prepareProfile = false)
+        invalidateAutomaticStart()
+        if (result == GateResult.Denied(GateReason.CLEANUP_PENDING)) pendingAutomaticStart = pending
+        return result
+    }
+    private fun cleanupSettled(): GateResult = synchronized(gate) {
+        val result = gate.settleCleanup()
+        val pending = pendingAutomaticStart
+        if (result !is GateResult.Denied && pending != null && automaticStartCurrent(pending)) {
+            invalidateAutomaticStart()
+            automaticAdmission(pending.ingress)
+        }
+        result
+    }
+    internal suspend fun refresh(ingress: StartIngress, allowAcquisition: Boolean = true) {
+        if (disposed || !migrate()) return
+        synchronized(gate) {
+        if (disposed) return@synchronized
         val selected = store.snapshot().getOrNull()?.selectedPair
         observeAudioProfile(selected)
+        // Observe a real disconnection even when there was no admitted control owner.
+        if (selected != null && facts.connection(selected) == ProfileConnection.DISCONNECTED) {
+            lifetimes.observe(selected, false); invalidateAutomaticStart()
+        }
         if (!facts.permitted()) {
             observedSetupReceipt?.revoke(); audioReceipt?.revoke()
             invalidatePresence(); gate.stop(SuppressReason.REVOKED); return@synchronized
@@ -847,7 +954,8 @@ class AirPodsAndroidController internal constructor(
             return@synchronized
         }
         if (allowAcquisition && a == null && (testPermit == null || qualificationAuthority != null)) {
-            val result = admit(ingress, if (qualificationAuthority != null) ConnectionPurpose.QUALIFICATION_TEST else ConnectionPurpose.PRODUCT)
+            val result = if (ingress in setOf(StartIngress.RECEIVER, StartIngress.COMPANION)) automaticAdmission(ingress)
+                else admit(ingress, if (qualificationAuthority != null) ConnectionPurpose.QUALIFICATION_TEST else ConnectionPurpose.PRODUCT)
             if (result is GateResult.Denied && result.reason in setOf(GateReason.SUPPRESSED, GateReason.HISTORY_FAILED, GateReason.PERSISTENCE_FAILED, GateReason.DISABLED)) {
                 if (companion.stop() !is CompanionResult.Denied) observation = null
             }
@@ -912,7 +1020,7 @@ class AirPodsAndroidController internal constructor(
             d.start.consentGeneration != p.consent || !d.start.enabled || d.start.suppressUntilExplicitResume) return
         if (companion.appeared(p.registration.callbackGeneration, p.pair, p.associationId, facts.connected(p.pair)) !is CompanionResult.Trigger) return
         // admit rechecks current connection, permission, eligibility and C4 before FGS/factory.
-        admit(StartIngress.COMPANION, if (qualificationAuthority != null) ConnectionPurpose.QUALIFICATION_TEST else ConnectionPurpose.PRODUCT)
+        automaticAdmission(StartIngress.COMPANION)
     }
     private fun startOwner(admission: ConnectionAdmission): Boolean {
         synchronized(lock) {
@@ -941,10 +1049,12 @@ class AirPodsAndroidController internal constructor(
     /** The production collector and host regression use the same bootstrap decisions.
      * A stage notification cannot acquire an owner or bypass the current admission. */
     internal fun advanceBootstrap(stage: AacpStage) {
-        if (!current(ticket) || state.value.stage != stage) return
+        val admitted = ticket ?: return
+        if (!current(admitted) || state.value.stage != stage) return
         when (stage) {
             AacpStage.CONSTRUCTED -> repository.connect()
             AacpStage.CONNECTED -> repository.bootstrap()
+            AacpStage.ERROR -> processScope.launch { controlChannelFailed(admitted) }
             else -> Unit
         }
     }
@@ -957,7 +1067,7 @@ class AirPodsAndroidController internal constructor(
             val lease = transportLease ?: return false
             if (lease.released) return false
             service = host
-            val handler = CoroutineExceptionHandler { _, _ -> fail("OWNER_WORKER_FAILED"); processScope.launch { stopIfCurrent(a, SuppressReason.START_FAILED) } }
+            val handler = CoroutineExceptionHandler { _, _ -> processScope.launch { controlChannelFailed(a, "OWNER_WORKER_FAILED") } }
             val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO + handler); sessionScope = scope
             // Same connection's latest live ear observation, confined to main. Bootstrap may
             // receive it before the media port exists; it seeds a baseline, never an action.
@@ -1023,10 +1133,6 @@ class AirPodsAndroidController internal constructor(
                     diagnostics.record(DiagnosticKind.STAGE, s.stage)
                     if (!current(a)) return@collect
                     advanceBootstrap(s.stage)
-                    when (s.stage) {
-                        AacpStage.ERROR -> { fail("TRANSPORT_FAILED"); processScope.launch { stopIfCurrent(a, SuppressReason.START_FAILED) } }
-                        else -> Unit
-                    }
                     val identity = s.identityReceived?.takeIf { it.generation == s.generation }?.value
                     // NAME is projected from INFORMATION itself; it is not an independent basic RX.
                     val basic = s.batteries.values.any { it.generation == s.generation } ||
@@ -1035,14 +1141,22 @@ class AirPodsAndroidController internal constructor(
                         val verified = verifiedSetup || if (testPermit != null) true else store.recordSetup(a.address, PairVerification(identity.modelNumber, buildFingerprint, System.currentTimeMillis())).isSuccess
                         if (testPermit != null && verified && !verifiedSetup) observedSetupAt = SystemClock.elapsedRealtime()
                         verifiedSetup = verified
-                        mutableRuntime.value = mutableRuntime.value.copy(setupVerified = verified)
+                        synchronized(gate) {
+                            if (ticket !== a) return@collect
+                            val recovering = mutableRuntime.value.controlRecovery != ControlChannelRecovery.NONE
+                            mutableRuntime.value = mutableRuntime.value.copy(setupVerified = verified,
+                                controlRecovery = if (verified) ControlChannelRecovery.NONE else mutableRuntime.value.controlRecovery,
+                                failure = if (verified && recovering) null else mutableRuntime.value.failure)
+                        }
                         if (!mediaStarted && a.purpose != ConnectionPurpose.VERIFICATION_ONLY) {
                             mediaStarted = true
                             armTracking()
                             val p = store.snapshot().getOrThrow().pairs.getValue(a.address)
                             val published = withContext(Dispatchers.Main.immediate) { publishMedia(a, s.generation, p.host, scope, bootstrapEar) }
                             // A Stop that already cleared the ticket owns the runtime state: no late adapter verdict.
-                            if (ticket === a) mutableRuntime.value = mutableRuntime.value.copy(mediaAvailable = published, failure = if (!published) "MEDIA_ADAPTER_UNAVAILABLE" else null)
+                            if (ticket === a) mutableRuntime.value = mutableRuntime.value.copy(mediaAvailable = published,
+                                failure = if (!published) "MEDIA_ADAPTER_UNAVAILABLE" else mutableRuntime.value.failure.takeIf {
+                                    mutableRuntime.value.controlRecovery != ControlChannelRecovery.NONE })
                         }
                     }
                 }
@@ -1076,7 +1190,10 @@ class AirPodsAndroidController internal constructor(
                 synchronized(lock) { if (!current(a)) { guarded.close(); error("STALE_OWNER") }; transport = guarded }
                 guarded
             }
-            mutableRuntime.value = AndroidRuntimeState(active = true, verifying = a.purpose == ConnectionPurpose.VERIFICATION_ONLY, productConformance = productConformance())
+            val recovery = mutableRuntime.value
+            mutableRuntime.value = AndroidRuntimeState(active = true, verifying = a.purpose == ConnectionPurpose.VERIFICATION_ONLY,
+                productConformance = productConformance(), controlRecovery = recovery.controlRecovery,
+                failure = recovery.failure.takeIf { recovery.controlRecovery != ControlChannelRecovery.NONE })
         }
         return true
     }
@@ -1090,6 +1207,7 @@ class AirPodsAndroidController internal constructor(
             oldLease = transportLease
             ticket = null; oldTransport = transport; transport = null; oldScope = sessionScope; sessionScope = null
             oldMedia = media; media = null; oldService = service; service = null
+            if (oldService != null) { retiringServices.add(oldService); retiringServiceCount.value = retiringServices.size }
         }
         diagnostics.record(DiagnosticKind.STOP, state.value.stage)
         val began = SystemClock.elapsedRealtime()
@@ -1121,7 +1239,11 @@ class AirPodsAndroidController internal constructor(
         if (testPermit != null && !(qualificationAuthority != null && retainObservationForDisconnect)) {
             testPermit.revoke(); audioReceipt = null; onTestStopped?.invoke()
         }
-        mutableRuntime.value = AndroidRuntimeState(productConformance = productConformance())
+        val recovery = mutableRuntime.value.takeIf {
+            retainObservationForDisconnect && it.controlRecovery != ControlChannelRecovery.NONE
+        }
+        mutableRuntime.value = AndroidRuntimeState(productConformance = productConformance(),
+            failure = recovery?.failure, controlRecovery = if (recovery != null) ControlChannelRecovery.WAITING else ControlChannelRecovery.NONE)
         check(observationPersisted && leaseClose.isSuccess && oldLease?.released != false && close.isSuccess && mediaClose.isSuccess && observationStop !is CompanionResult.Denied && SystemClock.elapsedRealtime() - began < 2000) {
             fail("CLEANUP_FAILED"); "AirPods cleanup failed"
         }
@@ -1148,7 +1270,7 @@ class AirPodsAndroidController internal constructor(
             synchronized(lock) { retiringMedia.removeAll(ports); retiringCount.value = retiringMedia.size }
             if (!stopped) fail("CLEANUP_FAILED")
             // No durable write and no gate wait on the UI thread.
-            Dispatchers.IO.asExecutor().execute { synchronized(gate) { gate.settleCleanup() } }
+            Dispatchers.IO.asExecutor().execute { cleanupSettled() }
         } }.getOrDefault(false)
         if (!queued) synchronized(lock) {
             retiringMedia.removeAll(ports); failedMedia.addAll(ports); retiringCount.value = retiringMedia.size
@@ -1196,7 +1318,7 @@ class AirPodsAndroidController internal constructor(
     private fun ownerCleanup(): OwnerCleanup = synchronized(lock) {
         when {
             failedMedia.isNotEmpty() || failedTransports.isNotEmpty() -> OwnerCleanup.FAILED
-            retiringMedia.isNotEmpty() -> OwnerCleanup.OUTSTANDING
+            retiringMedia.isNotEmpty() || retiringServices.isNotEmpty() -> OwnerCleanup.OUTSTANDING
             else -> OwnerCleanup.COMPLETE
         }
     }
@@ -1204,8 +1326,8 @@ class AirPodsAndroidController internal constructor(
      * teardown, then asks the gate for its final answer. The teardown and the gate conclude on
      * their own if this gives up first. */
     private suspend fun settleMediaRetirement(): GateResult {
-        withTimeoutOrNull(2_000) { retiringCount.first { it == 0 } } // the synchronous cleanup budget
-        return synchronized(gate) { gate.settleCleanup() }
+        withTimeoutOrNull(2_000) { combine(retiringCount, retiringServiceCount) { media, services -> media + services }.first { it == 0 } }
+        return cleanupSettled()
     }
     private suspend fun settled(result: GateResult): GateResult =
         if (result == GateResult.Denied(GateReason.CLEANUP_PENDING)) settleMediaRetirement() else result
@@ -1220,14 +1342,45 @@ class AirPodsAndroidController internal constructor(
         return if (stillExplicit()) gate.explicitConsent(ingress) else GateResult.Denied(GateReason.SETUP_REQUIRED)
     }
 
+    /** Called by the real repository error collector/worker handler, also the regression seam.
+     * Under the same gate as Stop: a late fault cannot replace the user's newer intention. */
+    internal fun controlChannelFailed(admission: ConnectionAdmission, code: String = "TRANSPORT_FAILED"): Unit = synchronized(gate) {
+        require(code == "TRANSPORT_FAILED" || code == "OWNER_WORKER_FAILED")
+        if (ticket !== admission) return@synchronized
+        val foregroundAtFailure = (visibility as? AirPodsForegroundState)?.captureForeground()
+        retainObservationForDisconnect = admission.purpose in setOf(ConnectionPurpose.PRODUCT, ConnectionPurpose.QUALIFICATION_TEST)
+        try { gate.connectionFailed(admission) }
+        finally { retainObservationForDisconnect = false }
+        recordControlFailure(code, foregroundAtFailure)
+    }
+    private fun recordControlFailure(code: String, foregroundAtFailure: Long?) {
+        controlFailureForegroundEpoch = foregroundAtFailure
+        val start = store.snapshot().getOrNull()?.start
+        val recoverable = start?.enabled == true && !start.suppressUntilExplicitResume && !gate.locallySuppressed
+        val failure = when {
+            start == null -> "PERSISTENCE_FAILED"
+            mutableRuntime.value.failure == "CLEANUP_FAILED" -> "CLEANUP_FAILED"
+            gate.locallySuppressed && !start.suppressUntilExplicitResume -> "PERSISTENCE_FAILED"
+            else -> code
+        }
+        fail(failure)
+        mutableRuntime.value = mutableRuntime.value.copy(controlRecovery =
+            if (recoverable) ControlChannelRecovery.WAITING else ControlChannelRecovery.NONE)
+    }
     private fun stopIfCurrent(admission: ConnectionAdmission, reason: SuppressReason): Unit = synchronized(gate) {
         if (ticket === admission) gate.stop(reason)
         Unit
     }
     internal fun serviceDestroyed(host: AirPodsControlService) {
-        val admitted = ticket ?: return
-        if (service === host) processScope.launch {
-            synchronized(gate) { if (service === host && ticket === admitted) gate.stop(SuppressReason.USER_STOP) }
+        val retiring = synchronized(lock) {
+            retiringServices.remove(host).also { if (it) retiringServiceCount.value = retiringServices.size }
+        }
+        if (retiring) { processScope.launch { cleanupSettled() }; return }
+        // An unexpected onDestroy is itself the terminal confirmation. Detach it before stopOwner
+        // runs, so cleanup cannot wait for a second destruction of this same service.
+        val admitted = synchronized(lock) { if (service === host) ticket.also { service = null } else null } ?: return
+        processScope.launch {
+            synchronized(gate) { if (ticket === admitted) gate.stop(SuppressReason.USER_STOP) }
         }
     }
     /** Bounded wait for main. Never call it while holding the gate: main-thread readers take it. */

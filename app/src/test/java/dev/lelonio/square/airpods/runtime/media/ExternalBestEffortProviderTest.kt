@@ -84,6 +84,27 @@ class ExternalBestEffortProviderTest {
         assertNull(f.read().correlatedPauseEffect)
         assertFalse(f.read().routedToPair)
     }
+    @Test fun identicalTimestampedPausedRedeliveryIsNotANewManualPause() {
+        val f = Fixture(); f.enable(); f.now = 100
+        val c = f.read(); f.p.requested(c, MediaAction.PAUSE, null, 7)
+        f.raw = listOf(f.raw.first().copy(playback = Playback.PAUSED))
+        f.facts = f.facts.copy(exactPairStreaming = false)
+        f.p.playbackObserved(c.target, Playback.PAUSED, stateUpdatedAt = 100)
+        val revision = f.read().transportRevision
+        f.now += 600_000
+        f.p.playbackObserved(c.target, Playback.PAUSED, stateUpdatedAt = 100)
+        assertEquals(7L, f.read().correlatedPauseEffect)
+        assertEquals(revision, f.read().transportRevision)
+        f.p.playbackObserved(c.target, Playback.PAUSED, stateUpdatedAt = f.now)
+        assertFalse(f.read().routedToPair)
+    }
+    @Test fun timestampedInterruptionsStillRevokeEvenAtIdenticalSourceTimestamp() {
+        val f = Fixture(); f.enable(); f.now = 100
+        val c = f.read(); f.p.requested(c, MediaAction.PAUSE, null, 7)
+        f.p.playbackObserved(c.target, Playback.PAUSED, stateUpdatedAt = 100)
+        f.p.playbackObserved(c.target, Playback.PAUSED, stateUpdatedAt = 100, interruption = true)
+        assertNull(f.read().correlatedPauseEffect)
+    }
     @Test fun volumeRequiresOwnRequestAndActualObservationThenDivergenceRevokes() {
         val f = Fixture(); f.enable(); val c = f.read()
         f.p.volumeObserved(c.target, 3); assertNull(f.read().correlatedVolumeEffect)

@@ -229,6 +229,7 @@ fun AirPodsQuickOverlay(state: AirPodsUiState, visible: Boolean, onDismiss: () -
 internal fun AirPodsQuickContent(state: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {
     Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         AirPodsBatteryView(state)
+        AudioRequestOutcome(state, dispatch)
         // Only when there is something to explain: a ready session is already told by the
         // charge and the thumb on the selector.
         if (!state.controlsReady) {
@@ -270,7 +271,7 @@ private fun pageTitle(page: AirPodsSettingsPage, s: AirPodsUiState): String = wh
     AirPodsSettingsPage.Controls -> stringResource(R.string.airpods_feature_controls_group)
     AirPodsSettingsPage.HeadGestures -> stringResource(R.string.airpods_feature_setting_host_head_gestures)
     AirPodsSettingsPage.Automations -> stringResource(R.string.airpods_feature_automations_group)
-    AirPodsSettingsPage.Setup -> stringResource(R.string.airpods_ui_setup)
+    AirPodsSettingsPage.Setup -> stringResource(R.string.airpods_ui_connect_setup)
     AirPodsSettingsPage.Diagnostics -> stringResource(R.string.airpods_feature_diagnostics_group)
 }
 
@@ -357,6 +358,7 @@ private fun ColumnScope.MainPage(state: AirPodsUiState, dispatch: (AirPodsUiActi
     val device = identity?.takeIf { state.controlsReady && it.recognized }
 
     DeviceHeader(state)
+    AudioRequestOutcome(state, dispatch)
     // The gate is said once, at the top, in the tone of a warning.
     if (!state.productGatePassed) FluidInlineMessage(
         message = stringResource(R.string.airpods_ui_gate),
@@ -377,8 +379,12 @@ private fun ColumnScope.MainPage(state: AirPodsUiState, dispatch: (AirPodsUiActi
 
     // Fluidify's half: what the phone does, and what the pair needs before anything above exists.
     Pane {
-        OpenRow(R.string.airpods_ui_setup, AirPodsSettingsPage.Setup, onOpen)
-        FluidListDivider()
+        // Pairing and recovery are tasks, not an everyday service-settings section.
+        if (!state.surfaceAuthorized || !state.enabled || state.suppressed ||
+            !state.bluetoothGranted || state.pendingCleanupCount > 0) {
+            OpenRow(R.string.airpods_ui_connect_setup, AirPodsSettingsPage.Setup, onOpen)
+            FluidListDivider()
+        }
         OpenRow(R.string.airpods_feature_automations_group, AirPodsSettingsPage.Automations, onOpen)
         FluidListDivider()
         // No "On"/"Off" beside this row: the bare word of an alternative between two editors
@@ -387,11 +393,6 @@ private fun ColumnScope.MainPage(state: AirPodsUiState, dispatch: (AirPodsUiActi
         FluidListDivider()
         OpenRow(R.string.airpods_feature_diagnostics_group, AirPodsSettingsPage.Diagnostics, onOpen)
     }
-    // Plain words on the page floor, in the page's own ink.
-    Text(stringResource(R.string.airpods_feature_exclusive_summary),
-        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurface,
-        modifier = Modifier.padding(horizontal = 4.dp))
-
     if (identity != null) {
         GroupLabel(R.string.airpods_feature_device_group)
         Pane {
@@ -405,7 +406,6 @@ private fun ColumnScope.MainPage(state: AirPodsUiState, dispatch: (AirPodsUiActi
     var forget by remember { mutableStateOf(false) }
     FluidButton(stringResource(R.string.airpods_feature_forget), { forget = true }, enabled = state.allowed("setup.FORGET"),
         style = FluidButtonStyle.Destructive, fillWidth = true, modifier = Modifier.padding(top = 8.dp))
-    FluidSectionFootnote(stringResource(R.string.airpods_feature_forget_summary))
     if (forget) FluidAlert(onDismissRequest = { forget = false }, title = stringResource(R.string.airpods_feature_forget),
         message = stringResource(R.string.airpods_ui_forget_confirm), actions = listOf(
             FluidAlertAction(stringResource(R.string.airpods_ui_cancel), { forget = false }),
@@ -522,10 +522,6 @@ private fun receivedNumber(s: AirPodsUiState, property: CommandProperty): Int? =
 
 @Composable private fun ColumnScope.RenamePage(state: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {
     Pane {
-        state.identity?.let { id ->
-            IdentityLine(id)
-            FluidListDivider()
-        }
         RenameEditor(state, dispatch)
     }
 }
@@ -560,8 +556,18 @@ private fun receivedNumber(s: AirPodsUiState, property: CommandProperty): Int? =
 
 @Composable private fun ColumnScope.CallsPage(state: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {
     RegistryPage(AirPodsSettingsPage.Calls, state, dispatch)
-    Pane { SetupButton(state, SetupAction.CALL_PERMISSION, R.string.airpods_call_permission, dispatch) }
-    FluidSectionFootnote(stringResource(R.string.airpods_call_explanation))
+    Pane {
+        PaneBlock {
+            Text(stringResource(R.string.wf_i03_call_gestures), style = MaterialTheme.typography.bodyMedium)
+            StatusLine(stringResource(state.callAccess.summary()),
+                if (state.callAccess.granted) StatusKind.Confirmed else StatusKind.Problem,
+                modifier = Modifier.testTag("airpods-call-access-state"))
+        }
+        if (!state.callAccess.granted) {
+            FluidListDivider()
+            SetupButton(state, SetupAction.CALL_PERMISSION, R.string.wf_i03_allow_call_access, dispatch)
+        }
+    }
 }
 
 /** Every registry control filed under [page] that applies to this device, one pane each. */
@@ -629,10 +635,15 @@ private fun receivedNumber(s: AirPodsUiState, property: CommandProperty): Int? =
 }
 
 @Composable private fun ColumnScope.SetupPage(state: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {
+    FluidSectionFootnote(stringResource(R.string.airpods_feature_exclusive_summary))
     Pane {
-        Text(stringResource(R.string.airpods_ui_choose), style = MaterialTheme.typography.bodyMedium,
+        Text(stringResource(R.string.wf_i03_choose_pair), style = MaterialTheme.typography.bodyMedium,
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             modifier = Modifier.padding(start = PaneInset, top = 12.dp, end = PaneInset, bottom = 8.dp))
+        Text(stringResource(R.string.wf_i03_verify_pair_note), style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = PaneInset, end = PaneInset, bottom = 8.dp)
+                .testTag("airpods-identity-note"))
         // Only with the permission is an empty list a fact about the phone.
         if (state.candidates.isEmpty() && state.bluetoothGranted) Text(
             stringResource(R.string.airpods_feature_no_candidates), style = MaterialTheme.typography.bodyMedium,
@@ -641,7 +652,7 @@ private fun receivedNumber(s: AirPodsUiState, property: CommandProperty): Int? =
             FluidListDivider()
             FluidChoiceRow(candidate.displayName, selected = candidate.id == state.selectedCandidateId,
                 onSelect = { dispatch(AirPodsUiAction.SelectPair(candidate.id)) },
-                subtitle = candidate.identityHint)
+                modifier = Modifier.testTag("airpods-candidate-${candidate.id}"))
         }
         SetupRows(state, dispatch,
             SetupAction.BLUETOOTH_PERMISSION to R.string.airpods_feature_bluetooth_access,
@@ -665,9 +676,13 @@ private fun receivedNumber(s: AirPodsUiState, property: CommandProperty): Int? =
             SetupAction.NOTIFICATION_PERMISSION to R.string.airpods_ui_notifications,
             SetupAction.MEDIA_ACCESS to R.string.airpods_feature_media_access,
             SetupAction.COMPANION_ASSOCIATION to R.string.airpods_feature_companion_setup,
-            SetupAction.BLUETOOTH_SETTINGS to R.string.airpods_feature_open_bluetooth,
             leadingDivider = false)
+        if (state.audioResult?.presentation()?.offerSettings != true) {
+            FluidListDivider()
+            SetupButton(state, SetupAction.BLUETOOTH_SETTINGS, R.string.airpods_feature_open_bluetooth, dispatch)
+        }
     }
+    AudioRequestOutcome(state, dispatch)
     Pane {
         SetupRows(state, dispatch,
             SetupAction.CONNECT to R.string.airpods_audio_connect,
@@ -677,6 +692,25 @@ private fun receivedNumber(s: AirPodsUiState, property: CommandProperty): Int? =
     }
     FluidSectionFootnote(stringResource(R.string.airpods_audio_explanation))
     FluidSectionFootnote(stringResource(R.string.airpods_ui_tile))
+}
+
+/** Outcome stays beside the controls that asked for it, including the player quick pane. */
+@Composable private fun AudioRequestOutcome(state: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {
+    val outcome = state.audioResult?.presentation() ?: return
+    Pane {
+        PaneBlock {
+            StatusLine(stringResource(outcome.message), outcome.kind,
+                modifier = Modifier.testTag("airpods-audio-outcome"))
+        }
+        if (outcome.offerSettings) {
+            FluidListDivider()
+            FluidListRow(stringResource(R.string.airpods_feature_open_bluetooth), "",
+                modifier = Modifier.testTag("airpods-audio-settings"),
+                onClick = if (state.allowed("setup.BLUETOOTH_SETTINGS")) ({
+                    dispatch(AirPodsUiAction.Setup(SetupAction.BLUETOOTH_SETTINGS))
+                }) else null)
+        }
+    }
 }
 
 @Composable private fun ColumnScope.DiagnosticsPage(state: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {

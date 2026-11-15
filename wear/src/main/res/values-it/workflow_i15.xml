@@ -1,0 +1,15 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i15_headphones">Cuffie</string>
+    <string name="wf_i15_airpods">AirPods</string>
+    <string name="wf_i15_from_phone">Lette dal telefono</string>
+    <string name="wf_i15_left">Sinistra</string>
+    <string name="wf_i15_right">Destra</string>
+    <string name="wf_i15_case">Custodia</string>
+    <string name="wf_i15_unknown">Dato ignoto</string>
+    <string name="wf_i15_percent">%1$d%%</string>
+    <string name="wf_i15_no_fresh_reading">Nessuna lettura recente</string>
+    <string name="wf_i15_phone_unavailable">Telefono non disponibile</string>
+    <string name="wf_i15_phone_headphones_only">Per le cuffie usate dal telefono</string>
+    <string name="wf_i15_battery_action">Batteria cuffie</string>
+</resources>

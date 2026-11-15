@@ -83,7 +83,7 @@ fun SwipeToQueue(
                     modifier = Modifier.size(20.dp),
                 )
                 Text(
-                    stringResource(R.string.queued),
+                    stringResource(R.string.wf_i06_add_to_queue),
                     style = MaterialTheme.typography.labelLarge,
                     color = MaterialTheme.colorScheme.primary,
                     modifier = Modifier.padding(start = 8.dp),
@@ -101,7 +101,7 @@ fun SwipeToQueue(
                         onDragEnd = {
                             val commit = -offset.value >= threshold
                             if (commit) {
-                                haptics.play(FluidHapticEvent.Confirm)
+                                haptics.play(FluidHapticEvent.PressClick)
                                 onQueue()
                             }
                             scope.launch { offset.animateTo(0f, FluidMotion.pixels()) }

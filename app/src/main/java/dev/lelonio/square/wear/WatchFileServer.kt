@@ -73,6 +73,7 @@ class WatchFileServer(private val app: SquareApplication) {
     suspend fun stopAndJoin() = transfers.stopAndJoin()
     private val channels by lazy { Wearable.getChannelClient(app) }
     private val running = AtomicInteger()
+    internal val isTransferring: Boolean get() = running.get() > 0
 
     /** One lock per staged track and quality: two asks for the same file must not fetch it twice. */
     private val stagingLocks = ConcurrentHashMap<String, Mutex>()
@@ -84,22 +85,24 @@ class WatchFileServer(private val app: SquareApplication) {
         val access = app.accountLocalData.capture()
         if (access == null) { channels.close(channel); return }
         scope.launch {
-            val wrapUp = ChannelWrapUp(channels, channel)
-            var answered = false
-            if (running.incrementAndGet() == 1) WatchTransferService.start(app)
-            try {
-                cleanAbandonedStaging()
-                wrapUp.start()
-                answered = transfer(access, channel)
-            } catch (error: Exception) {
-                if (error is CancellationException) throw error
-                Log.i(TAG, "transfer to the watch stopped: ${error.message}")
-            } finally {
-                // Not closed at once: see ChannelWrapUp. Only an answer that was completely written
-                // is worth waiting for the watch's close on.
-                withContext(NonCancellable) {
-                    wrapUp.finish(delivered = answered)
-                    if (running.decrementAndGet() == 0) WatchTransferService.stop(app)
+            PlaybackService.connections.withClient {
+                val wrapUp = ChannelWrapUp(channels, channel)
+                var answered = false
+                if (running.incrementAndGet() == 1) WatchTransferService.start(app)
+                try {
+                    cleanAbandonedStaging()
+                    wrapUp.start()
+                    answered = transfer(access, channel)
+                } catch (error: Exception) {
+                    if (error is CancellationException) throw error
+                    Log.i(TAG, "transfer to the watch stopped: ${error.message}")
+                } finally {
+                    // Not closed at once: see ChannelWrapUp. Only an answer that was completely written
+                    // is worth waiting for the watch's close on.
+                    withContext(NonCancellable) {
+                        wrapUp.finish(delivered = answered)
+                        if (running.decrementAndGet() == 0) WatchTransferService.stop(app)
+                    }
                 }
             }
         }

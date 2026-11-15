@@ -214,6 +214,7 @@ internal fun ImmersiveGestures(
     val liked by remember { derivedStateOf { nowState.value.snapshot?.liked == true } }
     val likeable by remember { derivedStateOf { nowState.value.snapshot?.track.likeable() } }
     val playLabel = stringResource(if (playing) R.string.pause else R.string.play)
+    val shouldPlay = !playing
     val nextLabel = stringResource(R.string.next)
     val likeLabel = stringResource(if (liked) R.string.unlike else R.string.like)
     val showLabel = stringResource(R.string.show_controls)
@@ -231,7 +232,7 @@ internal fun ImmersiveGestures(
             .semantics {
                 customActions = buildList {
                     add(CustomAccessibilityAction(showLabel) { chrome.show(); true })
-                    add(CustomAccessibilityAction(playLabel) { controls.togglePlay(); true })
+                    add(CustomAccessibilityAction(playLabel) { controls.setPlaying(shouldPlay); true })
                     add(CustomAccessibilityAction(nextLabel) { controls.next(); true })
                     if (likeable) {
                         add(
@@ -250,7 +251,7 @@ internal fun ImmersiveGestures(
                         sign = if (nowPlaying) PhosphorIcons.Fill.Pause else PhosphorIcons.Fill.Play
                         signal++
                         haptics.play(FluidHapticEvent.Confirm)
-                        controls.togglePlay()
+                        controls.setPlaying(!nowPlaying)
                     },
                     onDoubleTap = {
                         sign = PhosphorIcons.Fill.SkipForward

@@ -80,7 +80,8 @@ class MirrorNowPlaying(private val app: WearApp) {
             .addAction(
                 if (playing) R.drawable.ic_tile_pause else R.drawable.ic_tile_play,
                 app.getString(if (playing) R.string.pause else R.string.play),
-                TileActions.pendingIntent(app, TileActions.TOGGLE),
+                // These absolute names are routed by the small TileActions root integration patch.
+                TileActions.pendingIntent(app, if (playing) "pause" else "play"),
             )
             .addAction(R.drawable.ic_tile_next, app.getString(R.string.next), TileActions.pendingIntent(app, TileActions.NEXT))
             .setStyle(MediaStyleNotificationHelper.MediaStyle(current).setShowActionsInCompactView(0, 1, 2))
@@ -153,9 +154,7 @@ class PhoneMirrorPlayer(
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
-        val snapshot = nowPlaying().snapshot
-        val playing = snapshot != null && (snapshot.isPlaying || snapshot.playWhenReady)
-        if (playing != playWhenReady) controls.togglePlay()
+        controls.setPlaying(playWhenReady)
         return Futures.immediateVoidFuture()
     }
 

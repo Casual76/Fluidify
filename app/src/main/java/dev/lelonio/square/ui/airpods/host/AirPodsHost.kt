@@ -102,7 +102,17 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
         val runtime = o.runtime.value
         val mapped = mapAirPodsUiState(domain, data, bluetooth.connected(data.selectedPair), bluetooth.granted(),
             runtime.productConformance, Build.FINGERPRINT, SystemClock.elapsedRealtime())
-        val base = mapped.copy(enabled = mapped.enabled && runtime.active && !runtime.verifying, functionalAuthority = functionalAuthority)
+        val callAccess = CallGestureAccess(
+            readPhoneState = context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED,
+            answerPhoneCalls = context.checkSelfPermission(Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED,
+        )
+        val base = mapped.copy(
+            enabled = mapped.enabled && runtime.active && !runtime.verifying,
+            functionalAuthority = functionalAuthority,
+            controlRecovery = runtime.controlRecovery,
+            callAccess = callAccess,
+            audioResult = o.audioResult.value,
+        )
         val nls = context.packageName in NotificationManagerCompat.getEnabledListenerPackages(context)
         val notifications = Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED
         val selected = data.selectedPair != null
@@ -140,6 +150,7 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
         fun reasonFor(key: String): String {
             val specific = when (key) {
                 "host.select" -> R.string.airpods_reason_bluetooth_permission
+                "setup.CALL_PERMISSION" -> R.string.wf_i03_call_access_granted
                 "setup.BLUETOOTH_PERMISSION" -> R.string.airpods_reason_access_granted
                 "setup.NOTIFICATION_PERMISSION" -> R.string.airpods_reason_access_granted
                 "setup.MEDIA_ACCESS" -> R.string.airpods_reason_access_granted
@@ -200,7 +211,7 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
                 val allowed = when(action) {
                     SetupAction.BLUETOOTH_PERMISSION -> !base.bluetoothGranted
                     SetupAction.NOTIFICATION_PERMISSION -> Build.VERSION.SDK_INT >= 33 && !notifications
-                    SetupAction.CALL_PERMISSION -> true
+                    SetupAction.CALL_PERMISSION -> !callAccess.granted
                     SetupAction.MEDIA_ACCESS -> !nls
                     SetupAction.COMPANION_ASSOCIATION -> selected && base.bluetoothGranted && companionFeature && associations != null && !alreadyAssociated
                     SetupAction.VERIFY_SELECTED -> !o.isFunctionalTest && selected && base.bluetoothGranted && base.profileConnected && notifications && !runtime.verifying
@@ -274,7 +285,7 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
             .mapNotNull { (side, name) -> GestureAction.entries.firstOrNull { it.name == name }?.let { side to it } }.toMap()
         state.value = base.copy(pendingCleanupCount = data.pendingCleanup.size,
             candidates = candidates.mapIndexed { index, address -> PairCandidate(ids.id(address),
-            bluetooth.label(address) ?: context.getString(R.string.airpods_host_candidate, index + 1), text(R.string.airpods_host_label_only)) },
+            bluetooth.label(address) ?: context.getString(R.string.airpods_host_candidate, index + 1), "") },
             selectedCandidateId = data.selectedPair?.takeIf { it in candidates }?.let(ids::id), availability = availability,
             gestureAssignments = assignments, headHistory = headHistory.toList(),
             localVolumePercent = o.volume.value?.let { it.current * 100 / it.maximum },
@@ -327,8 +338,10 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
                         actionFailure = admissionFailureMessage(it.reason); false
                     } else true
                 }
-                SetupAction.CONNECT -> o.requestAudio(AudioOperation.CONNECT).let { it is PlatformResult.RequestAccepted || it is PlatformResult.Queued || it is PlatformResult.SettingsRequired }
-                SetupAction.DISCONNECT -> o.requestAudio(AudioOperation.DISCONNECT).let { it is PlatformResult.RequestAccepted || it is PlatformResult.Queued || it is PlatformResult.SettingsRequired }
+                // SettingsRequired is handled by the visible audioResult recovery, including the
+                // deferred profile callback. It is never a receipt of a connected audio profile.
+                SetupAction.CONNECT -> o.requestAudio(AudioOperation.CONNECT).let { it !is PlatformResult.Denied }
+                SetupAction.DISCONNECT -> o.requestAudio(AudioOperation.DISCONNECT).let { it !is PlatformResult.Denied }
                 SetupAction.DISABLE -> o.stopControls(SuppressReason.DISABLED).let { it !is dev.lelonio.square.airpods.runtime.lifecycle.GateResult.Denied }
                 SetupAction.STOP -> o.stopControls().let { it !is dev.lelonio.square.airpods.runtime.lifecycle.GateResult.Denied }
                 SetupAction.FORGET -> o.forget().let { it !is dev.lelonio.square.airpods.runtime.lifecycle.GateResult.Denied }

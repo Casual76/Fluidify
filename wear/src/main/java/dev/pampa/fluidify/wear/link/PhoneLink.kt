@@ -53,6 +53,10 @@ interface CommandChannel {
 
     /** [send], waiting up to [timeoutMs] for the answer: for commands the phone takes a while over. */
     suspend fun send(command: Command, timeoutMs: Long): CommandAck? = send(command)
+
+    /** Captures the destination now, before a UI coroutine can run under another account. */
+    fun prepare(command: Command, timeoutMs: Long): I12CommandRequest =
+        I12CommandRequest({ send(command, timeoutMs) }, { effect -> effect(); true })
 }
 
 /** Where the conversation with the phone stands. */
@@ -113,7 +117,19 @@ class PhoneLink(
     val phone: StateFlow<Hello?> = _phone.asStateFlow()
 
     private val ids = AtomicLong(System.currentTimeMillis())
-    private val pending = ConcurrentHashMap<Long, CompletableDeferred<CommandAck>>()
+    private val commands = I12CommandDelivery(accountSessions, ids,
+        resolveNode = {
+            (nodeId ?: findPhone()?.id).also { if (it == null) _status.value = LinkStatus.UNREACHABLE }
+        },
+        transmit = { node, envelope, current ->
+            send(node, WearPaths.COMMAND, WearCodec.encode(CommandEnvelope.serializer(), envelope), current).also {
+                if (!it && current()) {
+                    nodeId = null
+                    _status.value = LinkStatus.UNREACHABLE
+                }
+            }
+        },
+    )
     private val rpcPending = ConcurrentHashMap<Long, CompletableDeferred<RpcResponse>>()
     private val authPending = ConcurrentHashMap<Long, CompletableDeferred<dev.pampa.fluidify.wear.protocol.AuthGrant>>()
 
@@ -223,6 +239,7 @@ class PhoneLink(
     }
 
     private suspend fun sayHello(node: String) {
+        state.beginAirPodsBatteryContact(node)
         val sent = send(node, WearPaths.HELLO, WearCodec.encode(Hello.serializer(), ownHello()))
         if (!sent) {
             _status.value = LinkStatus.UNREACHABLE
@@ -239,6 +256,7 @@ class PhoneLink(
     fun onHello(hello: Hello, fromNode: String) {
         if (hello.role != Role.PHONE) return
         state.observeClock(hello.sentAtEpochMs)
+        if (!hello.wantsReply) state.confirmAirPodsBatteryContact(hello.sentAtEpochMs, fromNode)
         nodeId = fromNode
         _phone.value = hello
         // The phone handles updates while it is around; see WatchSelfUpdateWorker.
@@ -265,31 +283,11 @@ class PhoneLink(
      * Sends [command] and waits for the phone's acknowledgement. Null when the
      * phone could not be reached or did not answer in time.
      */
-    override suspend fun send(command: Command): CommandAck? = send(command, ACK_TIMEOUT_MS)
+    override suspend fun send(command: Command): CommandAck? = send(command, I12CommandTimeouts.forCommand(command))
 
-    override suspend fun send(command: Command, timeoutMs: Long): CommandAck? {
-        val account = accountSessions.capture() ?: return null
-        val node = nodeId ?: findPhone()?.id ?: run {
-            _status.value = LinkStatus.UNREACHABLE
-            return null
-        }
-        val id = ids.incrementAndGet()
-        val waiter = CompletableDeferred<CommandAck>()
-        pending[id] = waiter
-        // Whatever ends this call (an answer, a timeout, the caller being cancelled) takes the
-        // waiter out: one left behind was kept for good, and an answer arriving late completed it.
-        try {
-            val bytes = WearCodec.encode(CommandEnvelope.serializer(), CommandEnvelope(id, command, account.session))
-            if (!send(node, WearPaths.COMMAND, bytes)) {
-                nodeId = null
-                _status.value = LinkStatus.UNREACHABLE
-                return null
-            }
-            return withTimeoutOrNull(timeoutMs) { waiter.await() }?.takeIf { accountSessions.isCurrent(account) }
-        } finally {
-            pending.remove(id)
-        }
-    }
+    override suspend fun send(command: Command, timeoutMs: Long): CommandAck? = prepare(command, timeoutMs).await()
+
+    override fun prepare(command: Command, timeoutMs: Long): I12CommandRequest = commands.prepare(command, timeoutMs)
 
     /**
      * Asks the phone something and decodes the answer with [serializer].
@@ -378,7 +376,7 @@ class PhoneLink(
     fun onAck(ack: CommandAck) {
         state.observeClock(ack.sentAtEpochMs)
         onPhoneHeard()
-        pending.remove(ack.id)?.complete(ack)
+        commands.onAck(ack)
     }
     internal suspend fun acknowledgeDownload(node: String, ack: dev.pampa.fluidify.wear.protocol.DownloadPlanAck) {
         val account = accountSessions.capture() ?: return
@@ -399,11 +397,12 @@ class PhoneLink(
         return send(node, WearPaths.UPDATE_REQUEST, WearCodec.encode(Hello.serializer(), ownHello(wantsReply = false)))
     }
 
-    private suspend fun send(node: String, path: String, bytes: ByteArray): Boolean = runCatching {
-        if (!isNearby(node)) return false
+    private suspend fun send(node: String, path: String, bytes: ByteArray, isCurrent: () -> Boolean = { true }): Boolean = runCatching {
+        if (!isNearby(node) || !isCurrent()) return false
         messages.sendMessage(node, path, bytes).await()
         true
     }.onFailure {
+        if (it is kotlinx.coroutines.CancellationException) throw it
         // A node that did not take the message is looked at again before the next one.
         forgetNearby()
         Log.i(TAG, "send $path failed: ${it.message}")
@@ -476,7 +475,6 @@ class PhoneLink(
         /** The preferences that remember when the phone was last heard; see WatchSelfUpdateWorker. */
         const val PREFS = "phone_link"
         const val ASSET_KEY = "img"
-        private const val ACK_TIMEOUT_MS = 3_000L
         private const val RPC_TIMEOUT_MS = 12_000L
 
         /** The phone may have to refresh its own session first, over its own network. */

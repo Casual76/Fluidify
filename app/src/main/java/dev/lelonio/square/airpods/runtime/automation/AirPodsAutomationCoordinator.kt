@@ -41,9 +41,15 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
         var awaiting: MediaEffect? = null, var deadline: Long = 0,
         var restoring: Boolean = false,
         var observedWrite: Boolean = false,
+        // A manual transport command forfeits pause/resume, not this volume baseline.
+        // Only that explicit intervention permits retaining it through a loading state.
+        var transportOverridden: Boolean = false,
         // Receipt already present at baseline or consumed at the last confirmed write.
         // Its persistence at lastWrite is neither a new ACK nor interference.
         var lastEvidence: Long? = null,
+        // Speech may start/end while the previous write is still being observed. Keep its
+        // original receipt deadline, then begin the new direction at the confirmed level.
+        var restartAfterObservation: Boolean = false,
     )
     private var duck: Duck? = null
 
@@ -66,11 +72,19 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
         config = null
     }
 
-    /** An explicit manual intent consumes all effect authority without resetting sensor baselines.
+    /** An explicit volume intent or blanket revocation consumes all authority, keeping sensor baselines.
      * No cleanup PLAY/restore; duplicates cannot reacquire, but a new ear transition still can.
      * Keep inputEpoch: observations remain current, while the cancelled lease fences old effects.
      */
     @Synchronized fun onManualIntent() { invalidateEffects() }
+
+    /** Manual play/pause/seek/skip consumes transport only. Keep the same duck lease and
+     * pending receipt/deadline; a volume command still uses onManualIntent() above.
+     */
+    @Synchronized fun onManualTransportIntent() {
+        abandonTransportEffects()
+        reasons.clear()
+    }
 
     /**
      * Host notice that an accepted PLAY of the current lease was actually dispatched. From then,
@@ -134,12 +148,13 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
             return
         }
         if (snapshot.transportOverride) {
-            abandonEffects()
+            abandonTransportEffects()
             if (snapshot.playback == Playback.PLAYING) reasons.remove(PauseReason.EAR)
         } else if (snapshot.playback == Playback.UNKNOWN) {
-            // Only inside the bounded window of our own dispatched PLAY can UNKNOWN be the
-            // transition into it. Before dispatch, after the window, or otherwise: forfeit.
-            if (!resumeInFlight()) abandonEffects()
+            // UNKNOWN can be our bounded dispatched PLAY or loading after an explicit manual
+            // transport override. The latter retains volume only, never pause/resume authority.
+            // Identity, route, permission, volume interference and receipt bounds still apply.
+            if (!resumeInFlight() && duck?.transportOverridden != true) abandonEffects()
         } else {
             pending?.let { p ->
                 if (clock.nowMillis() >= p.deadline) abandonEffects()
@@ -177,10 +192,17 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
                     d.lastEvidence = receipt
                     d.observedWrite = true
                     d.awaiting = null
+                    if (d.restartAfterObservation) {
+                        d.restartAfterObservation = false
+                        d.from = d.lastWrite
+                        d.started = clock.nowMillis()
+                    }
                     if (d.restoring && d.lastWrite == d.initial) duck = null
-                } else if (v.current != d.lastWrite || newReceipt) {
+                } else if ((v.current != d.lastWrite && v.current != a.volume) || newReceipt) {
                     abandonEffects()
                 }
+                // A matching requested level with no new receipt is only a pending read.
+                // It grants no ownership and never extends the original receipt deadline.
             } else if (v.current != d.lastWrite || newReceipt) abandonEffects()
         }
     }
@@ -188,6 +210,17 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
     private fun invalidateEffects() {
         abandonEffects()
         reasons.clear()
+    }
+
+    private fun abandonTransportEffects() {
+        // Individual cancellation fences queued transport without cancelling a volume write
+        // that may already have applied. Its original receipt is still required to restore.
+        pending?.let { host.cancelEffect(it.effect) }
+        pendingResume?.let { host.cancelEffect(it.effect) }
+        pending = null
+        ownedPause = null
+        pendingResume = null
+        duck?.transportOverridden = true
     }
 
     private fun abandonEffects() {
@@ -319,13 +352,13 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
         val existing = duck
         if (existing != null) {
             if (existing.restoring) {
-                if (existing.awaiting != null) { abandonEffects(); return }
                 existing.restoring = false
                 existing.from = existing.lastWrite
                 val base = if (c.volumeMode == VolumeMode.RELATIVE) existing.initial else existing.maximum
                 existing.goal = min(existing.initial,
                     (base.toDouble() * c.clampedVolumePercent / 100).roundToInt())
                 existing.started = clock.nowMillis()
+                existing.restartAfterObservation = existing.awaiting != null
             }
             return
         }
@@ -341,13 +374,14 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
 
     private fun finishDuck() {
         val d = duck ?: return
-        // An unobserved write may have applied; never restore from uncertain attribution.
-        if (d.awaiting != null) { abandonEffects(); return }
+        // A direction change is not interference. Retain the one pending write and its
+        // deadline; no restoration can run until that write has a matching receipt.
         d.restoring = true
         d.from = d.lastWrite
         d.goal = d.initial
         d.started = clock.nowMillis()
-        if (d.from == d.goal) duck = null else tick()
+        d.restartAfterObservation = d.awaiting != null
+        if (d.awaiting == null && d.from == d.goal) duck = null else tick()
     }
 
     /** Monotonic clock; no wall-clock timers. One unobserved volume write at most. */

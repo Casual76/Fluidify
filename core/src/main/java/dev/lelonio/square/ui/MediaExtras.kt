@@ -20,6 +20,9 @@ const val EXTRA_CONTEXT_ORDERED = "dev.lelonio.square.CONTEXT_ORDERED"
  */
 const val EXTRA_PLAY_NEXT = "dev.lelonio.square.PLAY_NEXT"
 
+/** The occurrence that began the current queue round, even when the URI repeats. */
+const val EXTRA_QUEUE_CYCLE_ANCHOR = "dev.lelonio.square.QUEUE_CYCLE_ANCHOR"
+
 /** What to show the listener: "Playlist · Estate 2025", "Ricerca". */
 const val EXTRA_CONTEXT_LABEL = "dev.lelonio.square.CONTEXT_LABEL"
 

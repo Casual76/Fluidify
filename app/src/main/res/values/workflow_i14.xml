@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i14_title">Listening history</string>
+    <string name="wf_i14_library_detail">Your saved listens</string>
+    <string name="wf_i14_search">Search title or artist</string>
+    <string name="wf_i14_clear">Clear search</string>
+    <string name="wf_i14_close_search">Close search</string>
+    <string name="wf_i14_scope">Listens kept on this phone, including Spotify imports.</string>
+    <string name="wf_i14_recording_paused">Recording paused. Saved listens remain here.</string>
+    <string name="wf_i14_no_account">Sign in to view your history</string>
+    <string name="wf_i14_no_account_detail">History belongs to each account.</string>
+    <string name="wf_i14_empty">No saved listens yet</string>
+    <string name="wf_i14_empty_detail">Recorded listens and existing Spotify imports appear here.</string>
+    <string name="wf_i14_no_results">No matches</string>
+    <string name="wf_i14_no_results_detail">Try another title or artist.</string>
+    <string name="wf_i14_error">History unavailable</string>
+    <string name="wf_i14_error_detail">Try reading the saved listens again.</string>
+    <string name="wf_i14_more_error">Could not read more listens.</string>
+    <string name="wf_i14_retry">Try again</string>
+    <string name="wf_i14_imported_time">%1$s · Spotify</string>
+</resources>

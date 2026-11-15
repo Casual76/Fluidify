@@ -13,7 +13,6 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharedFlow
@@ -80,7 +79,7 @@ class ActivePlayback(
         scope.launch {
             remote.nowPlaying.collect { phone ->
                 if (_mode.value != PlaybackMode.WATCH) return@collect
-                if (moveJob?.isActive == true) {
+                if (moveJob?.isActive == true || holdWatchAfterHandback) {
                     // Snapshots received during the explicit handoff belong to that move.
                     watchSelectionSeq = maxOf(watchSelectionSeq, phone.snapshot?.seq ?: Long.MIN_VALUE)
                     return@collect
@@ -101,6 +100,10 @@ class ActivePlayback(
 
     private var moveJob: Job? = null
     private var watchSelectionSeq = Long.MIN_VALUE
+    // An unconfirmed handback may finish in non-interruptible JNI later. Its snapshots cannot
+    // authorize stopping the watch. A new explicit output choice or confirmed handback can.
+    private var holdWatchAfterHandback = false
+    private var moveRevision = 0L
 
     /**
      * Plays on the watch, through [output]. Whatever the phone was playing follows, once the
@@ -129,6 +132,13 @@ class ActivePlayback(
         parts.router.choose(output)
         // Already the watch: picking headphones or the speaker in the output list only moves the
         // sound, which the service follows by itself. A request from the phone still moves its music.
+        if (holdWatchAfterHandback) {
+            moveRevision++
+            moveJob?.cancel()
+            _moving.value = false
+            holdWatchAfterHandback = false
+            watchSelectionSeq = remote.nowPlaying.value.snapshot?.seq ?: Long.MIN_VALUE
+        }
         if (_mode.value == PlaybackMode.WATCH && !fromPhone) return
         watchSelectionSeq = remote.nowPlaying.value.snapshot?.seq ?: Long.MIN_VALUE
         _mode.value = PlaybackMode.WATCH
@@ -230,17 +240,25 @@ class ActivePlayback(
      */
     fun moveToPhone(deviceId: String) {
         moveJob?.cancel()
-        _moving.value = false
+        val revision = ++moveRevision
+        val request = remote.prepareTransfer(deviceId)
+        holdWatchAfterHandback = _mode.value == PlaybackMode.WATCH
+        _moving.value = true
         moveJob = scope.launch {
-            if (!remote.transferAndWait(deviceId)) {
-                _errors.tryEmit(AckErrors.TRANSFER)
-                return@launch
+            try {
+                val confirmed = remote.awaitTransfer(request) {
+                    if (moveRevision == revision) {
+                        // I05/I11's positive ACK follows actual consumer acquisition. Commit the
+                        // front and stop under the same captured phone-account admission.
+                        _mode.value = PlaybackMode.PHONE
+                        local.stopAfterTransfer()
+                        holdWatchAfterHandback = false
+                    }
+                }
+                if (!confirmed && moveRevision == revision) _errors.tryEmit(AckErrors.TRANSFER)
+            } finally {
+                if (moveRevision == revision) _moving.value = false
             }
-            _mode.value = PlaybackMode.PHONE
-            // Long enough for Connect to have moved the music off the watch; the service then
-            // stops itself once it has been idle, and the engine with it.
-            delay(HANDBACK_MS)
-            if (_mode.value == PlaybackMode.PHONE) local.stop()
         }
     }
 
@@ -251,8 +269,10 @@ class ActivePlayback(
     suspend fun signedOut(forgetCredentials: suspend () -> Unit = { standalone().auth.signOut() }) {
         val parts = standalone()
         if (_mode.value == PlaybackMode.WATCH || local.isConnected) {
+            moveRevision++
             moveJob?.cancel()
             _moving.value = false
+            holdWatchAfterHandback = false
             local.stop()
             _mode.value = PlaybackMode.PHONE
             withTimeoutOrNull(SIGN_OUT_WAIT_MS) { parts.engine.status.first { it == EngineStatus.OFF } }
@@ -268,7 +288,8 @@ class ActivePlayback(
         }
     }
 
-    override fun togglePlay() = front.togglePlay()
+    override fun togglePlay() = setPlaying(nowPlaying.value.snapshot?.let { !it.isPlaying && !it.playWhenReady } ?: true)
+    override fun setPlaying(playing: Boolean) = front.setPlaying(playing)
     override fun next() = front.next()
     override fun previous() = front.previous()
     private val _visualSeek = MutableStateFlow(0L)
@@ -329,7 +350,6 @@ class ActivePlayback(
             EngineStatus.PREMIUM_REQUIRED -> ENGINE_PREMIUM
             else -> ENGINE_FAILED
         }
-        private const val HANDBACK_MS = 6_000L
 
         /** From "engine started" to "the account can see the watch". */
         private const val CONNECT_WAIT_MS = 20_000L

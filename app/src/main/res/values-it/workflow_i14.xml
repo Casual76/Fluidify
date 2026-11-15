@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="wf_i14_title">Cronologia ascolti</string>
+    <string name="wf_i14_library_detail">I tuoi ascolti conservati</string>
+    <string name="wf_i14_search">Cerca titolo o artista</string>
+    <string name="wf_i14_clear">Svuota la ricerca</string>
+    <string name="wf_i14_close_search">Chiudi la ricerca</string>
+    <string name="wf_i14_scope">Ascolti su questo telefono, inclusi gli importati da Spotify.</string>
+    <string name="wf_i14_recording_paused">Registrazione in pausa. Gli ascolti conservati restano qui.</string>
+    <string name="wf_i14_no_account">Accedi per vedere la cronologia</string>
+    <string name="wf_i14_no_account_detail">Ogni account ha la sua cronologia.</string>
+    <string name="wf_i14_empty">Nessun ascolto conservato</string>
+    <string name="wf_i14_empty_detail">Qui trovi gli ascolti registrati e quelli già importati da Spotify.</string>
+    <string name="wf_i14_no_results">Nessun risultato</string>
+    <string name="wf_i14_no_results_detail">Prova un altro titolo o artista.</string>
+    <string name="wf_i14_error">Cronologia non disponibile</string>
+    <string name="wf_i14_error_detail">Riprova a leggere gli ascolti conservati.</string>
+    <string name="wf_i14_more_error">Impossibile leggere altri ascolti.</string>
+    <string name="wf_i14_retry">Riprova</string>
+    <string name="wf_i14_imported_time">%1$s · Spotify</string>
+</resources>

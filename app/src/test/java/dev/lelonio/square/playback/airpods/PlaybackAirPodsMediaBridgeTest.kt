@@ -201,7 +201,7 @@ class PlaybackAirPodsMediaBridgeTest {
             assertFalse(f.provider.execute(target, MediaAction.PLAY, null, 43))
         } finally { f.provider.close() }
     }
-    @Test fun delegatedSeekIntentsRevokePauseAndVolumeEvenWithoutStateCallback() {
+    @Test fun delegatedSeekIntentsRevokePauseButPreserveStreamVolumeEvenWithoutStateCallback() {
         val commands: List<(Player) -> Unit> = listOf(
             { it.seekBack() }, { it.seekForward() },
             { it.seekToDefaultPosition() }, { it.seekToDefaultPosition(0) },
@@ -222,7 +222,9 @@ class PlaybackAirPodsMediaBridgeTest {
                 val after = f.provider.read(pair)!!
                 assertTrue(after.transportRevision > owned.transportRevision)
                 assertNull(after.observedPauseEffect)
-                assertNull(after.observedVolumeEffect)
+                assertEquals(owned.observedVolumeEffect, after.observedVolumeEffect)
+                assertEquals(owned.volumeRevision, after.volumeRevision)
+                assertEquals(owned.volume, after.volume)
                 assertFalse(f.provider.execute(target, MediaAction.PLAY, null, 300L + index))
             }
             assertEquals(0, f.raw.plays)
@@ -346,10 +348,10 @@ class PlaybackAirPodsMediaBridgeTest {
             assertNull(f.provider.read(pair)!!.observedVolumeEffect)
         } finally { f.provider.close() }
     }
-    private class FakeBridge : LocalAirPodsMediaBridge, Closeable {
+    private class FakeBridge(private val candidate: MediaCandidate? = null) : LocalAirPodsMediaBridge, Closeable {
         var callback: (() -> Unit)? = null
         var closed = 0
-        override fun read(pair: PairAddress): MediaCandidate? = null
+        override fun read(pair: PairAddress): MediaCandidate? = candidate
         override fun observe(changed: () -> Unit): Closeable {
             callback = changed
             return Closeable { callback = null }
@@ -378,4 +380,104 @@ class PlaybackAirPodsMediaBridgeTest {
         assertEquals(1, second.closed)
         assertNull(PlaybackAirPodsMediaBridge.read(pair))
     }
+    @Test fun idleRetentionRequiresAttachedProviderAndCurrentPolicyLease() {
+        val target = MediaTarget("fluidify", "session", 1, "pair-route", "account")
+        fun bridge(value: MediaTarget) = FakeBridge(MediaCandidate(value, Playback.PAUSED,
+            null, true, true, true, false))
+        PlaybackAirPodsMediaBridge.retainAutomation(target)
+        assertFalse(PlaybackAirPodsMediaBridge.keepsPlaybackAlive)
+        val first = PlaybackAirPodsMediaBridge.attach(bridge(target))
+        try {
+            PlaybackAirPodsMediaBridge.read(pair)
+            PlaybackAirPodsMediaBridge.retainAutomation(target)
+            assertTrue(PlaybackAirPodsMediaBridge.keepsPlaybackAlive)
+            PlaybackAirPodsMediaBridge.retainAutomation(null)
+            assertFalse(PlaybackAirPodsMediaBridge.keepsPlaybackAlive)
+            PlaybackAirPodsMediaBridge.retainAutomation(target)
+            val newTarget = target.copy(sessionGeneration = 2)
+            val second = PlaybackAirPodsMediaBridge.attach(bridge(newTarget))
+            try {
+                assertFalse("replacement cannot inherit old automation", PlaybackAirPodsMediaBridge.keepsPlaybackAlive)
+                PlaybackAirPodsMediaBridge.retainAutomation(target)
+                assertFalse("old policy cannot republish before new provider read", PlaybackAirPodsMediaBridge.keepsPlaybackAlive)
+                PlaybackAirPodsMediaBridge.read(pair)
+                PlaybackAirPodsMediaBridge.retainAutomation(target)
+                assertFalse("old policy cannot republish after new provider read", PlaybackAirPodsMediaBridge.keepsPlaybackAlive)
+                PlaybackAirPodsMediaBridge.retainAutomation(newTarget)
+                first.close()
+                assertTrue("stale detach cannot revoke new policy", PlaybackAirPodsMediaBridge.keepsPlaybackAlive)
+            } finally { second.close() }
+            assertFalse(PlaybackAirPodsMediaBridge.keepsPlaybackAlive)
+        } finally { first.close() }
+    }
+    @Test fun manualTransportDuringAppliedDuckRestoresStreamWithoutAutomaticPlayback() {
+        val commands: List<(Player) -> Unit> = listOf(
+            { it.pause() }, { it.seekTo(0L) }, { it.seekToNext() }, { it.seekToPreviousMediaItem() },
+        )
+        for (command in commands) {
+            val f = Fixture(); f.route = route()
+            val manager = f.context.getSystemService(AudioManager::class.java)
+            val baseline = manager.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
+            manager.setStreamVolume(AudioManager.STREAM_MUSIC, baseline, 0)
+            val session = AutomationSession("pair", 1)
+            val effects = mutableListOf<MediaEffect>()
+            val coordinator = AirPodsAutomationCoordinator(object : MediaHost {
+                override fun submit(effect: MediaEffect): Boolean { effects.add(effect); return true }
+                override fun cancel(lease: Long) {}
+                override fun cancelEffect(effect: MediaEffect) {}
+            }, AutomationClock { 0L })
+            var sequence = 0L
+            var previous: MediaCandidate? = null
+            fun observe(): MediaCandidate {
+                val c = f.provider.read(pair)!!
+                coordinator.onMedia(MediaSnapshot(session, ++sequence, c.target, c.playback, c.volume,
+                    c.permitted, true, c.routedToPair,
+                    transportOverride = previous?.transportRevision?.let { it != c.transportRevision } == true,
+                    volumeOverride = previous?.volumeRevision?.let { it != c.volumeRevision } == true,
+                    observedPauseEffect = c.observedPauseEffect, observedVolumeEffect = c.observedVolumeEffect,
+                    foreignDuckActive = c.foreignDuckActive))
+                previous = c
+                return c
+            }
+            fun applyLast() {
+                val effect = effects.last()
+                assertTrue(f.provider.execute(effect.target, effect.action, effect.volume, effect.id))
+                observe()
+            }
+            try {
+                coordinator.configure(AutomationConfig("pair", enabled = true, conversationEnabled = true,
+                    conversationPause = false, conversationDuck = true, rampMillis = 0), 1)
+                observe()
+                coordinator.onConversation(session, true); applyLast()
+                val ducked = observe()
+                assertTrue(ducked.volume!!.current < baseline)
+                command(f.provider.sessionPlayer)
+                val after = observe()
+                assertTrue(after.transportRevision > ducked.transportRevision)
+                assertEquals(ducked.volumeRevision, after.volumeRevision)
+                assertEquals(ducked.observedVolumeEffect, after.observedVolumeEffect)
+                coordinator.onConversation(session, false); applyLast()
+                assertEquals(listOf(MediaAction.SET_VOLUME, MediaAction.SET_VOLUME), effects.map { it.action })
+                assertEquals(baseline, manager.getStreamVolume(AudioManager.STREAM_MUSIC))
+                assertEquals(0, f.raw.plays)
+                assertFalse(coordinator.status().volumeOwned)
+                assertFalse(coordinator.status().rampActive)
+            } finally { f.provider.close(); f.track.release() }
+        }
+    }
+
+    @Test fun explicitSamePlayerVolumeStillRevokesStreamReceipt() {
+        val f = Fixture(); f.route = route()
+        try {
+            val target = f.provider.read(pair)!!.target
+            assertTrue(f.provider.execute(target, MediaAction.SET_VOLUME, 1, 91))
+            val ducked = f.provider.read(pair)!!
+            f.provider.sessionPlayer.volume = 1f // Same player volume, explicit user intent.
+            val after = f.provider.read(pair)!!
+            assertTrue(after.volumeRevision > ducked.volumeRevision)
+            assertEquals(ducked.volume, after.volume)
+            assertNull(after.observedVolumeEffect)
+        } finally { f.provider.close(); f.track.release() }
+    }
+
 }

@@ -34,10 +34,16 @@ fun EssentialsScreen(
     onOpenContext: (uri: String, title: String) -> Unit,
     onRadio: () -> Unit,
     onAddToPlaylist: () -> Unit = {},
+    onAirPodsBattery: (() -> Unit)? = null,
 ) {
     val now by controls.nowPlaying.collectAsStateWithLifecycle()
     val track = now.snapshot?.track
     FluidWearList(title = track?.title ?: stringResource(R.string.more)) {
+        onAirPodsBattery?.let { open ->
+            item(key = "airpods-battery") {
+                FluidWearListRow(title = stringResource(R.string.wf_i15_headphones), onClick = open)
+            }
+        }
         item {
             FluidWearListRow(
                 title = stringResource(R.string.queue),
