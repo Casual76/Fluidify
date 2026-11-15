@@ -23,14 +23,23 @@
       "sizeBytes": 19849925
     },
     "beta": {
-      "version": "2.1.0-beta.3",
-      "releaseDate": "2026-11-11",
-      "changelog": "Nuova beta di Fluidify.\n\n- Integrazione AirPods attiva: immagini e batterie derivate da LibrePods, selettore trascinabile delle modalità, controlli rapidi e impostazioni complete. Le automazioni per orecchio, conversazione e gesti della testa sono facoltative e richiedono attivazione e permessi.\n- Corrette la ripresa dopo il reinserimento dell’auricolare e la pausa durante la conversazione con ripristino del volume. Migliorato il primo avvio dei controlli con cuffie già collegate.\n- Corretti i blocchi di Home e Libreria al ripristino dell’account e alla riapertura. In offline manuale restano disponibili i contenuti scaricati, con indicazioni più chiare.\n- Nuovo widget Scena con sfocatura progressiva, vignettatura e tasti di vetro; statistiche di ascolto più coerenti con il resto dell’app. Ripristinati gli effetti luminosi della musica e ripulita l’interfaccia dagli strumenti di sviluppo.\n- Percentuali batteria leggibili anche con testo grande e spiegazioni dei controlli disattivati.\n\nLa compatibilità AirPods e il recupero dopo chiusura della custodia o riconnessione continuano a essere verificati. Dopo un aggiornamento o un’interruzione può servire «Riattiva AirPods». Questa beta non comprende un nuovo rilascio dell’app Wear OS.",
-      "releaseTag": "beta-fluidify-v2.1.0-beta.3",
-      "apkAsset": "fluidify-2.1.0-beta.3.apk",
-      "sizeBytes": 23250982
+      "version": "2.1.0-beta.4",
+      "releaseDate": "2026-11-15",
+      "changelog": "Nuova beta di Fluidify per telefono e Wear OS.\n\n- Interventi sulla riconnessione delle AirPods, sul ripristino di pausa e volume dopo una conversazione e sulla chiusura dei servizi quando non servono.\n- Comandi dell'orologio e passaggio della musica fra dispositivi rivisti; batteria delle AirPods visibile dal polso.\n- Cerca una raccolta per nome nella Libreria e quando aggiungi un brano a una playlist.\n- La coda mostra quanto ascolto resta, tenendo conto della ripetizione. Puoi accodare un album intero dopo i brani aggiunti a mano.\n- Cronologia completa degli ascolti conservati per l'account, con ricerca per titolo e artista.\n- Nuova preferenza per tenere acceso lo schermo durante la riproduzione nel player aperto a tutto schermo, inizialmente disattivata.\n- Pannello AirPods sopra il player, testi, navigazione, download e accesso all'account rivisti.\n\nBeta da provare nell'uso quotidiano: la suite automatica Android e le prove fisiche con cuffie e orologio non sono ancora completate. La versione stabile resta disponibile.",
+      "releaseTag": "beta-fluidify-v2.1.0-beta.4",
+      "apkAsset": "fluidify-2.1.0-beta.4.apk",
+      "sizeBytes": 23404720,
+      "sha256": "437207cee42a6e5c11e68e35a829739c451944dbed295008f979ffc750616fc3"
     },
     "history": [
+      {
+        "version": "2.1.0-beta.3",
+        "releaseDate": "2026-11-11",
+        "changelog": "Nuova beta di Fluidify.\n\n- Integrazione AirPods attiva: immagini e batterie derivate da LibrePods, selettore trascinabile delle modalità, controlli rapidi e impostazioni complete. Le automazioni per orecchio, conversazione e gesti della testa sono facoltative e richiedono attivazione e permessi.\n- Corrette la ripresa dopo il reinserimento dell’auricolare e la pausa durante la conversazione con ripristino del volume. Migliorato il primo avvio dei controlli con cuffie già collegate.\n- Corretti i blocchi di Home e Libreria al ripristino dell’account e alla riapertura. In offline manuale restano disponibili i contenuti scaricati, con indicazioni più chiare.\n- Nuovo widget Scena con sfocatura progressiva, vignettatura e tasti di vetro; statistiche di ascolto più coerenti con il resto dell’app. Ripristinati gli effetti luminosi della musica e ripulita l’interfaccia dagli strumenti di sviluppo.\n- Percentuali batteria leggibili anche con testo grande e spiegazioni dei controlli disattivati.\n\nLa compatibilità AirPods e il recupero dopo chiusura della custodia o riconnessione continuano a essere verificati. Dopo un aggiornamento o un’interruzione può servire «Riattiva AirPods». Questa beta non comprende un nuovo rilascio dell’app Wear OS.",
+        "releaseTag": "beta-fluidify-v2.1.0-beta.3",
+        "apkAsset": "fluidify-2.1.0-beta.3.apk",
+        "sizeBytes": 23250982
+      },
       {
         "version": "2.1.0-beta.1",
         "releaseDate": "2026-11-08",
