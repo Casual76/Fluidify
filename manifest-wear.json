@@ -18,13 +18,13 @@
       "sha256": "f4a32b51d259174dd3aace93c6630138324a60a7f08c0909ef43d76219d838a5"
     },
     "beta": {
-      "version": "2.0.1",
-      "releaseDate": "2026-11-05",
-      "changelog": "Aggiornamento di manutenzione abbinato a Fluidify 2.0.1.",
-      "releaseTag": "stable-fluidify-v2.0.1",
-      "apkAsset": "fluidify-wear-2.0.1.apk",
-      "sizeBytes": 24050439,
-      "sha256": "f4a32b51d259174dd3aace93c6630138324a60a7f08c0909ef43d76219d838a5"
+      "version": "2.1.0-beta.4",
+      "releaseDate": "2026-11-15",
+      "changelog": "Comandi dal polso e trasferimenti rivisti. Batteria AirPods dal telefono. Beta abbinata a Fluidify 2.1.0-beta.4.",
+      "releaseTag": "beta-fluidify-v2.1.0-beta.4",
+      "apkAsset": "fluidify-wear-2.1.0-beta.4.apk",
+      "sizeBytes": 24616426,
+      "sha256": "7ccdc103f6334c2abf9f8f5a56ad32186ecf6e9f9b0498710381621e9f9b76a8"
     }
   }
 }
