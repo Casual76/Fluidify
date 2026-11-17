@@ -208,6 +208,28 @@ class I5LongPressRuntimeTest {
             }
         }
     }
+    @Test fun longPressEntersFirstConfiguredModeWhenCurrentModeIsOutsideCycle() = runBlocking<Unit> {
+        Fixture().use { f ->
+            f.admit(); val transport = f.ready(f.pair)
+            f.controller.store.configure(f.pair) { it.copy(leftLongPress = LongPressAction.DIGITAL_ASSISTANT) }.getOrThrow()
+            val generation = f.controller.state.value.generation
+            f.rx(8)
+            f.repository.receive(generation, AacpEvent.Property(CommandProperty.LISTENING_MODE_CONFIGS, PropertyValue.Number(6)))
+            fun pressRight() = ReflectionHelpers.callInstanceMethod<Unit>(f.controller, "handleLongPress",
+                ReflectionHelpers.ClassParameter.from(StemSample::class.java, StemSample(8, 2)))
+            f.repository.receive(generation, AacpEvent.Mode(ListeningMode.ANC))
+            pressRight()
+            withTimeout(2_000) { f.controller.state.first { it.desired[CommandProperty.MODE]?.status == DesiredStatus.SENT } }
+            assertEquals(PropertyValue.Number(3), f.controller.state.value.desired[CommandProperty.MODE]?.requested)
+            f.repository.receive(generation, AacpEvent.Mode(ListeningMode.TRANSPARENCY))
+            f.repository.receive(generation, AacpEvent.Mode(ListeningMode.ADAPTIVE))
+            pressRight()
+            assertEquals("The beta.4 stem order enters at ANC before Transparency", PropertyValue.Number(2),
+                f.controller.state.value.desired[CommandProperty.MODE]?.requested)
+            withTimeout(2_000) { f.controller.state.first { it.desired[CommandProperty.MODE]?.status == DesiredStatus.SENT } }
+            assertTrue(transport.writes.contains(AacpCodec.property(CommandProperty.MODE, 2).map { it.toInt() and 255 }))
+        }
+    }
     @Test fun concurrentSidesAndNewerChoiceAreAcceptedWhileUnconfirmed() = runBlocking {
         Fixture().use { f ->
             f.admit(); f.ready(); f.rx(3)
