@@ -11,20 +11,19 @@ import dev.lelonio.square.R
 import dev.lelonio.square.airpods.*
 import dev.lelonio.square.airpods.protocol.*
 
-/** Diagnostics only: observation is RX, while editability uses the effective read-modify-write base. */
+/** Read-modify-write requires a mask received in the current session. */
 internal data class StemPresentation(val observation: Int, val command: Int, val blockReason: Int?) {
     val editable get() = blockReason == null
 }
 internal fun AirPodsUiState.stemPresentation(): StemPresentation {
     val property = CommandProperty.STEM_CONFIG
-    val mask = (domain.propertyEffective(property)?.value as? PropertyValue.Number)?.value
     val observedMask = (domain.propertyObserved(property)?.value as? PropertyValue.Number)?.value
     val pending = domain.pending[property]?.generation == domain.generation
     val spec = AirPodsProperties.spec(property)
     val block = when {
         !controlsReady -> R.string.airpods_reason_session
         identity?.let { spec?.candidate(it) } != true -> R.string.airpods_reason_capability
-        mask == null -> R.string.airpods_stem_need_observation
+        observedMask == null -> R.string.airpods_stem_need_observation
         else -> null
     }
     val command = when {

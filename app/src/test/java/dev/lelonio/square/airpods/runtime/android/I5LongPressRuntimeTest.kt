@@ -112,10 +112,10 @@ class I5LongPressRuntimeTest {
             assertTrue(controller.hasAdmission())
             assertEquals(1, context.starts)
         }
-        suspend fun ready(): Transport {
+        suspend fun ready(address: PairAddress? = null): Transport {
             val transport = Transport()
             suspend fun await(stage: AacpStage) = withTimeout(2_000) { controller.state.first { it.stage == stage } }
-            repository.construct { syntheticTransportFactories++; transport }; await(AacpStage.CONSTRUCTED)
+            repository.construct(address) { syntheticTransportFactories++; transport }; await(AacpStage.CONSTRUCTED)
             repository.connect(); await(AacpStage.CONNECTED)
             repository.handshake(); await(AacpStage.HANDSHAKE_SENT)
             repository.subscribe(); await(AacpStage.SUBSCRIBED)
@@ -152,6 +152,46 @@ class I5LongPressRuntimeTest {
     private suspend fun Fixture.sent() = withTimeout(2_000) {
         controller.state.first { it.desired[CommandProperty.STEM_CONFIG]?.status == DesiredStatus.SENT }
     }
+
+    @Test fun changingOneSideRequiresKnownOtherStemBits() = runBlocking {
+        Fixture().use { f ->
+            f.admit()
+            val transport = f.ready(f.pair)
+            assertNull(f.controller.state.value.propertyObserved(CommandProperty.STEM_CONFIG))
+            val before = f.pairSettings()
+            val accepted = f.controller.setLongPress(left = LongPressAction.DIGITAL_ASSISTANT)
+            if (accepted) {
+                f.sent()
+                val overwritten = AacpCodec.property(CommandProperty.STEM_CONFIG, 8).map { it.toInt() and 255 }
+                assertTrue("Unobserved base sent 0x08, clearing the other stem bits", transport.writes.contains(overwritten))
+            }
+            assertFalse("Writing the shared mask requires a current-generation observation", accepted)
+            assertEquals(before, f.pairSettings())
+            assertTrue(f.controller.state.value.pending.isEmpty())
+
+            f.rx(5)
+            assertTrue(f.controller.setLongPress(left = LongPressAction.DIGITAL_ASSISTANT))
+            f.sent()
+            val preserved = AacpCodec.property(CommandProperty.STEM_CONFIG, 13).map { it.toInt() and 255 }
+            assertTrue("Writing 0x0d preserves single and triple press bits from RX 0x05",
+                transport.writes.contains(preserved))
+
+            val oldGeneration = f.controller.state.value.generation
+            f.repository.close()
+            val next = f.ready(f.pair)
+            f.rx(7, oldGeneration)
+            assertNull(f.controller.state.value.propertyObserved(CommandProperty.STEM_CONFIG))
+            assertEquals(PropertyValue.Number(5),
+                f.controller.state.value.cachedValues.observed[CommandProperty.STEM_CONFIG]?.value)
+            val saved = f.pairSettings()
+            assertFalse("A cached observation cannot authorize the next session's write",
+                f.controller.setLongPress(right = LongPressAction.DIGITAL_ASSISTANT))
+            assertEquals(saved, f.pairSettings())
+            assertTrue(f.controller.state.value.pending.isEmpty())
+            assertTrue(next.writes.none { it.getOrNull(6) == 0x39 })
+        }
+    }
+
     @Test fun masksZeroThroughSevenBothSidesAndBothChoicesPreserveLowBits() = runBlocking {
         for (mask in 0..7) Fixture().use { f ->
             f.admit(); f.ready(); f.rx(mask)

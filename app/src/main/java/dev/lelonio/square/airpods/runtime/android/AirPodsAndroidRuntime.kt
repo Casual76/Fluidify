@@ -880,7 +880,8 @@ class AirPodsAndroidController internal constructor(
             if (admitted == null || ticket !== admitted || state.value.generation != generation ||
                 !writable() || (left == null && right == null)) return@synchronized false
             val before = state.value
-            val mask = (before.propertyEffective(CommandProperty.STEM_CONFIG)?.value as? PropertyValue.Number)?.value
+            // 0x39 replaces the whole mask, including the other stem presses.
+            val mask = (before.propertyObserved(CommandProperty.STEM_CONFIG)?.value as? PropertyValue.Number)?.value
                 ?: return@synchronized false
             val address = admitted.address
             val previous = store.snapshot().getOrNull()?.pairs?.get(address) ?: return@synchronized false

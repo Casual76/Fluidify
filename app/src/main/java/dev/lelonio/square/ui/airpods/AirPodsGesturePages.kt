@@ -57,7 +57,13 @@ import kotlinx.coroutines.flow.collect
 @Composable internal fun ColumnScope.LongPressPage(s: AirPodsUiState, side: GestureSide, dispatch: (AirPodsUiAction) -> Unit) {
     val options = gestureOptions(side)
     val saved = s.gestureAssignments[side]?.takeIf { it in options }
-    val editable = s.allowed("gesture.$side") && s.stemPresentation().editable
+    val stem = s.stemPresentation()
+    val editable = s.allowed("gesture.$side") && stem.editable
+    LaunchedEffect(s.domain.generation, side) {
+        if (stem.blockReason == R.string.airpods_stem_need_observation && s.allowed("setup.INFORMATION")) {
+            dispatch(AirPodsUiAction.Setup(SetupAction.INFORMATION))
+        }
+    }
     Pane {
         options.forEachIndexed { index, action ->
             if (index > 0) FluidListDivider()

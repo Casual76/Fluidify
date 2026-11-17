@@ -175,13 +175,18 @@ class AirPodsI5StemHostTest {
                 compose.onNodeWithTag("airpods-gesture-$side").performScrollTo().assertIsEnabled()
         } finally { f.close() }
     }
-    @Test fun defaultsPermitLocalChoiceButPermissionAndClosedGenerationFenceIt() = runBlocking {
+    @Test fun waitsForCurrentStemAfterOneSubscriptionAndKeepsPermissionAndGenerationFences() = runBlocking {
         val f = Fixture()
         try {
             f.stem(null); f.host.refresh(); page = AirPodsSettingsPage.LongPressLeft; mount(f)
             val option = compose.onNodeWithTag("airpods-gesture-LEFT-DIGITAL_ASSISTANT")
-            option.performScrollTo().assertIsEnabled()
+            option.performScrollTo().assertIsNotEnabled()
             assertNull(f.host.state.value.domain.propertyObserved(CommandProperty.STEM_CONFIG))
+            compose.waitForIdle()
+            assertEquals(listOf(AirPodsUiAction.Setup(SetupAction.INFORMATION)), f.actions)
+            f.actions.clear()
+            f.stem(0); f.host.refresh()
+            option.assertIsEnabled()
             shadowOf(f.context).denyPermissions(Manifest.permission.BLUETOOTH_CONNECT); f.host.refresh()
             option.assertIsNotEnabled().performTouchInput { click() }
             compose.waitForIdle(); assertTrue(f.actions.isEmpty())
