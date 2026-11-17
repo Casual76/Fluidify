@@ -936,8 +936,8 @@ class AirPodsAndroidController internal constructor(
                 (cycle and (1 shl (it.wire - 1))) != 0 && !(it == ListeningMode.OFF && observedOffDisabled)
             }
             val current = state.value.mode?.takeIf { it.generation == state.value.generation }?.value ?: return
-            if (modes.size < 2) return
-            val next = modes.getOrNull(modes.indexOf(current) + 1) ?: modes.first()
+            val next = modes.getOrNull(modes.indexOf(current) + 1) ?: modes.firstOrNull() ?: return
+            if (next == current) return
             repository.setProperty(CommandProperty.MODE, PropertyValue.Number(next.wire))
         }
     }
