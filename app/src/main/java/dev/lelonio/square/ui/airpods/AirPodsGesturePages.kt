@@ -52,15 +52,18 @@ import kotlinx.coroutines.flow.collect
 /**
  * Upstream's `LongPress` page: what holding this stem does, and which modes a hold cycles through.
  *
- * The side choice comes exclusively from local preferences; the shared cycle uses effective 0x1a.
+ * The shared cycle needs a current 0x1a reading before it can be edited.
  */
 @Composable internal fun ColumnScope.LongPressPage(s: AirPodsUiState, side: GestureSide, dispatch: (AirPodsUiAction) -> Unit) {
     val options = gestureOptions(side)
     val saved = s.gestureAssignments[side]?.takeIf { it in options }
     val stem = s.stemPresentation()
     val editable = s.allowed("gesture.$side") && stem.editable
+    val cycle = CommandProperty.LISTENING_MODE_CONFIGS
+    val cycleUnread = saved == GestureAction.NOISE_CONTROL && s.applies(AirPodsProperties.spec(cycle)!!) &&
+        s.domain.propertyObserved(cycle) == null
     LaunchedEffect(s.domain.generation, side) {
-        if (stem.blockReason == R.string.airpods_stem_need_observation && s.allowed("setup.INFORMATION")) {
+        if ((stem.blockReason == R.string.airpods_stem_need_observation || cycleUnread) && s.allowed("setup.INFORMATION")) {
             dispatch(AirPodsUiAction.Setup(SetupAction.INFORMATION))
         }
     }

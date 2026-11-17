@@ -14,6 +14,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.antigravity.fluidengine.ui.fluid.*
 import dev.lelonio.square.airpods.*
 import dev.lelonio.square.airpods.protocol.*
+import dev.lelonio.square.airpods.runtime.storage.AirPodsPairValues
+import dev.lelonio.square.airpods.runtime.storage.SavedProperty
 import dev.lelonio.square.ui.theme.SquareTheme
 import org.junit.Assert.*
 import org.junit.Rule
@@ -73,6 +75,35 @@ class AirPodsC3GesturePagesTest {
         compose.onNodeWithTag("airpods-cycle-ANC").performScrollTo().performClick()
         assertEquals(listOf(AirPodsUiAction.Write(7, CommandProperty.LISTENING_MODE_CONFIGS,
             PropertyValue.Number(6))), actions)
+    }
+
+    @Test fun cycleIsUnreadUntilCurrentRxAndRequestsOneSubscription() {
+        val actions = mutableListOf<AirPodsUiAction>()
+        val property = CommandProperty.LISTENING_MODE_CONFIGS
+        val base = state()
+        var shown by mutableStateOf(base.copy(
+            availability = base.availability + ("setup.INFORMATION" to UiAvailability(true)),
+            domain = base.domain.copy(properties = base.domain.properties - property,
+                cachedValues = AirPodsPairValues(observed = mapOf(property to SavedProperty(PropertyValue.Number(8), 12))))))
+        mount { Column { LongPressPage(shown, GestureSide.LEFT, actions::add) } }
+        val anc = compose.onNodeWithTag("airpods-cycle-ANC").performScrollTo()
+        val transparency = compose.onNodeWithTag("airpods-cycle-TRANSPARENCY")
+        anc.assertIsNotEnabled().performTouchInput { click() }
+        transparency.performScrollTo().assertIsNotEnabled().performTouchInput { click() }
+        assertEquals(listOf(AirPodsUiAction.Setup(SetupAction.INFORMATION)), actions)
+
+        compose.runOnIdle {
+            shown = shown.copy(domain = shown.domain.copy(properties = shown.domain.properties +
+                (property to Received(PropertyValue.Number(12), 1002, 6))))
+        }
+        anc.assertIsNotEnabled()
+        compose.runOnIdle {
+            shown = shown.copy(domain = shown.domain.copy(properties = shown.domain.properties +
+                (property to Received(PropertyValue.Number(12), 1003, 7))))
+        }
+        anc.performScrollTo().assertIsEnabled().performClick()
+        assertEquals(listOf(AirPodsUiAction.Setup(SetupAction.INFORMATION),
+            AirPodsUiAction.Write(7, property, PropertyValue.Number(14))), actions)
     }
 
     @Test fun assistantHidesSharedCycle() {

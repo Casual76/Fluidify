@@ -195,8 +195,11 @@ class AirPodsRepositoryTest {
             val controls=AirPodsProperties.controls.filterNot { it.internalDependency }
             for (spec in controls) {
                 val v=if(spec.encoding==ControlEncoding.MODE_MASK) 3 else spec.range.first
+                if (spec.property == CommandProperty.LISTENING_MODE_CONFIGS)
+                    repository.receive(g, AacpEvent.Property(spec.property, PropertyValue.Number(6)))
                 assertTrue(spec.catalogId,repository.setProperty(spec.property,v))
-                assertNull(repository.state.value.propertyObserved(spec.property))
+                val observed = repository.state.value.propertyObserved(spec.property)?.value
+                assertEquals(if (spec.property == CommandProperty.LISTENING_MODE_CONFIGS) PropertyValue.Number(6) else null, observed)
                 assertTrue(repository.setProperty(spec.property,v)) // duplicate intent coalesces
             }
             withTimeout(2_000) { repository.state.first { it.pending.isEmpty() } }
@@ -228,6 +231,27 @@ class AirPodsRepositoryTest {
             repository.receive(g,AacpEvent.Information(AirPodsIdentity("A3063","Apple Inc.","fixture")))
             assertFalse(repository.setProperty(CommandProperty.CHIME_VOLUME,50))
         } finally { repository.close();timers.cancel() }
+    }
+    @Test fun cycleMaskWriteRequiresCurrentGenerationRxEvenWithCachedObservation() = runBlocking {
+        val scope = TestScope(); val store = AirPodsPairValueStore()
+        val pair = PairAddress("02:00:00:00:00:1A")
+        val property = CommandProperty.LISTENING_MODE_CONFIGS
+        store.save(pair, AirPodsPairValues(observed = mapOf(property to SavedProperty(PropertyValue.Number(12), 1)))).getOrThrow()
+        val repository = AirPodsRepository(scope, AirPodsClock { 100 }, valueStore = store)
+        val socket = FakeTransport()
+        try {
+            val generation = ready(repository, socket, pair)
+            assertEquals(PropertyValue.Number(12), repository.state.value.propertyEffective(property)?.value)
+            assertFalse("No 0x1a write may be admitted from the saved mask", repository.setProperty(property, 6))
+            repository.receive(generation - 1, AacpEvent.Property(property, PropertyValue.Number(12)))
+            assertFalse(repository.setProperty(property, 6))
+            assertTrue(repository.state.value.pending.isEmpty())
+            socket.deliver(AacpCodec.property(property, 12))
+            withTimeout(2_000) { repository.state.first { it.propertyObserved(property) != null } }
+            assertTrue(repository.setProperty(property, 14))
+            repository.sent(property)
+            assertTrue(socket.writes.contains(AacpCodec.property(property, 14).map { it.toInt() and 255 }))
+        } finally { repository.close(); scope.cancel() }
     }
     @Test fun concurrentWritersAreSerializedAndCloseInterruptsBlockedWrite() = runBlocking {
         val timers=TestScope();val repository=AirPodsRepository(timers,AirPodsClock { 0 })

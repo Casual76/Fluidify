@@ -7,14 +7,18 @@ package dev.lelonio.square.ui.airpods
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
+import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.semantics.disabled
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import dev.antigravity.fluidengine.ui.fluid.FluidChoiceRow
-import dev.antigravity.fluidengine.ui.fluid.FluidToggleRow
 import dev.antigravity.fluidengine.ui.theme.FluidListDivider
+import dev.antigravity.fluidengine.ui.theme.FluidListRow
 import dev.antigravity.fluidengine.ui.theme.FluidToneTileSize
 import dev.lelonio.square.R
 import dev.lelonio.square.airpods.CommandProperty
@@ -26,7 +30,7 @@ internal fun callAssignment(mute: Boolean, once: Boolean): Int =
 
 internal fun toggledCycleMask(mask: Int, mode: ListeningMode): Int? {
     val next = mask xor (1 shl (mode.wire - 1))
-    // An incomplete RX/default can be built up, but a valid cycle cannot be reduced below two.
+    // An incomplete RX can be built up, but a valid cycle cannot be reduced below two.
     return next.takeUnless { Integer.bitCount(mask) >= 2 && Integer.bitCount(next) < 2 }
 }
 
@@ -34,31 +38,42 @@ internal fun toggledCycleMask(mask: Int, mode: ListeningMode): Int? {
     val property = CommandProperty.LISTENING_MODE_CONFIGS
     val spec = AirPodsProperties.spec(property)!!
     if (!s.applies(spec)) return
-    val effective = effectiveNumber(s, property) ?: return
+    val observed = s.domain.propertyObserved(property)
+    val effective = observed?.let { effectiveNumber(s, property) }
     // Zero/single-bit RX is legal to display, illegal to send. Keep only this incomplete
     // selection until the second explicit touch, then send immediately (no Apply).
     // Reset on RX, intent, generation or available-mode changes; never persist it as a reading.
-    var incomplete by remember(s.domain.generation, s.domain.propertyEffective(property),
-        s.domain.properties[property], s.modes) { mutableStateOf<Int?>(null) }
+    var incomplete by remember(s.domain.generation, effective, observed, s.modes) { mutableStateOf<Int?>(null) }
     val mask = incomplete ?: effective
+    val unread = stringResource(R.string.airpods_ui_unknown)
     GroupLabel(featureTitles.getValue(spec.catalogId))
     Pane {
         noiseControlOrder.filter { it in s.modes }.forEachIndexed { index, mode ->
             if (index > 0) FluidListDivider()
+            val label = modeLabel(mode.wire)
+            val tag = Modifier.testTag("airpods-cycle-${mode.name}")
+            val leading: (@Composable () -> Unit)? = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) null else {
+                { Icon(painterResource(modeIconRes(mode.wire)), contentDescription = null,
+                    modifier = Modifier.size(FluidToneTileSize).testTag("airpods-cycle-icon-${mode.name}")) }
+            }
+            if (mask == null) {
+                FluidListRow(label, subtitle = "", modifier = tag.semantics { disabled(); stateDescription = unread },
+                    badge = { Text(stringResource(R.string.airpods_ui_missing)) },
+                    leading = leading, leadingTile = false, disclosure = false)
+                return@forEachIndexed
+            }
             val next = toggledCycleMask(mask, mode)
             val validWrite = next != null && s.writeAllowed(property, PropertyValue.Number(next))
             val canBuild = next != null && Integer.bitCount(next) < 2 && s.controlsReady &&
                 s.identity?.let(spec::candidate) == true
-            AirPodsReadableToggle(modeLabel(mode.wire), checked = mask and (1 shl (mode.wire - 1)) != 0,
+            AirPodsReadableToggle(label, checked = mask and (1 shl (mode.wire - 1)) != 0,
                 onCheckedChange = {
                     if (validWrite) {
                         incomplete = null
-                        dispatch(AirPodsUiAction.Write(s.domain.generation, property, PropertyValue.Number(next!!)))
+                        dispatch(AirPodsUiAction.Write(s.domain.generation, property, PropertyValue.Number(next)))
                     } else if (canBuild) incomplete = next
                 }, enabled = validWrite || canBuild,
-                modifier = Modifier.testTag("airpods-cycle-${mode.name}"),
-                leading = if (androidx.compose.ui.platform.LocalDensity.current.fontScale >= 1.5f) null else { { Icon(painterResource(modeIconRes(mode.wire)), contentDescription = null,
-                    modifier = Modifier.size(FluidToneTileSize).testTag("airpods-cycle-icon-${mode.name}")) } },
+                modifier = tag, leading = leading,
                 leadingTile = false)
         }
     }

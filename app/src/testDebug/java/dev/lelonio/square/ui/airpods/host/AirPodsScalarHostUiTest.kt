@@ -202,7 +202,10 @@ class AirPodsScalarHostUiTest {
             f.start(); mount(f)
             for (c in ScalarHostCases.all) {
                 val value = f.host.state.value.domain.propertyEffective(c.property)?.value as? PropertyValue.Number ?: continue
-                assertUi(c, ScalarInput(value.value, ""))
+                if (c.kind == ScalarEditorKind.MASK) {
+                    for (wire in 1..4) cycle(c, wire).performScrollTo().assertIsNotEnabled().assertHasNoClickAction()
+                        .assert(SemanticsMatcher.expectValue(SemanticsProperties.StateDescription, f.text(R.string.airpods_ui_unknown)))
+                } else assertUi(c, ScalarInput(value.value, ""))
                 if (c.property !in setOf(CommandProperty.MIC_MODE, CommandProperty.MODE)) assertNull(f.observed(c.property))
             }
             assertTrue(f.transport.commandWrites.isEmpty())

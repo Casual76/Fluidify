@@ -161,6 +161,7 @@ class AirPodsScalarHostTest {
             assertFalse(ListeningMode.OFF in f.host.state.value.modes)
             denied(f, mode, PropertyValue.Number(1))
             val mask = ScalarHostCases.get(CommandProperty.LISTENING_MODE_CONFIGS)
+            f.receiveScalar(mask.initial.hex, mask.property, mask.initial.number)
             denied(f, mask, PropertyValue.Number(15))
             assertTrue(f.host.state.value.writeAllowed(mask.property, PropertyValue.Number(6)))
             // Re-enabling changes the effective policy immediately, without manufacturing RX.

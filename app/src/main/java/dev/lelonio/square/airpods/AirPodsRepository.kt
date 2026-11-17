@@ -67,7 +67,10 @@ data class AirPodsState(
             val offDisabled = (propertyEffective(CommandProperty.ALLOW_OFF_OPTION)?.value as? PropertyValue.Number)?.value == 2
             if (offDisabled && ((property == CommandProperty.MODE && number == 1) ||
                 (property == CommandProperty.LISTENING_MODE_CONFIGS && (number and 1) != 0))) return false
-            if (property == CommandProperty.LISTENING_MODE_CONFIGS && (number and 8) != 0 && Capability.ADAPTIVE_AUDIO !in id.modelDeclared) return false
+            if (property == CommandProperty.LISTENING_MODE_CONFIGS) {
+                if (propertyObserved(property) == null) return false
+                if ((number and 8) != 0 && Capability.ADAPTIVE_AUDIO !in id.modelDeclared) return false
+            }
             return true
         }
         return when (property) {
