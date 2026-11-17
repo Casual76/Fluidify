@@ -141,14 +141,17 @@ class AirPodsI03OutcomeUiTest {
         compose.runOnIdle { state = state.copy(suppressed = true) }
         compose.onNodeWithTag("airpods-summary-state").assertTextEquals(text(R.string.airpods_feature_stopped))
         compose.runOnIdle { state = uiFixture() }
-        compose.onNodeWithTag("airpods-summary-state").assertTextEquals(text(R.string.airpods_feature_connected))
+        compose.runOnIdle { assertEquals(R.string.airpods_feature_connected, state.connectionSummary()) }
+        compose.onNodeWithTag("airpods-summary-state").assertDoesNotExist()
+        compose.onNodeWithTag("airpods-mode-2").performScrollTo().assertIsSelected()
+        compose.onNodeWithTag("airpods-mode-3").performScrollTo().assertHasClickAction()
     }
 
-    @Test fun authorizedEverydayPageKeepsDiagnosticsWithoutAddingASetupStep() {
+    @Test fun authorizedEverydayPageOpensSetupAndDiagnosticsDirectly() {
         val pages = mutableListOf<AirPodsSettingsPage>()
         mount { AirPodsSettingsContent(uiFixture(), {}, onOpen = pages::add) }
-        compose.onNodeWithTag("airpods-open-Setup").assertDoesNotExist()
+        compose.onNodeWithTag("airpods-open-Setup").performScrollTo().assertIsDisplayed().performClick()
         compose.onNodeWithTag("airpods-open-Diagnostics").performScrollTo().assertIsDisplayed().performClick()
-        compose.runOnIdle { assertEquals(listOf(AirPodsSettingsPage.Diagnostics), pages) }
+        compose.runOnIdle { assertEquals(listOf(AirPodsSettingsPage.Setup, AirPodsSettingsPage.Diagnostics), pages) }
     }
 }

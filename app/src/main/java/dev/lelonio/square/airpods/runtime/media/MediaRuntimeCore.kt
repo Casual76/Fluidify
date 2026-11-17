@@ -264,9 +264,9 @@ class MediaRuntimeCore(
         return accepted
     }
 
-    fun gesture(action: AirPodsMediaGesture): Boolean {
+    fun gesture(action: AirPodsMediaGesture, expectedTarget: MediaTarget? = null): Boolean {
         val c = selected() ?: return false
-        if (!accessible(c)) return false
+        if ((expectedTarget != null && c.target != expectedTarget) || !accessible(c)) return false
         coordinator.onManualTransportIntent()
         publishRetention()
         scheduleTick()

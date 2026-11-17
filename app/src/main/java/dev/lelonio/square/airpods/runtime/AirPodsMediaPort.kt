@@ -33,7 +33,8 @@ interface AirPodsMediaPort : Closeable {
     fun gestureContext(): Any? = null
     /** Any-thread invalidation fence. No I/O or main dispatch in this getter. */
     val gestureContextRevision: Long get() = 0
-    fun gesture(action: AirPodsMediaGesture): Boolean
+    /** Execute only for the target the owner just verified through [gestureContext]. */
+    fun gesture(action: AirPodsMediaGesture, expectedTarget: Any): Boolean
     /** Immediate source-side revocation, callable from ANY thread. Must not block, wait for the
      * serial domain or call back into the owner. Once it returns no method, including work
      * already queued on the serial domain, may start a platform/media effect, and the port is

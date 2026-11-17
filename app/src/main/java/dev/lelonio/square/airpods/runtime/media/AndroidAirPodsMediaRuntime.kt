@@ -89,7 +89,11 @@ class AndroidAirPodsMediaRuntime(
         if (revoked) return null
         return environment.read().filter { it.permitted && it.routedToPair && !it.callActive }.map { it.target }.singleOrNull()
     }
-    override fun gesture(action: AirPodsMediaGesture): Boolean { serial(); return !revoked && core.gesture(action) }
+    override fun gesture(action: AirPodsMediaGesture, expectedTarget: Any): Boolean {
+        serial()
+        val target = expectedTarget as? MediaTarget ?: return false
+        return !revoked && core.gesture(action, target)
+    }
     /** Any thread, no handler hop and no wait: Stop holds the start gate here, and main-thread
      * readers take that gate. Observers stay registered until stop() runs on the handler. */
     override fun revoke() { revoked = true; contextChanges.incrementAndGet(); mutableVolume.value = null }

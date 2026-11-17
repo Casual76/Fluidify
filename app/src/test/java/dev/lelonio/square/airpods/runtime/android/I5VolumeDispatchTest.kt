@@ -76,7 +76,7 @@ class I5VolumeDispatchTest {
             if (!stillCurrent()) return false
             sets.add(value); return true
         }
-        override fun gesture(action: AirPodsMediaGesture): Boolean = error("No transport allowed")
+        override fun gesture(action: AirPodsMediaGesture, expectedTarget: Any): Boolean = error("No transport allowed")
         override fun stop() = Unit
     }
     private class Fixture(plainSource: Boolean = false, functional: Boolean = false) : AutoCloseable {

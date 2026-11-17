@@ -7,6 +7,7 @@ import android.media.AudioManager
 import android.os.Looper
 import dev.lelonio.square.airpods.runtime.AirPodsMediaGesture
 import dev.lelonio.square.airpods.runtime.automation.AutomationSession
+import dev.lelonio.square.airpods.runtime.automation.MediaTarget
 import dev.lelonio.square.airpods.runtime.storage.HostSettings
 import dev.lelonio.square.airpods.runtime.storage.PairAddress
 import org.junit.Assert.*
@@ -31,6 +32,7 @@ import org.robolectric.util.ReflectionHelpers
 @Config(application = Application::class, manifest = Config.NONE, sdk = [35])
 class AndroidAirPodsMediaRevocationTest {
     private val pair = PairAddress("00:11:22:33:44:55")
+    private val target = MediaTarget("test", "test", 1, "test", "test")
     private val app: Application get() = RuntimeEnvironment.getApplication()
     private val audio: AudioManager get() = app.getSystemService(AudioManager::class.java)
 
@@ -66,7 +68,7 @@ class AndroidAirPodsMediaRevocationTest {
         assertNull("a revoked port adopted a pair", adoptedPair(port))
         assertFalse(port.setUserVolume(wanted))
         assertFalse(port.setUserVolume(wanted) { true })
-        assertFalse(port.gesture(AirPodsMediaGesture.PLAY))
+        assertFalse(port.gesture(AirPodsMediaGesture.PLAY, target))
         assertNull(port.gestureContext())
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(before, music())
@@ -91,7 +93,7 @@ class AndroidAirPodsMediaRevocationTest {
         val second = if (first == 0) 1 else 0
         assertFalse(port.setUserVolume(second))
         assertFalse(port.setUserVolume(second) { true })
-        assertFalse(port.gesture(AirPodsMediaGesture.PLAY))
+        assertFalse(port.gesture(AirPodsMediaGesture.PLAY, target))
         // Whatever the observers queued runs revoked.
         shadowOf(Looper.getMainLooper()).idle()
         assertEquals(first, music())

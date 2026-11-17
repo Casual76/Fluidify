@@ -78,7 +78,11 @@ class AirPodsHeadGestureContinuityTest {
         override fun setUserVolume(value: Int) = false
         override fun gestureContext(): Any? { contextReads.incrementAndGet(); return target }
         override val gestureContextRevision: Long get() = rev.get()
-        override fun gesture(action: AirPodsMediaGesture): Boolean { gestures.add(action); return true }
+        override fun gesture(action: AirPodsMediaGesture, expectedTarget: Any): Boolean {
+            if (target != expectedTarget) return false
+            gestures.add(action)
+            return true
+        }
         override fun stop() {}
     }
     private class Fixture : AutoCloseable {

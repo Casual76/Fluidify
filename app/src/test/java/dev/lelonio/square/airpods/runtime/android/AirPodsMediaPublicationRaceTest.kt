@@ -133,7 +133,7 @@ class AirPodsMediaPublicationRaceTest {
         override fun setUiVisible(visible: Boolean) { visibleCalls.incrementAndGet(); order += "visibility" }
         override fun onEvent(event: Received<AacpEvent>) { order += "ear"; received += event }
         override fun setUserVolume(value: Int): Boolean = false
-        override fun gesture(action: AirPodsMediaGesture): Boolean = false
+        override fun gesture(action: AirPodsMediaGesture, expectedTarget: Any): Boolean = false
         override fun revoke() { if (revokes.getAndIncrement() == 0) revokeThread = Thread.currentThread() }
         override fun stop() {
             if (starting) stoppedBeforeStartReturned = true

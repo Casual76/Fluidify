@@ -275,9 +275,11 @@ class AirPodsAndroidController internal constructor(
                 else -> null
             }
             if (gesture != null) withContext(Dispatchers.Main.immediate) {
+                val port = media ?: return@withContext
+                val target = key.target ?: return@withContext
                 // Fresh expensive checks only for a detected action, immediately before effects.
-                if (current(a) && currentHeadContext()?.key == key && noCallOrMix() && key.target != null &&
-                    media?.gestureContext() == key.target) media?.gesture(gesture)
+                if (current(a) && currentHeadContext()?.key == key && noCallOrMix() &&
+                    port.gestureContext() == target) port.gesture(gesture, target)
             }
         }
         resetHeadInput()
