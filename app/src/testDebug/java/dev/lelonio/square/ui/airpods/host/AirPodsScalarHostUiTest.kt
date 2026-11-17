@@ -28,7 +28,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** PREPARED ONLY, not compiled/executed here. EVERY test mounts the production body of the
+/** Real host integration. EVERY test mounts the production body of the
  * settings PAGE its control is filed under (airPodsSettingsPageOf), not a replica or a focused
  * editor: the settings are pages now, and a control is on exactly one of them. Real Compose
  * events dispatch to the real host/admitted owner; only Bluetooth SDUs/persistence/platform facts
@@ -41,23 +41,13 @@ class AirPodsScalarHostUiTest {
     @get:Rule val compose = createComposeRule()
 
     /** The settings page on screen. Every locator below first shows the page of its control. */
+    private val dispatchStarted = java.util.concurrent.atomic.AtomicInteger()
     private var page by mutableStateOf(AirPodsSettingsPage.Main)
     private fun show(c: ScalarHostCase) {
-        val target = airPodsSettingsPageOf(c.property)
+        val target = c.expectedPage
+        assertEquals(c.catalogId, target, airPodsSettingsPageOf(c.property))
         compose.runOnIdle { page = target }
         compose.waitForIdle()
-    }
-
-    /** An on/off control is one switch once the device has reported it. Before that there is no
-     * position to draw, and it is two alternatives with neither selected, like any other choice. */
-    private fun isSwitch(f: HostProtocolFixture, c: ScalarHostCase) =
-        requireNotNull(AirPodsProperties.spec(c.property)).encoding == ControlEncoding.BOOLEAN_1_2 &&
-            f.observed(c.property) != null
-
-    /** The switch row is its own heading: one node carrying the title and the toggle state. */
-    private fun switch(f: HostProtocolFixture, c: ScalarHostCase): SemanticsNodeInteraction {
-        show(c)
-        return compose.onNode(hasText(title(f, c)) and isToggleable())
     }
 
     private fun mount(f: HostProtocolFixture) {
@@ -65,7 +55,9 @@ class AirPodsScalarHostUiTest {
             val state by f.host.state.collectAsState()
             val scope = rememberCoroutineScope()
             val captured = f.host.stamp
-            val dispatch: (AirPodsUiAction) -> Unit = { action -> scope.launch {
+            val dispatch: (AirPodsUiAction) -> Unit = { action ->
+                dispatchStarted.incrementAndGet()
+                scope.launch {
                 f.host.dispatch(captured, action) { _, _ -> fail("No platform UI for scalar writes") }
             } }
             val backdrop = rememberGlassBackdrop()
@@ -83,186 +75,93 @@ class AirPodsScalarHostUiTest {
         }
     }
 
-    private fun title(f: HostProtocolFixture, c: ScalarHostCase) = f.text(featureTitles.getValue(c.catalogId))
-
-    /** Production has no per-editor tag/wrapper. Scope by the actual semantic heading and the
-     * next PUBLIC scalar heading in document order. Resolve IDs afresh after each recomposition.
-     * No global nth On/Off/Apply locator, coordinates, or fake editor subtree is substituted.
-     * Fail if a heading disappears; a full-page omission cannot pass a focused editor test. */
-    private fun editorNodes(f: HostProtocolFixture, c: ScalarHostCase): List<SemanticsNode> {
+    private fun isSwitch(c: ScalarHostCase) =
+        AirPodsProperties.spec(c.property)!!.encoding == ControlEncoding.BOOLEAN_1_2
+    private fun control(c: ScalarHostCase, input: ScalarInput = c.requested): SemanticsNodeInteraction {
         show(c)
-        compose.waitForIdle()
-        fun flatten(node: SemanticsNode): List<SemanticsNode> = listOf(node) + node.children.flatMap(::flatten)
-        // The merged tree keeps FluidListRow's title, Selected and OnClick on the same node.
-        val nodes = flatten(compose.onRoot().fetchSemanticsNode())
-        fun heading(node: SemanticsNode, text: String) =
-            node.config.getOrNull(SemanticsProperties.Text)?.any { it.text == text } == true
-        val start = nodes.indexOfFirst { heading(it, title(f, c)) }
-        assertTrue("The page of ${c.catalogId} omits it", start >= 0)
-        // The final scalar is followed by the device section, not another scalar.
-        // Its editor must not include device/gesture rows with the same On/Off labels.
-        val otherTitles = ScalarHostCases.all.filter { it != c }.map { title(f, it) }.toSet() +
-            f.text(R.string.airpods_feature_device_group)
-        val end = (start + 1 until nodes.size).firstOrNull { i -> otherTitles.any { heading(nodes[i], it) } } ?: nodes.size
-        return nodes.subList(start + 1, end)
-    }
-
-    private fun editorNode(f: HostProtocolFixture, c: ScalarHostCase, matcher: SemanticsMatcher): SemanticsNodeInteraction {
-        val matching = editorNodes(f, c).filter { matcher.matches(it) }
-        assertEquals("${c.catalogId}: unique scoped ${matcher.description}", 1, matching.size)
-        val id = matching.single().id
-        return compose.onNode(SemanticsMatcher("${c.catalogId} node $id") { it.id == id })
-    }
-
-    private fun modeText(f: HostProtocolFixture, wire: Int) = f.text(when (wire) {
-        1 -> R.string.airpods_feature_mode_off
-        2 -> R.string.airpods_feature_mode_anc
-        3 -> R.string.airpods_feature_mode_transparency
-        4 -> R.string.airpods_feature_mode_adaptive
-        else -> error("Unexpected independent mode input")
-    })
-
-    private fun optionText(f: HostProtocolFixture, c: ScalarHostCase, input: ScalarInput) =
-        if (c.property == CommandProperty.MODE) modeText(f, input.value) else f.text(optionLabels.getValue(input.label))
-
-    private fun option(f: HostProtocolFixture, c: ScalarHostCase, input: ScalarInput) =
-        editorNode(f, c, hasText(optionText(f, c, input)))
-
-    private fun apply(f: HostProtocolFixture, c: ScalarHostCase) =
-        editorNode(f, c, hasText(f.text(R.string.airpods_ui_apply)) and hasClickAction())
-
-    private fun toggle(f: HostProtocolFixture, c: ScalarHostCase, wire: Int) =
-        editorNode(f, c, hasText(modeText(f, wire)) and isToggleable())
-
-    private fun status(f: HostProtocolFixture, c: ScalarHostCase, resource: Int) =
-        editorNode(f, c, hasText(f.text(resource)) and
-            hasTestTag("airpods-reason-property.${c.property}").not())
-
-    /** The request is said to be waiting, wherever this control says it. */
-    private fun awaiting(f: HostProtocolFixture, c: ScalarHostCase) {
-        val words = f.text(R.string.airpods_ui_pending)
-        // A switch row says it in its second line, which its single node carries as description.
-        if (isSwitch(f, c)) switch(f, c).performScrollTo().assert(hasContentDescription(words, substring = true))
-        else status(f, c, R.string.airpods_ui_pending).performScrollTo().assertIsDisplayed()
-    }
-
-    /** After an answer nothing is said to be waiting; an editor with a status line says "current". */
-    private fun settled(f: HostProtocolFixture, c: ScalarHostCase) {
-        val waiting = f.text(R.string.airpods_ui_pending)
-        when {
-            isSwitch(f, c) -> switch(f, c).assert(hasContentDescription(waiting, substring = true).not())
-            // The selector's thumb is the received mode; it prints a status only while one is owed.
-            c.property == CommandProperty.MODE ->
-                assertTrue(c.catalogId, editorNodes(f, c).none { hasText(waiting).matches(it) })
-            else -> status(f, c, R.string.airpods_ui_observed).performScrollTo().assertIsDisplayed()
+        val tag = when {
+            isSwitch(c) -> "airpods-switch-${c.property}"
+            c.property == CommandProperty.MODE -> "airpods-mode-${input.value}"
+            c.property == CommandProperty.CHIME_VOLUME -> "airpods-chime-volume"
+            c.property == CommandProperty.AUTO_ANC_STRENGTH -> "airpods-property-${c.property}"
+            c.property == CommandProperty.CALL_MANAGEMENT_CONFIG ->
+                "airpods-choice-" + if (input.value == 3) "mute-once" else "mute-twice"
+            else -> "airpods-choice-${c.property}-${input.value}"
         }
+        return if (c.kind == ScalarEditorKind.NUMBER) compose.onNode(
+            SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress) and
+                (hasTestTag(tag) or hasAnyAncestor(hasTestTag(tag))))
+        else compose.onNodeWithTag(tag)
     }
-
-    private fun assertReceivedUi(f: HostProtocolFixture, c: ScalarHostCase, input: ScalarInput) {
+    private fun cycle(c: ScalarHostCase, wire: Int): SemanticsNodeInteraction {
+        show(c)
+        return compose.onNodeWithTag("airpods-cycle-${ListeningMode.entries.single { it.wire == wire }.name}")
+    }
+    private fun assertUi(c: ScalarHostCase, input: ScalarInput) {
         when (c.kind) {
-            ScalarEditorKind.OPTIONS -> if (isSwitch(f, c)) {
-                val row = switch(f, c).performScrollTo().assertIsDisplayed()
-                if (input.value == 1) row.assertIsOn() else row.assertIsOff()
-            } else {
-                option(f, c, input).performScrollTo().assertIsDisplayed().assertIsSelected()
-                c.inputs.filter { it.value != input.value }.forEach {
-                    option(f, c, it).assert(isSelected().not())
-                }
-            }
-            ScalarEditorKind.NUMBER -> {
-                editorNode(f, c, hasText("${title(f, c)} \u00b7 ${input.value}"))
-                    .performScrollTo().assertIsDisplayed()
-                editorNode(f, c, hasContentDescription(title(f, c)))
-                    .assertRangeInfoEquals(ProgressBarRangeInfo(input.value.toFloat(), 0f..100f))
-            }
             ScalarEditorKind.MASK -> for (wire in 1..4) {
-                val row = toggle(f, c, wire).performScrollTo().assertIsDisplayed()
+                val row = cycle(c, wire).performScrollTo()
                 if (input.value and (1 shl (wire - 1)) != 0) row.assertIsOn() else row.assertIsOff()
             }
-        }
-    }
-
-    private fun editAndSend(f: HostProtocolFixture, c: ScalarHostCase) {
-        val writes = f.transport.writes.size
-        when (c.kind) {
-            // A switch asks for the other value; the pointer is what a finger uses on its row.
-            ScalarEditorKind.OPTIONS -> if (isSwitch(f, c)) switch(f, c).performScrollTo().performTouchInput { click() }
-                else option(f, c, c.requested).performScrollTo().performClick()
-            ScalarEditorKind.NUMBER -> {
-                editorNode(f, c, hasContentDescription(title(f, c))).performScrollTo()
-                    .performSemanticsAction(SemanticsActions.SetProgress) { set -> assertTrue(set(c.requested.value.toFloat())) }
-                assertEquals(c.catalogId, c.initial.number, f.observed(c.property))
-                assertFalse(c.catalogId, c.property in f.owner.state.value.pending)
-                assertEquals(c.catalogId, writes, f.transport.writes.size)
-                apply(f, c).performScrollTo().assertIsEnabled().performClick()
-            }
-            ScalarEditorKind.MASK -> {
-                fun touch(wire: Int) {
-                    // FluidToggleRow deliberately clears its semantic OnClick; exercise the
-                    // real pointer handler instead of inventing an accessibility action.
-                    toggle(f, c, wire).performScrollTo().performTouchInput { click() }
+            ScalarEditorKind.NUMBER -> control(c).performScrollTo()
+                .assertRangeInfoEquals(ProgressBarRangeInfo(input.value.toFloat(), 0f..100f))
+            ScalarEditorKind.OPTIONS -> if (isSwitch(c)) {
+                val row = control(c).performScrollTo()
+                if (input.value == 1) row.assertIsOn() else row.assertIsOff()
+            } else {
+                control(c, input).performScrollTo().assertIsSelected()
+                c.inputs.filter { it.value != input.value }.forEach { control(c, it).assertIsNotSelected() }
+                if (c.property == CommandProperty.CALL_MANAGEMENT_CONFIG) {
+                    compose.onNodeWithTag("airpods-choice-" + if (input.value == 3) "end-twice" else "end-once").assertIsSelected()
+                    compose.onNodeWithTag("airpods-choice-" + if (input.value == 3) "end-once" else "end-twice").assertIsNotSelected()
                 }
-                // From RX=6: one bit, zero bits and Off alone must each keep Apply disabled.
-                touch(2); apply(f, c).assertIsNotEnabled()
-                touch(3); apply(f, c).assertIsNotEnabled()
-                touch(1); apply(f, c).assertIsNotEnabled()
-                touch(2); apply(f, c).assertIsEnabled()
-                touch(3); touch(4) // draft=15; none of the toggles sends a command
-                assertEquals(c.catalogId, c.initial.number, f.observed(c.property))
-                assertFalse(c.catalogId, c.property in f.owner.state.value.pending)
-                assertEquals(c.catalogId, writes, f.transport.writes.size)
-                apply(f, c).performScrollTo().performClick()
             }
         }
-        // This also exercises the real AUTO_ANC_STRENGTH debounce before the host ingress.
-        // It does not certify the exact 150ms boundary or scheduling on a physical device.
-        compose.waitUntil(4_000) { f.transport.writes.size == writes + 1 }
-        assertArrayEquals(c.catalogId, HostProtocolWire.bytes(c.requested.hex), f.transport.writes.last().toByteArray())
-        f.refresh()
     }
-
+    private fun editAndSend(f: HostProtocolFixture, c: ScalarHostCase) {
+        val before = f.transport.commandWrites.size
+        when(c.kind) {
+            ScalarEditorKind.NUMBER -> control(c).performScrollTo()
+                .performSemanticsAction(SemanticsActions.SetProgress) { assertTrue(it(c.requested.value.toFloat())) }
+            ScalarEditorKind.MASK -> {
+                // RX=6: removing either remaining mode is forbidden. Adding Off sends 7,
+                // then adding Adaptive sends 15 immediately, without Apply.
+                cycle(c, 2).performScrollTo().assertIsNotEnabled()
+                cycle(c, 3).performScrollTo().assertIsNotEnabled()
+                cycle(c, 1).performScrollTo().performTouchInput { click() }
+                compose.waitUntil(4_000) { f.transport.commandWrites.size == before + 1 }
+                f.sent(c.property)
+                assertArrayEquals(HostProtocolWire.bytes("04 00 04 00 09 00 1a 07 00 00 00"), f.transport.commandWrites.last().toByteArray())
+                cycle(c, 4).performScrollTo().performTouchInput { click() }
+            }
+            ScalarEditorKind.OPTIONS -> if (isSwitch(c)) control(c).performScrollTo().performTouchInput { click() }
+                else control(c).performScrollTo().performClick()
+        }
+        compose.waitUntil(4_000) { f.transport.count(c.requested.hex) == 1 }
+        f.sent(c.property)
+        assertEquals(before + if (c.kind == ScalarEditorKind.MASK) 2 else 1, f.transport.commandWrites.size)
+        assertArrayEquals(c.catalogId, HostProtocolWire.bytes(c.requested.hex), f.transport.commandWrites.last().toByteArray())
+    }
     private fun fullPageCase(property: CommandProperty) {
         val c = ScalarHostCases.get(property)
         HostProtocolFixture().use { f ->
-            f.start()
-            f.receiveScalar(c.initial.hex, c.property, c.initial.number)
-            mount(f)
-            assertReceivedUi(f, c, c.initial)
+            f.start(); f.receiveScalar(c.initial.hex, property, c.initial.number); mount(f)
+            assertUi(c, c.initial)
             editAndSend(f, c)
-            val request = f.owner.state.value.pending.getValue(c.property)
-            assertEquals(c.catalogId, c.requested.number, request.requested)
-            assertEquals(c.catalogId, c.initial.number, f.observed(c.property))
-            awaiting(f, c)
-            when (c.kind) {
-                ScalarEditorKind.OPTIONS -> {
-                    assertReceivedUi(f, c, c.initial)
-                    if (isSwitch(f, c)) {
-                        // Still the received position, and a second touch reaches nobody.
-                        val sent = f.transport.writes.size
-                        switch(f, c).performTouchInput { click() }
-                        compose.waitForIdle()
-                        assertEquals(c.catalogId, sent, f.transport.writes.size)
-                    } else option(f, c, c.requested).assert(hasClickAction().not())
-                }
-                ScalarEditorKind.NUMBER -> assertReceivedUi(f, c, c.initial)
-                // The mask intentionally displays a LOCAL draft during pending; RX stays 6.
-                ScalarEditorKind.MASK -> assertReceivedUi(f, c, c.requested)
-            }
-            val count = f.transport.writes.size
-            f.receiveScalar(c.different.hex, c.property, c.different.number)
-            assertEquals(c.catalogId, CommandOutcome.OBSERVED_OTHER, f.owner.state.value.outcomes[c.property])
-            // Regression expectation for the mask too: RX=6 must replace draft=15 even when
-            // the previous RX was also 6. Frozen production remember(value,generation) may
-            // retain that draft; REPORT.md records the statically identified product defect.
-            assertReceivedUi(f, c, c.different)
-            settled(f, c)
-            assertEquals(c.catalogId, count, f.transport.writes.size) // feedback does not echo-write
-            assertFalse(c.catalogId, f.host.state.value.productGatePassed)
-            assertFalse(c.catalogId, f.owner.runtime.value.productConformance)
+            assertEquals(c.initial.number, f.observed(property))
+            assertUi(c, c.requested)
+            compose.onAllNodesWithText(f.text(R.string.airpods_ui_pending)).assertCountEquals(0)
+            compose.onAllNodesWithText(f.text(R.string.airpods_ui_apply)).assertCountEquals(0)
+            val count = f.transport.commandWrites.size
+            f.receiveScalar(c.different.hex, property, c.different.number)
+            assertEquals(CommandOutcome.OBSERVED_OTHER, f.owner.state.value.outcomes[property])
+            assertUi(c, c.different)
+            assertEquals(count, f.transport.commandWrites.size)
+            assertFalse(f.host.state.value.productGatePassed)
+            assertFalse(f.owner.runtime.value.productConformance)
             assertNull(f.owner.store.snapshot().getOrThrow().pairs.getValue(HostProtocolFixture.PAIR).verification)
         }
     }
-
     @Test fun fullPageMicrophone() = fullPageCase(CommandProperty.MIC_MODE)
     @Test fun fullPageDoubleClickInterval() = fullPageCase(CommandProperty.DOUBLE_CLICK_INTERVAL)
     @Test fun fullPageClickHoldInterval() = fullPageCase(CommandProperty.CLICK_HOLD_INTERVAL)
@@ -283,120 +182,89 @@ class AirPodsScalarHostUiTest {
     @Test fun fullPagePpe() = fullPageCase(CommandProperty.PPE_TOGGLE_CONFIG)
     @Test fun fullPageOptimizedCharging() = fullPageCase(CommandProperty.DYNAMIC_END_OF_CHARGE)
 
-    @Test fun chimeUnknownInputRequiresAnExplicitValidDraft() = unknownNumber(CommandProperty.CHIME_VOLUME)
-    @Test fun adaptiveUnknownInputRequiresAnExplicitValidDraft() = unknownNumber(CommandProperty.AUTO_ANC_STRENGTH)
-
-    private fun unknownNumber(property: CommandProperty) {
+    @Test fun chimeWithoutRxShowsDefaultAndSendsDirectly() = initialNumber(CommandProperty.CHIME_VOLUME, 75)
+    @Test fun adaptiveWithoutRxShowsDefaultAndSendsDirectly() = initialNumber(CommandProperty.AUTO_ANC_STRENGTH, 50)
+    private fun initialNumber(property: CommandProperty, default: Int) {
         val c = ScalarHostCases.get(property)
         HostProtocolFixture().use { f ->
             f.start(); mount(f)
             assertNull(f.observed(property))
-            status(f, c, R.string.airpods_ui_candidate).performScrollTo().assertIsDisplayed()
-            apply(f, c).assertIsNotEnabled()
-            for (invalid in listOf("-1", "101", "bad", "")) {
-                editorNode(f, c, hasSetTextAction()).performScrollTo().performTextReplacement(invalid)
-                apply(f, c).assertIsNotEnabled()
-                assertNull(f.observed(property))
-                assertTrue(f.owner.state.value.pending.isEmpty())
-                assertEquals(HostProtocolWire.BOOTSTRAP_PACKET_COUNT, f.transport.writes.size)
-            }
-            editorNode(f, c, hasSetTextAction()).performScrollTo().performTextReplacement("100")
-            assertNull(f.observed(property))
-            assertEquals(HostProtocolWire.BOOTSTRAP_PACKET_COUNT, f.transport.writes.size)
-            apply(f, c).performScrollTo().assertIsEnabled().performClick()
-            compose.waitUntil(4_000) { f.transport.count(c.requested.hex) == 1 }
-            f.refresh()
-            assertNull(f.observed(property))
-            status(f, c, R.string.airpods_ui_pending).performScrollTo().assertIsDisplayed()
+            assertUi(c, ScalarInput(default, ""))
+            assertTrue(f.transport.commandWrites.isEmpty())
+            editAndSend(f, c)
+            assertNull(f.observed(property)); assertUi(c, c.requested)
             f.receiveScalar(c.different.hex, property, c.different.number)
-            assertEquals(CommandOutcome.OBSERVED_OTHER, f.owner.state.value.outcomes[property])
-            assertReceivedUi(f, c, c.different)
+            assertUi(c, c.different)
         }
     }
-
-    @Test fun candidateOptionsAndMaskDoNotSelectGuessedDefaultsInTheFullPage() {
+    @Test fun defaultsAreDisplayedWithoutBecomingObservationsOrWrites() {
         HostProtocolFixture().use { f ->
             f.start(); mount(f)
-            for (c in ScalarHostCases.all.filter { it.property !in setOf(CommandProperty.MIC_MODE, CommandProperty.MODE) }) {
-                assertNull(c.catalogId, f.observed(c.property))
-                status(f, c, R.string.airpods_ui_candidate).performScrollTo().assertIsDisplayed()
-                when (c.kind) {
-                    ScalarEditorKind.OPTIONS -> c.inputs.forEach { option(f, c, it).assert(isSelected().not()) }
-                    ScalarEditorKind.NUMBER -> {
-                        editorNode(f, c, hasSetTextAction()).assertExists()
-                        apply(f, c).assertIsNotEnabled()
-                    }
-                    ScalarEditorKind.MASK -> {
-                        (1..4).forEach { toggle(f, c, it).assertIsOff() }
-                        apply(f, c).assertIsNotEnabled()
-                    }
-                }
+            for (c in ScalarHostCases.all) {
+                val value = f.host.state.value.domain.propertyEffective(c.property)?.value as? PropertyValue.Number ?: continue
+                assertUi(c, ScalarInput(value.value, ""))
+                if (c.property !in setOf(CommandProperty.MIC_MODE, CommandProperty.MODE)) assertNull(f.observed(c.property))
             }
-            assertEquals(HostProtocolWire.BOOTSTRAP_PACKET_COUNT, f.transport.writes.size)
+            assertTrue(f.transport.commandWrites.isEmpty())
         }
     }
-
     @Test fun recognizedUnsupportedModelIsNotOfferedTheControlsItDoesNotHave() {
         HostProtocolFixture().use { f ->
-            f.start()
-            f.receiveModel(ScalarHostCases.INFORMATION_A1523, "A1523")
-            mount(f)
-            for (c in ScalarHostCases.all.filter { it.needsCapability }) {
-                // A control this model does not have is not on its page at all: nothing reads as
-                // available, and there is nothing to touch. The host still refuses the write.
+            f.start(); f.receiveModel(ScalarHostCases.INFORMATION_A1523, "A1523"); mount(f)
+            for (c in ScalarHostCases.all) {
                 show(c)
-                compose.onAllNodesWithText(title(f, c)).assertCountEquals(0)
-                assertFalse(c.catalogId, f.host.state.value.availability.getValue("property.${c.property}").reason.isNullOrBlank())
-                assertFalse(c.catalogId, f.host.state.value.writeAllowed(c.property, c.requested.number))
+                if (c.needsCapability) {
+                    if (c.kind == ScalarEditorKind.MASK) compose.onAllNodesWithTag("airpods-cycle-ANC").assertCountEquals(0)
+                    else control(c).assertDoesNotExist()
+                    assertFalse(c.catalogId, f.host.state.value.writeAllowed(c.property, c.requested.number))
+                } else control(c).assertExists()
             }
-            // What every model has is still there.
-            for (c in ScalarHostCases.all.filterNot { it.needsCapability }) {
-                show(c)
-                assertTrue(c.catalogId, compose.onAllNodesWithText(title(f, c)).fetchSemanticsNodes().isNotEmpty())
-            }
-            assertEquals(HostProtocolWire.BOOTSTRAP_PACKET_COUNT, f.transport.writes.size)
+            assertTrue(f.transport.commandWrites.isEmpty())
         }
     }
-
     @Test fun receivedAllowOffConfigurationUpdatesBothModeAndMaskReachability() {
         HostProtocolFixture().use { f ->
             f.start()
             val off = ScalarHostCases.get(CommandProperty.ALLOW_OFF_OPTION)
             val mode = ScalarHostCases.get(CommandProperty.MODE)
             val mask = ScalarHostCases.get(CommandProperty.LISTENING_MODE_CONFIGS)
-            f.receiveScalar(off.requested.hex, off.property, off.requested.number) // Off permitted by RX=1
-            mount(f)
-            option(f, mode, mode.initial).performScrollTo().assertIsDisplayed().assertHasClickAction()
-            toggle(f, mask, 1).performScrollTo().assertIsDisplayed()
-            // Received as 1, so it is a switch that is on; a touch requests RX=2, currently still 1.
-            switch(f, off).performScrollTo().assertIsOn().performTouchInput { click() }
-            compose.waitUntil(4_000) { f.transport.count(off.initial.hex) == 1 }
-            f.refresh()
-            option(f, mode, mode.initial).performScrollTo().assertIsDisplayed().assertHasClickAction()
-            toggle(f, mask, 1).performScrollTo().assertIsDisplayed()
+            f.receiveScalar(off.requested.hex, off.property, off.requested.number); mount(f)
+            control(mode, mode.initial).performScrollTo().assertIsEnabled()
+            cycle(mask, 1).performScrollTo().assertExists()
+            control(off).performScrollTo().performTouchInput { click() }
+            f.sent(off.property)
+            // Effective policy is immediate, before its echo arrives.
+            control(mode, mode.initial).assertDoesNotExist(); cycle(mask, 1).assertDoesNotExist()
             f.receiveScalar(off.initial.hex, off.property, off.initial.number)
-            assertFalse(editorNodes(f, mode).any { hasText(modeText(f, 1)).matches(it) })
-            assertFalse(editorNodes(f, mask).any { isToggleable().matches(it) && hasText(modeText(f, 1)).matches(it) })
-            assertEquals(PropertyValue.Number(2), f.observed(off.property))
-            assertEquals(HostProtocolWire.BOOTSTRAP_PACKET_COUNT + 1, f.transport.writes.size)
+            control(mode, mode.initial).assertDoesNotExist(); cycle(mask, 1).assertDoesNotExist()
+            assertEquals(1, f.transport.commandWrites.size)
         }
     }
-
     @Test fun permitRevokedAfterRenderingCannotTurnAVisibleOptionIntoATransportWrite() {
         HostProtocolFixture().use { f ->
-            f.start()
+            f.start(); mount(f)
             val c = ScalarHostCases.get(CommandProperty.MIC_MODE)
-            mount(f)
-            option(f, c, c.requested).performScrollTo().assertHasClickAction()
-            f.permit.revoke() // no host-state refresh: exercise the already-rendered closure
-            option(f, c, c.requested).performClick()
+            val visibleOption = control(c).performScrollTo().assertIsEnabled()
+            val startedBefore = dispatchStarted.get()
+            val renderedStamp = f.host.stamp
+            val renderedGeneration = f.owner.state.value.generation
+            f.permit.revoke()
+            visibleOption.performClick()
             compose.waitForIdle()
+            // GesturePropertyChoice rechecks the LIVE authority synchronously in OnClick.
+            // Its already-rendered action returns without even launching the host coroutine.
+            assertEquals(startedBefore, dispatchStarted.get())
+            // Also exercise the host fence with the stamp captured before revocation;
+            // this call returns synchronously after dispatch, rather than waiting for silence.
+            f.write(c.property, c.requested.number, renderedStamp)
             f.refresh()
             assertFalse(f.host.state.value.controlsReady)
-            option(f, c, c.requested).assert(hasClickAction().not())
+            control(c).assertIsNotEnabled()
             assertTrue(f.owner.state.value.pending.isEmpty())
-            assertEquals(PropertyValue.Number(0), f.observed(c.property))
-            assertEquals(HostProtocolWire.BOOTSTRAP_PACKET_COUNT, f.transport.writes.size)
+            assertEquals("Revocation cannot invent an observation; retired RX is filtered",
+                if (f.owner.state.value.generation == renderedGeneration) PropertyValue.Number(0) else null,
+                f.observed(c.property))
+            assertTrue(f.transport.commandWrites.isEmpty())
         }
     }
 }

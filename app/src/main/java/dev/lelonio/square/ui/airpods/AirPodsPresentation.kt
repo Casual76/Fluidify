@@ -134,7 +134,7 @@ internal fun airPodsSettingsPageOf(property: CommandProperty): AirPodsSettingsPa
     CommandProperty.STEM_CONFIG -> AirPodsSettingsPage.LongPressLeft
     CommandProperty.MIC_MODE,
     CommandProperty.CALL_MANAGEMENT_CONFIG -> AirPodsSettingsPage.Calls
-    CommandProperty.AUTO_ANC_STRENGTH -> AirPodsSettingsPage.AdaptiveStrength
+    CommandProperty.AUTO_ANC_STRENGTH -> AirPodsSettingsPage.Main
     CommandProperty.EQ -> AirPodsSettingsPage.Equalizer
     CommandProperty.NAME -> AirPodsSettingsPage.Rename
     CommandProperty.DOUBLE_CLICK_INTERVAL,

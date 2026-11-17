@@ -36,13 +36,13 @@ class ListeningModeCycleTest {
         assertEquals(listOf(ListeningMode.TRANSPARENCY, ListeningMode.ANC), cycle(state("A2084", allowOff = false), 2))
         assertEquals(ListeningMode.TRANSPARENCY, state("A3063", ListeningMode.OFF, false).nextTileListeningMode())
     }
-    @Test fun unknownIdentityMissingOrStaleModeAndPendingDoNotEmitCandidate() {
+    @Test fun identityAndSessionGateCandidatesWhileMissingStaleOrPendingModeUsesEffectiveValue() {
         assertNull(state("A9999").nextTileListeningMode())
-        assertNull(state("A3063").copy(mode = null).nextTileListeningMode())
-        assertNull(state("A3063").copy(mode = Received(ListeningMode.ANC, 11, 6)).nextTileListeningMode())
+        assertEquals(ListeningMode.ADAPTIVE, state("A3063").copy(mode = null).nextTileListeningMode())
+        assertEquals(ListeningMode.ADAPTIVE, state("A3063").copy(mode = Received(ListeningMode.ANC, 11, 6)).nextTileListeningMode())
         assertNull(state("A3063").copy(identityReceived = null).nextTileListeningMode())
         assertNull(state("A3063").copy(stage = AacpStage.CLOSED).nextTileListeningMode())
-        assertNull(state("A3063").copy(pending = mapOf(CommandProperty.MODE to PendingCommand(3, 12, 1))).nextTileListeningMode())
+        assertEquals(ListeningMode.OFF, state("A3063").copy(pending = mapOf(CommandProperty.MODE to PendingCommand(3, 12, 1))).nextTileListeningMode())
     }
     @Test fun staleRestrictionDoesNotBecomeCurrentAndUnknownAllowanceRemainsOnlyCandidate() {
         val stale = state("A3063", allowOff = false).copy(properties = mapOf(CommandProperty.ALLOW_OFF_OPTION to

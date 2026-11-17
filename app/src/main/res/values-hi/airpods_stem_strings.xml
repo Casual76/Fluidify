@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="airpods_stem_local_choice">इस फ़ोन पर सहेजा गया</string>
     <string name="airpods_stem_shared">देर तक दबाना &#183; डिवाइस की साझा स्थिति</string>
     <string name="airpods_stem_unknown">अभी प्रेस को इंटरसेप्ट किया जा रहा है या नहीं: अज्ञात। डिवाइस से कोई मौजूदा रीडिंग नहीं मिली है।</string>
     <string name="airpods_stem_intercepted">मौजूदा रीडिंग: दोनों ओर देर तक दबाने पर Fluidify प्रेस को इंटरसेप्ट करता है।</string>

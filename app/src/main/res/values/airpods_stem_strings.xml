@@ -1,5 +1,4 @@
 <resources>
-    <string name="airpods_stem_local_choice">Saved on this phone</string>
     <string name="airpods_stem_shared">Long press &#183; shared device status</string>
     <string name="airpods_stem_unknown">Current interception: unknown. No current device reading.</string>
     <string name="airpods_stem_intercepted">Current reading: Fluidify intercepts long presses on both sides.</string>

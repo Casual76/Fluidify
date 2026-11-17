@@ -20,7 +20,7 @@
 //    app already translates, in a small disc. The case has no mark; it stands under its picture;
 //  - a component that has not reported is "--" with no ring. Upstream draws 0 % for it, and an
 //    empty ring is a reading of zero that nobody has taken;
-//  - a value older than the freshness window is not drawn here at all (see BatteryHistory);
+//  - the case keeps its pair's last valid percentage, marked stale and without charging state;
 //  - the pictures are nodpi resources laid out by their own aspect ratio.
 package dev.lelonio.square.ui.airpods
 
@@ -58,7 +58,6 @@ import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.res.painterResource
@@ -118,8 +117,7 @@ internal fun AirPodsPicture(resource: Int, modifier: Modifier = Modifier, live: 
 /**
  * The ring, the bolt and the percentage of one received reading.
  *
- * Called only with a value the device reported in this session and inside the freshness window:
- * there is no default percentage, and no call site that passes one.
+ * A stale case reading has a short label and can never carry a charging state.
  */
 @OptIn(androidx.compose.foundation.layout.ExperimentalLayoutApi::class)
 @Composable
@@ -128,11 +126,12 @@ internal fun AirPodsBatteryIndicator(
     status: Int,
     modifier: Modifier = Modifier,
     side: String? = null,
+    stale: Boolean = false,
 ) {
     val scheme = MaterialTheme.colorScheme
     val fill = if (percent > 25) scheme.primary else scheme.error
     val track = LocalContentColor.current.copy(alpha = 0.14f)
-    val charging = status == StatusCharging || status == StatusOptimizedCharging
+    val charging = !stale && (status == StatusCharging || status == StatusOptimizedCharging)
     val bolt by animateFloatAsState(
         targetValue = if (charging) 1f else 0f,
         animationSpec = FluidMotion.standard(),
@@ -151,7 +150,7 @@ internal fun AirPodsBatteryIndicator(
                 val stroke = Stroke(width = strokeWidthPx, cap = StrokeCap.Round)
                 val radius = size.minDimension / 2
 
-                if (status == StatusOptimizedCharging) {
+                if (!stale && status == StatusOptimizedCharging) {
                     drawArc(track, startAngle, 360f * optimizedLimit, useCenter = false, style = stroke)
                     drawArc(fill, startAngle, 360f * min(progress, optimizedLimit), useCenter = false, style = stroke)
 
@@ -178,7 +177,7 @@ internal fun AirPodsBatteryIndicator(
                 }
             }
 
-            Icon(
+            if (charging) Icon(
                 PhosphorIcons.Fill.Lightning,
                 contentDescription = null,
                 tint = fill,
@@ -199,6 +198,9 @@ internal fun AirPodsBatteryIndicator(
                 maxLines = 1,
             )
         }
+        if (stale) Text(stringResource(R.string.airpods_header_not_live),
+            style = MaterialTheme.typography.labelSmall,
+            color = scheme.onSurfaceVariant, textAlign = TextAlign.Center)
     }
 }
 
@@ -245,18 +247,20 @@ internal fun AirPodsBatteryView(s: AirPodsUiState, modifier: Modifier = Modifier
     val live = choice.known && s.homeVisible
     val left = s.freshBattery(BatteryLeft)
     val right = s.freshBattery(BatteryRight)
-    val case = s.freshBattery(BatteryCase)
+    val case = s.caseBatteryReading()
     val single = earbudsReadAsOne(left, right)
     val earbudWeight = if (LocalDensity.current.fontScale > 1.3f && !single) 2f else 1f
     val leftLetter = stringResource(R.string.airpods_ui_left_short)
     val rightLetter = stringResource(R.string.airpods_ui_right_short)
     val spoken = listOf(
         R.string.airpods_feature_left to left, R.string.airpods_feature_right to right,
-        R.string.airpods_feature_case to case,
     ).map { (name, value) ->
         value?.percent?.let { stringResource(R.string.airpods_feature_battery_accessibility, stringResource(name), it) }
             ?: (stringResource(name) + " " + stringResource(R.string.airpods_ui_missing))
-    }.joinToString(". ")
+    }.joinToString(". ") + ". " + stringResource(R.string.airpods_feature_case) + " " +
+        (case?.let { stringResource(R.string.airpods_feature_percent, it.percent) +
+            if (!it.live) " " + stringResource(R.string.airpods_header_not_live) else "" }
+            ?: stringResource(R.string.airpods_ui_missing))
 
     Box(modifier.fillMaxWidth().semantics(mergeDescendants = true) { contentDescription = spoken },
         contentAlignment = Alignment.Center) {
@@ -285,10 +289,12 @@ internal fun AirPodsBatteryView(s: AirPodsUiState, modifier: Modifier = Modifier
             Column(Modifier.weight(1f).fillMaxHeight(), horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.spacedBy(12.dp)) {
                 Box(Modifier.weight(1f).fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    AirPodsPicture(choice.artwork.case, Modifier.fillMaxWidth(), live)
+                    AirPodsPicture(choice.artwork.case, Modifier.fillMaxWidth(), live && case?.live == true)
                 }
                 Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-                    BatteryCell(case, null, Modifier.testTag("airpods-battery-$BatteryCase"))
+                    if (case != null) AirPodsBatteryIndicator(case.percent, case.status,
+                        Modifier.testTag("airpods-battery-$BatteryCase"), stale = !case.live)
+                    else AirPodsBatteryUnknown(Modifier.testTag("airpods-battery-$BatteryCase"))
                 }
             }
         }

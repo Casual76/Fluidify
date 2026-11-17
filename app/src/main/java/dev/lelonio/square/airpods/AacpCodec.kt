@@ -3,6 +3,7 @@
 package dev.lelonio.square.airpods
 
 import dev.lelonio.square.airpods.protocol.*
+import dev.lelonio.square.airpods.runtime.AirPodsRxCapture
 import java.nio.ByteBuffer
 import java.nio.charset.CodingErrorAction
 
@@ -35,9 +36,17 @@ sealed interface AacpEvent {
 }
 data class BatteryValue(val percent: Int?, val status: Int)
 
-/** AACP has no universal length field. Consume complete L2CAP SDUs, never scan payload for headers.
- * Known fixed frames may share an SDU. Unknown/variable frames consume the remaining SDU.
- * A truncated frame produces diagnostics only; it cannot confirm a command or manufacture state. */
+/** Sanitized wire diagnostic. INFORMATION/name and unknown payloads never enter bytes. */
+data class AacpRxFrame(val opcode: Int?, val controlIdentifier: Int?, val byteCount: Int, val bytes: List<Int>)
+fun interface AirPodsRxDiagnostics {
+    fun observe(generation: Long, frame: AacpRxFrame)
+    companion object { val NONE = AirPodsRxDiagnostics { _, _ -> } }
+}
+
+/** AACP has no universal length field. Known fixed frames preserve their entire payload,
+ * including zero-valued fields. Unknown opcodes resynchronize at a complete fixed envelope;
+ * INFORMATION's opaque extension is deliberately never scanned for synthetic controls.
+ * Truncated/malformed known frames cannot become an observation. */
 object AacpCodec {
     private val header = byteArrayOf(4, 0, 4, 0)
     fun handshake() = byteArrayOf(0, 0, 4, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0)
@@ -75,11 +84,61 @@ object AacpCodec {
     }
     private fun hex(s: String) = s.split(" ").map { it.toInt(16).toByte() }.toByteArray()
 
-    fun decodeSdu(sdu: ByteArray): List<AacpEvent> {
+    private fun fixedSize(opcode: Int) = when (opcode) {
+        9 -> 11; 4 -> 22; 0x4b -> 10; 6, 0x19 -> 8; 0x63 -> 13; 0x17 -> 70; else -> null
+    }
+    private fun nextFixedFrame(bytes: ByteArray, from: Int): Int? = (from..bytes.size - 6).firstOrNull { i ->
+        bytes[i] == 4.toByte() && bytes[i+1] == 0.toByte() && bytes[i+2] == 4.toByte() &&
+            bytes[i+3] == 0.toByte() && bytes[i+5] == 0.toByte() &&
+            fixedSize(bytes[i+4].toInt() and 255)?.let { bytes.size - i >= it } == true
+    }
+    private fun nextEnvelope(bytes: ByteArray, from: Int): Int? = (from..bytes.size - 6).firstOrNull { i ->
+        bytes[i] == 4.toByte() && bytes[i+1] == 0.toByte() && bytes[i+2] == 4.toByte() &&
+            bytes[i+3] == 0.toByte() && bytes[i+5] == 0.toByte()
+    }
+
+    private fun capture(frame: ByteArray, onFrame: ((AacpRxFrame) -> Unit)?) {
+        val opcode = frame.getOrNull(4)?.toInt()?.and(255) ?: return
+        val id = if (opcode == 9) frame.getOrNull(6)?.toInt()?.and(255) else null
+        val safe = (opcode == 9 && id?.let(AirPodsProperties::wire) != null) || opcode in setOf(4, 0x63, 6, 0x19, 0x4b, 0x17)
+        val payloadStart = (if (opcode == 9) 7 else 6).coerceAtMost(frame.size)
+        // W2's process-local sink is inert until explicitly enabled. Private/unknown frame
+        // bytes never cross this boundary; a zero-filled placeholder preserves length only.
+        if (AirPodsRxCapture.enabled) AirPodsRxCapture.record(opcode, id, if (safe) frame.copyOfRange(payloadStart, frame.size)
+            else ByteArray(frame.size - payloadStart))
+        if (onFrame != null) runCatching {
+            onFrame(AacpRxFrame(opcode, id, frame.size,
+                if (safe && opcode != 0x17) frame.map { it.toInt() and 255 } else emptyList()))
+        }
+    }
+
+    /** Physical write attempt, not an acknowledgement. Never copy rename/identity/opaque bytes. */
+    internal fun captureTx(packet: ByteArray) {
+        if (!AirPodsRxCapture.enabled) return
+        val framed = packet.size >= 6 && packet.copyOfRange(0, 4).contentEquals(header)
+        val opcode = if (framed) packet[4].toInt() and 255 else -1
+        val id = if (opcode == 9) packet.getOrNull(6)?.toInt()?.and(255) else null
+        val start = (if (opcode == 9) 7 else 6).coerceAtMost(packet.size)
+        val safe = (opcode == 9 && id?.let(AirPodsProperties::wire) != null) || opcode == 0x63
+        AirPodsRxCapture.recordTx(opcode, id, if (safe) packet.copyOfRange(start, packet.size)
+            else ByteArray(packet.size - start))
+    }
+
+    @JvmOverloads
+    fun decodeSdu(sdu: ByteArray, onFrame: ((AacpRxFrame) -> Unit)? = null): List<AacpEvent> {
         val events = mutableListOf<AacpEvent>()
         var offset = 0
         while (offset < sdu.size) {
             var p = sdu.copyOfRange(offset, sdu.size)
+            // Padding belongs to the envelope, not a reason to trim meaningful payload zeros.
+            if (p.all { it == 0.toByte() }) break
+            if (p[0] == 0.toByte()) {
+                val next = nextFixedFrame(p, 1)
+                if (next != null && p.take(next).all { it == 0.toByte() }) {
+                    offset += next
+                    continue
+                }
+            }
             // Upstream ControlCommand.fromByteArray explicitly accepts repeated AACP prefixes.
             // Only unwrap when the terminal opcode is a control, rather than treating payload as framing.
             var wrappers = 0
@@ -93,9 +152,16 @@ object AacpCodec {
             if (p.size < 6 || !p.copyOfRange(0, 4).contentEquals(header) || p[5] != 0.toByte()) {
                 events += unknown("Unrecognized header or truncated SDU"); break
             }
-            val size = when (p[4].toInt() and 255) { 9 -> 11; 4 -> 22; 0x4b -> 10; 6, 0x19 -> 8; 0x63 -> 13; else -> p.size }
-            if (p.size < size) { events += unknown("Truncated frame"); break }
+            val opcode = p[4].toInt() and 255
+            val size = when (opcode) {
+                0x1d -> p.size // INFORMATION has an opaque, potentially header-looking extension.
+                0x17 -> if (p.size < 70) 70 else nextEnvelope(p, 70) ?: p.size
+                else -> fixedSize(opcode) ?: nextFixedFrame(p, 6) ?: p.size
+            }
+            if (p.size < size) { capture(p, onFrame); events += unknown("Truncated frame"); break }
             val frame = p.copyOf(size)
+            capture(frame, onFrame)
+            fun frameUnknown(reason: String) = AacpEvent.Unknown(opcode, frame.size, reason)
             val event: AacpEvent = when (frame[4].toInt() and 255) {
                 9 -> {
                     val spec = AirPodsProperties.wire(frame[6].toInt() and 255)
@@ -110,16 +176,16 @@ object AacpCodec {
                 }
                 6 -> AacpEvent.Ear(EarSample(frame[6].toInt() and 255, frame[7].toInt() and 255))
                 0x19 -> if ((frame[6].toInt() and 255) in 5..8 && (frame[7].toInt() and 255) in 1..2)
-                    AacpEvent.Stem(StemSample(frame[6].toInt(), frame[7].toInt())) else unknown("Unknown stem event")
+                    AacpEvent.Stem(StemSample(frame[6].toInt(), frame[7].toInt())) else frameUnknown("Unknown stem event")
                 0x63 -> {
                     val n = frame.map { it.toInt() and 255 }
                     if (n[6] != 5 || n[7] != 0 || n[8] != 1 || n[9] !in 1..2 || n.slice(10..12).any { it > 100 })
-                        unknown("Malformed EQ")
+                        frameUnknown("Malformed EQ")
                     else AacpEvent.Property(CommandProperty.EQ, PropertyValue.Eq(n[9] == 2,n[10],n[11],n[12]))
                 }
                 0x17 -> {
                     if (frame.size < 70 || !frame.sliceArray(6..9).contentEquals(byteArrayOf(0,0,0x10,0)) ||
-                        (frame[10].toInt() and 255) !in 0x44..0x45 || frame[11] != 0.toByte()) unknown("Unknown tracking layout")
+                        (frame[10].toInt() and 255) !in 0x44..0x45 || frame[11] != 0.toByte()) frameUnknown("Unknown tracking layout")
                     else {
                         fun signed(i: Int) = ((frame[i+1].toInt() shl 8) or (frame[i].toInt() and 255))
                         AacpEvent.Head(HeadSample(signed(43),signed(45),signed(47),signed(51),signed(53),frame[10].toInt()))
@@ -131,13 +197,13 @@ object AacpCodec {
                         val status = frame[i + 3].toInt() and 255
                         (frame[i].toInt() and 255) to BatteryValue(level.takeIf { it <= 100 && status in setOf(1,2,5) }, status)
                     }
-                    if (frame[6] != 3.toByte() || components.size != 3 || components.keys.any { it !in setOf(2, 4, 8) }) unknown("Unsupported battery layout")
+                    if (frame[6] != 3.toByte() || components.size != 3 || components.keys.any { it !in setOf(2, 4, 8) }) frameUnknown("Unsupported battery layout")
                     else AacpEvent.Battery(components)
                 }
                 0x4b -> if (frame[6] == 2.toByte() && frame[7] == 0.toByte() && (frame[9].toInt() and 255) in setOf(1,2,6,8,9))
-                    AacpEvent.ConversationActivity(frame[9].toInt() and 255) else unknown("Unknown CA activity layout")
-                0x1d -> parseInformation(frame) ?: unknown("Incomplete or unknown information layout")
-                else -> unknown("Unhandled opcode")
+                    AacpEvent.ConversationActivity(frame[9].toInt() and 255) else frameUnknown("Unknown CA activity layout")
+                0x1d -> parseInformation(frame) ?: frameUnknown("Incomplete or unknown information layout")
+                else -> frameUnknown("Unhandled opcode")
             }
             events += event
             offset += size

@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_c4_save_failed">Impossibile salvare questa impostazione sul telefono.</string>
+    <string name="airpods_c4_partial_save">Salvata sul telefono. Invio alle AirPods non riuscito.</string>
+    <string name="airpods_c4_send_failed">Invio alle AirPods non riuscito.</string>
+</resources>

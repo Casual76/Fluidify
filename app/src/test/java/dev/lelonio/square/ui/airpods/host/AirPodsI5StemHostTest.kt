@@ -15,7 +15,6 @@ import androidx.compose.ui.test.*
 import androidx.compose.ui.test.junit4.createComposeRule
 import androidx.compose.ui.unit.dp
 import androidx.test.core.app.ApplicationProvider
-import com.github.takahirom.roborazzi.captureRoboImage
 import dev.antigravity.fluidengine.ui.fluid.*
 import dev.lelonio.square.R
 import dev.lelonio.square.airpods.*
@@ -37,7 +36,7 @@ import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 import org.robolectric.util.ReflectionHelpers
 
-/** PREPARED, NOT EXECUTED. Actual controller selector -> host -> real page/portal.
+/** Synthetic admission and real host selector. Actual controller selector -> host -> real page/portal.
  * Admission/runtime/repository observations injected; no gate admission, FGS, transport or hardware proof.
  * Action sink measures UI dispatch; blocked host dispatch also rechecks the actual host state. */
 @RunWith(RobolectricTestRunner::class)
@@ -144,72 +143,61 @@ class AirPodsI5StemHostTest {
             pending = if (pending) mapOf(CommandProperty.STEM_CONFIG to PendingCommand(8, 2, 1, generation = 7)) else emptyMap(),
             outcomes = outcome?.let { mapOf(CommandProperty.STEM_CONFIG to it) }.orEmpty())
     }
-    @Test fun realHostAndPagesSeparateLocalChoiceFromEveryCommandOutcomeAtFontTwo() = runBlocking {
+    @Test fun realHostPagesKeepLocalChoiceEditableAcrossOutcomesAtFontTwo() = runBlocking {
         val f = Fixture()
         try {
             f.owner.store.configure(f.pair) { it.copy(leftLongPress = LongPressAction.DIGITAL_ASSISTANT) }.getOrThrow()
             f.stem(0, CommandOutcome.SEND_FAILED); f.host.refresh(); mount(f, font = 2f)
-            val assistant = f.text(R.string.airpods_ui_digital_assistant)
-            val noise = f.text(gestureLabels.getValue(GestureAction.NOISE_CONTROL))
-            // The main page says what is saved for each side; the page behind the row is where it is chosen.
-            compose.onNodeWithTag("airpods-gesture-LEFT").performScrollTo().assertTextContains(assistant, substring = true)
-            compose.onNodeWithTag("airpods-gesture-RIGHT").performScrollTo().assertTextContains(noise, substring = true)
-            show(AirPodsSettingsPage.LongPressLeft)
-            compose.onNodeWithText(f.text(R.string.airpods_stem_local_choice)).performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText(assistant).performScrollTo().assertIsSelected()
-            compose.onNodeWithText(noise).assertIsNotSelected()
-            compose.onNodeWithTag("airpods-stem-observation").performScrollTo()
-                .assertTextEquals(f.text(R.string.airpods_stem_hardware))
-            val expected = mapOf(CommandOutcome.SEND_FAILED to R.string.airpods_stem_failed,
-                CommandOutcome.NOT_CONFIRMED to R.string.airpods_stem_timeout,
-                CommandOutcome.OBSERVED_MATCH to R.string.airpods_stem_match,
-                CommandOutcome.OBSERVED_OTHER to R.string.airpods_stem_other,
-                CommandOutcome.CLOSED to R.string.airpods_stem_closed)
-            for ((outcome, resource) in expected) {
+            compose.onNodeWithTag("airpods-gesture-LEFT").performScrollTo()
+                .assertTextContains(f.text(R.string.airpods_ui_digital_assistant), substring = true)
+            compose.onNodeWithTag("airpods-gesture-RIGHT").performScrollTo()
+                .assertTextContains(f.text(gestureLabels.getValue(GestureAction.NOISE_CONTROL)), substring = true)
+            for (outcome in CommandOutcome.entries) {
                 f.stem(0, outcome); f.host.refresh()
-                compose.onNodeWithTag("airpods-stem-command").performScrollTo().assertTextEquals(f.text(resource)).assertIsDisplayed()
-                val capture = java.io.File("build/airpods-full-integration/implementation/I5-stem-screenshots/$outcome-font2.png")
-                capture.parentFile.mkdirs()
-                compose.onRoot().captureRoboImage(capture.path)
+                show(AirPodsSettingsPage.LongPressLeft)
+                compose.onNodeWithTag("airpods-gesture-LEFT-DIGITAL_ASSISTANT").performScrollTo().assertIsSelected().assertIsEnabled()
+                compose.onNodeWithTag("airpods-gesture-LEFT-NOISE_CONTROL").performScrollTo().assertIsNotSelected().assertIsEnabled()
+                compose.onAllNodesWithTag("airpods-stem-command").assertCountEquals(0)
+                compose.onAllNodesWithTag("airpods-stem-observation").assertCountEquals(0)
+                assertEquals(LongPressAction.DIGITAL_ASSISTANT, f.owner.store.snapshot().getOrThrow().pairs.getValue(f.pair).leftLongPress)
             }
             f.stem(0, pending = true); f.host.refresh()
             for (side in listOf(GestureSide.LEFT, GestureSide.RIGHT)) {
-                assertFalse(f.host.state.value.allowed("gesture.$side"))
-                show(if (side == GestureSide.LEFT) AirPodsSettingsPage.LongPressLeft else AirPodsSettingsPage.LongPressRight)
-                // Paused on both sides: a touch on either alternative reaches nobody.
-                for (label in listOf(assistant, noise))
-                    compose.onNodeWithText(label).performScrollTo().performTouchInput { click() }
-                compose.waitForIdle()
-                assertTrue(f.actions.isEmpty())
-            }
-            compose.onNodeWithTag("airpods-stem-reason").performScrollTo().assertTextEquals(f.text(R.string.airpods_stem_pending))
-            val before = f.owner.store.snapshot().getOrThrow()
-            f.host.dispatch(f.host.stamp, AirPodsUiAction.AssignGesture(GestureSide.RIGHT, GestureAction.DIGITAL_ASSISTANT)) { _, _ -> fail("No platform action") }
-            assertEquals(before, f.owner.store.snapshot().getOrThrow())
-            assertTrue(f.actions.isEmpty())
-            show(AirPodsSettingsPage.HeadGestures)
-            for (side in listOf(GestureSide.NOD, GestureSide.SHAKE)) {
                 assertTrue(f.host.state.value.allowed("gesture.$side"))
-                compose.onNodeWithTag("airpods-gesture-$side").performScrollTo().assertIsEnabled()
+                show(if (side == GestureSide.LEFT) AirPodsSettingsPage.LongPressLeft else AirPodsSettingsPage.LongPressRight)
+                compose.onNodeWithTag("airpods-gesture-$side-DIGITAL_ASSISTANT").performScrollTo().assertIsEnabled().performClick()
             }
+            compose.waitForIdle()
+            assertEquals(listOf(AirPodsUiAction.AssignGesture(GestureSide.LEFT, GestureAction.DIGITAL_ASSISTANT),
+                AirPodsUiAction.AssignGesture(GestureSide.RIGHT, GestureAction.DIGITAL_ASSISTANT)), f.actions)
+            show(AirPodsSettingsPage.HeadGestures)
+            for (side in listOf(GestureSide.NOD, GestureSide.SHAKE))
+                compose.onNodeWithTag("airpods-gesture-$side").performScrollTo().assertIsEnabled()
         } finally { f.close() }
     }
-    @Test fun unknownPermissionClosedAndNewGenerationHaveConcreteCurrentReasons() = runBlocking {
+    @Test fun defaultsPermitLocalChoiceButPermissionAndClosedGenerationFenceIt() = runBlocking {
         val f = Fixture()
         try {
             f.stem(null); f.host.refresh(); page = AirPodsSettingsPage.LongPressLeft; mount(f)
-            compose.onNodeWithTag("airpods-stem-observation").performScrollTo().assertTextEquals(f.text(R.string.airpods_stem_unknown))
-            compose.onNodeWithTag("airpods-stem-reason").performScrollTo().assertTextEquals(f.text(R.string.airpods_stem_need_observation))
+            val option = compose.onNodeWithTag("airpods-gesture-LEFT-DIGITAL_ASSISTANT")
+            option.performScrollTo().assertIsEnabled()
+            assertNull(f.host.state.value.domain.propertyObserved(CommandProperty.STEM_CONFIG))
             shadowOf(f.context).denyPermissions(Manifest.permission.BLUETOOTH_CONNECT); f.host.refresh()
-            compose.onNodeWithTag("airpods-stem-reason").performScrollTo().assertTextEquals(f.text(R.string.airpods_reason_bluetooth_permission))
+            option.assertIsNotEnabled().performTouchInput { click() }
+            compose.waitForIdle(); assertTrue(f.actions.isEmpty())
+            val before = f.owner.store.snapshot().getOrThrow()
+            val stamp = f.host.stamp
+            f.host.dispatch(stamp, AirPodsUiAction.AssignGesture(GestureSide.LEFT, GestureAction.DIGITAL_ASSISTANT)) { _, _ -> fail("No platform action") }
+            assertEquals(before, f.owner.store.snapshot().getOrThrow())
             shadowOf(f.context).grantPermissions(Manifest.permission.BLUETOOTH_CONNECT)
             f.stem(8, CommandOutcome.OBSERVED_MATCH)
             f.domain.value = f.domain.value.copy(stage = AacpStage.CLOSED, generation = 8); f.host.refresh()
-            compose.onNodeWithTag("airpods-stem-observation").performScrollTo().assertTextEquals(f.text(R.string.airpods_stem_unknown))
-            compose.onNodeWithTag("airpods-stem-command").performScrollTo().assertTextEquals(f.text(R.string.airpods_stem_closed))
-            compose.onNodeWithTag("airpods-stem-reason").performScrollTo().assertTextEquals(f.text(R.string.airpods_reason_session))
+            option.assertIsNotEnabled()
+            assertNull(f.host.state.value.domain.propertyObserved(CommandProperty.STEM_CONFIG))
+            f.host.dispatch(stamp, AirPodsUiAction.AssignGesture(GestureSide.LEFT, GestureAction.DIGITAL_ASSISTANT)) { _, _ -> fail("No platform action") }
+            assertEquals(before, f.owner.store.snapshot().getOrThrow())
             f.domain.value = f.domain.value.copy(stage = AacpStage.SUBSCRIBED, outcomes = emptyMap()); f.host.refresh()
-            compose.onNodeWithTag("airpods-stem-command").performScrollTo().assertTextEquals(f.text(R.string.airpods_stem_no_command))
+            compose.onAllNodesWithTag("airpods-stem-command").assertCountEquals(0)
             assertTrue(f.actions.isEmpty())
         } finally { f.close() }
     }

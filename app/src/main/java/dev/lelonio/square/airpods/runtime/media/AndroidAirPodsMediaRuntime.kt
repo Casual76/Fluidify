@@ -12,6 +12,7 @@ import dev.lelonio.square.airpods.runtime.*
 import dev.lelonio.square.airpods.runtime.automation.*
 import dev.lelonio.square.airpods.runtime.storage.*
 import java.io.Closeable
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -40,7 +41,15 @@ class AndroidAirPodsMediaRuntime(
     /** Terminal. Written by the stopping thread, read by the core at every authority check, so
      * effects already queued on the handler are refused when they run. */
     @Volatile private var revoked = false
-    private val core = MediaRuntimeCore(environment, queue, AutomationClock { SystemClock.elapsedRealtime() }, trace = observer,
+    private val contextChanges = AtomicLong()
+    override val gestureContextRevision: Long get() = contextChanges.get()
+    private val observedEnvironment = object : MediaRuntimeEnvironment by environment {
+        override fun observe(changed: () -> Unit): Closeable = environment.observe {
+            contextChanges.incrementAndGet()
+            changed()
+        }
+    }
+    private val core = MediaRuntimeCore(observedEnvironment, queue, AutomationClock { SystemClock.elapsedRealtime() }, trace = observer,
         authority = { !revoked && authority() }) {
         mutableVolume.value = if (revoked) null else it
     }
@@ -53,8 +62,8 @@ class AndroidAirPodsMediaRuntime(
         core.start(session, settings)
         unregisterIfRevoked()
     }
-    override fun updateSettings(settings: HostSettings) { serial(); if (revoked) return; core.configure(settings); unregisterIfRevoked() }
-    override fun setUiVisible(visible: Boolean) { serial(); if (revoked) return; core.visible(visible); unregisterIfRevoked() }
+    override fun updateSettings(settings: HostSettings) { serial(); if (revoked) return; contextChanges.incrementAndGet(); core.configure(settings); unregisterIfRevoked() }
+    override fun setUiVisible(visible: Boolean) { serial(); if (revoked) return; contextChanges.incrementAndGet(); core.visible(visible); unregisterIfRevoked() }
     /** A revocation that landed while a call above was registering observers: nothing it
      * registered outlives that call, whether or not the owner's queued stop() follows. */
     private fun unregisterIfRevoked() { if (revoked) stop() }
@@ -83,6 +92,6 @@ class AndroidAirPodsMediaRuntime(
     override fun gesture(action: AirPodsMediaGesture): Boolean { serial(); return !revoked && core.gesture(action) }
     /** Any thread, no handler hop and no wait: Stop holds the start gate here, and main-thread
      * readers take that gate. Observers stay registered until stop() runs on the handler. */
-    override fun revoke() { revoked = true; mutableVolume.value = null }
-    override fun stop() { serial(); session = null; core.stop(); environment.pair = null; mutableVolume.value = null }
+    override fun revoke() { revoked = true; contextChanges.incrementAndGet(); mutableVolume.value = null }
+    override fun stop() { serial(); contextChanges.incrementAndGet(); session = null; core.stop(); environment.pair = null; mutableVolume.value = null }
 }

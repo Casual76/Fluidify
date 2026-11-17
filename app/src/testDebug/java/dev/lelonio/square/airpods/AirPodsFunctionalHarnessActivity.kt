@@ -114,10 +114,11 @@ open class AirPodsFunctionalHarnessActivity : ComponentActivity() {
                 } else {
                     val runtime by current.controller.runtime.collectAsState()
                     val state by current.controller.state.collectAsState()
+                    val head by current.controller.headSamples.collectAsState()
                     Text("${state.stage} · bootstrap/RX=${runtime.setupVerified} · media=${runtime.mediaAvailable} · ${runtime.failure ?: ""}")
                     Text("Identità RX: ${state.identityReceived?.value?.modelNumber ?: "unknown"}; batterie: ${state.batteries}")
                     Text("Pending: ${state.pending.keys}; esiti: ${state.outcomes}")
-                    Text("Ears: ${state.ears}; testa: ${state.head}; formato attivo: ${state.activePacketFormat}")
+                    Text("Ears: ${state.ears}; testa: ${head}; formato attivo: ${state.activePacketFormat}")
                     val ready = runtime.active && runtime.setupVerified
                     val audioResult by current.controller.audioResult.collectAsState()
                     val audioProfile by current.controller.audioProfile.collectAsState()

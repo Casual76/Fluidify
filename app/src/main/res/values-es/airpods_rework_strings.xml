@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_c4_save_failed">No se pudo guardar este ajuste en el teléfono.</string>
+    <string name="airpods_c4_partial_save">Guardado en este teléfono. No se pudo enviar a los AirPods.</string>
+    <string name="airpods_c4_send_failed">No se pudo enviar a los AirPods.</string>
+    <string name="airpods_c3_mute">Silenciar / activar micrófono</string>
+    <string name="airpods_c3_end_call">Finalizar llamada</string>
+    <string name="airpods_c3_press_once">Pulsar una vez</string>
+    <string name="airpods_c3_press_twice">Pulsar dos veces</string>
+    <string name="airpods_c3_always_right">Siempre el derecho</string>
+    <string name="airpods_c3_always_left">Siempre el izquierdo</string>
+    <string name="airpods_header_not_live">Sin actualizar</string>
+    <string name="airpods_p1_name">Nombre</string>
+</resources>

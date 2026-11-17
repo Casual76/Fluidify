@@ -70,10 +70,8 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
     private val bluetooth = HostBluetooth(context)
     private val commands = Mutex()
     private var candidates = emptyList<PairAddress>()
-    private var historyGeneration = -1L
-    private val headHistory = ArrayDeque<HeadSample>()
-    private var lastHead: Received<HeadSample>? = null
     private var failure: String? = null
+    private var mainToggleIssue: Pair<HostStamp, AirPodsMainToggleIssue>? = null
     @Volatile private var closed = false
     private fun text(id: Int) = context.getString(id)
     fun close() { closed = true; stamp = null; bluetooth.close() }
@@ -269,25 +267,21 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
                 val reason = liveReason ?: when {
                     base.identity?.recognized != true -> R.string.airpods_reason_information
                     !spec.candidate(base.identity!!) -> R.string.airpods_reason_capability
-                    spec.property in domain.pending -> R.string.airpods_ui_pending
                     else -> null
                 }
                 putAllowed("property.${spec.property}", reason == null, reason?.let(::text) ?: "")
             }
-        }
-        if (historyGeneration != domain.generation) { headHistory.clear(); lastHead = null; historyGeneration = domain.generation }
-        domain.head?.takeIf { it.generation == domain.generation && it != lastHead }?.let {
-            lastHead = it; headHistory.addLast(it.value); while(headHistory.size > 120) headHistory.removeFirst()
         }
         val p = base.pair
         val assignments = mapOf(GestureSide.LEFT to gestureName(p.leftLongPress), GestureSide.RIGHT to gestureName(p.rightLongPress),
             GestureSide.NOD to gestureName(p.nodAction), GestureSide.SHAKE to gestureName(p.shakeAction))
             .mapNotNull { (side, name) -> GestureAction.entries.firstOrNull { it.name == name }?.let { side to it } }.toMap()
         state.value = base.copy(pendingCleanupCount = data.pendingCleanup.size,
+            mainToggleIssue = mainToggleIssue?.takeIf { it.first.matches(data, domain.generation) }?.second,
             candidates = candidates.mapIndexed { index, address -> PairCandidate(ids.id(address),
             bluetooth.label(address) ?: context.getString(R.string.airpods_host_candidate, index + 1), "") },
             selectedCandidateId = data.selectedPair?.takeIf { it in candidates }?.let(ids::id), availability = availability,
-            gestureAssignments = assignments, headHistory = headHistory.toList(),
+            gestureAssignments = assignments, headSamples = (o as? AirPodsHeadSampleSource)?.headSamples,
             localVolumePercent = o.volume.value?.let { it.current * 100 / it.maximum },
             diagnostics = listOfNotNull(failure, runtime.failure, o.sanitizedDiagnostics()) + o.diagnostics.records.value.map { "${it.id} ${it.atMillis} ${it.kind} ${it.stage}" })
         stamp = HostStamp.capture(data, domain.generation)
@@ -310,10 +304,42 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
         var actionFailure: String? = null
         val accepted = when(action) {
             is AirPodsUiAction.SelectPair -> ids.resolve(action.candidateId)?.takeIf { it in candidates }?.let { o.selectPair(it).isSuccess } == true
-            is AirPodsUiAction.Write -> action.generation == o.state.value.generation && s.writeAllowed(action.property, action.value) && when(action.property) {
-                CommandProperty.NAME -> (action.value as? PropertyValue.Name)?.let { o.rename(it.value) } == true
-                CommandProperty.EQ -> (action.value as? PropertyValue.Eq)?.let(o::setEq) == true
-                else -> o.setProperty(action.property, action.value)
+            is AirPodsUiAction.Write -> if (action.property in coordinatedMainProperties) {
+                val number = (action.value as? PropertyValue.Number)?.value
+                val enabled = number == 1
+                val problem = if ((number != 1 && number != 2) ||
+                    action.generation != o.state.value.generation ||
+                    !s.mainToggleAllowed(action.property, enabled)) AirPodsMainToggleFailure.UNAVAILABLE
+                else coordinateMainToggle(action.property, enabled,
+                    saveLocal = { update ->
+                        if (closed || !ingressCurrent()) false else o.configure { pair ->
+                            // configure runs on IO: selection/consent can change after host admission.
+                            // The store holds its transaction lock while invoking this transform.
+                            val current = o.store.snapshot().getOrThrow()
+                            // Avoid taking controller/ingress locks while holding the store lock.
+                            check(!closed && captured.matches(current, o.state.value.generation))
+                            update(pair)
+                        }.isSuccess
+                    },
+                    send = { value ->
+                        val current = o.store.snapshot().getOrNull()
+                        !closed && ingressCurrent() && current != null &&
+                            captured.matches(current, o.state.value.generation) &&
+                            o.setProperty(action.property, value)
+                    })
+                mainToggleIssue = problem?.let { captured to AirPodsMainToggleIssue(action.property, it) }
+                problem == null
+            } else {
+                val admitted = action.generation == o.state.value.generation && s.writeAllowed(action.property, action.value) && when(action.property) {
+                    CommandProperty.NAME -> (action.value as? PropertyValue.Name)?.let { o.rename(it.value) } == true
+                    CommandProperty.EQ -> (action.value as? PropertyValue.Eq)?.let(o::setEq) == true
+                    else -> o.setProperty(action.property, action.value)
+                }
+                if (airPodsSettingsPageOf(action.property) == AirPodsSettingsPage.Main) {
+                    mainToggleIssue = if (admitted) null else captured to
+                        AirPodsMainToggleIssue(action.property, AirPodsMainToggleFailure.UNAVAILABLE)
+                }
+                admitted
             }
             is AirPodsUiAction.Toggle -> o.configure { toggleSettings(it, action.toggle, action.enabled) }.isSuccess
             is AirPodsUiAction.ConversationVolume -> action.percent in 10..85 && o.configure { it.copy(host = it.host.copy(conversationVolumePercent = action.percent)) }.isSuccess

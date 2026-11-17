@@ -141,7 +141,7 @@ class AirPodsI4AvailabilityTest {
         val f = Fixture()
         try {
             f.preferences(head = true, automations = false, background = false)
-            f.host.refresh(); page = AirPodsSettingsPage.HeadGestures; mount(f)
+            f.host.refresh(); page = AirPodsSettingsPage.Diagnostics; mount(f)
             assertEquals(TrackingBlockReason.AUTOMATIONS_DISABLED, f.owner.trackingUnavailableReason(true))
             reason("tracking.start", f.text(R.string.airpods_reason_automations_off))
             compose.onNodeWithTag("airpods-tracking-start").performScrollTo().assertIsNotEnabled().performTouchInput { click() }
@@ -177,7 +177,7 @@ class AirPodsI4AvailabilityTest {
             reason("property.CHIME_VOLUME", f.text(R.string.airpods_reason_bluetooth_permission))
             show(AirPodsSettingsPage.Calls)
             reason("property.MIC_MODE", f.text(R.string.airpods_reason_bluetooth_permission))
-            show(AirPodsSettingsPage.HeadGestures)
+            show(AirPodsSettingsPage.Diagnostics)
             reason("tracking.start", f.text(R.string.airpods_reason_bluetooth_permission))
             show(AirPodsSettingsPage.Automations)
             reason("local.preferredMode", f.text(R.string.airpods_reason_bluetooth_permission))

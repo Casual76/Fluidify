@@ -124,7 +124,7 @@ class AndroidRuntimeContractsTest {
     @Test fun sanitizedLogsAreBoundedExportableAndIndividuallyDeletable() {
         val log = AirPodsSanitizedDiagnostics { 123L }
         log.startCollection()
-        repeat(130) { log.record(DiagnosticKind.STAGE,dev.lelonio.square.airpods.AacpStage.SUBSCRIBED) }
+        repeat(130) { log.record(DiagnosticKind.STAGE, if (it % 2 == 0) dev.lelonio.square.airpods.AacpStage.SUBSCRIBED else dev.lelonio.square.airpods.AacpStage.CONNECTED) }
         assertEquals(100,log.records.value.size)
         val id = log.records.value.first().id
         assertEquals("$id 123 STAGE SUBSCRIBED",log.export(id))

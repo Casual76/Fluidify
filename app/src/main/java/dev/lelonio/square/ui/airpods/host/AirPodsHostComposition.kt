@@ -30,6 +30,7 @@ import dev.lelonio.square.airpods.runtime.android.*
 import dev.lelonio.square.ui.airpods.*
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.flow.collectLatest
 
 class AirPodsHostBinding internal constructor(
     val binding: AirPodsUiBinding,
@@ -115,8 +116,16 @@ fun rememberAirPodsHostBinding(): AirPodsHostBinding {
             launch { host.owner?.audioResult?.collect { host.refresh() } }
             launch { host.owner?.volume?.collect { host.refresh() } }
             launch { host.owner?.diagnostics?.records?.collect { host.refresh() } }
-            // Refresh durable configuration and battery age while UI is started; never reconnect.
-            while(isActive) { host.refresh(); delay(1_000) }
+            // Battery freshness has one exact deadline per current sample. Head samples do not
+            // reach this state; there is no global one-second refresh or graph history copy.
+            launch {
+                host.state.collectLatest { s ->
+                    val now = android.os.SystemClock.elapsedRealtime()
+                    val next = s.domain.batteries.values.filter { it.generation == s.domain.generation }
+                        .map { it.atMs + 300_000 }.filter { it > now }.minOrNull()
+                    if (next != null) { delay(next - now); host.refresh() }
+                }
+            }
         }
     }
     DisposableEffect(host) { onDispose { host.close() } }

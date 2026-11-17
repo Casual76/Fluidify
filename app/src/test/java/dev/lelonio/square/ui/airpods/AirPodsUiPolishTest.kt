@@ -60,12 +60,14 @@ class AirPodsUiPolishTest {
         compose.onNodeWithTag("airpods-all-settings").assertIsDisplayed().performClick()
         assertEquals(listOf("dismiss","settings"), events)
     }
-    @Test fun compactModeWritesTypedValueWithoutInventingSelection() {
+    @Test fun compactModeUsesDisplayDefaultWithoutInventingRx() {
         val actions = mutableListOf<AirPodsUiAction>()
         val fixture = uiFixture().let { it.copy(domain=it.domain.copy(mode=null)) }
         mount { AirPodsQuickOverlay(fixture,true,{}, {actions += it}, {}) }
-        compose.onNodeWithText(label(R.string.airpods_feature_mode_transparency)).performScrollTo().assertIsNotSelected().performClick()
-        assertEquals(listOf(AirPodsUiAction.Write(7,CommandProperty.MODE,PropertyValue.Number(3))),actions)
+        compose.onNodeWithTag("airpods-quick-MODE-3").assertIsSelected()
+        assertNull(fixture.domain.mode)
+        compose.onNodeWithText(label(R.string.airpods_feature_mode_adaptive)).performScrollTo().assertIsNotSelected().performClick()
+        assertEquals(listOf(AirPodsUiAction.Write(7,CommandProperty.MODE,PropertyValue.Number(4))),actions)
     }
     @Test fun liveQuickDoesNotDuplicateHistoricalBattery() {
         mount { AirPodsQuickOverlay(uiFixture(),true,{}, {}, {}) }

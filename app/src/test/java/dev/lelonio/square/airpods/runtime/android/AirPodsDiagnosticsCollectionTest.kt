@@ -36,4 +36,20 @@ class AirPodsDiagnosticsCollectionTest {
         log.delete(firstId)
         assertEquals(1, log.records.value.size)
     }
+    @Test fun repeatedStatesDoNotPublishStagesButRealTransitionsAndExplicitSnapshotsDo() {
+        val log = AirPodsSanitizedDiagnostics { 3L }
+        log.startCollection()
+        repeat(1000) { log.record(DiagnosticKind.STAGE, AacpStage.CONNECTED) }
+        assertEquals(1, log.records.value.size)
+        log.record(DiagnosticKind.SNAPSHOT, AacpStage.CONNECTED)
+        log.record(DiagnosticKind.STAGE, AacpStage.SUBSCRIBED)
+        log.record(DiagnosticKind.STAGE, AacpStage.CONNECTED)
+        assertEquals(4, log.records.value.size)
+        log.clear()
+        log.record(DiagnosticKind.STAGE, AacpStage.CONNECTED)
+        assertTrue(log.records.value.isEmpty())
+        log.stopCollection(); log.startCollection()
+        log.record(DiagnosticKind.STAGE, AacpStage.CONNECTED)
+        assertEquals(1, log.records.value.size)
+    }
 }

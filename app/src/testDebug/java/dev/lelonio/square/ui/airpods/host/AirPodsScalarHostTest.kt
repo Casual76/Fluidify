@@ -36,21 +36,22 @@ class AirPodsScalarHostTest {
             for (c in ScalarHostCases.all) {
                 f.receiveScalar(c.initial.hex, c.property, c.initial.number)
                 val previous = f.observed(c.property)
-                val before = f.transport.writes.size
+                val before = f.transport.commandWrites.size
                 f.write(c.property, c.requested.number)
-                f.await("${c.catalogId} reaches raw transport") { f.transport.writes.size == before + 1 }
-                assertArrayEquals(c.catalogId, HostProtocolWire.bytes(c.requested.hex), f.transport.writes.last().toByteArray())
+                f.await("${c.catalogId} reaches raw transport") { f.transport.commandWrites.size == before + 1 }
+                f.sent(c.property)
+                assertArrayEquals(c.catalogId, HostProtocolWire.bytes(c.requested.hex), f.transport.commandWrites.last().toByteArray())
                 f.refresh()
-                val request = f.owner.state.value.pending.getValue(c.property)
+                val request = f.owner.state.value.desired.getValue(c.property)
                 assertEquals(c.catalogId, c.requested.number, request.requested)
-                assertEquals(c.catalogId, HostProtocolWire.bytes(c.requested.hex).map { it.toInt() and 255 }, request.packet)
                 assertEquals(c.catalogId, f.owner.state.value.generation, request.generation)
                 assertEquals(c.catalogId, previous, f.observed(c.property))
-                assertEquals(c.catalogId, PropertyStatus.PENDING, f.host.state.value.domain.propertyView(c.property)?.status)
-                assertFalse(c.catalogId, f.host.state.value.writeAllowed(c.property, c.requested.number))
+                assertEquals(c.catalogId, PropertyStatus.OBSERVED, f.host.state.value.domain.propertyView(c.property)?.status)
+                assertEquals(c.catalogId, c.requested.number, f.host.state.value.domain.propertyEffective(c.property)?.value)
+                assertTrue(c.catalogId, f.host.state.value.writeAllowed(c.property, c.requested.number))
                 f.write(c.property, c.requested.number)
-                assertEquals(c.catalogId, before + 1, f.transport.writes.size)
-                assertEquals(c.catalogId, request.sequence, f.owner.state.value.pending.getValue(c.property).sequence)
+                assertEquals(c.catalogId, before + 1, f.transport.commandWrites.size)
+                assertEquals(c.catalogId, request.sequence, f.owner.state.value.desired.getValue(c.property).sequence)
 
                 // Every scalar rejects nonzero trailing padding through the REAL read loop.
                 // The following activity event is an ordered decoder fence, not a sleep or ACK.
@@ -63,11 +64,8 @@ class AirPodsScalarHostTest {
                 }
                 assertEquals(c.catalogId, previous, f.observed(c.property))
                 val afterFence = f.owner.state.value
-                assertNotNull("${c.catalogId}: malformed padding/unrelated event cleared pending; " +
-                    "stage=${afterFence.stage}, outcome=${afterFence.outcomes[c.property]}, " +
-                    "diagnostic=${afterFence.diagnostic}, clock=${android.os.SystemClock.elapsedRealtime()}, " +
-                    "started=${request.startedMs}", afterFence.pending[c.property])
-                assertEquals(c.catalogId, request.sequence, afterFence.pending.getValue(c.property).sequence)
+                assertEquals(c.catalogId, DesiredStatus.SENT, afterFence.desired[c.property]?.status)
+                assertEquals(c.catalogId, request.sequence, afterFence.desired.getValue(c.property).sequence)
                 f.receiveScalar(c.different.hex, c.property, c.different.number)
                 assertEquals(c.catalogId, CommandOutcome.OBSERVED_OTHER, f.owner.state.value.outcomes[c.property])
                 assertEquals(c.catalogId, PropertyStatus.OBSERVED, f.host.state.value.domain.propertyView(c.property)?.status)
@@ -76,11 +74,12 @@ class AirPodsScalarHostTest {
                 // This catches an ingress/property mix-up even if the standalone codec is correct.
                 for (input in c.inputs) {
                     val old = f.observed(c.property)
-                    val count = f.transport.writes.size
+                    val count = f.transport.commandWrites.size
                     assertTrue("${c.catalogId}/${input.value}", f.host.state.value.writeAllowed(c.property, input.number))
                     f.write(c.property, input.number)
-                    f.await("${c.catalogId}/${input.value} raw TX") { f.transport.writes.size == count + 1 }
-                    assertArrayEquals(c.catalogId, HostProtocolWire.bytes(input.hex), f.transport.writes.last().toByteArray())
+                    f.await("${c.catalogId}/${input.value} raw TX") { f.transport.commandWrites.size == count + 1 }
+                    f.sent(c.property)
+                    assertArrayEquals(c.catalogId, HostProtocolWire.bytes(input.hex), f.transport.commandWrites.last().toByteArray())
                     assertEquals("TX must not manufacture RX: ${c.catalogId}", old, f.observed(c.property))
                     f.receiveScalar(input.hex, c.property, input.number)
                     assertEquals(c.catalogId, CommandOutcome.OBSERVED_MATCH, f.owner.state.value.outcomes[c.property])
@@ -98,12 +97,12 @@ class AirPodsScalarHostTest {
     }
 
     private fun denied(f: HostProtocolFixture, c: ScalarHostCase, value: PropertyValue = c.requested.number) {
-        val writes = f.transport.writes.size
+        val writes = f.transport.commandWrites.size
         val events = f.events.count { it.step == QualificationStep.TX && it.property == c.property }
         val previous = f.observed(c.property)
         assertFalse(c.catalogId, f.host.state.value.writeAllowed(c.property, value))
         f.write(c.property, value)
-        assertEquals(c.catalogId, writes, f.transport.writes.size)
+        assertEquals(c.catalogId, writes, f.transport.commandWrites.size)
         assertEquals(c.catalogId, events, f.events.count { it.step == QualificationStep.TX && it.property == c.property })
         assertFalse(c.catalogId, c.property in f.owner.state.value.pending)
         assertEquals(c.catalogId, previous, f.observed(c.property))
@@ -119,7 +118,7 @@ class AirPodsScalarHostTest {
             }
             val mask = ScalarHostCases.get(CommandProperty.LISTENING_MODE_CONFIGS)
             listOf(0, 1, 2, 4, 8, 16).forEach { denied(f, mask, PropertyValue.Number(it)) }
-            assertEquals(HostProtocolWire.BOOTSTRAP_PACKET_COUNT, f.transport.writes.size)
+            assertEquals(0, f.transport.commandWrites.size)
         }
     }
 
@@ -135,10 +134,10 @@ class AirPodsScalarHostTest {
                     denied(f, c)
                 } else {
                     assertTrue(c.catalogId, f.host.state.value.writeAllowed(c.property, c.requested.number))
-                    val count = f.transport.writes.size
+                    val count = f.transport.commandWrites.size
                     f.write(c.property, c.requested.number)
-                    f.await("ungated ${c.catalogId} raw TX") { f.transport.writes.size == count + 1 }
-                    assertArrayEquals(c.catalogId, HostProtocolWire.bytes(c.requested.hex), f.transport.writes.last().toByteArray())
+                    f.await("ungated ${c.catalogId} raw TX") { f.transport.commandWrites.size == count + 1 }
+                    assertArrayEquals(c.catalogId, HostProtocolWire.bytes(c.requested.hex), f.transport.commandWrites.last().toByteArray())
                     f.receiveScalar(c.requested.hex, c.property, c.requested.number)
                 }
             }
@@ -164,12 +163,13 @@ class AirPodsScalarHostTest {
             val mask = ScalarHostCases.get(CommandProperty.LISTENING_MODE_CONFIGS)
             denied(f, mask, PropertyValue.Number(15))
             assertTrue(f.host.state.value.writeAllowed(mask.property, PropertyValue.Number(6)))
-            // Re-enabling is itself a pending write. It cannot expose Off until RX arrives.
+            // Re-enabling changes the effective policy immediately, without manufacturing RX.
             f.write(off.property, off.requested.number)
             f.await("enable Off raw TX") { f.transport.count(off.requested.hex) == 1 }
+            f.sent(off.property)
             f.refresh()
-            assertFalse(ListeningMode.OFF in f.host.state.value.modes)
-            denied(f, mode, PropertyValue.Number(1))
+            assertTrue(ListeningMode.OFF in f.host.state.value.modes)
+            assertTrue(f.host.state.value.writeAllowed(mode.property, PropertyValue.Number(1)))
             f.receiveScalar(off.requested.hex, off.property, off.requested.number)
             assertTrue(ListeningMode.OFF in f.host.state.value.modes)
             assertTrue(f.host.state.value.writeAllowed(mode.property, PropertyValue.Number(1)))
@@ -198,7 +198,7 @@ class AirPodsScalarHostTest {
                 f.write(c.property, c.requested.number, savedStamp, generation)
                 denied(f, c) // also reject the current host stamp/current CLOSED generation
             }
-            assertEquals(HostProtocolWire.BOOTSTRAP_PACKET_COUNT, f.transport.writes.size)
+            assertEquals(0, f.transport.commandWrites.size)
             assertFalse(f.events.any { it.step == QualificationStep.TX && it.property != null })
         }
     }
@@ -222,7 +222,7 @@ class AirPodsScalarHostTest {
                 f.host.close()
                 ScalarHostCases.all.forEach { f.write(it.property, it.requested.number, stamp) }
                 assertTrue(f.owner.state.value.pending.isEmpty())
-                assertEquals(HostProtocolWire.BOOTSTRAP_PACKET_COUNT, f.transport.writes.size)
+                assertEquals(0, f.transport.commandWrites.size)
             } finally { f.detachHostBluetooth(ordinary); ordinary.close() }
         }
     }
@@ -237,7 +237,7 @@ class AirPodsScalarHostTest {
             f.refresh()
             assertFalse(f.host.state.value.controlsReady)
             ScalarHostCases.all.forEach { denied(f, it) }
-            assertEquals(HostProtocolWire.BOOTSTRAP_PACKET_COUNT, f.transport.writes.size)
+            assertEquals(0, f.transport.commandWrites.size)
         }
     }
 }

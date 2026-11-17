@@ -51,8 +51,9 @@ class AirPodsPresentationTest {
         assertEquals(ordered, ordered.distinct())
         val main = airPodsPageSpecs(AirPodsSettingsPage.Main).map { it.property }
         assertTrue(ordered.all { it in main })
-        // The mode is the selector; everything else on the main page is in the order.
-        assertEquals((main - CommandProperty.MODE).toSet(), ordered.toSet())
+        assertEquals(1, main.count { it == CommandProperty.AUTO_ANC_STRENGTH })
+        // Mode and adaptive strength have unique inline controls, separate from switch groups.
+        assertEquals((main - CommandProperty.MODE - CommandProperty.AUTO_ANC_STRENGTH).toSet(), ordered.toSet())
     }
 
     @Test fun theSelectorReleasesOnTheNearestSlotInsideThePill() {

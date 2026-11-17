@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="airpods_stem_local_choice">Guardado en este teléfono</string>
     <string name="airpods_stem_shared">Pulsación prolongada &#183; estado compartido del dispositivo</string>
     <string name="airpods_stem_unknown">Intercepción actual: desconocida. No hay una lectura actual del dispositivo.</string>
     <string name="airpods_stem_intercepted">Lectura actual: Fluidify intercepta las pulsaciones prolongadas en ambos lados.</string>

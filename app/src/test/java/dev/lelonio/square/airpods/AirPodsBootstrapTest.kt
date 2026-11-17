@@ -9,11 +9,15 @@ import java.util.concurrent.atomic.AtomicInteger
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.test.advanceTimeBy
+import kotlinx.coroutines.test.runCurrent
 import org.junit.Assert.*
 import org.junit.Test
 
 /** PREPARED, NOT EXECUTED by the writer. Synthetic transport; no firmware claims.
  * Expected bytes are transcribed from pinned LibrePods, independently of AacpCodec. */
+@OptIn(ExperimentalCoroutinesApi::class)
 class AirPodsBootstrapTest {
     private val expected = listOf(
         hex("00 00 04 00 01 00 02 00 00 00 00 00 00 00 00 00"),
@@ -111,6 +115,44 @@ class AirPodsBootstrapTest {
             repository.bootstrap(); repository.await(AacpStage.SUBSCRIBED)
             assertEquals(expected.take(1), old.writes.toList())
             assertEquals(expected, next.writes.toList())
+            assertNoReceivedCapabilities(repository)
+        } finally { repository.close(); scope.cancel() }
+    }
+
+    @Test fun notificationRefreshUsesPinnedPacketsAndRetiredGenerationCannotContinueIt() = runBlocking<Unit> {
+        val scope = TestScope(); val repository = AirPodsRepository(scope, AirPodsClock { scope.testScheduler.currentTime })
+        val old = Transport(blockAt = 5)
+        try {
+            connected(repository, old); repository.bootstrap(); repository.await(AacpStage.SUBSCRIBED)
+            // Drive owner delays while allowing each physical IO continuation to drain.
+            withTimeout(2_000) {
+                while (old.entered.count != 0L) { scope.runCurrent(); scope.advanceTimeBy(200); delay(1) }
+            }
+            assertEquals(expected, old.writes.toList())
+            val retired = repository.state.value.generation
+            repository.close()
+            scope.advanceTimeBy(10_000); scope.runCurrent()
+            val next = Transport()
+            connected(repository, next)
+            assertTrue(repository.state.value.generation > retired)
+            repository.bootstrap(); repository.await(AacpStage.SUBSCRIBED)
+            // Only the already-entered retry may complete after close, never flags/subscribe.
+            withTimeout(2_000) { while (old.writes.size < 5) delay(1) }
+            assertEquals(expected + listOf(expected[0]), old.writes.toList())
+            assertEquals(expected, next.writes.toList())
+        } finally { repository.close(); scope.cancel() }
+    }
+
+    @Test fun startupRefreshRepeatsSubscriptionTwiceWithoutWritingSettings() = runBlocking<Unit> {
+        val scope = TestScope(); val repository = AirPodsRepository(scope, AirPodsClock { scope.testScheduler.currentTime })
+        val socket = Transport()
+        try {
+            connected(repository, socket); repository.bootstrap(); repository.await(AacpStage.SUBSCRIBED)
+            withTimeout(3_000) {
+                while (socket.writes.size < 11) { scope.runCurrent(); scope.advanceTimeBy(200); delay(1) }
+            }
+            assertEquals(expected + expected + expected.take(3), socket.writes.toList())
+            assertEquals(3, socket.writes.count { it == expected[2] })
             assertNoReceivedCapabilities(repository)
         } finally { repository.close(); scope.cancel() }
     }

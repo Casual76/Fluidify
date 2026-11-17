@@ -26,11 +26,8 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.annotation.GraphicsMode
 
-/** PREPARED ONLY. Real UI events -> AirPodsHost.dispatch -> admitted controller -> real
- * writer/decoder -> fake transport. State is collected from the real host, never fabricated.
- * The focused PropertyEditor is production UI; name/EQ use the production body of their own
- * settings page because their editors are private. This is not full Activity navigation, visual
- * QA or hardware. */
+/** Real production settings pages -> host -> admitted controller -> writer/decoder.
+ * Only Bluetooth facts, persistence and supplied SDUs are synthetic. No hardware claim. */
 @RunWith(RobolectricTestRunner::class)
 @Config(application = Application::class, sdk = [35], qualifiers = "w600dp-h960dp-mdpi",
     instrumentedPackages = ["dev.lelonio.square.airpods"], shadows = [HostProtocolSocketShadow::class])
@@ -54,10 +51,8 @@ class AirPodsHostProtocolUiTest {
                     LocalFluidGlassModalHostState provides modal,
                     LocalFluidMotionPolicy provides FluidMotionPolicy(0f)) {
                     Box(Modifier.requiredSize(360.dp, 640.dp)) {
-                        if (property == null) AirPodsSettingsContent(state, dispatch, Modifier.fillMaxSize(), page = page)
-                        else Column(Modifier.fillMaxSize().verticalScroll(rememberScrollState())) {
-                            PropertyEditor(state, requireNotNull(AirPodsProperties.spec(property)), dispatch)
-                        }
+                        AirPodsSettingsContent(state, dispatch, Modifier.fillMaxSize(),
+                            page = property?.let(::airPodsSettingsPageOf) ?: page)
                         FluidGlassModalHost(modal, backdrop = backdrop)
                     }
                 }
@@ -65,105 +60,137 @@ class AirPodsHostProtocolUiTest {
         }
     }
 
-    private fun pendingVisible(f: HostProtocolFixture) {
-        compose.onAllNodesWithText(f.text(R.string.airpods_ui_pending)).onFirst()
-            .performScrollTo().assertIsDisplayed()
-    }
+    private fun slider(tag: String) = compose.onNode(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress) and
+        (hasTestTag(tag) or hasAnyAncestor(hasTestTag(tag))))
+    private fun nameField() = compose.onNode(hasSetTextAction() and
+        (hasTestTag("airpods-rename-name") or hasAnyAncestor(hasTestTag("airpods-rename-name"))))
+    private fun progress(tag: String, value: Int) = slider(tag).performScrollTo()
+        .performSemanticsAction(SemanticsActions.SetProgress) { assertTrue(it(value.toFloat())) }
+    private fun range(tag: String, value: Int) = slider(tag).performScrollTo()
+        .assertRangeInfoEquals(androidx.compose.ui.semantics.ProgressBarRangeInfo(value.toFloat(), 0f..100f))
 
-    @Test fun scalarClickKeepsOldSelectionPendingUntilDecodedRxChangesIt() {
+    @Test fun scalarClickShowsEffectiveImmediatelyAndDecodedContraryRxWins() {
         HostProtocolFixture().use { f ->
             f.start(); mount(f, CommandProperty.MIC_MODE)
-            val automatic = f.text(optionLabels.getValue("automatic"))
-            val left = f.text(optionLabels.getValue("left"))
-            compose.onNodeWithText(automatic).assertIsSelected()
-            compose.onNodeWithText(left).performClick()
-            compose.waitUntil(4_000) { f.transport.count(HostProtocolWire.MIC_LEFT) == 1 }
-            f.refresh()
-            pendingVisible(f)
-            compose.onNodeWithText(automatic).assertIsSelected()
-            // FluidListRow exposes Selected only for the selected row.
-            compose.onNodeWithText(left).assert(isSelected().not())
+            compose.onNodeWithTag("airpods-choice-MIC_MODE-0").assertIsSelected()
+            compose.onNodeWithTag("airpods-choice-MIC_MODE-2").performClick()
+            f.sent(CommandProperty.MIC_MODE)
+            assertEquals(listOf(HostProtocolWire.bytes(HostProtocolWire.MIC_LEFT).toList()), f.transport.commandWrites)
+            compose.onNodeWithTag("airpods-choice-MIC_MODE-2").assertIsSelected().assertIsEnabled()
             assertEquals(PropertyValue.Number(0), f.observed(CommandProperty.MIC_MODE))
-            f.receive(HostProtocolWire.MIC_LEFT, CommandProperty.MIC_MODE, PropertyValue.Number(2))
-            compose.onNodeWithText(left).assertIsSelected()
-            compose.onNodeWithText(automatic).assert(isSelected().not())
-            compose.onNodeWithText(f.text(R.string.airpods_ui_observed)).assertIsDisplayed()
-            assertEquals(1, f.transport.count(HostProtocolWire.MIC_LEFT))
+            f.receiveScalar(HostProtocolWire.MIC_AUTO, CommandProperty.MIC_MODE, PropertyValue.Number(0))
+            compose.onNodeWithTag("airpods-choice-MIC_MODE-0").assertIsSelected()
+            assertEquals(CommandOutcome.OBSERVED_OTHER, f.host.state.value.domain.outcomes[CommandProperty.MIC_MODE])
+            assertEquals(1, f.transport.commandWrites.size)
         }
     }
-
-    @Test fun multibyteNumberEditorSendsPinnedChimePayloadAndShowsObservedDifferentValue() {
+    @Test fun chimeSliderSendsPinnedMultibytePayloadAndContraryRxWins() {
         HostProtocolFixture().use { f ->
             f.start(); mount(f, CommandProperty.CHIME_VOLUME)
-            val title = f.text(featureTitles.getValue("aacp.chime_volume"))
-            compose.onNode(hasSetTextAction() and hasText(title)).performTextInput("37")
-            compose.onNodeWithText(f.text(R.string.airpods_ui_apply)).performScrollTo().performClick()
-            compose.waitUntil(4_000) { f.transport.count(HostProtocolWire.CHIME_37) == 1 }
-            f.refresh()
-            pendingVisible(f)
+            range("airpods-chime-volume", 75)
+            progress("airpods-chime-volume", 37); f.sent(CommandProperty.CHIME_VOLUME)
+            assertEquals(listOf(HostProtocolWire.bytes(HostProtocolWire.CHIME_37).toList()), f.transport.commandWrites)
+            range("airpods-chime-volume", 37)
             assertNull(f.observed(CommandProperty.CHIME_VOLUME))
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(6))
+            f.refresh()
+            range("airpods-chime-volume", 37)
+            assertNull(f.host.state.value.domain.outcomes[CommandProperty.CHIME_VOLUME])
+            assertEquals(1, f.transport.commandWrites.size)
             f.receive(HostProtocolWire.CHIME_40, CommandProperty.CHIME_VOLUME, PropertyValue.Number(40))
-            compose.onNodeWithText("$title · 40").performScrollTo().assertIsDisplayed()
-            compose.onNodeWithText(f.text(R.string.airpods_ui_observed)).performScrollTo().assertIsDisplayed()
+            range("airpods-chime-volume", 40)
             assertEquals(CommandOutcome.OBSERVED_OTHER, f.host.state.value.domain.outcomes[CommandProperty.CHIME_VOLUME])
+            assertEquals(1, f.transport.commandWrites.size)
         }
     }
-
-    @Test fun renameEditorSendsUtf8ByteLengthAndIdentityStaysOldUntilInformation() {
+    @Test fun renameIsPrefilledAndUtf8IntentShowsBeforeInformation() {
         HostProtocolFixture().use { f ->
             f.start(); mount(f, page = AirPodsSettingsPage.Rename)
-            compose.onNode(hasSetTextAction() and hasText(f.text(R.string.airpods_ui_name)))
-                .performScrollTo().performTextInput("Caffè")
+            nameField().assertTextContains("Pods")
+                .performTextReplacement("Caff\u00e8")
             compose.onNode(hasText(f.text(R.string.airpods_feature_setting_device_rename)) and hasClickAction())
                 .performScrollTo().performClick()
-            compose.waitUntil(4_000) { f.transport.count(HostProtocolWire.RENAME_CAFFE) == 1 }
-            f.refresh()
-            pendingVisible(f)
+            f.sent(CommandProperty.NAME)
+            assertEquals(listOf(HostProtocolWire.bytes(HostProtocolWire.RENAME_CAFFE).toList()), f.transport.commandWrites)
             assertEquals("Pods", f.host.state.value.identity?.name)
-            compose.onNodeWithText("Apple Inc. · Pods", substring = true).performScrollTo().assertIsDisplayed()
-            f.receive(HostProtocolWire.INFORMATION_CAFFE, CommandProperty.NAME, PropertyValue.Name("Caffè"))
-            compose.onNodeWithText("Apple Inc. · Caffè", substring = true).performScrollTo().assertIsDisplayed()
+            assertEquals(PropertyValue.Name("Caff\u00e8"), f.host.state.value.domain.propertyEffective(CommandProperty.NAME)?.value)
+            nameField().assertTextContains("Caff\u00e8")
+            f.receive(HostProtocolWire.INFORMATION_CAFFE, CommandProperty.NAME, PropertyValue.Name("Caff\u00e8"))
+            assertEquals("Caff\u00e8", f.host.state.value.identity?.name)
             assertEquals(CommandOutcome.OBSERVED_MATCH, f.host.state.value.domain.outcomes[CommandProperty.NAME])
-            assertEquals(1, f.transport.count(HostProtocolWire.RENAME_CAFFE))
+            assertEquals(1, f.transport.commandWrites.size)
         }
     }
-
-    @Test fun eqEditorDraftIsNotRxAndDifferentDecodedEqReplacesTheDraft() {
+    @Test fun eqSlidersSendWholeEffectivePayloadAndDifferentDecodedEqWinsWithoutEcho() {
         HostProtocolFixture().use { f ->
             f.start()
             val previous = PropertyValue.Eq(false, 50, 50, 50)
             f.receive(HostProtocolWire.EQ_OLD, CommandProperty.EQ, previous)
             mount(f, page = AirPodsSettingsPage.Equalizer)
-            // The EQ has its own page: its On is the only one, and its four Apply are the only ones.
-            compose.onAllNodesWithText(f.text(R.string.airpods_ui_on)).onLast().performScrollTo().performClick()
-            fun band(resource: Int, value: Float, applyOffsetFromEnd: Int) {
-                compose.onNodeWithContentDescription(f.text(resource)).performScrollTo()
-                    .performSemanticsAction(SemanticsActions.SetProgress) { set -> assertTrue(set(value)) }
-                // Current production Settings: low/mid/high/final-EQ are the final four Apply
-                // buttons (phone volume is unavailable with the deliberately absent media port).
-                val applies = compose.onAllNodes(hasText(f.text(R.string.airpods_ui_apply)) and hasClickAction())
-                val count = applies.fetchSemanticsNodes().size
-                assertTrue("EQ band Apply locator requires four trailing buttons", count >= 4)
-                applies[count - applyOffsetFromEnd].performScrollTo().performClick()
-            }
-            band(R.string.airpods_ui_low, 0f, 4)
-            band(R.string.airpods_ui_high, 100f, 2)
+            compose.onNodeWithTag("airpods-switch-EQ").performScrollTo().performTouchInput { click() }
+            f.sent(CommandProperty.EQ)
+            assertArrayEquals(HostProtocolWire.bytes("04 00 04 00 63 00 05 00 01 02 32 32 32"), f.transport.commandWrites.last().toByteArray())
+            progress("airpods-eq-low", 0)
+            f.await("second EQ payload") { f.transport.commandWrites.size == 2 }
+            f.sent(CommandProperty.EQ)
+            assertArrayEquals(HostProtocolWire.bytes("04 00 04 00 63 00 05 00 01 02 00 32 32"), f.transport.commandWrites.last().toByteArray())
+            progress("airpods-eq-high", 100)
+            f.await("third EQ payload") { f.transport.commandWrites.size == 3 }
+            f.sent(CommandProperty.EQ)
+            assertArrayEquals(HostProtocolWire.bytes(HostProtocolWire.EQ_NEW), f.transport.commandWrites.last().toByteArray())
+            assertEquals(3, f.transport.commandWrites.size)
             assertEquals(previous, f.observed(CommandProperty.EQ))
-            assertEquals(0, f.transport.count(HostProtocolWire.EQ_NEW)) // band draft commits do not send AACP
-            compose.onAllNodes(hasText(f.text(R.string.airpods_ui_apply)) and hasClickAction())
-                .onLast().performScrollTo().performClick()
-            compose.waitUntil(4_000) { f.transport.count(HostProtocolWire.EQ_NEW) == 1 }
-            f.refresh()
-            pendingVisible(f)
-            assertEquals(previous, f.observed(CommandProperty.EQ))
+            range("airpods-eq-low", 0); range("airpods-eq-mid", 50); range("airpods-eq-high", 100)
             val other = PropertyValue.Eq(false, 10, 20, 30)
             f.receive(HostProtocolWire.EQ_OTHER, CommandProperty.EQ, other)
             assertEquals(CommandOutcome.OBSERVED_OTHER, f.host.state.value.domain.outcomes[CommandProperty.EQ])
-            compose.onNodeWithContentDescription(f.text(R.string.airpods_ui_low)).performScrollTo()
-                .assertRangeInfoEquals(androidx.compose.ui.semantics.ProgressBarRangeInfo(10f, 0f..100f))
-            compose.onNodeWithContentDescription(f.text(R.string.airpods_ui_high)).performScrollTo()
-                .assertRangeInfoEquals(androidx.compose.ui.semantics.ProgressBarRangeInfo(30f, 0f..100f))
-            assertEquals(1, f.transport.count(HostProtocolWire.EQ_NEW))
+            range("airpods-eq-low", 10); range("airpods-eq-mid", 20); range("airpods-eq-high", 30)
+            compose.onNodeWithTag("airpods-switch-EQ").performScrollTo().assertIsOff()
+            assertEquals(3, f.transport.commandWrites.size)
         }
     }
+    @Test fun realWriteFailureWithdrawsIntentAndClosesControlsWithoutEcho() {
+        HostProtocolFixture().use { f ->
+            f.start()
+            f.receive(HostProtocolWire.CHIME_40, CommandProperty.CHIME_VOLUME, PropertyValue.Number(40))
+            mount(f, CommandProperty.CHIME_VOLUME)
+            f.transport.failWriteHex = HostProtocolWire.CHIME_37
+            progress("airpods-chime-volume", 37)
+            f.await("raw failure withdraws intent") {
+                f.owner.state.value.outcomes[CommandProperty.CHIME_VOLUME] == CommandOutcome.SEND_FAILED
+            }
+            f.refresh()
+            assertEquals(1, f.transport.failedWriteAttempts.get())
+            assertEquals(PropertyValue.Number(40), f.host.state.value.domain.propertyEffective(CommandProperty.CHIME_VOLUME)?.value)
+            assertFalse(f.host.state.value.controlsReady)
+            assertEquals(dev.lelonio.square.airpods.protocol.DesiredStatus.FAILED,
+                f.host.state.value.domain.desired[CommandProperty.CHIME_VOLUME]?.status)
+            slider("airpods-chime-volume").assertDoesNotExist()
+            assertTrue(f.transport.commandWrites.isEmpty())
+        }
+    }
+    @Test fun rapidChimeDragFlushesOneFinalPayloadAndDoesNotEchoOnRx() {
+        HostProtocolFixture().use { f ->
+            f.start(); mount(f, CommandProperty.CHIME_VOLUME)
+            val slider = slider("airpods-chime-volume").performScrollTo()
+            compose.mainClock.autoAdvance = false
+            slider.performTouchInput {
+                down(center)
+                moveTo(centerRight, delayMillis = 10)
+                moveTo(centerLeft, delayMillis = 10)
+                moveTo(centerRight, delayMillis = 10)
+                up()
+            }
+            compose.mainClock.advanceTimeBy(32)
+            compose.mainClock.autoAdvance = true
+            f.sent(CommandProperty.CHIME_VOLUME)
+            assertEquals(1, f.transport.commandWrites.size)
+            assertArrayEquals(HostProtocolWire.bytes("04 00 04 00 09 00 1f 64 50 00 00"), f.transport.commandWrites.single().toByteArray())
+            range("airpods-chime-volume", 100)
+            f.receive(HostProtocolWire.CHIME_40, CommandProperty.CHIME_VOLUME, PropertyValue.Number(40))
+            range("airpods-chime-volume", 40)
+            assertEquals(1, f.transport.commandWrites.size)
+        }
+    }
+
 }

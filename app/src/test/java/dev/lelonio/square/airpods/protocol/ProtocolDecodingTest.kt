@@ -21,10 +21,51 @@ class ProtocolDecodingTest {
         frame[6]=4
         assertTrue(AacpCodec.decodeSdu(frame).single() is AacpEvent.Unknown)
     }
-    @Test fun unknownVariableFrameConsumesRestWithoutHeaderScanning() {
+    @Test fun unknownFrameBetweenKnownFramesDoesNotConsumeTheFollowingControl() {
         val frame=hex("04 00 04 00 7f 00")+AacpCodec.mode(ListeningMode.ANC)
-        assertEquals(1,AacpCodec.decodeSdu(frame).size)
-        assertTrue(AacpCodec.decodeSdu(frame).single() is AacpEvent.Unknown)
+        val events=AacpCodec.decodeSdu(AacpCodec.conversation(true)+frame)
+        assertEquals(3,events.size)
+        assertEquals(AacpEvent.ConversationSetting(true),events[0])
+        assertTrue(events[1] is AacpEvent.Unknown)
+        assertEquals(AacpEvent.Mode(ListeningMode.ANC),events[2])
+    }
+    @Test fun meaningfulZeroFieldsAndTrailingEnvelopeZerosSurviveCoalescence() {
+        val sdu = hex("04 00 04 00 09 00 39 00 00 00 00 00 00") +
+            hex("04 00 04 00 09 00 2e 64 00 00 00 00 00 00")
+        assertEquals(listOf(AacpEvent.Property(CommandProperty.STEM_CONFIG, PropertyValue.Number(0)),
+            AacpEvent.Property(CommandProperty.AUTO_ANC_STRENGTH, PropertyValue.Number(0))), AacpCodec.decodeSdu(sdu))
+        val cycle = AirPodsProperties.spec(CommandProperty.LISTENING_MODE_CONFIGS)!!
+        for (mask in listOf(0,1,2,4,8)) {
+            val rx = AacpCodec.decodeSdu(hex("04 00 04 00 09 00 1a")+byteArrayOf(mask.toByte(),0,0,0)).single()
+            assertEquals(AacpEvent.Property(CommandProperty.LISTENING_MODE_CONFIGS,PropertyValue.Number(mask)),rx)
+            assertFalse(cycle.accepts(mask))
+            assertTrue(runCatching { AacpCodec.property(CommandProperty.LISTENING_MODE_CONFIGS,mask) }.isFailure)
+        }
+    }
+    @Test fun numericRawDiagnosticsRetainRejectedBytesAndRedactPrivatePayloads() {
+        val rows=mutableListOf<AacpRxFrame>()
+        val control=hex("04 00 04 00 09 00 0a 01 00 00 01")
+        AacpCodec.decodeSdu(control) { rows.add(it) }
+        assertEquals(control.map { it.toInt() and 255 },rows.single().bytes)
+        rows.clear()
+        val name=hex("04 00 04 00 1a 00 01 03 00 61 62 63")
+        AacpCodec.decodeSdu(name) { rows.add(it) }
+        assertTrue(rows.single().bytes.isEmpty())
+    }
+    @Test fun splitFramesReachW2CaptureWithoutNamesOrAggregatePayloads() {
+        val buffer=dev.lelonio.square.airpods.runtime.AirPodsRawRxBuffer(clock={0})
+        dev.lelonio.square.airpods.runtime.AirPodsRxCapture.install(buffer)
+        try {
+            AacpCodec.decodeSdu(hex("04 00 04 00 09 00 0d 02 00 00 00")+
+                hex("04 00 04 00 7f 00 00")+hex("04 00 04 00 09 00 39 00 00 00 00"))
+            AacpCodec.decodeSdu(AacpCodec.rename("private-synthetic-name"))
+            val text=buffer.export()
+            assertTrue(text.contains("op=9 id=d len=4 bytes=02000000"))
+            assertTrue(text.contains("op=9 id=39 len=4 bytes=00000000"))
+            assertTrue(text.contains("op=7f id=- len=1 bytes=omitted"))
+            assertTrue(text.contains("op=1a id=- len=25 bytes=omitted"))
+            assertFalse(text.contains("private-synthetic-name"))
+        } finally { dev.lelonio.square.airpods.runtime.AirPodsRxCapture.remove(buffer) }
     }
     @Test fun syntheticEarStemAndTrackingCaptures() {
         // Synthetic frames based on pinned Packets.kt and HeadOrientation.kt, not radio captures.
@@ -42,6 +83,12 @@ class ProtocolDecodingTest {
             assertEquals(-1,sample.orientation1); assertEquals(-32768,sample.horizontal);assertEquals(32767,sample.vertical)
             assertEquals(variant,sample.wireVariant)
             assertTrue(AacpCodec.decodeSdu(frame.copyOf(69)).single() is AacpEvent.Unknown)
+            val coalesced=AacpCodec.decodeSdu(frame+hex("04 00 04 00 7f 00")+frame)
+            assertEquals(3,coalesced.size)
+            assertEquals(sample,(coalesced[0] as AacpEvent.Head).sample)
+            assertTrue(coalesced[1] is AacpEvent.Unknown)
+            assertEquals(sample,(coalesced[2] as AacpEvent.Head).sample)
+            assertEquals(sample,(AacpCodec.decodeSdu(frame+byteArrayOf(1,2,3)).single() as AacpEvent.Head).sample)
         }
     }
     @Test fun modelsAndCatalogDoNotFallBackOrClaimAnnouncements() {

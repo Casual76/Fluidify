@@ -22,7 +22,8 @@ import dev.lelonio.square.airpods.CommandProperty
 import dev.lelonio.square.airpods.PendingCommand
 import dev.lelonio.square.airpods.Received
 import dev.lelonio.square.airpods.protocol.AirPodsProperties
-import dev.lelonio.square.airpods.protocol.PropertyValue
+import dev.lelonio.square.airpods.protocol.*
+import dev.lelonio.square.airpods.runtime.storage.*
 import dev.lelonio.square.ui.theme.SquareTheme
 import org.junit.Assert.*
 import org.junit.Rule
@@ -83,15 +84,28 @@ class AirPodsUiReuseTest {
 
     @Test fun everyPublicRegistryControlIsDrawnOnThePageItIsFiledUnder() {
         var page by mutableStateOf(AirPodsSettingsPage.Main)
-        mount { AirPodsSettingsContent(uiFixture(), {}, page = page) }
+        mount { AirPodsSettingsContent(uiFixture().copy(gestureAssignments = mapOf(GestureSide.LEFT to GestureAction.NOISE_CONTROL)), {}, page = page) }
         for (target in AirPodsSettingsPage.entries) {
             compose.runOnIdle { page = target }
             compose.waitForIdle()
             for (spec in airPodsPageSpecs(target)) {
                 // The fixture is a model with every capability, so nothing is hidden as not applicable.
-                val title = label(featureTitles.getValue(spec.catalogId))
-                assertTrue("${spec.catalogId} is missing from $target",
-                    compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty())
+                val tag = when (spec.property) {
+                    CommandProperty.AUTO_ANC_STRENGTH -> "airpods-property-${spec.property}"
+                    CommandProperty.CHIME_VOLUME -> "airpods-chime-volume"
+                    CommandProperty.EQ -> "airpods-switch-EQ"
+                    CommandProperty.STEM_CONFIG -> "airpods-gesture-LEFT-NOISE_CONTROL"
+                    CommandProperty.CALL_MANAGEMENT_CONFIG -> "airpods-choice-mute-once"
+                    CommandProperty.LISTENING_MODE_CONFIGS -> "airpods-cycle-TRANSPARENCY"
+                    else -> null
+                }
+                if (spec.property == CommandProperty.NAME) compose.onNode(hasSetTextAction()).assertExists()
+                else if (tag != null) compose.onNodeWithTag(tag).assertExists()
+                else {
+                    val title = label(featureTitles.getValue(spec.catalogId))
+                    assertTrue("${spec.catalogId} is missing from $target",
+                        compose.onAllNodesWithText(title).fetchSemanticsNodes().isNotEmpty())
+                }
             }
         }
         assertEquals(registry.size, AirPodsSettingsPage.entries.sumOf { airPodsPageSpecs(it).size })
@@ -101,11 +115,39 @@ class AirPodsUiReuseTest {
         val opened = mutableListOf<AirPodsSettingsPage>()
         mount { AirPodsSettingsContent(uiFixture(), {}, onOpen = opened::add) }
         val behindRows = AirPodsSettingsPage.entries - AirPodsSettingsPage.Main -
-            AirPodsSettingsPage.LongPressLeft - AirPodsSettingsPage.LongPressRight - AirPodsSettingsPage.Setup
+            AirPodsSettingsPage.LongPressLeft - AirPodsSettingsPage.LongPressRight - AirPodsSettingsPage.AdaptiveStrength
         for (page in behindRows) compose.onNodeWithTag("airpods-open-$page").performScrollTo().performClick()
         compose.onNodeWithTag("airpods-gesture-LEFT").performScrollTo().performClick()
         compose.onNodeWithTag("airpods-gesture-RIGHT").performScrollTo().performClick()
         assertEquals(behindRows + AirPodsSettingsPage.LongPressLeft + AirPodsSettingsPage.LongPressRight, opened)
+    }
+
+    @Test fun largeFontNameKeepsTitleAndValueReadableAndStillOpensRename() {
+        val opened = mutableListOf<AirPodsSettingsPage>()
+        val state = received(CommandProperty.MODE to 2).let {
+            it.copy(domain = it.domain.copy(properties = it.domain.properties +
+                (CommandProperty.NAME to Received<PropertyValue>(PropertyValue.Name("My AirPods"), it.nowMs, it.domain.generation))))
+        }
+        mount(font = 2f) { AirPodsSettingsContent(state, {}, onOpen = opened::add) }
+        compose.onNodeWithTag("airpods-open-Rename").performScrollTo()
+            .assertTextContains(label(R.string.airpods_p1_name)).assertTextContains("My AirPods")
+        val title = compose.onNodeWithText(label(R.string.airpods_p1_name), useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        val value = compose.onNodeWithText("My AirPods", useUnmergedTree = true).fetchSemanticsNode().boundsInRoot
+        assertTrue("Value must be below the title at font 2", value.top >= title.bottom)
+        assertTrue("Title has room for words", title.width > 80f)
+        compose.onNodeWithTag("airpods-open-Rename").performClick()
+        assertEquals(listOf(AirPodsSettingsPage.Rename), opened)
+    }
+
+    @Test fun forgetExplanationLivesInDestructiveConfirmationAndNotInThePageFooter() {
+        val actions = mutableListOf<AirPodsUiAction>()
+        mount { AirPodsSettingsContent(uiFixture().copy(availability = mapOf("setup.FORGET" to UiAvailability(true))), actions::add) }
+        compose.onNodeWithText(label(R.string.airpods_feature_forget_summary)).assertDoesNotExist()
+        compose.onNode(hasText(label(R.string.airpods_feature_forget)) and hasClickAction())
+            .performScrollTo().performClick()
+        compose.onNodeWithText(label(R.string.airpods_ui_forget_confirm)).assertIsDisplayed()
+        compose.onNodeWithText(label(R.string.airpods_ui_cancel)).performClick()
+        assertTrue(actions.isEmpty())
     }
 
     // ---- the gate, and a session that is not there -----------------------------------------
@@ -122,9 +164,9 @@ class AirPodsUiReuseTest {
         compose.onNodeWithText(label(R.string.airpods_feature_forget)).performScrollTo().assertExists()
     }
 
-    @Test fun readyDeviceShowsDiagnosticsWithoutServiceSetupOrRepeatedForgetDescription() {
+    @Test fun readyDeviceShowsSetupAndDiagnosticsWithoutRepeatingTheirExplanations() {
         mount { AirPodsSettingsContent(uiFixture(), {}) }
-        compose.onNodeWithTag("airpods-open-${AirPodsSettingsPage.Setup}").assertDoesNotExist()
+        compose.onNodeWithTag("airpods-open-${AirPodsSettingsPage.Setup}").performScrollTo().assertHasClickAction()
         compose.onNodeWithTag("airpods-open-${AirPodsSettingsPage.Diagnostics}").performScrollTo().assertHasClickAction()
         compose.onNodeWithText(label(R.string.airpods_feature_forget)).performScrollTo().assertExists()
         compose.onAllNodesWithText(label(R.string.airpods_feature_forget_summary)).assertCountEquals(0)
@@ -134,16 +176,16 @@ class AirPodsUiReuseTest {
     @Test fun withTheGatePassedThereIsNoGateNoticeAndTheReceivedModeIsTheThumb() {
         mount { AirPodsSettingsContent(uiFixture(), {}) }
         compose.onNodeWithTag("airpods-gate").assertDoesNotExist()
-        compose.onNodeWithTag("airpods-summary-state")
-            .assertTextContains(label(R.string.airpods_feature_connected))
+        compose.onNodeWithTag("airpods-summary-state").assertDoesNotExist()
+        assertTrue(uiFixture().controlsReady)
         compose.onNodeWithTag("airpods-mode-2").performScrollTo().assertIsSelected()
         for (mode in listOf(1, 3, 4)) compose.onNodeWithTag("airpods-mode-$mode").assertIsNotSelected()
     }
 
     @Test fun aLiveSessionRemainsVisibleWhenAllBatteryReadingsHaveExpired() {
         mount { AirPodsSettingsContent(uiFixture().copy(nowMs = 301_000), {}) }
-        compose.onNodeWithTag("airpods-summary-state")
-            .assertTextContains(label(R.string.airpods_feature_connected))
+        compose.onNodeWithTag("airpods-summary-state").assertDoesNotExist()
+        assertTrue(uiFixture().controlsReady)
         compose.onAllNodesWithText("80%").assertCountEquals(0)
         compose.onNode(hasTestTag("airpods-battery-4") and hasAnyDescendant(
             hasText(label(R.string.airpods_ui_missing))), useUnmergedTree = true).assertExists()
@@ -193,12 +235,19 @@ class AirPodsUiReuseTest {
         compose.onAllNodesWithText("last known", substring = true).assertCountEquals(0)
     }
 
-    @Test fun staleChargeLeavesItsCellUnknownAndIsShownOnlyAsHistory() {
-        mount { AirPodsSettingsContent(uiFixture().copy(nowMs = 301_000), {}) }
+    @Test fun staleChargeNeverBecomesLiveAndCachedCaseIsMarkedNotUpdated() {
+        val base = uiFixture()
+        val state = base.copy(nowMs = 301_000, domain = base.domain.copy(cachedValues =
+            AirPodsPairValues(casePercent = SavedCasePercent(37, 1_700_000_000_000))))
+        mount { AirPodsSettingsContent(state, {}) }
         compose.onNode(hasTestTag("airpods-battery-4") and hasAnyDescendant(hasText(label(R.string.airpods_ui_missing))),
             useUnmergedTree = true).assertExists()
         compose.onAllNodesWithText("80%").assertCountEquals(0)
-        compose.onNodeWithText("last known 80%", substring = true).assertExists()
+        compose.onNode(hasTestTag("airpods-battery-8") and hasAnyDescendant(hasText("37%")),
+            useUnmergedTree = true).assertExists()
+        compose.onNodeWithText(label(R.string.airpods_header_not_live)).assertExists()
+        assertNull(state.freshBattery(8))
+        compose.onAllNodesWithText("last known", substring = true).assertCountEquals(0)
     }
 
     @Test fun aMatchedPairIsSaidOnceWithTheLowerOfTheTwo() {
@@ -215,19 +264,19 @@ class AirPodsUiReuseTest {
 
     // ---- a request is not an answer -----------------------------------------------------------
 
-    @Test fun whileARequestIsOutstandingTheReceivedAlternativeStaysSelectedAndNothingCanBeRequested() {
+    @Test fun anAdmittedIntentIsEffectiveAndASecondChoiceRemainsAvailable() {
         val base = received(CommandProperty.MIC_MODE to 0)
-        val state = base.copy(domain = base.domain.copy(pending = mapOf(CommandProperty.MIC_MODE to
-            PendingCommand(2, base.nowMs, 1, generation = base.domain.generation))))
+        var state by mutableStateOf(base.copy(domain = base.domain.copy(desired = mapOf(CommandProperty.MIC_MODE to
+            DesiredProperty(PropertyValue.Number(2), 1, 7, DesiredStatus.SENT, base.nowMs)))))
         val actions = mutableListOf<AirPodsUiAction>()
-        mount { Column { PropertyEditor(state, requireNotNull(AirPodsProperties.spec(CommandProperty.MIC_MODE)), actions::add) } }
-        compose.onNodeWithText(label(R.string.airpods_ui_pending)).assertIsDisplayed()
-        compose.onNodeWithText(label(R.string.airpods_ui_automatic)).assertIsSelected().assert(hasClickAction().not())
-        // "Left" is what was asked for. It is not selected, and asking again is not possible.
-        compose.onNodeWithText(label(R.string.airpods_ui_left)).assertIsNotSelected().assert(hasClickAction().not())
-        compose.onNodeWithText(label(R.string.airpods_ui_right)).assertIsNotSelected().assert(hasClickAction().not())
-        compose.onNodeWithText(label(R.string.airpods_ui_left)).performTouchInput { click() }
-        assertTrue(actions.isEmpty())
+        mount { AirPodsSettingsContent(state, actions::add, page = AirPodsSettingsPage.Calls) }
+        compose.onNodeWithText(label(R.string.airpods_ui_pending)).assertDoesNotExist()
+        compose.onNodeWithText(label(R.string.airpods_c3_always_left)).assertIsSelected()
+        compose.onNodeWithText(label(R.string.airpods_ui_automatic)).assertIsNotSelected().performClick()
+        assertEquals(listOf(AirPodsUiAction.Write(7, CommandProperty.MIC_MODE, PropertyValue.Number(0))), actions)
+        compose.runOnIdle { state = base } // Later contrary RX projection, with no echo write.
+        compose.onNodeWithText(label(R.string.airpods_ui_automatic)).assertIsSelected()
+        assertEquals(1, actions.size)
     }
 
     @Test fun aTapOnAModeAsksForItAndLeavesTheThumbOnTheReceivedMode() {
@@ -274,17 +323,19 @@ class AirPodsUiReuseTest {
         assertTrue(actions.isEmpty())
     }
 
-    @Test fun whileAModeIsAwaitedTheReceivedOneIsStillTheThumbAndNoModeCanBeAskedFor() {
+    @Test fun anAdmittedModeIsSelectedWithoutBlockingTheNextChoice() {
         val base = uiFixture()
-        val state = base.copy(domain = base.domain.copy(pending = mapOf(CommandProperty.MODE to
-            PendingCommand(3, base.nowMs, 1, generation = base.domain.generation))))
+        var state by mutableStateOf(base.copy(domain = base.domain.copy(desired = mapOf(CommandProperty.MODE to
+            DesiredProperty(PropertyValue.Number(3), 1, 7, DesiredStatus.SENT, base.nowMs)))))
         val actions = mutableListOf<AirPodsUiAction>()
         mount { AirPodsQuickOverlay(state, true, {}, actions::add, {}) }
-        compose.onNodeWithText(label(R.string.airpods_ui_pending)).assertIsDisplayed()
+        compose.onNodeWithText(label(R.string.airpods_ui_pending)).assertDoesNotExist()
+        compose.onNodeWithTag("airpods-quick-MODE-3").assertIsSelected()
+        compose.onNodeWithTag("airpods-quick-MODE-4").assertIsNotSelected().performClick()
+        assertEquals(listOf(AirPodsUiAction.Write(7, CommandProperty.MODE, PropertyValue.Number(4))), actions)
+        compose.runOnIdle { state = base }
         compose.onNodeWithTag("airpods-quick-MODE-2").assertIsSelected()
-        for (mode in 1..4) compose.onNodeWithTag("airpods-quick-MODE-$mode").assert(hasClickAction().not())
-        compose.onNodeWithTag("airpods-quick-MODE-3").assertIsNotSelected().performTouchInput { click() }
-        assertTrue(actions.isEmpty())
+        assertEquals(1, actions.size)
     }
 
     @Test fun quickSaysWhatIsMissingOnlyWhenTheSessionIsNotReady() {
@@ -308,7 +359,9 @@ class AirPodsUiReuseTest {
     @Test fun aSwitchIsTheReceivedValueAndATouchOnlyAsksForTheOther() {
         val actions = mutableListOf<AirPodsUiAction>()
         val title = label(featureTitles.getValue("aacp.conversation_detect_config"))
-        mount { AirPodsQuickOverlay(received(CommandProperty.CONVERSATION to 1), true, {}, actions::add, {}) }
+        val state = received(CommandProperty.CONVERSATION to 1).copy(availability = mapOf(
+            "local.CA_DUCK.disable" to UiAvailability(true), "local.CA_PAUSE.disable" to UiAvailability(true)))
+        mount { AirPodsQuickOverlay(state, true, {}, actions::add, {}) }
         val switch = compose.onNode(hasText(title) and isToggleable())
         switch.performScrollTo().assertIsOn()
         // The row keeps no click action in its semantics; the pointer is what a finger uses.
@@ -317,28 +370,25 @@ class AirPodsUiReuseTest {
         compose.onNode(hasText(title) and isToggleable()).assertIsOn()
     }
 
-    @Test fun withNothingReceivedThereIsNoSwitchPositionToShow() {
-        val title = label(featureTitles.getValue("aacp.conversation_detect_config"))
-        // Not ready, so nothing may be tried either: the row is the missing mark and no control.
-        val state = uiFixture().let { it.copy(domain = it.domain.copy(stage = AacpStage.ERROR)) }
-        mount { Column { PropertySwitchRow(state, requireNotNull(AirPodsProperties.spec(CommandProperty.CONVERSATION))) {} } }
-        compose.onAllNodes(isToggleable()).assertCountEquals(0)
-        compose.onNode(hasText(title) and hasText(label(R.string.airpods_ui_missing))).assertExists()
-            .assert(hasClickAction().not())
-    }
-
-    @Test fun withNothingReceivedButAValueThatMayBeTriedNeitherAlternativeIsSelected() {
+    @Test fun anUnavailableSwitchShowsItsDefaultButCannotSend() {
         val actions = mutableListOf<AirPodsUiAction>()
-        mount { Column { PropertySwitchRow(uiFixture(), requireNotNull(AirPodsProperties.spec(CommandProperty.CONVERSATION)), actions::add) } }
-        compose.onAllNodes(isToggleable()).assertCountEquals(0)
-        compose.onNodeWithText(label(R.string.airpods_ui_candidate)).assertIsDisplayed()
-        compose.onNodeWithText(label(R.string.airpods_ui_on)).assertIsNotSelected()
-        compose.onNodeWithText(label(R.string.airpods_ui_off)).assertIsNotSelected().performClick()
-        compose.waitForIdle()
-        assertEquals(listOf<AirPodsUiAction>(AirPodsUiAction.Write(7, CommandProperty.CONVERSATION, PropertyValue.Number(2))), actions)
+        val state = uiFixture().let { it.copy(domain = it.domain.copy(stage = AacpStage.ERROR)) }
+        mount { Column { MainSwitchRow(state, requireNotNull(AirPodsProperties.spec(CommandProperty.CONVERSATION)), actions::add) } }
+        compose.onNodeWithTag("airpods-switch-CONVERSATION").assertIsOff().assertIsNotEnabled().performTouchInput { click() }
+        assertTrue(actions.isEmpty())
+        assertNull(state.domain.propertyObserved(CommandProperty.CONVERSATION))
     }
 
-    // ---- what left the quick pane is on its page ------------------------------------------------
+    @Test fun aDefaultSwitchCanBeChangedWithoutFabricatingAnObservation() {
+        val actions = mutableListOf<AirPodsUiAction>()
+        val state = uiFixture().copy(availability = mapOf(
+            "local.CA_DUCK.enable" to UiAvailability(true), "local.CA_PAUSE.enable" to UiAvailability(true),
+            "local.AUTOMATIONS.enable" to UiAvailability(true)))
+        mount { Column { MainSwitchRow(state, requireNotNull(AirPodsProperties.spec(CommandProperty.CONVERSATION)), actions::add) } }
+        compose.onNodeWithTag("airpods-switch-CONVERSATION").assertIsOff().assertIsEnabled().performClick()
+        assertEquals(listOf(AirPodsUiAction.Write(7, CommandProperty.CONVERSATION, PropertyValue.Number(1))), actions)
+        assertNull(state.domain.propertyObserved(CommandProperty.CONVERSATION))
+    }
 
     @Test fun theQuickPaneCarriesNoPreferencesAndNoSummaries() {
         mount { AirPodsQuickOverlay(uiFixture(), true, {}, {}, {}) }
@@ -348,7 +398,7 @@ class AirPodsUiReuseTest {
         compose.onNodeWithTag("airpods-all-settings").assertIsDisplayed()
     }
 
-    @Test fun aDraftedNumberStandsBesideApplyAndNeverReplacesTheReceivedValue() {
+    @Test fun hostVolumeSendsDirectlyWithoutApplyOrInventingState() {
         val actions = mutableListOf<AirPodsUiAction>()
         val state = uiFixture().copy(localVolumePercent = 40,
             availability = mapOf("host.volume" to UiAvailability(true)))
@@ -356,18 +406,11 @@ class AirPodsUiReuseTest {
         mount { AirPodsSettingsContent(state, actions::add, page = AirPodsSettingsPage.Automations) }
         compose.onNodeWithContentDescription(title).performScrollTo()
             .performSemanticsAction(SemanticsActions.SetProgress) { set -> assertTrue(set(55f)) }
-        compose.onNodeWithText("$title · 40").assertExists()
-        compose.onNodeWithText("55").assertExists()
-        assertTrue("A draft is not a request", actions.isEmpty())
-        // Host volume is the last number of the page: its Apply is the last enabled one.
-        compose.onAllNodes(hasText(label(R.string.airpods_ui_apply)) and hasClickAction() and isEnabled())
-            .onLast().performScrollTo().performClick()
+        compose.waitForIdle()
         assertEquals(listOf<AirPodsUiAction>(AirPodsUiAction.LocalVolume(55)), actions)
-        compose.onAllNodesWithText("55").assertCountEquals(0)
-        compose.onNodeWithText("$title · 40").assertExists()
+        compose.onAllNodesWithText(label(R.string.airpods_ui_apply)).assertCountEquals(0)
+        assertEquals(40, state.localVolumePercent)
     }
-
-    // ---- the capsule --------------------------------------------------------------------------------
 
     @Test fun theCapsuleIsOneTargetThatOpensThePaneAndNeverWrites() {
         val actions = mutableListOf<AirPodsUiAction>()

@@ -34,7 +34,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -66,12 +65,13 @@ import dev.lelonio.square.airpods.AacpStage
 import dev.lelonio.square.airpods.AirPodsIdentity
 import dev.lelonio.square.airpods.AirPodsState
 import dev.lelonio.square.airpods.BatteryValue
-import dev.lelonio.square.airpods.CommandOutcome
 import dev.lelonio.square.airpods.CommandProperty
 import dev.lelonio.square.airpods.ListeningMode
-import dev.lelonio.square.airpods.PendingCommand
 import dev.lelonio.square.airpods.Received
-import dev.lelonio.square.airpods.protocol.PropertyValue
+import dev.lelonio.square.airpods.protocol.*
+import dev.lelonio.square.airpods.runtime.storage.AirPodsPairValues
+import dev.lelonio.square.airpods.runtime.storage.SavedProperty
+import dev.lelonio.square.airpods.runtime.storage.SavedCasePercent
 import dev.lelonio.square.airpods.runtime.storage.HostSettings
 import dev.lelonio.square.airpods.runtime.storage.PairSettings
 import dev.lelonio.square.airpods.runtime.storage.PairVerification
@@ -82,8 +82,6 @@ import dev.lelonio.square.ui.navigation.LocalFluidifyPageAmbient
 import dev.lelonio.square.ui.navigation.rememberFluidifyPageAmbient
 import dev.lelonio.square.ui.theme.SquareTheme
 import dev.lelonio.square.ui.theme.pageFloor
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.launch
 
 /**
  * Invented AirPods state for looking at the three surfaces on a device. Debug builds only.
@@ -108,7 +106,7 @@ internal object AirPodsDemo {
     fun availability(enabled: Boolean, reason: String? = null,
         vararg overrides: Pair<String, UiAvailability>): Map<String, UiAvailability> {
         val keys = SetupAction.entries.map { "setup.$it" } +
-            LocalToggle.entries.flatMap { listOf("local.$it", "status.$it") } +
+            LocalToggle.entries.flatMap { listOf("local.$it", "status.$it", "local.$it.enable", "local.$it.disable") } +
             CommandProperty.entries.map { "property.$it" } +
             GestureSide.entries.map { "gesture.$it" } +
             listOf("local.preferredMode", "host.volume", "host.ca_volume", "tracking.start", "tracking.stop")
@@ -118,7 +116,7 @@ internal object AirPodsDemo {
     private fun done(vararg actions: SetupAction) =
         actions.map { "setup.$it" to UiAvailability(false, "DEMO · già fatto in questo stato") }.toTypedArray()
 
-    /** Set up, connected, subscribed: one answer outstanding and one request that timed out. */
+    /** Set up, connected, subscribed: current observations and ordinary display defaults. */
     val connected = AirPodsUiState(
         domain = AirPodsState(
             generation = GENERATION, stage = AacpStage.SUBSCRIBED,
@@ -148,8 +146,7 @@ internal object AirPodsDemo {
             batteries = mapOf(
                 4 to rx(BatteryValue(82, 2)), 2 to rx(BatteryValue(64, 2)), 8 to rx(BatteryValue(37, 1)),
             ),
-            pending = mapOf(CommandProperty.DOUBLE_CLICK_INTERVAL to PendingCommand(1, NOW - 400, 3, generation = GENERATION)),
-            outcomes = mapOf(CommandProperty.CLICK_HOLD_INTERVAL to CommandOutcome.NOT_CONFIRMED),
+
         ),
         pair = PairSettings(
             verification = PairVerification("A3063", "demo", 0),
@@ -182,9 +179,20 @@ internal object AirPodsDemo {
     val partial = connected.copy(domain = connected.domain.copy(batteries = mapOf(
         4 to rx(BatteryValue(82, 2)), 8 to rx(BatteryValue(37, 1), ageMs = 420_000))))
 
-    /** A listening-mode request waiting for its answer: the received mode is still the selected one. */
-    val pending = connected.copy(domain = connected.domain.copy(
-        pending = mapOf(CommandProperty.MODE to PendingCommand(3, NOW - 400, 4, generation = GENERATION))))
+    /** Admitted local intent remains effective even without RX; the old ANC observation is intact. */
+    val localIntent = connected.copy(domain = connected.domain.copy(desired = mapOf(CommandProperty.MODE to
+        DesiredProperty(PropertyValue.Number(3), 4, GENERATION, DesiredStatus.SENT, NOW - 400))))
+
+    /** A subsequent contrary RX reconciles the intent, without writing another command. */
+    val contraryRx = localIntent.copy(domain = localIntent.domain.copy(
+        mode = rx(ListeningMode.ADAPTIVE),
+        desired = localIntent.domain.desired.mapValues { it.value.copy(status = DesiredStatus.CONTRADICTED) }))
+
+    /** Reopened pair: cached values are display inputs, never live observations. */
+    val cached = connected.copy(domain = connected.domain.copy(mode = null, properties = emptyMap(), batteries = emptyMap(),
+        cachedValues = AirPodsPairValues(observed = mapOf(
+            CommandProperty.MODE to SavedProperty(PropertyValue.Number(4), 1_700_000_000_000)),
+            casePercent = SavedCasePercent(37, 1_700_000_000_000))))
 
     /** Verified pair, audio profile down: the player keeps the capsule, Home does not show one. */
     fun disconnected(reason: String) = connected.copy(profileConnected = false,
@@ -202,47 +210,25 @@ internal object AirPodsDemo {
             "setup.DELETE_DIAGNOSTICS" to UiAvailability(true)))
 }
 
-/**
- * A pretend device for the stage: it answers what the surfaces ask, after a visible wait.
- *
- * Debug builds only, and only with [simulate]. Nothing is sent anywhere: a device write becomes a
- * pending request in the invented state and, 900 ms later, a received value equal to what was
- * asked; a phone-side preference changes at once. Setup and tracking actions are discarded,
- * because there is nothing here for them to act on. This is what lets the stage show the
- * difference the surfaces are built around: where the thumb is while a request is outstanding,
- * and where it goes when the answer arrives.
- */
+/** Synthetic admission only: update local choices/effective intent immediately; never invent RX.
+ * Contrary RX and cached-value scenes are explicit fixtures, not delayed firmware confirmations. */
 @Composable
 private fun rememberDemoSession(initial: AirPodsUiState, simulate: Boolean): Pair<AirPodsUiState, (AirPodsUiAction) -> Unit> {
     var state by remember(initial) { mutableStateOf(initial) }
     var sequence by remember(initial) { mutableStateOf(100L) }
-    val scope = rememberCoroutineScope()
     fun answer(action: AirPodsUiAction) {
         if (!simulate) return
         when (action) {
-            is AirPodsUiAction.Write -> if (state.writeAllowed(action.property, action.value)) {
-                val number = (action.value as? PropertyValue.Number)?.value
-                val name = (action.value as? PropertyValue.Name)?.value
+            is AirPodsUiAction.Write -> if (state.writeAllowed(action.property, action.value) &&
+                (action.property !in coordinatedMainProperties || state.mainToggleAllowed(action.property,
+                    (action.value as? PropertyValue.Number)?.value == 1))) {
                 sequence += 1
-                state = state.copy(domain = state.domain.copy(pending = state.domain.pending +
-                    (action.property to PendingCommand(number ?: 0, AirPodsDemo.NOW, sequence,
-                        requested = action.value, generation = state.domain.generation))))
-                scope.launch {
-                    delay(900)
-                    val domain = state.domain
-                    val answered = ListeningMode.entries.firstOrNull { it.wire == number }
-                    state = state.copy(domain = domain.copy(
-                        pending = domain.pending - action.property,
-                        outcomes = domain.outcomes + (action.property to CommandOutcome.OBSERVED_MATCH),
-                        properties = if (name == null) domain.properties +
-                            (action.property to Received(action.value, AirPodsDemo.NOW, domain.generation))
-                        else domain.properties,
-                        mode = if (action.property == CommandProperty.MODE && answered != null)
-                            Received(answered, AirPodsDemo.NOW, domain.generation) else domain.mode,
-                        identityReceived = if (name == null) domain.identityReceived
-                        else domain.identityReceived?.let { it.copy(value = it.value.copy(name = name)) },
-                    ))
-                }
+                val pair = if (action.property in coordinatedMainProperties)
+                    mainToggleSettings(state.pair, action.property, (action.value as? PropertyValue.Number)?.value == 1)
+                else state.pair
+                state = state.copy(pair = pair, domain = state.domain.copy(desired = state.domain.desired +
+                    (action.property to DesiredProperty(action.value, sequence, state.domain.generation,
+                        DesiredStatus.SENT, AirPodsDemo.NOW))))
             }
             is AirPodsUiAction.Toggle -> {
                 val pair = state.pair
@@ -512,7 +498,7 @@ private fun DemoArtwork(dark: Boolean, flat: Boolean) {
  *         --es view flow --es theme dark --es state connected --ef font 1.0
  *
  * Extras, all optional: `view` = flow (default) | board | page | quick | capsules; `theme` = dark
- * (default) | light | amoled; `state` = connected (default) | paired | partial | pending |
+ * (default) | light | amoled; `state` = connected (default) | paired | partial | local-intent | contrary-rx | cached |
  * disconnected | gate-off; `page` = a settings page by name (Main, Rename, LongPressLeft,
  * LongPressRight, Calls, AdaptiveStrength, Equalizer, Controls, HeadGestures, Automations, Setup,
  * Diagnostics) for `page` and `board`; `sim` = false to discard every action instead of answering
@@ -534,7 +520,9 @@ class AirPodsGlassPreviewActivity : ComponentActivity() {
         val state = when (intent.getStringExtra("state")) {
             "paired" -> AirPodsDemo.paired
             "partial" -> AirPodsDemo.partial
-            "pending" -> AirPodsDemo.pending
+            "local-intent" -> AirPodsDemo.localIntent
+            "contrary-rx" -> AirPodsDemo.contraryRx
+            "cached" -> AirPodsDemo.cached
             "disconnected" -> AirPodsDemo.disconnected(getString(R.string.airpods_reason_connection))
             "gate-off" -> AirPodsDemo.gateOff(getString(R.string.airpods_reason_gate))
             else -> AirPodsDemo.connected

@@ -147,7 +147,10 @@ class I5LongPressRuntimeTest {
         repository.receive(generation, AacpEvent.Property(CommandProperty.STEM_CONFIG, PropertyValue.Number(mask)))
     private fun Fixture.pairSettings() = data().pairs.getValue(pair)
     private suspend fun Fixture.outcome(expected: CommandOutcome) = withTimeout(7_000) {
-        controller.state.first { it.outcomes[CommandProperty.STEM_CONFIG] == expected }
+        controller.state.first { it.outcomes[CommandProperty.STEM_CONFIG] == expected }; Unit
+    }
+    private suspend fun Fixture.sent() = withTimeout(2_000) {
+        controller.state.first { it.desired[CommandProperty.STEM_CONFIG]?.status == DesiredStatus.SENT }
     }
     @Test fun masksZeroThroughSevenBothSidesAndBothChoicesPreserveLowBits() = runBlocking {
         for (mask in 0..7) Fixture().use { f ->
@@ -160,20 +163,22 @@ class I5LongPressRuntimeTest {
                 assertEquals(if (!leftSide) choice else before.rightLongPress, saved.rightLongPress)
                 val custom = saved.leftLongPress == LongPressAction.DIGITAL_ASSISTANT || saved.rightLongPress == LongPressAction.DIGITAL_ASSISTANT
                 val wanted = mask or (if (custom) 8 else 0)
-                assertEquals(wanted, f.controller.state.value.pending.getValue(CommandProperty.STEM_CONFIG).value)
-                f.rx(wanted); f.outcome(CommandOutcome.OBSERVED_MATCH)
+                assertEquals(wanted, (f.controller.state.value.desired.getValue(CommandProperty.STEM_CONFIG).requested as PropertyValue.Number).value)
+                f.sent(); f.rx(wanted); f.outcome(CommandOutcome.OBSERVED_MATCH)
             }
         }
     }
-    @Test fun duplicateDirectAndConcurrentPendingRequestsDoNotPersist() = runBlocking {
+    @Test fun concurrentSidesAndNewerChoiceAreAcceptedWhileUnconfirmed() = runBlocking {
         Fixture().use { f ->
             f.admit(); f.ready(); f.rx(3)
             val accepted = listOf(async(Dispatchers.Default) { f.controller.setLongPress(left = LongPressAction.DIGITAL_ASSISTANT) },
                 async(Dispatchers.Default) { f.controller.setLongPress(right = LongPressAction.DIGITAL_ASSISTANT) }).awaitAll()
-            assertEquals(1, accepted.count { it })
-            val saved = f.pairSettings(); val commits = f.persistence.commits
-            assertFalse(f.controller.setLongPress(LongPressAction.CYCLE_NOISE_CONTROL_MODES, LongPressAction.CYCLE_NOISE_CONTROL_MODES))
-            assertEquals(commits, f.persistence.commits); assertEquals(saved, f.pairSettings())
+            assertEquals(2, accepted.count { it })
+            assertEquals(LongPressAction.DIGITAL_ASSISTANT, f.pairSettings().leftLongPress)
+            assertEquals(LongPressAction.DIGITAL_ASSISTANT, f.pairSettings().rightLongPress)
+            assertTrue(f.controller.setLongPress(LongPressAction.CYCLE_NOISE_CONTROL_MODES, LongPressAction.CYCLE_NOISE_CONTROL_MODES))
+            f.sent()
+            assertEquals(PropertyValue.Number(3), f.controller.state.value.propertyEffective(CommandProperty.STEM_CONFIG)?.value)
         }
     }
     @Test fun immediateDispatchRejectionRollsBackOnlyTheTwoChoices() = runBlocking {
@@ -194,24 +199,15 @@ class I5LongPressRuntimeTest {
             assertFalse(f.controller.state.value.pending.containsKey(CommandProperty.STEM_CONFIG))
         }
     }
-    @OptIn(ExperimentalCoroutinesApi::class)
-    @Test fun timeoutAtFiveSecondsKeepsIntentAndLateRxDoesNotConfirmRequest() = runBlocking {
+    @Test fun silenceKeepsIntentAndLateRxReconciles() = runBlocking {
         Fixture().use { f ->
             f.admit(); f.ready(); f.rx(4)
-            val timers = TestScope()
-            // Only the repository timer/clock are virtual; controller dispatch/store are production.
-            ReflectionHelpers.setField(f.repository, "scope", timers)
-            ReflectionHelpers.setField(f.repository, "clock", AirPodsClock { timers.testScheduler.currentTime })
-            try {
-                assertTrue(f.controller.setLongPress(left = LongPressAction.DIGITAL_ASSISTANT))
-                timers.runCurrent(); timers.advanceTimeBy(4_999); timers.runCurrent()
-                assertTrue(CommandProperty.STEM_CONFIG in f.controller.state.value.pending)
-                timers.advanceTimeBy(1); timers.runCurrent()
-                assertEquals(CommandOutcome.NOT_CONFIRMED, f.controller.state.value.outcomes[CommandProperty.STEM_CONFIG])
-                assertEquals(LongPressAction.DIGITAL_ASSISTANT, f.pairSettings().leftLongPress)
-                f.rx(12)
-                assertEquals(CommandOutcome.NOT_CONFIRMED, f.controller.state.value.outcomes[CommandProperty.STEM_CONFIG])
-            } finally { timers.cancel() }
+            assertTrue(f.controller.setLongPress(left = LongPressAction.DIGITAL_ASSISTANT))
+            f.sent()
+            assertNull(f.controller.state.value.outcomes[CommandProperty.STEM_CONFIG])
+            assertEquals(PropertyValue.Number(12), f.controller.state.value.propertyEffective(CommandProperty.STEM_CONFIG)?.value)
+            assertEquals(PropertyValue.Number(4), f.controller.state.value.propertyObserved(CommandProperty.STEM_CONFIG)?.value)
+            f.rx(12); f.outcome(CommandOutcome.OBSERVED_MATCH)
         }
     }
     @Test fun staleAdmissionIsRejectedBeforePersistenceAndReplacementDuringSaveRollsBack() = runBlocking {
@@ -235,10 +231,10 @@ class I5LongPressRuntimeTest {
         Fixture().use { f ->
             f.admit(); f.ready(); f.rx(5)
             assertTrue(f.controller.setLongPress(left = LongPressAction.DIGITAL_ASSISTANT))
-            f.rx(5); f.outcome(CommandOutcome.OBSERVED_OTHER)
+            f.sent(); f.rx(5); f.outcome(CommandOutcome.OBSERVED_OTHER)
             assertTrue(f.controller.setLongPress(right = LongPressAction.DIGITAL_ASSISTANT))
             val old = f.controller.state.value.generation
-            f.repository.close(); f.outcome(CommandOutcome.CLOSED)
+            f.repository.close(); assertEquals(DesiredStatus.UNCERTAIN, f.controller.state.value.desired[CommandProperty.STEM_CONFIG]?.status)
             val saved = f.pairSettings(); val commits = f.persistence.commits
             assertFalse(f.controller.setLongPress(left = LongPressAction.CYCLE_NOISE_CONTROL_MODES))
             assertEquals(commits, f.persistence.commits)

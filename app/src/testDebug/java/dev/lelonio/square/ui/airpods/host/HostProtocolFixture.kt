@@ -12,6 +12,7 @@ import android.os.Looper
 import android.os.SystemClock
 import dev.lelonio.square.airpods.*
 import dev.lelonio.square.airpods.protocol.PropertyValue
+import dev.lelonio.square.airpods.protocol.DesiredStatus
 import dev.lelonio.square.airpods.runtime.android.*
 import dev.lelonio.square.airpods.runtime.lifecycle.GateResult
 import dev.lelonio.square.airpods.runtime.storage.*
@@ -97,6 +98,10 @@ internal class HostProtocolTransport : AacpTransport {
         val release = CountDownLatch(1)
     }
     val writes = CopyOnWriteArrayList<List<Byte>>()
+    /** Control/EQ/name writes. Bootstrap and tracking packets have separate assertions. */
+    val commandWrites get() = writes.filter { (it.getOrNull(4)?.toInt()?.and(255)) in setOf(9, 0x63, 0x1a) }
+    @Volatile var failWriteHex: String? = null
+    val failedWriteAttempts = AtomicInteger()
     val connects = AtomicInteger()
     val readsStarted = AtomicInteger()
     val readsReturned = AtomicInteger()
@@ -120,6 +125,10 @@ internal class HostProtocolTransport : AacpTransport {
     }
     override fun write(packet: ByteArray) {
         check(!closed)
+        failWriteHex?.takeIf { packet.contentEquals(HostProtocolWire.bytes(it)) }?.let {
+            failedWriteAttempts.incrementAndGet()
+            throw java.io.IOException("Synthetic raw transport write failure")
+        }
         writes.add(packet.toList())
         barrier?.takeIf { packet.contentEquals(HostProtocolWire.bytes(it.hex)) }?.let {
             it.entered.countDown()
@@ -238,7 +247,7 @@ internal class HostProtocolFixture : AutoCloseable {
             HostProtocolWire.bytes(HostProtocolWire.HANDSHAKE).toList(),
             HostProtocolWire.bytes(HostProtocolWire.FEATURE_FLAGS).toList(),
             HostProtocolWire.bytes(HostProtocolWire.SUBSCRIBE).toList(),
-            HostProtocolWire.bytes(HostProtocolWire.BOOTSTRAP_EXTENSION).toList()), transport.writes.toList())
+            HostProtocolWire.bytes(HostProtocolWire.BOOTSTRAP_EXTENSION).toList()), transport.writes.take(4))
         refresh()
         assertFalse("Subscribed without current RX is not setup", host.state.value.controlsReady)
         write(CommandProperty.MIC_MODE, PropertyValue.Number(2))
@@ -266,9 +275,17 @@ internal class HostProtocolFixture : AutoCloseable {
         }
     }
     fun observed(property: CommandProperty) = owner.state.value.propertyObserved(property)?.value
+    fun sent(property: CommandProperty) {
+        await("local send completed for $property") {
+            owner.state.value.desired[property]?.status == DesiredStatus.SENT && property !in owner.state.value.pending
+        }
+        refresh()
+    }
+    fun reconciled(property: CommandProperty): Boolean = owner.state.value.desired[property]?.status !in
+        setOf(DesiredStatus.QUEUED, DesiredStatus.WRITING, DesiredStatus.SENT)
     fun receive(hex: String, property: CommandProperty, value: PropertyValue) {
         transport.deliver(hex)
-        await("decoded $property") { observed(property) == value && property !in owner.state.value.pending }
+        await("decoded $property") { observed(property) == value && property !in owner.state.value.pending && reconciled(property) }
         refresh()
     }
     fun await(description: String, timeoutMs: Long = 4_000, condition: () -> Boolean) {

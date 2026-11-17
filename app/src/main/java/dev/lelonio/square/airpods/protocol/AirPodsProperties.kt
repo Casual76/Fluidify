@@ -23,6 +23,8 @@ data class PropertySpec(
     val internalDependency: Boolean = false, val debounceMs: Long = 0,
 ) {
     fun accepts(value: Int) = value in range && (encoding != ControlEncoding.MODE_MASK || Integer.bitCount(value) >= 2)
+    /** Receiving one/zero selected modes is not permission to write an invalid cycle. */
+    fun acceptsReceived(value: Int) = if (encoding == ControlEncoding.MODE_MASK) value in 0..15 else value in range
     fun candidate(identity: AirPodsIdentity) = identity.recognized &&
         (capability == null || capability in identity.modelDeclared)
     fun encode(value: Int): List<Int> {
@@ -43,7 +45,7 @@ data class PropertySpec(
         if (encoding == ControlEncoding.CALL_ASSIGNMENT && bytes[0] != 0) return null
         val raw = if (encoding == ControlEncoding.CALL_ASSIGNMENT) bytes[1] else bytes[0]
         val value = if (encoding == ControlEncoding.INVERTED_PERCENT) 100 - raw else raw
-        return value.takeIf(::accepts)?.let { PropertyValue.Number(it) }
+        return value.takeIf(::acceptsReceived)?.let { PropertyValue.Number(it) }
     }
 }
 object AirPodsProperties {
@@ -90,11 +92,12 @@ data class EarSample(val firstRaw: Int, val secondRaw: Int) {
 }
 data class StemSample(val press: Int, val bud: Int)
 
-/** UI derives selection exclusively from observed; candidate defaults never become selected values. */
+/** Selection uses effective; observed remains a separate RX fact for automation. */
 enum class PropertyStatus { UNKNOWN, CANDIDATE, OBSERVED, PENDING, NOT_CONFIRMED, DEPENDENCY_EXCLUDED, UNAVAILABLE }
 data class PropertyView(val spec: PropertySpec, val status: PropertyStatus,
     val observed: dev.lelonio.square.airpods.Received<PropertyValue>?,
-    val pending: dev.lelonio.square.airpods.PendingCommand?, val reason: String?)
+    val pending: dev.lelonio.square.airpods.PendingCommand?, val reason: String?,
+    val effective: EffectiveProperty? = null, val desired: DesiredProperty? = null)
 fun dev.lelonio.square.airpods.AirPodsState.propertyView(property: CommandProperty): PropertyView? {
     val spec = AirPodsProperties.spec(property) ?: return null
     val id = identityReceived?.takeIf { it.generation == generation }?.value
@@ -106,7 +109,6 @@ fun dev.lelonio.square.airpods.AirPodsState.propertyView(property: CommandProper
         id == null || !id.recognized -> PropertyStatus.UNKNOWN
         excluded -> PropertyStatus.DEPENDENCY_EXCLUDED
         request != null -> PropertyStatus.PENDING
-        outcomes[property] == dev.lelonio.square.airpods.CommandOutcome.NOT_CONFIRMED -> PropertyStatus.NOT_CONFIRMED
         observed != null -> PropertyStatus.OBSERVED
         else -> PropertyStatus.CANDIDATE
     }
@@ -117,5 +119,5 @@ fun dev.lelonio.square.airpods.AirPodsState.propertyView(property: CommandProper
         PropertyStatus.CANDIDATE -> "Candidate from static model; device verification pending"
         PropertyStatus.NOT_CONFIRMED -> "No matching property RX within 5s; incompatibility not established"
         else -> null
-    })
+    }, propertyEffective(property), desired[property])
 }

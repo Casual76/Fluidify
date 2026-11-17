@@ -2,6 +2,7 @@
 package dev.lelonio.square.airpods.runtime.android
 
 import dev.lelonio.square.airpods.*
+import dev.lelonio.square.airpods.protocol.*
 import dev.lelonio.square.airpods.runtime.nextTileListeningMode
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
@@ -79,18 +80,20 @@ class AirPodsTileObservationTest {
 
     @Test fun listeningSurvivesPendingAndMatchingRxWithoutReopen() = scenario {
         start(); click()
-        val requested = repository.state.value.pending.getValue(CommandProperty.MODE).value
+        withTimeout(2_000) { repository.state.first { it.desired[CommandProperty.MODE]?.status == DesiredStatus.SENT } }
+        val requested = (repository.state.value.desired.getValue(CommandProperty.MODE).requested as PropertyValue.Number).value
         rx(AacpEvent.Mode(ListeningMode.entries.single { it.wire == requested })); drain()
         assertEquals(CommandOutcome.OBSERVED_MATCH, repository.state.value.outcomes[CommandProperty.MODE])
-        assertEquals(listOf(true, false, true), updates)
+        assertEquals(listOf(true), updates)
         assertEquals(1, subscriptions)
     }
 
-    @Test fun listeningSurvivesRealPendingTimeoutWithoutReopen() = scenario {
+    @Test fun listeningSurvivesSilenceWithoutRollback() = scenario {
         start(); click()
         timers.advanceTimeBy(5_000); drain()
-        assertEquals(CommandOutcome.NOT_CONFIRMED, repository.state.value.outcomes[CommandProperty.MODE])
-        assertEquals(listOf(true, false, true), updates)
+        assertNull(repository.state.value.outcomes[CommandProperty.MODE])
+        assertEquals(PropertyValue.Number(ListeningMode.OFF.wire), repository.state.value.propertyEffective(CommandProperty.MODE)?.value)
+        assertEquals(listOf(true), updates)
         assertEquals(ListeningMode.ANC, repository.state.value.mode?.value)
     }
 
@@ -116,7 +119,7 @@ class AirPodsTileObservationTest {
         runtime.value = runtime.value.copy(failure = "UNRELATED"); drain()
         assertEquals(listOf(true), updates)
         click(); observer.refresh(); drain()
-        assertEquals(listOf(true, false), updates)
+        assertEquals(listOf(true), updates)
         assertEquals(1, resolutions)
         assertEquals(1, subscriptions)
         assertEquals(1, activeSubscriptions)
@@ -125,18 +128,19 @@ class AirPodsTileObservationTest {
     @Test fun stopAndDestroyCancelQueuedCallbacksAndAllowOnlyFreshListening() = scenario {
         start()
         click()
-        val requested = repository.state.value.pending.getValue(CommandProperty.MODE).value
+        withTimeout(2_000) { repository.state.first { it.desired[CommandProperty.MODE]?.status == DesiredStatus.SENT } }
+        val requested = (repository.state.value.desired.getValue(CommandProperty.MODE).requested as PropertyValue.Number).value
         rx(AacpEvent.Mode(ListeningMode.entries.single { it.wire == requested }))
         observer.stop() // RX is queued on main, then listening ends before it can render.
         drain()
-        assertEquals(listOf(true, false), updates)
+        assertEquals(listOf(true), updates)
         assertEquals(0, activeSubscriptions)
         start()
-        assertEquals(listOf(true, false, true), updates)
+        assertEquals(listOf(true, true), updates)
         repository.close() // queue another change, destroy before delivery
         observer.destroy(); drain()
         observer.start(); observer.refresh(); drain()
-        assertEquals(listOf(true, false, true), updates)
+        assertEquals(listOf(true, true), updates)
         assertEquals(0, activeSubscriptions)
         assertEquals(2, subscriptions)
     }

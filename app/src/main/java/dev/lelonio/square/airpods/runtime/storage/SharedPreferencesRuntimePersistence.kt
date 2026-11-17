@@ -9,6 +9,11 @@ class SharedPreferencesRuntimePersistence(private val preferences: SharedPrefere
     // Android may retain changed memory after a failed disk commit. Poison this adapter
     // until process restart so that such memory can never authorize a subsequent start.
     private var failed = false
+    @Synchronized override fun cacheToken(): Any {
+        check(!failed) { "AirPods persistence unavailable" }
+        return preferences.getString("runtime_v1", null) ?: Missing
+    }
+    private object Missing
     @Synchronized override fun read(): ByteArray? {
         check(!failed) { "AirPods persistence unavailable" }
         return preferences.getString("runtime_v1", null)?.let { Base64.decode(it, Base64.NO_WRAP) }

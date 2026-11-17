@@ -134,11 +134,11 @@ class AirPodsFinalProductLayoutTest {
         capture("head-gestures-master-off")
     }
 
-    @Test fun channelStatusRemainsVisibleWhenAllBatteryReadingsExpire() {
+    @Test fun readyControlsRemainAvailableWhenAllBatteryReadingsExpire() {
         val state = uiFixture().copy(nowMs = 301_000)
         mount(1f) { AirPodsSettingsContent(state, {}) }
-        compose.onNodeWithTag("airpods-summary-state")
-            .assertTextEquals(label(state.connectionSummary())).assertIsDisplayed()
+        compose.onNodeWithTag("airpods-summary-state").assertDoesNotExist()
+        compose.onNodeWithTag("airpods-mode-3").performScrollTo().assertHasClickAction()
         compose.onAllNodesWithText("80%").assertCountEquals(0)
         capture("channel-with-expired-battery")
     }

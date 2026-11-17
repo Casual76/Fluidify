@@ -13,23 +13,16 @@
 // by 10 dp that disappear beside the thumb, the labels under the pill, the horizontal `draggable`
 // clamped to the pill with the release rounding to the nearest slot, and a low-bounce spring.
 //
-// Changed here, and only this:
-//  - the thumb is where the device last said the mode is, and nowhere else. Upstream moves it to
-//    the tapped or released slot at once; here a tap or a release only sends a request, the slot
-//    asked for gets a ring while the answer is outstanding, and the thumb travels when the answer
-//    arrives. With no mode received there is no thumb;
-//  - the drag is read on the pill, not on the thumb. Upstream puts its `draggable` on the thumb
-//    under a row of clickable marks, where a sibling above it takes the pointer first; on the pill
-//    a tap still belongs to the mark and a horizontal movement to the drag. The thumb follows the
-//    finger without the spring while it is held, and springs only on release;
-//  - any number of modes, not only three or four (AirPods Pro 1 has no Adaptive);
-//  - colours from the theme, the spring from FluidMotion, the capsule shape from the engine.
+// Changed here: shared effective state owns selection (local accepted intent, then RX), with no
+// waiting ring. The draggable stays on the containing pill, above the clickable marks in the
+// pointer ancestry. During a drag the thumb follows the finger directly; after release it follows
+// the effective state. A later contradictory RX animates it to the newly effective slot.
+// Model filtering, theme colours, FluidMotion and the capsule shape remain Fluidify's adapters.
 package dev.lelonio.square.ui.airpods
 
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -51,6 +44,7 @@ import androidx.compose.material3.LocalContentColor
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -71,9 +65,9 @@ import androidx.compose.ui.semantics.disabled
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
-import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.semantics.text
 import androidx.compose.ui.text.AnnotatedString
+import androidx.compose.ui.text.rememberTextMeasurer
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -94,94 +88,85 @@ internal fun noiseControlSlot(offsetPx: Float, slotWidthPx: Float, count: Int): 
 
 /**
  * @param modes the modes this device has, in any order; drawn in [noiseControlOrder].
- * @param received the mode the device last reported in this session, or null. The thumb.
- * @param requested the mode a request still waiting for its answer asked for, or null. The ring.
+ * @param effective the shared display value, including accepted local intent; null when unavailable.
  * @param onRequest returns the request for a mode, or null when that mode cannot be asked for
- *   now (or is the received one, which there is nothing to ask for). A slot without a request
+ *   now (or is already effective, which there is nothing to ask for). A slot without a request
  *   has no click action at all, and a release on it does nothing.
  * @param tagPrefix each slot is tagged "$tagPrefix-$wire".
  */
 @Composable
 internal fun AirPodsNoiseControl(
     modes: Collection<ListeningMode>,
-    received: ListeningMode?,
-    requested: ListeningMode?,
+    effective: ListeningMode?,
     onRequest: (ListeningMode) -> (() -> Unit)?,
     tagPrefix: String,
     modifier: Modifier = Modifier,
 ) {
     val shown = remember(modes) { noiseControlOrder.filter { it in modes } }
     if (shown.isEmpty()) return
-    val scheme = MaterialTheme.colorScheme
     val ink = LocalContentColor.current
     val pill = ink.copy(alpha = 0.08f)
     val thumb = ink.copy(alpha = 0.18f)
     val divider = ink.copy(alpha = 0.12f)
-    val awaitingRing = scheme.primary.copy(alpha = 0.7f)
-    val pendingWords = stringResource(R.string.airpods_ui_pending)
-
     BoxWithConstraints(modifier.fillMaxWidth().padding(vertical = 8.dp)) {
         val density = LocalDensity.current
         val count = shown.size
         val slotWidth = maxWidth / count
         val slotWidthPx = with(density) { slotWidth.toPx() }
-        val receivedIndex = shown.indexOf(received)
-        val requestedIndex = shown.indexOf(requested)
-        val targetOffset = slotWidthPx * receivedIndex.coerceAtLeast(0)
+        val legendTextWidthPx = with(density) { (maxWidth - 28.dp).toPx() }
+        val measurer = rememberTextMeasurer()
+        val labelStyle = MaterialTheme.typography.labelSmall
+        val narrow = density.fontScale >= 1.5f
+        val effectiveIndex = shown.indexOf(effective)
+        val targetOffset = slotWidthPx * effectiveIndex.coerceAtLeast(0)
 
-        var dragging by remember { mutableStateOf(false) }
-        var dragOffset by remember { mutableFloatStateOf(0f) }
+        var dragging by remember(shown) { mutableStateOf(false) }
+        var dragOffset by remember(shown) { mutableFloatStateOf(0f) }
         val request by rememberUpdatedState(onRequest)
-        val current by rememberUpdatedState(received)
+        val current by rememberUpdatedState(effective)
 
-        // Held, the thumb is under the finger; released, it springs to wherever the device says.
-        val animatedOffset by animateFloatAsState(
-            targetValue = if (dragging) dragOffset else targetOffset,
-            animationSpec = if (dragging) snap() else FluidMotion.fluid(),
-            label = "airpods noise control thumb",
-        )
+        // Read dragOffset directly in layout: no animation frame may trail the finger.
+        val position = remember(shown) { Animatable(targetOffset) }
+        val motion = FluidMotion.fluid<Float>()
+        LaunchedEffect(targetOffset, dragging) {
+            if (!dragging) position.animateTo(targetOffset, motion)
+        }
         val thumbPresence by animateFloatAsState(
-            targetValue = if (receivedIndex >= 0) 1f else 0f,
+            targetValue = if (effectiveIndex >= 0) 1f else 0f,
             animationSpec = FluidMotion.standard(),
             label = "airpods noise control thumb presence",
         )
-        val ringPresence by animateFloatAsState(
-            targetValue = if (requestedIndex >= 0) 1f else 0f,
-            animationSpec = FluidMotion.standard(),
-            label = "airpods noise control request",
-        )
-        // The ring fades where it was: its slot is remembered for as long as it is still visible.
-        var ringSlot by remember { mutableStateOf(0) }
-        if (requestedIndex >= 0) ringSlot = requestedIndex
-
         Column(Modifier.fillMaxWidth()) {
             Box(
                 Modifier
                     .fillMaxWidth()
                     .height(60.dp)
+                    .testTag("$tagPrefix-track")
                     .background(pill, FluidCapsuleShape)
                     .draggable(
                         orientation = Orientation.Horizontal,
-                        // Nothing to drag while no mode has been received.
-                        enabled = receivedIndex >= 0,
+                        // Admission gates stay authoritative; pending never disables a gesture.
+                        enabled = effectiveIndex >= 0 && shown.any { onRequest(it) != null },
                         state = rememberDraggableState { delta ->
                             if (dragging) dragOffset = (dragOffset + delta).coerceIn(0f, slotWidthPx * (count - 1))
                         },
                         onDragStarted = { start ->
                             // Only the thumb is picked up, as upstream: a movement that begins on
                             // another slot is not a drag of this control.
-                            if (noiseControlSlot(start.x - slotWidthPx / 2f, slotWidthPx, count) == receivedIndex) {
-                                dragOffset = targetOffset
+                            if (noiseControlSlot(start.x - slotWidthPx / 2f, slotWidthPx, count) == noiseControlSlot(position.value, slotWidthPx, count)) {
+                                dragOffset = position.value
                                 dragging = true
+                                position.stop()
                             }
                         },
                         onDragStopped = {
                             if (dragging) {
-                                dragging = false
                                 val mode = shown[noiseControlSlot(dragOffset, slotWidthPx, count)]
-                                // A release is a request, never a selection: the thumb goes back
-                                // to the received mode and waits there for the device's answer.
+                                position.snapTo(dragOffset)
+                                // Dispatch before releasing the draft. Only the shared effective value
+                                // may settle selection; dispatch itself is not an acceptance receipt.
                                 if (mode != current) request(mode)?.invoke()
+                                dragging = false
                             }
                         },
                     ),
@@ -190,26 +175,17 @@ internal fun AirPodsNoiseControl(
                     Modifier
                         .width(slotWidth)
                         .fillMaxHeight()
-                        .offset { IntOffset(animatedOffset.roundToInt(), 0) }
+                        .offset { IntOffset((if (dragging) dragOffset else position.value).roundToInt(), 0) }
+                        .testTag("$tagPrefix-thumb")
                         .graphicsLayer { alpha = thumbPresence },
                 ) {
                     Box(Modifier.fillMaxSize().padding(3.dp).background(thumb, FluidCapsuleShape))
                 }
-                Box(
-                    Modifier
-                        .width(slotWidth)
-                        .fillMaxHeight()
-                        .offset { IntOffset((slotWidthPx * ringSlot).roundToInt(), 0) }
-                        .graphicsLayer { alpha = ringPresence }
-                        .padding(3.dp)
-                        .border(1.5.dp, awaitingRing, FluidCapsuleShape),
-                )
-
                 Row(Modifier.fillMaxWidth()) {
                     shown.forEachIndexed { index, mode ->
                         if (index > 0) {
                             // A divider next to the thumb would cut into it.
-                            val beside = receivedIndex >= 0 && (receivedIndex == index - 1 || receivedIndex == index)
+                            val beside = effectiveIndex >= 0 && (effectiveIndex == index - 1 || effectiveIndex == index)
                             Box(
                                 Modifier
                                     .padding(vertical = 10.dp)
@@ -221,8 +197,7 @@ internal fun AirPodsNoiseControl(
                         }
                         val label = modeLabel(mode.wire)
                         val ask = onRequest(mode)
-                        val isReceived = mode == received
-                        val isRequested = mode == requested
+                        val isEffective = mode == effective
                         Column(
                             modifier = Modifier
                                 .weight(1f)
@@ -231,13 +206,12 @@ internal fun AirPodsNoiseControl(
                                 .semantics(mergeDescendants = true) {
                                     text = AnnotatedString(label)
                                     role = Role.RadioButton
-                                    selected = isReceived
-                                    if (isRequested) stateDescription = pendingWords
-                                    // The received mode has nothing to ask for; that is not "disabled".
-                                    if (ask == null && !isReceived) disabled()
+                                    selected = isEffective
+                                    // The effective mode has nothing to ask for; that is not "disabled".
+                                    if (ask == null && !isEffective) disabled()
                                 }
-                                // The received mode stays legible while nothing can be asked for.
-                                .alpha(if (ask != null || isReceived) 1f else 0.5f)
+                                // The effective mode stays legible while nothing can be asked for.
+                                .alpha(if (ask != null || isEffective) 1f else 0.5f)
                                 .fluidRowPressable(onClick = ask, shape = FluidCapsuleShape),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
@@ -253,16 +227,61 @@ internal fun AirPodsNoiseControl(
                 }
             }
 
-            Row(Modifier.fillMaxWidth().padding(top = 4.dp).clearAndSetSemantics { }) {
-                shown.forEach { mode ->
-                    Text(
-                        text = modeLabel(mode.wire),
-                        style = MaterialTheme.typography.labelSmall,
-                        textAlign = TextAlign.Center,
-                        modifier = Modifier.weight(1f).padding(horizontal = 2.dp),
-                    )
+            if (narrow) {
+                Column(Modifier.fillMaxWidth().padding(top = 4.dp).testTag("$tagPrefix-legend")) {
+                    shown.forEach { mode ->
+                        val ask = onRequest(mode)
+                        Row(Modifier.fillMaxWidth().testTag("$tagPrefix-legend-${mode.wire}")
+                            // The track owns the accessible choices at every font scale.
+                            // Keep legend pointer input, but suppress its duplicate announcements.
+                            .clearAndSetSemantics { }
+                            .fluidRowPressable(onClick = ask, shape = FluidCapsuleShape)
+                            .padding(vertical = 6.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            Icon(painterResource(modeIconRes(mode.wire)), null,
+                                modifier = Modifier.size(20.dp))
+                            val label = modeLabel(mode.wire)
+                            val wordFits = label.split(' ').all {
+                                measurer.measure(it, labelStyle).size.width <= legendTextWidthPx
+                            }
+                            Text(label, style = labelStyle, modifier = Modifier.weight(1f),
+                                softWrap = wordFits,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                maxLines = if (wordFits) Int.MAX_VALUE else 1)
+                        }
+                    }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth().padding(top = 4.dp).testTag("$tagPrefix-labels").clearAndSetSemantics { }) {
+                    shown.forEach { mode ->
+                        val lines = noiseControlLabelLines(modeLabel(mode.wire),
+                            slotWidthPx - with(density) { 4.dp.toPx() }) { measurer.measure(it, labelStyle).size.width.toFloat() }
+                            .split('\n')
+                        Column(Modifier.weight(1f).padding(horizontal = 2.dp),
+                            horizontalAlignment = Alignment.CenterHorizontally) {
+                            lines.take(2).forEachIndexed { index, line ->
+                                Text(text = if (index == 1) lines.drop(1).joinToString(" ") else line,
+                                    style = labelStyle, softWrap = false, maxLines = 1,
+                                    overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis,
+                                    textAlign = TextAlign.Center)
+                            }
+                        }
+                    }
                 }
             }
         }
     }
+}
+
+/** Explicit word boundaries prevent Compose from breaking long words inside narrow slots.
+ * Each overlong line uses Text's ellipsis; the complete name remains on the radio slot. */
+internal fun noiseControlLabelLines(label: String, width: Float, measure: (String) -> Float): String {
+    val lines = mutableListOf<String>()
+    for (word in label.split(' ').filter { it.isNotEmpty() }) {
+        if (lines.isNotEmpty() && measure(lines.last() + " " + word) <= width)
+            lines[lines.lastIndex] += " " + word
+        else lines += word
+    }
+    return lines.joinToString("\n")
 }

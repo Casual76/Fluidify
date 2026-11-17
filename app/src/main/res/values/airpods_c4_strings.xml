@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_c4_save_failed">Could not save this setting on the phone.</string>
+    <string name="airpods_c4_partial_save">Saved on this phone. Could not send to AirPods.</string>
+    <string name="airpods_c4_send_failed">Could not send to AirPods.</string>
+</resources>

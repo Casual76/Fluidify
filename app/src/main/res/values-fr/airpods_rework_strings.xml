@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_c4_save_failed">Impossible d’enregistrer ce réglage sur le téléphone.</string>
+    <string name="airpods_c4_partial_save">Enregistré sur ce téléphone. Envoi aux AirPods impossible.</string>
+    <string name="airpods_c4_send_failed">Envoi aux AirPods impossible.</string>
+    <string name="airpods_c3_mute">Couper / réactiver le micro</string>
+    <string name="airpods_c3_end_call">Raccrocher</string>
+    <string name="airpods_c3_press_once">Appuyer une fois</string>
+    <string name="airpods_c3_press_twice">Appuyer deux fois</string>
+    <string name="airpods_c3_always_right">Toujours à droite</string>
+    <string name="airpods_c3_always_left">Toujours à gauche</string>
+    <string name="airpods_header_not_live">Non actualisé</string>
+    <string name="airpods_p1_name">Nom</string>
+</resources>

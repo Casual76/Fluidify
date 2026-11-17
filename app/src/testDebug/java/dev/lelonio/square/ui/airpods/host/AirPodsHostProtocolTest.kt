@@ -37,30 +37,32 @@ class AirPodsHostProtocolTest {
             for (case in cases) {
                 val old = f.observed(case.property)
                 assertTrue(f.host.state.value.writeAllowed(case.property, case.value))
-                val before = f.transport.writes.size
+                val before = f.transport.commandWrites.size
                 f.write(case.property, case.value)
-                f.await("raw TX ${case.property}") { f.transport.writes.size == before + 1 }
-                assertArrayEquals(case.property.name, HostProtocolWire.bytes(case.tx), f.transport.writes.last().toByteArray())
-                val request = f.owner.state.value.pending.getValue(case.property)
+                f.await("raw TX ${case.property}") { f.transport.commandWrites.size == before + 1 }
+                f.sent(case.property)
+                assertArrayEquals(case.property.name, HostProtocolWire.bytes(case.tx), f.transport.commandWrites.last().toByteArray())
+                val request = f.owner.state.value.desired.getValue(case.property)
                 assertEquals(case.value, request.requested)
-                assertEquals(HostProtocolWire.bytes(case.tx).map { it.toInt() and 255 }, request.packet)
                 assertEquals(f.owner.state.value.generation, request.generation)
                 assertEquals("Send success must not become RX", old, f.observed(case.property))
-                assertFalse(f.host.state.value.writeAllowed(case.property, case.value))
+                assertTrue(f.host.state.value.writeAllowed(case.property, case.value))
                 AirPodsProperties.spec(case.property)?.let {
-                    assertEquals(PropertyStatus.PENDING, f.host.state.value.domain.propertyView(case.property)?.status)
+                    assertEquals(if (old == null) PropertyStatus.CANDIDATE else PropertyStatus.OBSERVED,
+                        f.host.state.value.domain.propertyView(case.property)?.status)
                 }
-                // A second host action for this property is rejected before another writer is scheduled.
+                assertEquals(case.value, f.host.state.value.domain.propertyEffective(case.property)?.value)
+                // Identical intent is accepted and deduplicated; another choice remains available.
                 f.write(case.property, case.value)
-                assertEquals(before + 1, f.transport.writes.size)
-                assertEquals(request.sequence, f.owner.state.value.pending.getValue(case.property).sequence)
+                assertEquals(before + 1, f.transport.commandWrites.size)
+                assertEquals(request.sequence, f.owner.state.value.desired.getValue(case.property).sequence)
                 f.receive(case.rx, case.property, case.value)
                 assertEquals(CommandOutcome.OBSERVED_MATCH, f.host.state.value.domain.outcomes[case.property])
                 assertTrue(f.host.state.value.writeAllowed(case.property, case.value))
                 assertFalse(f.host.state.value.productGatePassed)
                 assertNull(f.owner.store.snapshot().getOrThrow().pairs.getValue(HostProtocolFixture.PAIR).verification)
             }
-            assertEquals(HostProtocolWire.BOOTSTRAP_PACKET_COUNT + cases.size, f.transport.writes.size) // only bootstrap plus these commands
+            assertEquals(cases.size, f.transport.commandWrites.size)
         }
     }
 
@@ -69,13 +71,14 @@ class AirPodsHostProtocolTest {
             f.start()
             f.write(CommandProperty.CHIME_VOLUME, PropertyValue.Number(37))
             f.await("chime raw write") { f.transport.count(HostProtocolWire.CHIME_37) == 1 }
+            f.sent(CommandProperty.CHIME_VOLUME)
             f.transport.deliver(HostProtocolWire.CHIME_BAD)
             f.transport.deliver(HostProtocolWire.MIC_LEFT) // ordered read-loop fence after malformed chime
             f.await("unrelated decoded RX") { f.observed(CommandProperty.MIC_MODE) == PropertyValue.Number(2) }
             f.refresh()
             assertNull(f.observed(CommandProperty.CHIME_VOLUME))
-            assertTrue(CommandProperty.CHIME_VOLUME in f.host.state.value.domain.pending)
-            assertEquals(PropertyStatus.PENDING, f.host.state.value.domain.propertyView(CommandProperty.CHIME_VOLUME)?.status)
+            assertEquals(DesiredStatus.SENT, f.host.state.value.domain.desired[CommandProperty.CHIME_VOLUME]?.status)
+            assertEquals(PropertyValue.Number(37), f.host.state.value.domain.propertyEffective(CommandProperty.CHIME_VOLUME)?.value)
             f.receive(HostProtocolWire.CHIME_40, CommandProperty.CHIME_VOLUME, PropertyValue.Number(40))
             assertEquals(CommandOutcome.OBSERVED_OTHER, f.host.state.value.domain.outcomes[CommandProperty.CHIME_VOLUME])
             assertEquals(PropertyStatus.OBSERVED, f.host.state.value.domain.propertyView(CommandProperty.CHIME_VOLUME)?.status)
@@ -88,35 +91,37 @@ class AirPodsHostProtocolTest {
             f.start()
             f.write(CommandProperty.NAME, PropertyValue.Name("Caffè"))
             f.await("rename raw write") { f.transport.count(HostProtocolWire.RENAME_CAFFE) == 1 }
+            f.sent(CommandProperty.NAME)
             f.transport.deliver(HostProtocolWire.RENAME_CAFFE) // opcode 0x1a is not INFORMATION
             f.transport.deliver(HostProtocolWire.MIC_LEFT)
             f.await("fence after rename echo") { f.observed(CommandProperty.MIC_MODE) == PropertyValue.Number(2) }
             f.refresh()
             assertEquals(PropertyValue.Name("Pods"), f.observed(CommandProperty.NAME))
             assertEquals("Pods", f.host.state.value.identity?.name)
-            assertTrue(CommandProperty.NAME in f.host.state.value.domain.pending)
+            assertEquals(DesiredStatus.SENT, f.host.state.value.domain.desired[CommandProperty.NAME]?.status)
+            assertEquals("Caffè", f.host.state.value.effectiveName)
             f.receive(HostProtocolWire.INFORMATION_CAFFE, CommandProperty.NAME, PropertyValue.Name("Caffè"))
             assertEquals("Caffè", f.host.state.value.identity?.name)
             assertEquals(CommandOutcome.OBSERVED_MATCH, f.host.state.value.domain.outcomes[CommandProperty.NAME])
         }
     }
 
-    @Test fun noRxExpiresPendingAndLateRxDoesNotRetroactivelyConfirmTheCommand() {
+    @Test fun silenceKeepsEffectiveValueAndLateRxReconcilesTheIntent() {
         HostProtocolFixture().use { f ->
             f.start()
             f.write(CommandProperty.CHIME_VOLUME, PropertyValue.Number(37))
             f.await("chime reaches raw transport") { f.transport.count(HostProtocolWire.CHIME_37) == 1 }
-            f.await("real repository five-second pending timeout", timeoutMs = 6_500) {
-                f.owner.state.value.outcomes[CommandProperty.CHIME_VOLUME] == CommandOutcome.NOT_CONFIRMED
-            }
+            f.sent(CommandProperty.CHIME_VOLUME)
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofSeconds(6))
             f.refresh()
             assertTrue(f.owner.state.value.pending.isEmpty())
             assertNull(f.observed(CommandProperty.CHIME_VOLUME))
-            assertEquals(PropertyStatus.NOT_CONFIRMED,
-                f.host.state.value.domain.propertyView(CommandProperty.CHIME_VOLUME)?.status)
+            assertNull(f.host.state.value.domain.outcomes[CommandProperty.CHIME_VOLUME])
+            assertEquals(PropertyValue.Number(37), f.host.state.value.domain.propertyEffective(CommandProperty.CHIME_VOLUME)?.value)
+            assertEquals(DesiredStatus.SENT, f.host.state.value.domain.desired[CommandProperty.CHIME_VOLUME]?.status)
             f.receive(HostProtocolWire.CHIME_37, CommandProperty.CHIME_VOLUME, PropertyValue.Number(37))
             assertEquals(PropertyValue.Number(37), f.host.state.value.domain.propertyObserved(CommandProperty.CHIME_VOLUME)?.value)
-            assertEquals(CommandOutcome.NOT_CONFIRMED, f.host.state.value.domain.outcomes[CommandProperty.CHIME_VOLUME])
+            assertEquals(CommandOutcome.OBSERVED_MATCH, f.host.state.value.domain.outcomes[CommandProperty.CHIME_VOLUME])
             assertEquals(1, f.transport.count(HostProtocolWire.CHIME_37))
         }
     }
@@ -224,7 +229,7 @@ class AirPodsHostProtocolTest {
                 f.host.close()
                 f.write(CommandProperty.CHIME_VOLUME, PropertyValue.Number(37), saved)
                 assertEquals(0, f.transport.count(HostProtocolWire.CHIME_37))
-                assertEquals(HostProtocolWire.BOOTSTRAP_PACKET_COUNT, f.transport.writes.size)
+                assertEquals(0, f.transport.commandWrites.size)
                 assertTrue(f.owner.state.value.pending.isEmpty())
             } finally { f.detachHostBluetooth(ordinary); ordinary.close() }
         }

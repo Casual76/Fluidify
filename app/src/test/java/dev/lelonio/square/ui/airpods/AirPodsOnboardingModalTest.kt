@@ -156,31 +156,45 @@ class AirPodsOnboardingModalTest {
     private fun assertReadablePageText(dark: Boolean, amoled: Boolean, name: String) {
         content(dark = dark, amoled = amoled, opaqueProbe = true)
         open()
-        val file = capture("host-content-$name")
+        assertTextContrast(name, R.string.airpods_host_absent, compose.onNodeWithText(label(R.string.airpods_host_absent)))
+        for (id in listOf(R.string.airpods_feature_diagnostics_group, R.string.airpods_ui_connect_setup)) {
+            assertTextContrast(name, id, compose.onNodeWithText(label(id)).performScrollTo())
+        }
+        val noticeId = R.string.airpods_feature_exclusive_summary
+        compose.onNodeWithText(label(noticeId)).assertDoesNotExist()
+        touch(compose.onNodeWithTag("airpods-open-Setup").performScrollTo())
+        val notice = compose.onNodeWithText(label(noticeId)).performScrollTo()
+        compose.onAllNodesWithText(label(noticeId)).assertCountEquals(1)
+        val choosePair = compose.onNodeWithText(label(R.string.wf_i03_choose_pair))
+        assertTrue("Notice precedes pair selection",
+            notice.fetchSemanticsNode().boundsInRoot.bottom <= choosePair.fetchSemanticsNode().boundsInRoot.top)
+        assertTextContrast(name, noticeId, notice)
+    }
+
+    private fun assertTextContrast(name: String, id: Int, node: SemanticsNodeInteraction) {
+        node.assertIsDisplayed()
+        val file = capture("host-content-$name-$id")
         val image = requireNotNull(android.graphics.BitmapFactory.decodeFile(file.path))
         val root = compose.onRoot().fetchSemanticsNode().boundsInRoot
         try {
-            for (id in listOf(R.string.airpods_host_absent, R.string.airpods_feature_diagnostics_group,
-                R.string.airpods_ui_connect_setup)) {
-                val bounds = compose.onNodeWithText(label(id)).fetchSemanticsNode().boundsInRoot
-                val left = ((bounds.left - root.left) * image.width / root.width).toInt().coerceIn(0, image.width - 1)
-                val top = ((bounds.top - root.top) * image.height / root.height).toInt().coerceIn(0, image.height - 1)
-                val right = kotlin.math.ceil(((bounds.right - root.left) * image.width / root.width).toDouble()).toInt().coerceIn(left + 1, image.width)
-                val bottom = kotlin.math.ceil(((bounds.bottom - root.top) * image.height / root.height).toDouble()).toInt().coerceIn(top + 1, image.height)
-                var inkPixels = 0
-                var maximumContrast = 0.0
-                for (y in top until bottom) for (x in left until right) {
-                    val contrast = androidx.core.graphics.ColorUtils.calculateContrast(image.getPixel(x, y), expectedPageFloor.toArgb())
-                    maximumContrast = maxOf(maximumContrast, contrast)
-                    if (contrast >= 4.5) inkPixels++
-                }
-                // Three visible text nodes on an opaque, uniform page floor. A few raster
-                // specks cannot stand in for visible glyphs; no source style is assumed.
-                println("HOST_TEXT_RASTER $name $id max=$maximumContrast ink=$inkPixels bounds=$bounds")
-                assertTrue("Host text contrast $name $id: max=$maximumContrast ink=$inkPixels",
-                    maximumContrast >= 4.5 && inkPixels >= 12)
+            val bounds = node.fetchSemanticsNode().boundsInRoot
+            val left = ((bounds.left - root.left) * image.width / root.width).toInt().coerceIn(0, image.width - 1)
+            val top = ((bounds.top - root.top) * image.height / root.height).toInt().coerceIn(0, image.height - 1)
+            val right = kotlin.math.ceil(((bounds.right - root.left) * image.width / root.width).toDouble()).toInt().coerceIn(left + 1, image.width)
+            val bottom = kotlin.math.ceil(((bounds.bottom - root.top) * image.height / root.height).toDouble()).toInt().coerceIn(top + 1, image.height)
+            var inkPixels = 0
+            var maximumContrast = 0.0
+            for (y in top until bottom) for (x in left until right) {
+                val contrast = androidx.core.graphics.ColorUtils.calculateContrast(image.getPixel(x, y), expectedPageFloor.toArgb())
+                maximumContrast = maxOf(maximumContrast, contrast)
+                if (contrast >= 4.5) inkPixels++
             }
-        } finally { image.recycle() }
+            println("HOST_TEXT_RASTER $name $id max=$maximumContrast ink=$inkPixels bounds=$bounds")
+            assertTrue("Host text contrast $name $id: max=$maximumContrast ink=$inkPixels",
+                maximumContrast >= 4.5 && inkPixels >= 12)
+        } finally {
+            image.recycle()
+        }
     }
 
     @Test fun darkHostIntroductionsAndSectionsRemainReadable() =

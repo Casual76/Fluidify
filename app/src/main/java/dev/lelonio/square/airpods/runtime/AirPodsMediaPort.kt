@@ -31,6 +31,8 @@ interface AirPodsMediaPort : Closeable {
     fun setUserVolume(value: Int, stillCurrent: () -> Boolean): Boolean =
         stillCurrent() && setUserVolume(value)
     fun gestureContext(): Any? = null
+    /** Any-thread invalidation fence. No I/O or main dispatch in this getter. */
+    val gestureContextRevision: Long get() = 0
     fun gesture(action: AirPodsMediaGesture): Boolean
     /** Immediate source-side revocation, callable from ANY thread. Must not block, wait for the
      * serial domain or call back into the owner. Once it returns no method, including work
@@ -45,3 +47,7 @@ interface AirPodsMediaPort : Closeable {
 }
 
 enum class AirPodsMediaGesture { TOGGLE_PLAYBACK, NEXT, PREVIOUS, PAUSE, PLAY }
+
+/** Apply before dispatching to main; never apply to the ordered gesture input collector. */
+internal fun AacpEvent.isMediaRuntimeEvent(): Boolean =
+    this is AacpEvent.Ear || this is AacpEvent.ConversationActivity

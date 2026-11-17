@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_c4_save_failed">Diese Einstellung konnte nicht auf dem Smartphone gespeichert werden.</string>
+    <string name="airpods_c4_partial_save">Auf diesem Smartphone gespeichert. Senden an AirPods fehlgeschlagen.</string>
+    <string name="airpods_c4_send_failed">Senden an AirPods fehlgeschlagen.</string>
+    <string name="airpods_c3_mute">Stummschalten / Stummschaltung aufheben</string>
+    <string name="airpods_c3_end_call">Anruf beenden</string>
+    <string name="airpods_c3_press_once">Einmal drücken</string>
+    <string name="airpods_c3_press_twice">Zweimal drücken</string>
+    <string name="airpods_c3_always_right">Immer rechts</string>
+    <string name="airpods_c3_always_left">Immer links</string>
+    <string name="airpods_header_not_live">Nicht aktualisiert</string>
+    <string name="airpods_p1_name">Name</string>
+</resources>

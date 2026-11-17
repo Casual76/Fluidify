@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="airpods_stem_local_choice">Salvo neste telefone</string>
     <string name="airpods_stem_shared">Pressão longa &#183; estado compartilhado do dispositivo</string>
     <string name="airpods_stem_unknown">Interceptação atual: desconhecida. Nenhuma leitura atual do dispositivo.</string>
     <string name="airpods_stem_intercepted">Leitura atual: o Fluidify intercepta as pressões longas dos dois lados.</string>

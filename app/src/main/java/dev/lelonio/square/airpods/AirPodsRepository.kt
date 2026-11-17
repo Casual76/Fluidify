@@ -10,6 +10,8 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.Closeable
 import dev.lelonio.square.airpods.protocol.*
+import dev.lelonio.square.airpods.runtime.storage.*
+import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
@@ -29,9 +31,13 @@ data class AirPodsState(
     val identity: AirPodsIdentity? = null,
     val identityReceived: Received<AirPodsIdentity>? = null,
     val properties: Map<CommandProperty, Received<PropertyValue>> = emptyMap(),
+    val desired: Map<CommandProperty, DesiredProperty> = emptyMap(),
+    val cachedValues: AirPodsPairValues = AirPodsPairValues(),
     val deviceAnnounced: Set<Capability>? = null,
     val ears: Received<EarSample>? = null,
     val stem: Received<StemSample>? = null,
+    /** Compatibility only; samples are published exclusively through headSamples/events. */
+    @Deprecated("Use AirPodsHeadSampleSource.headSamples for visualization, events for gestures")
     val head: Received<HeadSample>? = null,
     val activePacketFormat: HeadPacketFormat? = null,
     val mode: Received<ListeningMode>? = null,
@@ -42,18 +48,23 @@ data class AirPodsState(
     val outcomes: Map<CommandProperty, CommandOutcome> = emptyMap(),
     val diagnostic: String = "Physical compatibility and dual-channel coexistence: NV",
 ) {
-    fun propertyObserved(property: CommandProperty) = properties[property]?.takeIf {
-        it.generation == generation && stage == AacpStage.SUBSCRIBED
+    fun propertyObserved(property: CommandProperty): Received<PropertyValue>? {
+        val received = properties[property] ?: when (property) {
+            CommandProperty.MODE -> mode?.let { Received<PropertyValue>(PropertyValue.Number(it.value.wire), it.atMs, it.generation) }
+            CommandProperty.CONVERSATION -> conversation?.let { Received<PropertyValue>(PropertyValue.Number(if (it.value) 1 else 2), it.atMs, it.generation) }
+            else -> null
+        }
+        return received?.takeIf { it.generation == generation && stage == AacpStage.SUBSCRIBED }
     }
     fun canAttemptWrite(property: CommandProperty, value: PropertyValue): Boolean {
         val id = identityReceived?.takeIf { it.generation == generation }?.value ?: return false
-        if (stage != AacpStage.SUBSCRIBED || !id.recognized || property in pending) return false
+        if (stage != AacpStage.SUBSCRIBED || !id.recognized) return false
         val spec = AirPodsProperties.spec(property)
         if (spec != null) {
             val number = (value as? PropertyValue.Number)?.value ?: return false
             if (!spec.candidate(id) || !spec.accepts(number)) return false
             if (property == CommandProperty.MODE && id.modes.none { it.wire == number }) return false
-            val offDisabled = (propertyObserved(CommandProperty.ALLOW_OFF_OPTION)?.value as? PropertyValue.Number)?.value == 2
+            val offDisabled = (propertyEffective(CommandProperty.ALLOW_OFF_OPTION)?.value as? PropertyValue.Number)?.value == 2
             if (offDisabled && ((property == CommandProperty.MODE && number == 1) ||
                 (property == CommandProperty.LISTENING_MODE_CONFIGS && (number and 1) != 0))) return false
             if (property == CommandProperty.LISTENING_MODE_CONFIGS && (number and 8) != 0 && Capability.ADAPTIVE_AUDIO !in id.modelDeclared) return false
@@ -79,39 +90,122 @@ class AirPodsRepository(
     private val clock: AirPodsClock,
     private val io: CoroutineDispatcher = Dispatchers.IO,
     private val observer: AirPodsQualificationObserver = AirPodsQualificationObserver.NONE,
-) : Closeable {
+    private val valueStore: AirPodsPairValueStore = AirPodsPairValueStore(),
+    private val wallClock: AirPodsClock = AirPodsClock { System.currentTimeMillis() },
+    private val rxDiagnostics: AirPodsRxDiagnostics = AirPodsRxDiagnostics.NONE,
+) : Closeable, AirPodsHeadSampleSource {
     private val lock = Any()
     private val writer = Mutex()
     private val tracking = Mutex()
     private val mutable = MutableStateFlow(AirPodsState())
     val state: StateFlow<AirPodsState> = mutable.asStateFlow()
+    private val mutableHead = MutableStateFlow<Received<HeadSample>?>(null)
+    override val headSamples: StateFlow<Received<HeadSample>?> = mutableHead.asStateFlow()
+    private val mutableCacheFailures = MutableStateFlow(0L)
+    /** Optional diagnostics only; a value-cache failure is never a permission decision. */
+    val valueCacheFailures: StateFlow<Long> = mutableCacheFailures.asStateFlow()
     private var transport: AacpTransport? = null
     private var session: Job? = null
     private var sequence = 0L
     private var trackingRequest = 0L
     private var bootstrapGeneration: Long? = null
-    private val mutableEvents = MutableSharedFlow<Received<AacpEvent>>()
-    /** Subscribe before connect; live ordered events with backpressure, no replay across owners. */
+    private val mutableEvents = MutableSharedFlow<Received<AacpEvent>>(extraBufferCapacity = EVENT_CAPACITY)
+    /** Subscribe before connect. FIFO, no replay, no sensor sampling. The reader never suspends
+     * for a collector: exceeding 1024 queued events terminates the generation explicitly instead
+     * of silently dropping a sample or retaining an unbounded backlog. */
     val events: SharedFlow<Received<AacpEvent>> = mutableEvents.asSharedFlow()
-    private val timers = mutableMapOf<CommandProperty, Job>()
+    private val commandQueue = mutableMapOf<CommandProperty, PendingCommand>()
+    private var commandWorker: Job? = null
+    private var rxOrdinal = 0L
+    private data class SentAttempt(val command: PendingCommand, val atMs: Long)
+    private val sentHistory = mutableMapOf<CommandProperty, ArrayDeque<SentAttempt>>()
+    internal companion object {
+        const val EVENT_CAPACITY = 1024
+        const val LATE_ECHO_WINDOW_MS = 1_000L
+    }
+    private var currentPair: PairAddress? = null
+    private val pairCache = mutableMapOf<PairAddress, AirPodsPairValues>()
+    private val persistenceWriter = Mutex()
+    private val pendingPersistence = mutableMapOf<PairAddress, AirPodsPairValues>()
+    private val persistenceWakeup = Channel<Unit>(Channel.CONFLATED)
+    init {
+        scope.launch(io) {
+            for (ignored in persistenceWakeup) {
+                persistenceWriter.withLock {
+                    val updates = synchronized(lock) { pendingPersistence.toMap().also { pendingPersistence.clear() } }
+                    updates.forEach { (pair, values) ->
+                        if (valueStore.save(pair, values).isFailure) mutableCacheFailures.value += 1
+                    }
+                }
+            }
+        }
+    }
 
-    fun construct(factory: () -> AacpTransport) {
+    /** IO-only snapshots, coalesced independently for every pair, including a retired pair. */
+    private fun persistLocked(s: AirPodsState) {
+        currentPair?.let {
+            pairCache[it] = s.cachedValues
+            pendingPersistence[it] = s.cachedValues
+            persistenceWakeup.trySend(Unit)
+        }
+    }
+    /** Owner calls after forgetting/unpairing. Serialized with cache writes, so a delayed save
+     * cannot resurrect deleted values. Does not change consent, setup or Bluetooth ownership. */
+    suspend fun forgetPairValues(pair: PairAddress): Result<Unit> = withContext(io) {
+        persistenceWriter.withLock {
+            synchronized(lock) {
+                pairCache.remove(pair); pendingPersistence.remove(pair)
+                if (currentPair == pair) {
+                    currentPair = null
+                    mutable.value = mutable.value.copy(cachedValues = AirPodsPairValues(), desired = emptyMap())
+                }
+            }
+            valueStore.forget(pair).also { if (it.isFailure) mutableCacheFailures.value += 1 }
+        }
+    }
+    private fun restoreChoices(values: AirPodsPairValues, g: Long) = values.choices.mapValues { (_, saved) ->
+        DesiredProperty(saved.value, 0, g, when (saved.status) {
+            DesiredStatus.QUEUED, DesiredStatus.WRITING, DesiredStatus.SENT -> DesiredStatus.UNCERTAIN
+            else -> saved.status
+        }, 0)
+    }
+
+    fun construct(factory: () -> AacpTransport) = construct(null, factory)
+
+    /** Owner supplies its admitted pair, never an INFORMATION name/serial or inferred alias. */
+    fun construct(pair: PairAddress?, factory: () -> AacpTransport) {
         val generation: Long
         val job: Job
         val oldSocket: AacpTransport?; val oldJob: Job?
         synchronized(lock) {
             oldSocket = transport; transport = null; oldJob = session
-            timers.values.forEach { it.cancel() }; timers.clear()
+            commandQueue.clear(); commandWorker = null; sentHistory.clear(); mutableHead.value = null
+            // Preserve uncertainty even when construct directly replaces a connected generation.
+            val retired = uncertain(mutable.value)
+            persistLocked(retired)
+            // A legacy caller without an admitted pair cannot carry values across sessions:
+            // two unknown sessions might belong to different physical pairs.
+            val retained = if (pair != null && pair == currentPair) retired.cachedValues else pair?.let(pairCache::get)
+            currentPair = pair
             generation = mutable.value.generation + 1
             job = SupervisorJob(scope.coroutineContext[Job])
             session = job
-            mutable.value = AirPodsState(generation, AacpStage.CONSTRUCTING)
+            mutable.value = AirPodsState(generation, AacpStage.CONSTRUCTING,
+                desired = retained?.let { restoreChoices(it, generation) }.orEmpty(),
+                cachedValues = retained ?: AirPodsPairValues())
             observer.observe(QualificationEvent(QualificationStep.CONSTRUCT, QualificationPhase.REQUESTED, generation))
         }
         try { oldSocket?.close() } catch (_: Exception) { /* invalidated before close */ }
         oldJob?.cancel()
         scope.launch(job + io) {
             try {
+                val cached = pair?.let { address -> persistenceWriter.withLock {
+                    valueStore.load(address).also { if (it.isFailure) mutableCacheFailures.value += 1 }.getOrNull()
+                } }
+                synchronized(lock) {
+                    if (isCurrent(generation) && currentPair == pair && cached != null && mutable.value.cachedValues == AirPodsPairValues())
+                        mutable.value = mutable.value.copy(cachedValues = cached, desired = restoreChoices(cached, generation))
+                }
                 val created = factory()
                 observer.observe(QualificationEvent(QualificationStep.CONSTRUCT, QualificationPhase.COMPLETED, generation))
                 val accepted = synchronized(lock) {
@@ -197,7 +291,32 @@ class AirPodsRepository(
                         }
                     }
                 }
+                scheduleInitializationRefresh(g, socket, job)
             } catch (e: Exception) { fail(g, "bootstrap write", e) }
+        }
+    }
+
+    private fun scheduleInitializationRefresh(g: Long, socket: AacpTransport, job: Job) {
+        // Pinned AirPodsService: 200ms between handshake, flags, subscribe and 0x29;
+        // another 200ms, then the final handshake/flags/subscribe after 5 seconds.
+        // No proximity keys, ownership requests or implicit head tracking. Delays inherit
+        // the owner's scheduler; only blocking writes switch to IO.
+        scope.launch(job) {
+            try {
+                for (packet in listOf(AacpCodec.handshake(), AacpCodec.featureFlags(),
+                    AacpCodec.subscribe(), AacpCodec.bootstrapExtension())) {
+                    delay(200)
+                    if (!withContext(io) { write(g, socket, packet) { mutable.value.stage == AacpStage.SUBSCRIBED } }) return@launch
+                }
+                delay(200)
+                delay(5_000)
+                withContext(io) {
+                    writer.withLock {
+                        for (packet in listOf(AacpCodec.handshake(), AacpCodec.featureFlags(), AacpCodec.subscribe()))
+                            if (!writeLocked(g, socket, packet) { mutable.value.stage == AacpStage.SUBSCRIBED }) return@withLock
+                    }
+                }
+            } catch (e: Exception) { fail(g, "bootstrap refresh write", e) }
         }
     }
 
@@ -229,28 +348,111 @@ class AirPodsRepository(
             is PropertyValue.Eq -> { require(property == CommandProperty.EQ); AacpCodec.eq(value) }
             is PropertyValue.Name -> { require(property == CommandProperty.NAME); AacpCodec.rename(value.value) }
         } } catch (_: IllegalArgumentException) { return false }
-        val socket: AacpTransport; val job: Job; val g: Long; val pending: PendingCommand
         synchronized(lock) {
             val s = mutable.value
             if (!s.canAttemptWrite(property, value)) return false
-            socket = transport ?: return false; job = session ?: return false; g = s.generation
-            pending = PendingCommand((value as? PropertyValue.Number)?.value ?: 0, clock.nowMs(), ++sequence,
+            val socket = transport ?: return false; val job = session ?: return false; val g = s.generation
+            // Identical queued/in-flight/sent intent is already represented. Never resend on RX.
+            if (s.desired[property]?.let { it.requested == value && it.status in setOf(
+                    DesiredStatus.QUEUED, DesiredStatus.WRITING, DesiredStatus.SENT) } == true) return true
+            val pending = PendingCommand((value as? PropertyValue.Number)?.value ?: 0, clock.nowMs(), ++sequence,
                 value, packet.map { it.toInt() and 255 }, g)
-            mutable.value = s.copy(pending = s.pending + (property to pending), outcomes = s.outcomes - property)
+            val choice = DesiredProperty(value, pending.sequence, g, DesiredStatus.QUEUED, pending.startedMs)
+            commandQueue[property] = pending
+            mutable.value = s.copy(pending = s.pending + (property to pending), outcomes = s.outcomes - property,
+                desired = s.desired + (property to choice), cachedValues = s.cachedValues.copy(
+                    choices = s.cachedValues.choices + (property to SavedChoice(value, wallClock.nowMs().coerceAtLeast(0), choice.status))))
+            persistLocked(mutable.value)
             observer.observe(QualificationEvent(QualificationStep.TX, QualificationPhase.REQUESTED, g, pending.sequence, property, flags = 2))
-            timers[property] = scope.launch(job) {
-                delay(5_000)
-                finishPending(g, property, pending.sequence, CommandOutcome.NOT_CONFIRMED)
-            }
-        }
-        scope.launch(job + io) {
-            try { write(g, socket, packet, pending.sequence, property) { mutable.value.pending[property]?.sequence == pending.sequence && clock.nowMs() - pending.startedMs in 0 until 5_000 } }
-            catch (e: Exception) {
-                finishPending(g, property, pending.sequence, CommandOutcome.SEND_FAILED)
-                fail(g, "command write", e)
+            if (commandWorker?.isActive != true) {
+                commandWorker = scope.launch(job + io, start = CoroutineStart.LAZY) { drainCommands(g, socket) }
+                commandWorker?.start()
             }
         }
         return true
+    }
+
+    /** One worker per generation. Select AFTER acquiring the physical writer: queued A->B->C
+     * sends only C. An already-entered write completes; its result cannot retire a newer intent. */
+    private suspend fun drainCommands(g: Long, socket: AacpTransport) {
+        while (true) {
+            var sent: Pair<CommandProperty, PendingCommand>? = null
+            try {
+                val more = writer.withLock {
+                    val entry = synchronized(lock) {
+                        if (!isCurrent(g) || transport !== socket) return@withLock false
+                        val next = commandQueue.minByOrNull { it.value.sequence }
+                        if (next == null) { commandWorker = null; return@withLock false }
+                        val property = next.key; val request = next.value
+                        commandQueue.remove(property)
+                        sent = property to request
+                        val s = mutable.value
+                        if (!s.canAttemptWrite(property, request.requested)) {
+                            val rejected = s.desired.getValue(property).copy(status = DesiredStatus.FAILED)
+                            mutable.value = rememberChoice(s.copy(pending = s.pending - property,
+                                desired = s.desired + (property to rejected),
+                                outcomes = s.outcomes + (property to CommandOutcome.SEND_FAILED)), property, rejected)
+                            return@withLock true
+                        }
+                        property to request
+                    }
+                    val (property, request) = entry
+                    val written = writeLocked(g, socket, request.packet.map { it.toByte() }.toByteArray(), request.sequence, property,
+                        begin = {
+                            val s = mutable.value
+                            val intent = s.desired.getValue(property).copy(status = DesiredStatus.WRITING, writeAfterRx = rxOrdinal)
+                            mutable.value = rememberChoice(s.copy(desired = s.desired + (property to intent)), property, intent)
+                            sentHistory.getOrPut(property) { ArrayDeque() }.apply {
+                                addLast(SentAttempt(request, clock.nowMs())); while (size > 32) removeFirst()
+                            }
+                        }, eligible = {
+                            mutable.value.desired[property]?.sequence == request.sequence &&
+                                mutable.value.canAttemptWrite(property, request.requested)
+                        })
+                    synchronized(lock) {
+                        if (isCurrent(g)) {
+                            val s = mutable.value
+                            val intent = s.desired[property]
+                            if (intent?.sequence == request.sequence) {
+                                // An RX may have reconciled this intent while socket.write blocked.
+                                val updated = if (!written) intent.copy(status = DesiredStatus.FAILED)
+                                    else if (intent.status == DesiredStatus.WRITING) intent.copy(status = DesiredStatus.SENT) else intent
+                                mutable.value = rememberChoice(s.copy(pending = s.pending - property,
+                                    desired = s.desired + (property to updated),
+                                    outcomes = when (updated.status) {
+                                        DesiredStatus.SENT -> s.outcomes - property
+                                        DesiredStatus.FAILED -> s.outcomes + (property to CommandOutcome.SEND_FAILED)
+                                        else -> s.outcomes
+                                    }), property, updated)
+                            }
+                        }
+                    }
+                    true
+                }
+                if (!more) return
+            } catch (e: Exception) {
+                synchronized(lock) {
+                    sent?.let { (property, request) ->
+                        val s = mutable.value
+                        s.desired[property]?.takeIf { isCurrent(g) && it.sequence == request.sequence }?.let {
+                            val failed = it.copy(status = DesiredStatus.FAILED)
+                            mutable.value = rememberChoice(s.copy(pending = s.pending - property,
+                                desired = s.desired + (property to failed), outcomes = s.outcomes + (property to CommandOutcome.SEND_FAILED)), property, failed)
+                        }
+                    }
+                }
+                fail(g, "command write", e)
+                return
+            }
+        }
+    }
+
+    private fun rememberChoice(s: AirPodsState, property: CommandProperty, intent: DesiredProperty): AirPodsState {
+        val saved = s.cachedValues.choices[property]
+        val result = s.copy(cachedValues = s.cachedValues.copy(choices = s.cachedValues.choices +
+            (property to SavedChoice(intent.requested, saved?.atEpochMs ?: wallClock.nowMs().coerceAtLeast(0), intent.status))))
+        persistLocked(result)
+        return result
     }
     /** Subscription refresh solicits INFORMATION/battery/control RX.
      * No unverified INFORMATION request opcode, ownership or proximity keys. */
@@ -261,14 +463,23 @@ class AirPodsRepository(
     }
 
     private suspend fun write(g: Long, socket: AacpTransport, packet: ByteArray, sequence: Long = 0, property: CommandProperty? = null, eligible: () -> Boolean = { true }) = writer.withLock {
-        writeLocked(g, socket, packet, sequence, property, eligible)
+        writeLocked(g, socket, packet, sequence, property, eligible = eligible)
     }
     /** Caller holds writer, including for the complete bootstrap sequence. */
-    private fun writeLocked(g: Long, socket: AacpTransport, packet: ByteArray, sequence: Long = 0, property: CommandProperty? = null, eligible: () -> Boolean = { true }): Boolean {
+    private fun writeLocked(g: Long, socket: AacpTransport, packet: ByteArray, sequence: Long = 0, property: CommandProperty? = null,
+        begin: () -> Unit = {}, eligible: () -> Boolean = { true }): Boolean {
         val current = synchronized(lock) { isCurrent(g) && transport === socket && eligible() }
         return if (current) {
             observer.observe(QualificationEvent(QualificationStep.TX, QualificationPhase.REQUESTED, g, sequence, property, value = packet.size))
             try {
+                val admitted = synchronized(lock) {
+                    (isCurrent(g) && transport === socket && eligible()).also { if (it) begin() }
+                }
+                if (!admitted) {
+                    observer.observe(QualificationEvent(QualificationStep.TX, QualificationPhase.REJECTED, g, sequence, property))
+                    return false
+                }
+                AacpCodec.captureTx(packet)
                 socket.write(packet) // close never acquires writer: interrupts blocked I/O
                 observer.observe(QualificationEvent(QualificationStep.TX, QualificationPhase.COMPLETED, g, sequence, property, value = packet.size))
                 true
@@ -307,25 +518,22 @@ class AirPodsRepository(
         }
         return true
     }
-    private fun finishPending(g: Long, property: CommandProperty, seq: Long, outcome: CommandOutcome) = synchronized(lock) {
-        val s = mutable.value
-        if (isCurrent(g) && s.pending[property]?.sequence == seq) {
-            timers.remove(property)
-            mutable.value = s.copy(pending = s.pending - property, outcomes = s.outcomes + (property to outcome))
-        }
-    }
-
     private suspend fun readLoop(g: Long, socket: AacpTransport) {
         while (synchronized(lock) { isCurrent(g) }) {
             val sdu = socket.readSdu() ?: throw java.io.EOFException()
+            val ingressAt = clock.nowMs() // One timestamp for every frame already in this SDU.
+            if (!synchronized(lock) { isCurrent(g) && transport === socket }) return
             observer.observe(QualificationEvent(QualificationStep.RX_SDU, QualificationPhase.OBSERVED, g, value = sdu.size))
-            AacpCodec.decodeSdu(sdu).forEach {
-                receive(g, it)
-                if (synchronized(lock) { isCurrent(g) }) mutableEvents.emit(Received(it,clock.nowMs(),g))
+            val diagnosticFrame: ((AacpRxFrame) -> Unit)? = if (rxDiagnostics === AirPodsRxDiagnostics.NONE) null
+                else { frame -> rxDiagnostics.observe(g, frame) }
+            AacpCodec.decodeSdu(sdu, diagnosticFrame).forEach {
+                receive(g, it, ingressAt)
+                if (synchronized(lock) { isCurrent(g) } && !mutableEvents.tryEmit(Received(it, ingressAt, g)))
+                    throw IllegalStateException("EVENT_BUFFER_OVERFLOW")
             }
         }
     }
-    internal fun receive(g: Long, event: AacpEvent) = synchronized(lock) {
+    internal fun receive(g: Long, event: AacpEvent, ingressAt: Long = clock.nowMs()) = synchronized(lock) {
         if (!isCurrent(g)) return@synchronized
         var s = mutable.value
         // Only enum tags and numeric control values. INFORMATION/name/serial bytes never enter this port.
@@ -363,25 +571,54 @@ class AirPodsRepository(
                 is AacpEvent.Ear -> 6; is AacpEvent.Stem -> 7; is AacpEvent.Head -> 8
                 is AacpEvent.Property -> 9; is AacpEvent.Unknown -> 0
             }, values = numbers))
-        val now = clock.nowMs()
+        val now = ingressAt
+        val ordinal = ++rxOrdinal
         fun observed(property: CommandProperty, value: PropertyValue) {
-            s = s.copy(properties = s.properties + (property to Received(value, now, g)))
-            s.pending[property]?.let {
-                timers.remove(property)?.cancel()
-                val result = if (now - it.startedMs !in 0 until 5_000) CommandOutcome.NOT_CONFIRMED
-                    else if (it.requested == value) CommandOutcome.OBSERVED_MATCH else CommandOutcome.OBSERVED_OTHER
-                s = s.copy(pending = s.pending - property, outcomes = s.outcomes + (property to result))
+            s = s.copy(properties = s.properties + (property to Received(value, now, g)),
+                cachedValues = s.cachedValues.copy(observed = s.cachedValues.observed +
+                    (property to SavedProperty(value, wallClock.nowMs().coerceAtLeast(0)))))
+            s.desired[property]?.let { intent ->
+                val afterWrite = intent.writeAfterRx?.let { ordinal > it } == true
+                val reconcilable = intent.status in setOf(DesiredStatus.UNCERTAIN, DesiredStatus.FAILED) ||
+                    (afterWrite && intent.status in setOf(DesiredStatus.WRITING, DesiredStatus.SENT))
+                // AACP has no sequence. Each unobserved physical send can explain at most ONE
+                // late echo, within 1s of the latest physical send (never queue time). Silence
+                // alone changes nothing. Consumed/expired evidence cannot hide a later contrary RX.
+                val history = sentHistory[property]
+                val latest = history?.firstOrNull { it.command.sequence == intent.sequence }
+                val earlier = if (reconcilable && afterWrite && value != intent.requested &&
+                    intent.status in setOf(DesiredStatus.WRITING, DesiredStatus.SENT) && latest != null &&
+                    now - latest.atMs in 0..LATE_ECHO_WINDOW_MS)
+                    history?.firstOrNull { it.command.sequence < intent.sequence && it.command.requested == value }
+                else null
+                val earlierEcho = earlier != null
+                if (earlier != null) history?.remove(earlier)
+                if (reconcilable && !earlierEcho) history?.removeAll { it.command.requested == value }
+                if (reconcilable && !earlierEcho) {
+                    val matches = intent.requested == value
+                    val reconciled = intent.copy(status = if (matches) DesiredStatus.CONFIRMED else DesiredStatus.CONTRADICTED)
+                    s = rememberChoice(s.copy(desired = s.desired + (property to reconciled),
+                        outcomes = s.outcomes + (property to if (matches) CommandOutcome.OBSERVED_MATCH else CommandOutcome.OBSERVED_OTHER)), property, reconciled)
+                }
             }
         }
         when (event) {
             is AacpEvent.Property -> observed(event.property, event.value)
             is AacpEvent.Ear -> s = s.copy(ears=Received(event.sample,now,g))
             is AacpEvent.Stem -> s = s.copy(stem=Received(event.sample,now,g))
-            is AacpEvent.Head -> if (s.activePacketFormat != null) s = s.copy(head=Received(event.sample,now,g))
+            is AacpEvent.Head -> if (s.activePacketFormat != null) mutableHead.value = Received(event.sample,now,g)
             is AacpEvent.Mode -> { observed(CommandProperty.MODE, PropertyValue.Number(event.value.wire)); s = s.copy(mode = Received(event.value, now, g)) }
             is AacpEvent.ConversationSetting -> { observed(CommandProperty.CONVERSATION, PropertyValue.Number(if (event.enabled) 1 else 2)); s = s.copy(conversation = Received(event.enabled, now, g)) }
             is AacpEvent.ConversationActivity -> s = s.copy(conversationActivity = Received(event.rawStatus, now, g))
-            is AacpEvent.Battery -> s = s.copy(batteries = s.batteries + event.components.mapValues { Received(it.value, now, g) })
+            is AacpEvent.Battery -> {
+                // Keep the current null/disconnected sample honest. Preserve last valid case
+                // percentage separately, without reviving its old charging status as live.
+                val case = event.components[8]?.percent?.takeIf { it in 0..100 }?.let {
+                    SavedCasePercent(it, wallClock.nowMs().coerceAtLeast(0))
+                } ?: s.cachedValues.casePercent
+                s = s.copy(batteries = s.batteries + event.components.mapValues { Received(it.value, now, g) },
+                    cachedValues = s.cachedValues.copy(casePercent = case))
+            }
             is AacpEvent.Information -> {
                 event.identity.name?.let { observed(CommandProperty.NAME, PropertyValue.Name(it)) }
                 s = s.copy(identity=event.identity, identityReceived=Received(event.identity,now,g),
@@ -390,15 +627,28 @@ class AirPodsRepository(
             is AacpEvent.Unknown -> s = s.copy(diagnostic = "RX opcode=${event.opcode} bytes=${event.bytes}: ${event.reason}")
         }
         mutable.value = s
+        if (event is AacpEvent.Property || event is AacpEvent.Mode || event is AacpEvent.ConversationSetting ||
+            event is AacpEvent.Information || event is AacpEvent.Battery) persistLocked(s)
     }
     private fun isCurrent(g: Long) = mutable.value.generation == g && session?.isActive == true
     private fun fail(g: Long, step: String, error: Exception?) {
         synchronized(lock) { if (!isCurrent(g)) return }
         val detail = (error as? AacpPlatformException)?.reason ?: error?.javaClass?.simpleName ?: "unknown failure"
         observer.observe(QualificationEvent(QualificationStep.OWNER, QualificationPhase.FAILED, g))
-        release(g, AacpStage.ERROR, "$step: $detail; compatibility NV")
+        release(g, AacpStage.ERROR, "$step: ${if (error?.message == "EVENT_BUFFER_OVERFLOW") "EVENT_BUFFER_OVERFLOW" else detail}; compatibility NV")
     }
     override fun close() = release(null, AacpStage.CLOSED, "Closed; physical gate NV")
+    private fun uncertain(s: AirPodsState): AirPodsState {
+        var result = s
+        s.desired.forEach { (property, intent) ->
+            if (intent.status in setOf(DesiredStatus.QUEUED, DesiredStatus.WRITING, DesiredStatus.SENT)) {
+                val uncertain = intent.copy(status = DesiredStatus.UNCERTAIN)
+                result = rememberChoice(result.copy(desired = result.desired + (property to uncertain),
+                    outcomes = result.outcomes + (property to CommandOutcome.CLOSED)), property, uncertain)
+            }
+        }
+        return result
+    }
     private fun release(expected: Long?, stage: AacpStage, reason: String, expectedStage: AacpStage? = null) {
         val oldSocket: AacpTransport?; val oldJob: Job?
         synchronized(lock) {
@@ -406,9 +656,10 @@ class AirPodsRepository(
             if (expected != null && s.generation != expected) return
             if (expectedStage != null && s.stage != expectedStage) return
             oldSocket = transport; transport = null; oldJob = session; session = null
-            timers.values.forEach { it.cancel() }; timers.clear()
-            mutable.value = s.copy(generation = s.generation + 1, stage = stage, activePacketFormat=null, head=null, pending = emptyMap(),
-                outcomes = s.outcomes + s.pending.mapValues { CommandOutcome.CLOSED }, diagnostic = reason)
+            commandQueue.clear(); commandWorker = null; sentHistory.clear(); mutableHead.value = null
+            mutable.value = uncertain(s).copy(generation = s.generation + 1, stage = stage,
+                activePacketFormat=null, head=null, pending = emptyMap(), diagnostic = reason)
+            persistLocked(mutable.value)
         }
         observer.observe(QualificationEvent(QualificationStep.CLOSE, QualificationPhase.REQUESTED, mutable.value.generation))
         try {

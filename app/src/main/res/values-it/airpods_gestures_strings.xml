@@ -1,0 +1,8 @@
+<resources>
+    <string name="airpods_c3_mute">Disattiva / attiva microfono</string>
+    <string name="airpods_c3_end_call">Termina chiamata</string>
+    <string name="airpods_c3_press_once">Premi una volta</string>
+    <string name="airpods_c3_press_twice">Premi due volte</string>
+    <string name="airpods_c3_always_right">Sempre a destra</string>
+    <string name="airpods_c3_always_left">Sempre a sinistra</string>
+</resources>

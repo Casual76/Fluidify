@@ -17,7 +17,7 @@ object AirPodsFeatures {
         FeatureSpec("host.ca_pause", "automation", FeatureOwner.HOST, "client host adapter; no AACP command"),
         FeatureSpec("host.ca_relative", "automation", FeatureOwner.HOST, "client host adapter; no AACP command"),
         FeatureSpec("host.ca_volume", "automation", FeatureOwner.HOST, "client host adapter; no AACP command"),
-        FeatureSpec("host.head_gestures", "gestures", FeatureOwner.WIRE_AND_HOST, "setHeadTracking/state.head"),
+        FeatureSpec("host.head_gestures", "gestures", FeatureOwner.WIRE_AND_HOST, "setHeadTracking/events/headSamples"),
         FeatureSpec("host.long_press", "gestures", FeatureOwner.WIRE_AND_HOST, "setProperty(STEM_CONFIG)/state.stem"),
         FeatureSpec("host.disconnect_unworn", "automation", FeatureOwner.HOST, "client host adapter; no AACP command"),
         FeatureSpec("device.disconnect", "connection", FeatureOwner.HOST, "client host adapter; no AACP command"),

@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="airpods_stem_local_choice">Bu telefona kaydedildi</string>
     <string name="airpods_stem_shared">Uzun basma &#183; paylaşılan cihaz durumu</string>
     <string name="airpods_stem_unknown">Mevcut yakalama durumu: bilinmiyor. Cihazdan alınmış güncel bir okuma yok.</string>
     <string name="airpods_stem_intercepted">Güncel okuma: Fluidify her iki taraftaki uzun basmaları yakalıyor.</string>

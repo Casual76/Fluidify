@@ -1,5 +1,4 @@
 <resources>
-    <string name="airpods_stem_local_choice">Scelta salvata sul telefono</string>
     <string name="airpods_stem_shared">Pressione prolungata &#183; stato condiviso delle cuffie</string>
     <string name="airpods_stem_unknown">Intercettazione attuale: sconosciuta. Nessuna lettura corrente dalle cuffie.</string>
     <string name="airpods_stem_intercepted">Lettura attuale: Fluidify intercetta le pressioni prolungate su entrambi i lati.</string>

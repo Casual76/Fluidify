@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_c4_save_failed">फ़ोन पर यह सेटिंग सेव नहीं की जा सकी।</string>
+    <string name="airpods_c4_partial_save">इस फ़ोन पर सेव किया गया। AirPods पर भेजा नहीं जा सका।</string>
+    <string name="airpods_c4_send_failed">AirPods पर भेजा नहीं जा सका।</string>
+    <string name="airpods_c3_mute">माइक बंद / चालू करें</string>
+    <string name="airpods_c3_end_call">कॉल समाप्त करें</string>
+    <string name="airpods_c3_press_once">एक बार दबाएँ</string>
+    <string name="airpods_c3_press_twice">दो बार दबाएँ</string>
+    <string name="airpods_c3_always_right">हमेशा दायाँ</string>
+    <string name="airpods_c3_always_left">हमेशा बायाँ</string>
+    <string name="airpods_header_not_live">अपडेट नहीं किया गया</string>
+    <string name="airpods_p1_name">नाम</string>
+</resources>

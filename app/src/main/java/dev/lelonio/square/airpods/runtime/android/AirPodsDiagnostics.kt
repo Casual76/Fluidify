@@ -9,18 +9,24 @@ data class AirPodsDiagnosticRecord(val id: Long, val atMillis: Long, val kind: D
 /** Only typed enums and local timestamps enter this bounded process-local log. No packet/identity API. */
 class AirPodsSanitizedDiagnostics(private val clock: () -> Long = { System.currentTimeMillis() }) {
     private var sequence = 0L
+    private var lastStage: AacpStage? = null
     private val active = MutableStateFlow(false)
     val collecting = active.asStateFlow()
     private val mutable = MutableStateFlow<List<AirPodsDiagnosticRecord>>(emptyList())
     val records = mutable.asStateFlow()
     @Synchronized fun startCollection(): Boolean {
         if (active.value) return false
+        lastStage = null
         active.value = true
         return true
     }
     @Synchronized fun stopCollection() { active.value = false }
     @Synchronized fun record(kind: DiagnosticKind, stage: AacpStage) {
         if (!active.value) return
+        if (kind == DiagnosticKind.STAGE) {
+            if (stage == lastStage) return
+            lastStage = stage
+        }
         mutable.value = (mutable.value + AirPodsDiagnosticRecord(++sequence, clock(), kind, stage)).takeLast(100)
     }
     @Synchronized fun delete(id: Long) { mutable.value = mutable.value.filterNot { it.id == id } }

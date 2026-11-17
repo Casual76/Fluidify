@@ -1,0 +1,8 @@
+<resources>
+    <string name="airpods_c3_mute">Mute / unmute</string>
+    <string name="airpods_c3_end_call">End call</string>
+    <string name="airpods_c3_press_once">Press once</string>
+    <string name="airpods_c3_press_twice">Press twice</string>
+    <string name="airpods_c3_always_right">Always right</string>
+    <string name="airpods_c3_always_left">Always left</string>
+</resources>

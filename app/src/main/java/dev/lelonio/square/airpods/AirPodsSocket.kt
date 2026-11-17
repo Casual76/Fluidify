@@ -62,10 +62,12 @@ object AirPodsSocket {
     }
 
     private class SocketTransport(private val socket: BluetoothSocket) : AacpTransport {
+        // One reader per transport. Allocate after connect (negotiated MTU), then reuse.
+        private var readBuffer: ByteArray? = null
         override fun connect() = socket.connect()
         override fun readSdu(): ByteArray? {
             // Android's L2CAP read retains SDU boundaries if buffer >= negotiated receive MTU.
-            val bytes = ByteArray(socket.maxReceivePacketSize.coerceAtLeast(65535))
+            val bytes = readBuffer ?: ByteArray(socket.maxReceivePacketSize.coerceAtLeast(65535)).also { readBuffer = it }
             val count = socket.inputStream.read(bytes)
             return if (count < 0) null else bytes.copyOf(count)
         }

@@ -63,6 +63,12 @@ data class AirPodsUiState(
     /** An Android request outcome, never proof that the audio profile changed. */
     val audioResult: PlatformResult? = null,
 
+    /** Collected only inside the tracking graph, never by the global host projection. */
+    val headSamples: kotlinx.coroutines.flow.StateFlow<Received<HeadSample>?>? = null,
+
+    /** Local transaction/admission failure, never a missing firmware acknowledgement. */
+    val mainToggleIssue: AirPodsMainToggleIssue? = null,
+
 ) {
 
     val verified get() = pair.verification != null && conformanceMatches
@@ -81,7 +87,7 @@ data class AirPodsUiState(
 
     val modes get() = identity?.modes.orEmpty().filter { mode ->
 
-        mode != ListeningMode.OFF || (domain.propertyObserved(CommandProperty.ALLOW_OFF_OPTION)?.value as? PropertyValue.Number)?.value != 2
+        mode != ListeningMode.OFF || (domain.propertyEffective(CommandProperty.ALLOW_OFF_OPTION)?.value as? PropertyValue.Number)?.value != 2
 
     }
 
@@ -97,11 +103,17 @@ data class AirPodsUiState(
 
     }.takeIf { it in modes }
 
-    val currentMode get() = domain.mode?.takeIf { controlsReady && it.generation == domain.generation }?.value
+    val currentMode get() = if (controlsReady) (domain.propertyEffective(CommandProperty.MODE)?.value as? PropertyValue.Number)
+        ?.let { value -> ListeningMode.entries.firstOrNull { it.wire == value.value && it in modes } } else null
+
+    val effectiveName get() = (domain.propertyEffective(CommandProperty.NAME)?.value as? PropertyValue.Name)?.value
+
+    /** Last valid reading for this pair; never evidence of current charging. */
+    val lastKnownCasePercent get() = domain.cachedValues.casePercent
 
     val quickTarget get() = (if(currentMode == ListeningMode.ANC) preferredMode else ListeningMode.ANC)
 
-        ?.takeIf { controlsReady && it in modes && CommandProperty.MODE !in domain.pending }
+        ?.takeIf { controlsReady && it in modes }
 
     fun allowed(id: String) = availability[id]?.enabled == true
 

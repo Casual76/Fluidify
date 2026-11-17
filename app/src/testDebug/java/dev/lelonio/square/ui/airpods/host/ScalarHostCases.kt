@@ -19,6 +19,15 @@ internal data class ScalarHostCase(
     val needsCapability: Boolean,
     val inputs: List<ScalarInput>,
 ) {
+    // Independent product page map: a misplaced control must fail the full-page tests.
+    val expectedPage get() = when(property) {
+        CommandProperty.MIC_MODE, CommandProperty.CALL_MANAGEMENT_CONFIG -> dev.lelonio.square.ui.airpods.AirPodsSettingsPage.Calls
+        CommandProperty.LISTENING_MODE_CONFIGS -> dev.lelonio.square.ui.airpods.AirPodsSettingsPage.LongPressLeft
+        CommandProperty.DOUBLE_CLICK_INTERVAL, CommandProperty.CLICK_HOLD_INTERVAL,
+        CommandProperty.ONE_BUD_ANC_MODE, CommandProperty.CHIME_VOLUME,
+        CommandProperty.VOLUME_SWIPE_INTERVAL, CommandProperty.VOLUME_SWIPE_MODE -> dev.lelonio.square.ui.airpods.AirPodsSettingsPage.Controls
+        else -> dev.lelonio.square.ui.airpods.AirPodsSettingsPage.Main
+    }
     val initial get() = inputs.first()
     val requested get() = inputs.last()
     val different get() = inputs.dropLast(1).last()
@@ -135,7 +144,7 @@ internal fun HostProtocolFixture.receiveScalar(hex: String, property: CommandPro
     val previousEvents = matchingEvents()
     transport.deliver(hex)
     await("new scalar RX $property") {
-        matchingEvents() > previousEvents && observed(property) == value && property !in owner.state.value.pending
+        matchingEvents() > previousEvents && observed(property) == value && property !in owner.state.value.pending && reconciled(property)
     }
     refresh()
 }

@@ -1,6 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
-    <string name="airpods_stem_local_choice">Enregistré sur ce téléphone</string>
     <string name="airpods_stem_shared">Appui long &#183; état partagé de l\'appareil</string>
     <string name="airpods_stem_unknown">Interception actuelle : inconnue. Aucune lecture actuelle de l\'appareil.</string>
     <string name="airpods_stem_intercepted">Lecture actuelle : Fluidify intercepte les appuis longs des deux côtés.</string>

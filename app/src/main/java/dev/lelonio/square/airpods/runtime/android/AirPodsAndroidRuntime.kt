@@ -64,12 +64,16 @@ class AirPodsAndroidController internal constructor(
     private val qualificationAuthority: AirPodsQualificationLifecycleAuthority? = null,
     private val observer: AirPodsQualificationObserver = AirPodsQualificationObserver.NONE,
     private val debugInformationIngress: ((Long, ByteArray) -> Unit)? = null,
-) {
+) : AirPodsHeadSampleSource {
     private fun productConformance(): Boolean = testPermit == null && conformance()
     internal val isFunctionalTest get() = testPermit != null
     private val processScope = CoroutineScope(SupervisorJob() + runtimeDispatcher)
     val store = scratchStore ?: AirPodsRuntimeStore(persistenceOverride ?: SharedPreferencesRuntimePersistence(context.getSharedPreferences("airpods_runtime_v1", Context.MODE_PRIVATE)))
-    private val repository = AirPodsRepository(processScope, AirPodsClock { SystemClock.elapsedRealtime() }, observer = observer)
+    private val repository = AirPodsRepository(processScope, AirPodsClock { SystemClock.elapsedRealtime() }, observer = observer,
+        valueStore = if (testPermit != null || scratchStore != null || persistenceOverride != null) AirPodsPairValueStore()
+        else AirPodsPairValueStore(SharedPreferencesPairValuePersistence(
+            context.getSharedPreferences("airpods_pair_values_v1", Context.MODE_PRIVATE))))
+    override val headSamples = repository.headSamples
     val state: StateFlow<AirPodsState> = repository.state
     private val mutableRuntime = MutableStateFlow(AndroidRuntimeState(
         productConformance = runCatching { productConformance() }.getOrDefault(false),
@@ -175,6 +179,109 @@ class AirPodsAndroidController internal constructor(
     private var detector = PinnedHeadGestureDetector()
     private val calls = OrdinaryCallOperations(callPort)
     private var gestureContext: Any? = null
+    private val headInputLock = Any()
+    private var lastHeadAt = 0L
+    private data class HeadContextKey(val host: HostSettings, val nod: HeadAction, val shake: HeadAction,
+        val call: OrdinaryCallState, val callEpoch: Long, val generation: Long, val target: Any?,
+        val format: HeadPacketFormat?, val visible: Boolean, val platformEpoch: Long)
+    private data class HeadContext(val key: HeadContextKey, val settingsRevision: Long,
+        val port: AirPodsMediaPort?, val mediaRevision: Long)
+    private val headContexts = HeadGestureContextCache<HeadContext?>({ SystemClock.elapsedRealtime() })
+    private fun resetHeadInput() = synchronized(headInputLock) {
+        detector = PinnedHeadGestureDetector(); gestureContext = null; lastHeadAt = 0
+    }
+    /** Called by the independent session worker, at most 10Hz, never by a sensor sample. */
+    internal suspend fun refreshHeadContext() {
+        val a = ticket
+        if (a == null || !current(a)) { headContexts.invalidate(); return }
+        headContexts.refresh {
+            val revision = store.revision
+            val p = store.snapshot().getOrNull()?.pairs?.get(a.address)
+            val s = state.value
+            val visible = visibility.value
+            val epoch = platformEpoch.get()
+            if (p == null || !p.host.headGestures || !p.host.automationsEnabled ||
+                (!visible && !p.host.fluidifyBackgroundEnabled) || s.activePacketFormat == null) null
+            else {
+                val call = calls.observe()
+                val callEpoch = calls.epoch
+                val port = media
+                val mediaRevision = port?.gestureContextRevision ?: 0
+                val target = withContext(Dispatchers.Main.immediate) { port?.gestureContext() }
+                if (store.revision != revision || platformEpoch.get() != epoch || !current(a) ||
+                    media !== port || (port?.gestureContextRevision ?: 0) != mediaRevision) null
+                else HeadContext(HeadContextKey(p.host, p.nodAction, p.shakeAction, call, callEpoch,
+                    s.generation, target, s.activePacketFormat, visible, epoch), revision, port, mediaRevision)
+            }
+        }
+    }
+    internal suspend fun runHeadContextLoop(sessionCurrent: () -> Boolean) {
+        // No timer or platform reads without tracking. State changes restart this worker.
+        state.map { it.activePacketFormat != null }.distinctUntilChanged().collectLatest { tracking ->
+            if (!tracking) { headContexts.invalidate(); resetHeadInput(); return@collectLatest }
+            var revision = Long.MIN_VALUE
+            var host: HostSettings? = null
+            while (currentCoroutineContext().isActive && sessionCurrent()) {
+                val currentRevision = store.revision
+                if (revision != currentRevision) {
+                    host = ticket?.address?.let { store.snapshot().getOrNull()?.pairs?.get(it)?.host }
+                    revision = currentRevision
+                }
+                val settings = host
+                if (settings?.headGestures == true && settings.automationsEnabled &&
+                    (visibility.value || settings.fluidifyBackgroundEnabled)) refreshHeadContext()
+                else { headContexts.invalidate(); resetHeadInput() }
+                delay(100)
+            }
+        }
+    }
+    private fun currentHeadContext(): HeadContext? = headContexts.current()?.takeIf {
+        it.settingsRevision == store.revision && it.port === media &&
+            it.mediaRevision == (media?.gestureContextRevision ?: 0) &&
+            it.key.platformEpoch == platformEpoch.get() && it.key.visible == visibility.value &&
+            it.key.generation == state.value.generation && it.key.format == state.value.activePacketFormat
+    }
+    /** Ordered sensor input: volatile cache reads and the unchanged pinned detector only.
+     * Missing/expired context suppresses effects, not samples or detector continuity. Only a
+     * different non-null key starts a new gesture; effects still require fresh live checks. */
+    internal suspend fun consumeHead(event: Received<AacpEvent>) {
+        val h = (event.value as? AacpEvent.Head)?.sample ?: return
+        val a = ticket ?: return
+        if (disposed || ticket !== a || event.generation != state.value.generation) return
+        val input = currentHeadContext()?.takeIf { SystemClock.elapsedRealtime() - event.atMs in 0..1_000 }
+        val key = input?.key
+        val yes = synchronized(headInputLock) {
+            if ((key != null && gestureContext != key) || event.atMs - lastHeadAt !in 0..1_000) {
+                detector = PinnedHeadGestureDetector()
+            }
+            if (key != null) gestureContext = key
+            lastHeadAt = event.atMs
+            detector.processHeadOrientation(h.horizontal, h.vertical)
+            detector.detect().takeIf { input != null }
+        } ?: return
+        key ?: return
+        if (key.call.state == OrdinaryCallState.RINGING) {
+            val result = synchronized(platformLock) { calls.request(yes, key.callEpoch) {
+                currentHeadContext()?.key == key && current(a) && writable() &&
+                    gate.platformAuthorization(a.address, a.expectedConsentGeneration) == null
+            } }
+            synchronized(platformLock) { if (platformEpoch.get() == key.platformEpoch && current(a)) fail("CALL_${platformCode(result)}") }
+        } else if (noCallOrMix()) {
+            val action = if (yes) key.nod else key.shake
+            val gesture = when (action) {
+                HeadAction.TOGGLE_PLAYBACK -> AirPodsMediaGesture.TOGGLE_PLAYBACK
+                HeadAction.NEXT -> AirPodsMediaGesture.NEXT
+                HeadAction.PREVIOUS -> AirPodsMediaGesture.PREVIOUS
+                else -> null
+            }
+            if (gesture != null) withContext(Dispatchers.Main.immediate) {
+                // Fresh expensive checks only for a detected action, immediately before effects.
+                if (current(a) && currentHeadContext()?.key == key && noCallOrMix() && key.target != null &&
+                    media?.gestureContext() == key.target) media?.gesture(gesture)
+            }
+        }
+        resetHeadInput()
+    }
     private val platformEpoch = java.util.concurrent.atomic.AtomicLong()
     private var audioDeadline: Job? = null
     @Volatile private var audioReceipt: AirPodsAudioSetupReceipt? = null
@@ -207,9 +314,10 @@ class AirPodsAndroidController internal constructor(
         // Lock-free revocation first: a cold callback already inside its live checks holds the audio
         // monitor; it must not reach the platform after this point, and close() then waits for it.
         audio.revoke()
+        headContexts.invalidate()
         platformEpoch.incrementAndGet(); latestAudio = null; mutableAudioResult.value = null
         audioDeadline?.cancel(); audioDeadline = null; audio.close(); audio = createAudio()
-        detector = PinnedHeadGestureDetector(); gestureContext = null
+        resetHeadInput()
     }
     private fun platformCurrent(action: PlatformAction): Boolean {
         val d = store.snapshot().getOrNull() ?: return false
@@ -281,7 +389,6 @@ class AirPodsAndroidController internal constructor(
     fun tileUnavailableReason(): String? {
         if (!writable()) return "NO_ADMITTED_SESSION"
         val s = state.value
-        if (s.mode?.takeIf { it.generation == s.generation } == null) return "NO_CURRENT_MODE"
         return if (s.nextTileListeningMode() != null) null else "MODE_UNAVAILABLE_OR_PENDING"
     }
     fun cycleTile(): Boolean {
@@ -321,9 +428,9 @@ class AirPodsAndroidController internal constructor(
             addAction(android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED)
         }
         receiver = object : BroadcastReceiver() {
-            override fun onReceive(c: Context?, i: Intent?) { processScope.launch {
+            override fun onReceive(c: Context?, i: Intent?) { headContexts.invalidate(); processScope.launch {
                 if (i?.action == android.telephony.TelephonyManager.ACTION_PHONE_STATE_CHANGED) {
-                    calls.observe(); detector = PinnedHeadGestureDetector(); gestureContext = null; armTracking()
+                    calls.observe(); resetHeadInput(); armTracking()
                 } else refresh(StartIngress.RECEIVER)
             } }
         }
@@ -657,12 +764,19 @@ class AirPodsAndroidController internal constructor(
             return GateResult.Denied(GateReason.PERSISTENCE_FAILED)
         }
         val stopped = gate.stop(SuppressReason.UNPAIRED)
+        // Gate excludes a new admission of this pair until deletion is durable. Repository IO
+        // takes neither gate nor main, and its writer mutex fences a delayed cache flush.
+        val valuesRemoved = runBlocking(Dispatchers.IO) { repository.forgetPairValues(address) }.isSuccess
         val cleanup = performCleanup(target)
         if (cleanup !is CompanionCleanupResult.Removed && cleanup !is CompanionCleanupResult.AlreadyAbsent) {
             fail("COMPANION_CLEANUP_FAILED")
             return GateResult.Denied(GateReason.CLEANUP_FAILED)
         }
         observation = null
+        if (!valuesRemoved) {
+            fail("PAIR_VALUES_REMOVE_FAILED")
+            return GateResult.Denied(GateReason.PERSISTENCE_FAILED)
+        }
         return stopped
     }
 
@@ -699,7 +813,7 @@ class AirPodsAndroidController internal constructor(
                     if (media === currentMedia) currentMedia.updateSettings(pair.host)
                 }
             }
-            detector = PinnedHeadGestureDetector()
+            resetHeadInput()
             armTracking()
         }
     }
@@ -764,9 +878,7 @@ class AirPodsAndroidController internal constructor(
             if (admitted == null || ticket !== admitted || state.value.generation != generation ||
                 !writable() || (left == null && right == null)) return@synchronized false
             val before = state.value
-            // Reject duplicates before touching preferences, including direct concurrent calls.
-            if (CommandProperty.STEM_CONFIG in before.pending) return@synchronized false
-            val mask = (before.propertyObserved(CommandProperty.STEM_CONFIG)?.value as? PropertyValue.Number)?.value
+            val mask = (before.propertyEffective(CommandProperty.STEM_CONFIG)?.value as? PropertyValue.Number)?.value
                 ?: return@synchronized false
             val address = admitted.address
             val previous = store.snapshot().getOrNull()?.pairs?.get(address) ?: return@synchronized false
@@ -812,7 +924,10 @@ class AirPodsAndroidController internal constructor(
             }
         } else {
             val cycle = (state.value.propertyObserved(CommandProperty.LISTENING_MODE_CONFIGS)?.value as? PropertyValue.Number)?.value ?: return
-            val modes = listOf(ListeningMode.OFF, ListeningMode.ANC, ListeningMode.TRANSPARENCY, ListeningMode.ADAPTIVE).filter { (cycle and (1 shl (it.wire - 1))) != 0 }
+            val observedOffDisabled = (state.value.propertyObserved(CommandProperty.ALLOW_OFF_OPTION)?.value as? PropertyValue.Number)?.value == 2
+            val modes = listOf(ListeningMode.OFF, ListeningMode.ANC, ListeningMode.TRANSPARENCY, ListeningMode.ADAPTIVE).filter {
+                (cycle and (1 shl (it.wire - 1))) != 0 && !(it == ListeningMode.OFF && observedOffDisabled)
+            }
             val current = state.value.mode?.takeIf { it.generation == state.value.generation }?.value ?: return
             if (modes.size < 2 || current !in modes) return
             repository.setProperty(CommandProperty.MODE, PropertyValue.Number(modes[(modes.indexOf(current) + 1) % modes.size].wire))
@@ -1072,16 +1187,22 @@ class AirPodsAndroidController internal constructor(
             // Same connection's latest live ear observation, confined to main. Bootstrap may
             // receive it before the media port exists; it seeds a baseline, never an action.
             var bootstrapEar: Received<AacpEvent>? = null
+            runCatching { AirPodsRxCaptureSession.open(context, scope) } // Optional capture cannot fail admission.
             scope.launch(start = CoroutineStart.UNDISPATCHED) {
                 var previousEar: EarState? = null
                 var earEpoch = platformEpoch.get()
-                var lastHeadAt = 0L
                 repository.events.collect { event ->
+                    if (event.value is AacpEvent.Head) {
+                        if (a.purpose != ConnectionPurpose.VERIFICATION_ONLY) consumeHead(event)
+                        return@collect
+                    }
                     if (current(a) && event.generation == state.value.generation && a.purpose != ConnectionPurpose.VERIFICATION_ONLY) {
-                        withContext(Dispatchers.Main.immediate) { if (current(a)) {
-                            if (event.value is AacpEvent.Ear) bootstrapEar = event
-                            media?.onEvent(event)
-                        } }
+                        if (event.value.isMediaRuntimeEvent()) {
+                            withContext(Dispatchers.Main.immediate) { if (current(a)) {
+                                if (event.value is AacpEvent.Ear) bootstrapEar = event
+                                media?.onEvent(event)
+                            } }
+                        }
                         if (event.value is AacpEvent.Stem && SystemClock.elapsedRealtime() - event.atMs in 0..1_000) handleLongPress((event.value as AacpEvent.Stem).sample)
                         if (event.value is AacpEvent.Ear) {
                             if (earEpoch != platformEpoch.get()) { previousEar = null; earEpoch = platformEpoch.get() }
@@ -1094,37 +1215,12 @@ class AirPodsAndroidController internal constructor(
                                 requestAudio(AudioOperation.DISCONNECT, AudioOrigin.UNWORN)
                             }
                         }
-                        val p = store.snapshot().getOrNull()?.pairs?.get(a.address)
-                        if (event.value is AacpEvent.Head && p?.host?.headGestures == true && p.host.automationsEnabled && (visibility.value || p.host.fluidifyBackgroundEnabled) && state.value.activePacketFormat != null) {
-                            if (SystemClock.elapsedRealtime() - event.atMs !in 0..1_000) return@collect
-                            val headEpoch = platformEpoch.get()
-                            if (event.atMs - lastHeadAt !in 0..1_000) { detector = PinnedHeadGestureDetector(); gestureContext = null }
-                            lastHeadAt = event.atMs
-                            val call = calls.observe()
-                            val contextKey = Triple(calls.epoch, state.value.generation, mainCall { media?.gestureContext() })
-                            if (gestureContext != contextKey) { detector = PinnedHeadGestureDetector(); gestureContext = contextKey }
-                            val h = (event.value as AacpEvent.Head).sample
-                            detector.processHeadOrientation(h.horizontal, h.vertical)
-                            detector.detect()?.let { yes ->
-                                val callEpoch = calls.epoch
-                                if (call.state == OrdinaryCallState.RINGING) {
-                                    val result = synchronized(platformLock) { calls.request(yes, callEpoch) { platformEpoch.get() == headEpoch && current(a) && writable() && gate.platformAuthorization(a.address, a.expectedConsentGeneration) == null &&
-                                        store.snapshot().getOrNull()?.pairs?.get(a.address)?.host?.let {
-                                            it.headGestures && it.automationsEnabled && (visibility.value || it.fluidifyBackgroundEnabled)
-                                        } == true } }
-                                    synchronized(platformLock) { if (platformEpoch.get() == headEpoch && current(a)) fail("CALL_${platformCode(result)}") }
-                                    detector = PinnedHeadGestureDetector()
-                                    return@collect
-                                }
-                                if (!noCallOrMix()) { detector = PinnedHeadGestureDetector(); return@collect }
-                                val action = if (yes) p.nodAction else p.shakeAction
-                                val gesture = when (action) { HeadAction.TOGGLE_PLAYBACK -> AirPodsMediaGesture.TOGGLE_PLAYBACK; HeadAction.NEXT -> AirPodsMediaGesture.NEXT; HeadAction.PREVIOUS -> AirPodsMediaGesture.PREVIOUS; else -> null }
-                                if (gesture != null) withContext(Dispatchers.Main.immediate) { if (platformEpoch.get() == headEpoch && current(a) && noCallOrMix() && gestureContext == contextKey && contextKey.third != null && media?.gestureContext() == contextKey.third) media?.gesture(gesture) }
-                                detector = PinnedHeadGestureDetector()
-                            }
-                        }
+
                     }
                 }
+            }
+            scope.launch {
+                runHeadContextLoop { ticket === a }
             }
             scope.launch {
                 var mediaStarted = false
@@ -1165,7 +1261,7 @@ class AirPodsAndroidController internal constructor(
                 delay(30_000)
                 if (current(a)) { fail("VERIFICATION_WINDOW_ENDED"); stopIfCurrent(a, SuppressReason.USER_STOP) }
             }
-            repository.construct {
+            repository.construct(a.address) {
                 check(current(a))
                 observer.observe(QualificationEvent(QualificationStep.OWNER, QualificationPhase.REQUESTED,
                     state.value.generation, token = lease.generation))

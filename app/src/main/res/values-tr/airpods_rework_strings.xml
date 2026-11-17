@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="airpods_c4_save_failed">Bu ayar telefona kaydedilemedi.</string>
+    <string name="airpods_c4_partial_save">Bu telefona kaydedildi. AirPods’a gönderilemedi.</string>
+    <string name="airpods_c4_send_failed">AirPods’a gönderilemedi.</string>
+    <string name="airpods_c3_mute">Mikrofonu kapat / aç</string>
+    <string name="airpods_c3_end_call">Aramayı bitir</string>
+    <string name="airpods_c3_press_once">Bir kez basın</string>
+    <string name="airpods_c3_press_twice">İki kez basın</string>
+    <string name="airpods_c3_always_right">Her zaman sağ</string>
+    <string name="airpods_c3_always_left">Her zaman sol</string>
+    <string name="airpods_header_not_live">Güncel değil</string>
+    <string name="airpods_p1_name">Ad</string>
+</resources>

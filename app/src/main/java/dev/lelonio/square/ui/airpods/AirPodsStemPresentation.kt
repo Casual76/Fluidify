@@ -11,19 +11,19 @@ import dev.lelonio.square.R
 import dev.lelonio.square.airpods.*
 import dev.lelonio.square.airpods.protocol.*
 
-/** Observation and last command are independent. New construction clears outcomes; close retains the terminal failure. */
+/** Diagnostics only: observation is RX, while editability uses the effective read-modify-write base. */
 internal data class StemPresentation(val observation: Int, val command: Int, val blockReason: Int?) {
     val editable get() = blockReason == null
 }
 internal fun AirPodsUiState.stemPresentation(): StemPresentation {
     val property = CommandProperty.STEM_CONFIG
-    val mask = (domain.propertyObserved(property)?.value as? PropertyValue.Number)?.value
+    val mask = (domain.propertyEffective(property)?.value as? PropertyValue.Number)?.value
+    val observedMask = (domain.propertyObserved(property)?.value as? PropertyValue.Number)?.value
     val pending = domain.pending[property]?.generation == domain.generation
     val spec = AirPodsProperties.spec(property)
     val block = when {
         !controlsReady -> R.string.airpods_reason_session
         identity?.let { spec?.candidate(it) } != true -> R.string.airpods_reason_capability
-        pending -> R.string.airpods_stem_pending
         mask == null -> R.string.airpods_stem_need_observation
         else -> null
     }
@@ -41,13 +41,13 @@ internal fun AirPodsUiState.stemPresentation(): StemPresentation {
         }
     }
     return StemPresentation(when {
-        mask == null -> R.string.airpods_stem_unknown
-        mask and 8 != 0 -> R.string.airpods_stem_intercepted
+        observedMask == null -> R.string.airpods_stem_unknown
+        observedMask and 8 != 0 -> R.string.airpods_stem_intercepted
         else -> R.string.airpods_stem_hardware
     }, command, block)
 }
 
-/** One summary for the shared mask, immediately after the two independent local editors. */
+/** Technical summary retained for diagnostics consumers, never composed by the ordinary editor. */
 @Composable internal fun StemStatusSummary(state: AirPodsUiState) {
     val view = state.stemPresentation()
     Text(stringResource(R.string.airpods_stem_shared), style = MaterialTheme.typography.titleMedium)
