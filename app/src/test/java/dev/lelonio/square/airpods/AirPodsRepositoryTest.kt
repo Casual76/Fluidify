@@ -342,16 +342,42 @@ class AirPodsRepositoryTest {
         } finally { gate.countDown(); repository.close(); scope.cancel() }
     }
 
+    @Test fun oldSendMustNotMaskCurrentContraryRx() = runBlocking {
+        val scope = TestScope()
+        val now = java.util.concurrent.atomic.AtomicLong(100)
+        val socket = FakeTransport()
+        val repository = AirPodsRepository(scope, AirPodsClock { now.get() })
+        try {
+            ready(repository, socket)
+            assertTrue(repository.setMode(ListeningMode.ANC))
+            repository.sent(CommandProperty.MODE)
+            now.set(120_100)
+            assertTrue(repository.setMode(ListeningMode.ADAPTIVE))
+            repository.sent(CommandProperty.MODE)
+            now.incrementAndGet()
+            socket.deliver(AacpCodec.mode(ListeningMode.ANC))
+            val state = withTimeout(2_000) { repository.state.first { it.mode?.value == ListeningMode.ANC } }
+            assertEquals("An older send cannot explain the contrary observation two minutes later",
+                PropertyValue.Number(2), state.propertyEffective(CommandProperty.MODE)?.value)
+            assertEquals(CommandOutcome.OBSERVED_OTHER, state.outcomes[CommandProperty.MODE])
+        } finally { repository.close(); scope.cancel() }
+    }
+
     @Test fun lateEchoOfAIsConsumedOnceThenTheSameContraryValueWins() = runBlocking {
-        val scope = TestScope(); val repository = AirPodsRepository(scope, AirPodsClock { 100 })
+        val scope = TestScope()
+        val now = java.util.concurrent.atomic.AtomicLong(100)
+        val repository = AirPodsRepository(scope, AirPodsClock { now.get() })
         try {
             val g = ready(repository, FakeTransport())
             repository.setMode(ListeningMode.ANC); repository.sent(CommandProperty.MODE)
+            now.set(250)
             repository.setMode(ListeningMode.ADAPTIVE); repository.sent(CommandProperty.MODE)
+            now.set(300)
             repository.receive(g, AacpEvent.Mode(ListeningMode.ANC))
             assertEquals(ListeningMode.ANC, repository.state.value.mode?.value) // truthful D2
             assertEquals(PropertyValue.Number(4), repository.state.value.propertyEffective(CommandProperty.MODE)?.value)
             assertEquals(DesiredStatus.SENT, repository.state.value.desired[CommandProperty.MODE]?.status)
+            now.incrementAndGet()
             repository.receive(g, AacpEvent.Mode(ListeningMode.ANC))
             assertEquals(CommandOutcome.OBSERVED_OTHER, repository.state.value.outcomes[CommandProperty.MODE])
             assertEquals(PropertyValue.Number(2), repository.state.value.propertyEffective(CommandProperty.MODE)?.value)

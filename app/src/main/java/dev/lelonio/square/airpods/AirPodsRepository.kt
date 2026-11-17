@@ -582,14 +582,17 @@ class AirPodsRepository(
                 val reconcilable = intent.status in setOf(DesiredStatus.UNCERTAIN, DesiredStatus.FAILED) ||
                     (afterWrite && intent.status in setOf(DesiredStatus.WRITING, DesiredStatus.SENT))
                 // AACP has no sequence. Each unobserved physical send can explain at most ONE
-                // late echo, within 1s of the latest physical send (never queue time). Silence
+                // late echo within 1s of that physical send (never queue time). Silence
                 // alone changes nothing. Consumed/expired evidence cannot hide a later contrary RX.
                 val history = sentHistory[property]
                 val latest = history?.firstOrNull { it.command.sequence == intent.sequence }
                 val earlier = if (reconcilable && afterWrite && value != intent.requested &&
                     intent.status in setOf(DesiredStatus.WRITING, DesiredStatus.SENT) && latest != null &&
                     now - latest.atMs in 0..LATE_ECHO_WINDOW_MS)
-                    history?.firstOrNull { it.command.sequence < intent.sequence && it.command.requested == value }
+                    history?.firstOrNull {
+                        it.command.sequence < intent.sequence && it.command.requested == value &&
+                            now - it.atMs in 0..LATE_ECHO_WINDOW_MS
+                    }
                 else null
                 val earlierEcho = earlier != null
                 if (earlier != null) history?.remove(earlier)
