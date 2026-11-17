@@ -247,6 +247,19 @@ class AirPodsHeadGestureContinuityTest {
         }
     }
 
+    @Test fun ringingContextRefreshAvoidsMediaDiscoveryAndFreshNodStillAnswers() = runBlocking<Unit> {
+        prepared { f ->
+            f.callState = OrdinaryCallState(OrdinaryCallState.RINGING)
+            val mediaReads = f.port.contextReads.get()
+            repeat(10) { f.controller.refreshHeadContext() }
+            assertTrue(f.fresh())
+            assertEquals(0, f.port.contextReads.get() - mediaReads)
+            f.feed(nodSeq)
+            assertEquals(listOf(true), f.callActions)
+            assertTrue(f.port.gestures.isEmpty())
+        }
+    }
+
     @Test fun changedTargetResetsOnlyWhenFreshAndCannotInheritNod() = runBlocking<Unit> {
         prepared { f ->
             f.feed(nodSeq.take(12)); val before = f.detector()

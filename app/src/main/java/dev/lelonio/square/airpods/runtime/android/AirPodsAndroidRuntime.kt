@@ -208,7 +208,8 @@ class AirPodsAndroidController internal constructor(
                 val callEpoch = calls.epoch
                 val port = media
                 val mediaRevision = port?.gestureContextRevision ?: 0
-                val target = withContext(Dispatchers.Main.immediate) { port?.gestureContext() }
+                val target = if (call.state == OrdinaryCallState.RINGING || port == null) null
+                    else withContext(Dispatchers.Main.immediate) { port.gestureContext() }
                 if (store.revision != revision || platformEpoch.get() != epoch || !current(a) ||
                     media !== port || (port?.gestureContextRevision ?: 0) != mediaRevision) null
                 else HeadContext(HeadContextKey(p.host, p.nodAction, p.shakeAction, call, callEpoch,
