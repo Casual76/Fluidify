@@ -26,6 +26,7 @@ import dev.lelonio.square.ui.airpods.*
 import dev.lelonio.square.ui.theme.SquareTheme
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.first
 import org.junit.Assert.*
 import org.junit.Rule
 import org.junit.Test
@@ -87,7 +88,8 @@ class AirPodsI5StemHostTest {
             domain = ReflectionHelpers.getField(repository, "mutable")
             val identity = AirPodsIdentity("A3063", "Apple Inc.", "synthetic")
             domain.value = AirPodsState(generation = 7, stage = AacpStage.SUBSCRIBED,
-                identity = identity, identityReceived = Received(identity, 1, 7), activePacketFormat = HeadPacketFormat.STANDARD)
+                identity = identity, identityReceived = Received(identity, 1, 7), activePacketFormat = HeadPacketFormat.STANDARD,
+                sessionPair = pair)
             host = AirPodsHost(context, owner)
             val bluetooth = ReflectionHelpers.getField<HostBluetooth>(host, "bluetooth")
             val profile = java.lang.reflect.Proxy.newProxyInstance(BluetoothProfile::class.java.classLoader,
@@ -219,5 +221,58 @@ class AirPodsI5StemHostTest {
             compose.onAllNodesWithTag("airpods-stem-command").assertCountEquals(0)
             assertTrue(f.actions.isEmpty())
         } finally { f.close() }
+    }
+
+    private fun Fixture.pairValues() = AirPodsPairValueStore(SharedPreferencesPairValuePersistence(
+        context.getSharedPreferences("airpods_pair_values_v1", Context.MODE_PRIVATE)))
+
+    private suspend fun Fixture.receiveCaseFromA() {
+        val repository = ReflectionHelpers.getField<AirPodsRepository>(owner, "repository")
+        val closed = java.util.concurrent.CountDownLatch(1)
+        repository.construct(pair) { object : AacpTransport {
+            override fun connect() = Unit
+            override fun write(packet: ByteArray) = Unit
+            override fun readSdu(): ByteArray? { closed.await(); return null }
+            override fun close() { closed.countDown() }
+        } }
+        suspend fun await(stage: AacpStage) = withTimeout(2_000) { owner.state.first { it.stage == stage } }
+        await(AacpStage.CONSTRUCTED)
+        repository.connect(); await(AacpStage.CONNECTED)
+        repository.handshake(); await(AacpStage.HANDSHAKE_SENT)
+        repository.subscribe(); await(AacpStage.SUBSCRIBED)
+        val generation = owner.state.value.generation
+        repository.receive(generation, AacpEvent.Property(CommandProperty.NAME, PropertyValue.Name("Pair A")))
+        repository.receive(generation, AacpEvent.Battery(mapOf(BatteryCase to BatteryValue(39, 1))))
+        repository.close()
+        withTimeout(2_000) { while (pairValues().load(pair).getOrThrow().casePercent?.percent != 39) delay(1) }
+    }
+
+    @Test fun disconnectedHeaderFollowsSelectedPairAndNeverReusesAnotherPairsNameOrCase() = runBlocking {
+        val f = Fixture()
+        val pairB = PairAddress("00:11:22:33:44:66")
+        try {
+            f.receiveCaseFromA()
+            f.host.refresh()
+            assertEquals(CaseBatteryReading(39, false), f.host.state.value.caseBatteryReading())
+            f.owner.store.select(pairB).getOrThrow()
+            f.host.refresh()
+            assertEquals(listOf(null, null), listOf(f.host.state.value.caseBatteryReading(), f.host.state.value.headerName))
+            f.owner.store.select(f.pair).getOrThrow()
+            f.host.refresh()
+            assertEquals(CaseBatteryReading(39, false), f.host.state.value.caseBatteryReading())
+        } finally { f.close() }
+    }
+
+    @Test fun recreatedRepositoryShowsPersistedCaseWithoutOpeningSocket() = runBlocking {
+        val first = Fixture()
+        try { first.receiveCaseFromA() } finally { first.close() }
+        val cold = Fixture()
+        try {
+            cold.domain.value = AirPodsState()
+            cold.host.refresh()
+            assertEquals(AacpStage.CLOSED, cold.owner.state.value.stage)
+            assertEquals(CaseBatteryReading(39, false), cold.host.state.value.caseBatteryReading())
+            assertEquals("Pair A", cold.host.state.value.headerName)
+        } finally { cold.close() }
     }
 }

@@ -87,7 +87,8 @@ class AirPodsI4AvailabilityTest {
             domain = ReflectionHelpers.getField(repository, "mutable")
             val identity = AirPodsIdentity("A3063", "Apple Inc.", "synthetic")
             domain.value = AirPodsState(generation = 7, stage = AacpStage.SUBSCRIBED,
-                identity = identity, identityReceived = Received(identity, 1, 7), activePacketFormat = HeadPacketFormat.STANDARD)
+                identity = identity, identityReceived = Received(identity, 1, 7), activePacketFormat = HeadPacketFormat.STANDARD,
+                sessionPair = pair)
             host = AirPodsHost(context, owner)
             val bluetooth = ReflectionHelpers.getField<HostBluetooth>(host, "bluetooth")
             val profile = java.lang.reflect.Proxy.newProxyInstance(BluetoothProfile::class.java.classLoader,

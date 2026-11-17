@@ -89,6 +89,7 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
     }
     suspend fun refresh() {
         val o = owner
+        val revision = o?.store?.revision
         val data = withContext(Dispatchers.IO) { o?.store?.snapshot()?.getOrNull() }
         if (closed || !ingressCurrent() || o == null || data == null) {
             state.value = AirPodsUiState(diagnostics = listOf(text(if(o == null) R.string.airpods_host_absent else R.string.airpods_host_storage)))
@@ -96,10 +97,13 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
             return
         }
         bluetooth.prepare()
-        val domain = o.state.value
+        val observed = o.state.value
+        val selectedPair = data.selectedPair
+        val cached = selectedPair?.takeUnless { it == observed.sessionPair }?.let { o.cachedPairValues(it) }
+        val domain = if (observed.sessionPair == selectedPair) observed else o.state.value
         val runtime = o.runtime.value
         val mapped = mapAirPodsUiState(domain, data, bluetooth.connected(data.selectedPair), bluetooth.granted(),
-            runtime.productConformance, Build.FINGERPRINT, SystemClock.elapsedRealtime())
+            runtime.productConformance, Build.FINGERPRINT, SystemClock.elapsedRealtime(), cached)
         val callAccess = CallGestureAccess(
             readPhoneState = context.checkSelfPermission(Manifest.permission.READ_PHONE_STATE) == PackageManager.PERMISSION_GRANTED,
             answerPhoneCalls = context.checkSelfPermission(Manifest.permission.ANSWER_PHONE_CALLS) == PackageManager.PERMISSION_GRANTED,
@@ -279,6 +283,7 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
         val assignments = mapOf(GestureSide.LEFT to stemName(p.leftLongPress), GestureSide.RIGHT to stemName(p.rightLongPress),
             GestureSide.NOD to gestureName(p.nodAction), GestureSide.SHAKE to gestureName(p.shakeAction))
             .mapNotNull { (side, name) -> GestureAction.entries.firstOrNull { it.name == name }?.let { side to it } }.toMap()
+        if (closed || !ingressCurrent() || o.store.revision != revision) return
         state.value = base.copy(pendingCleanupCount = data.pendingCleanup.size,
             mainToggleIssue = mainToggleIssue?.takeIf { it.first.matches(data, domain.generation) }?.second,
             candidates = candidates.mapIndexed { index, address -> PairCandidate(ids.id(address),

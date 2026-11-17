@@ -182,11 +182,16 @@ sealed interface AirPodsUiAction {
 
 fun mapAirPodsUiState(domain: AirPodsState, data: AirPodsRuntimeData, profileConnected: Boolean,
 
-    bluetoothGranted: Boolean, productGatePassed: Boolean, conformanceBuild: String, nowMs: Long): AirPodsUiState {
+    bluetoothGranted: Boolean, productGatePassed: Boolean, conformanceBuild: String, nowMs: Long,
+    selectedPairValues: AirPodsPairValues? = null): AirPodsUiState {
 
     val pair = data.pairs[data.selectedPair] ?: PairSettings()
 
-    return AirPodsUiState(domain, pair, data.start.enabled, data.start.suppressUntilExplicitResume,
+    // An old transport can remain the repository's last state after selection changes.
+    val scoped = if (domain.sessionPair == data.selectedPair) domain else AirPodsState(
+        generation = domain.generation, cachedValues = selectedPairValues ?: AirPodsPairValues())
+
+    return AirPodsUiState(scoped, pair, data.start.enabled, data.start.suppressUntilExplicitResume,
 
         profileConnected, bluetoothGranted, productGatePassed,
 

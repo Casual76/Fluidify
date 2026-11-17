@@ -47,6 +47,8 @@ data class AirPodsState(
     val pending: Map<CommandProperty, PendingCommand> = emptyMap(),
     val outcomes: Map<CommandProperty, CommandOutcome> = emptyMap(),
     val diagnostic: String = "Physical compatibility and dual-channel coexistence: NV",
+    /** Address of the transport that produced this state, including after it closes. */
+    val sessionPair: PairAddress? = null,
 ) {
     fun propertyObserved(property: CommandProperty): Received<PropertyValue>? {
         val received = properties[property] ?: when (property) {
@@ -146,10 +148,26 @@ class AirPodsRepository(
 
     /** IO-only snapshots, coalesced independently for every pair, including a retired pair. */
     private fun persistLocked(s: AirPodsState) {
+        // A transport can close before the selected pair's cache has been loaded.
+        val values = s.cachedValues
+        if (values.observed.isEmpty() && values.choices.isEmpty() && values.casePercent == null) return
         currentPair?.let {
-            pairCache[it] = s.cachedValues
-            pendingPersistence[it] = s.cachedValues
+            pairCache[it] = values
+            pendingPersistence[it] = values
             persistenceWakeup.trySend(Unit)
+        }
+    }
+
+    /** An offline presentation lookup never assigns the pair to a socket or admits a command. */
+    internal suspend fun cachedPairValues(pair: PairAddress): AirPodsPairValues? {
+        synchronized(lock) { pairCache[pair]?.let { return it } }
+        return withContext(io) {
+            persistenceWriter.withLock {
+                synchronized(lock) { pairCache[pair] } ?: valueStore.load(pair)
+                    .onFailure { mutableCacheFailures.value += 1 }.getOrNull()?.let { loaded ->
+                        synchronized(lock) { pairCache.getOrPut(pair) { loaded } }
+                    }
+            }
         }
     }
     /** Owner calls after forgetting/unpairing. Serialized with cache writes, so a delayed save
@@ -195,16 +213,14 @@ class AirPodsRepository(
             session = job
             mutable.value = AirPodsState(generation, AacpStage.CONSTRUCTING,
                 desired = retained?.let { restoreChoices(it, generation) }.orEmpty(),
-                cachedValues = retained ?: AirPodsPairValues())
+                cachedValues = retained ?: AirPodsPairValues(), sessionPair = pair)
             observer.observe(QualificationEvent(QualificationStep.CONSTRUCT, QualificationPhase.REQUESTED, generation))
         }
         try { oldSocket?.close() } catch (_: Exception) { /* invalidated before close */ }
         oldJob?.cancel()
         scope.launch(job + io) {
             try {
-                val cached = pair?.let { address -> persistenceWriter.withLock {
-                    valueStore.load(address).also { if (it.isFailure) mutableCacheFailures.value += 1 }.getOrNull()
-                } }
+                val cached = pair?.let { cachedPairValues(it) }
                 synchronized(lock) {
                     if (isCurrent(generation) && currentPair == pair && cached != null && mutable.value.cachedValues == AirPodsPairValues())
                         mutable.value = mutable.value.copy(cachedValues = cached, desired = restoreChoices(cached, generation))

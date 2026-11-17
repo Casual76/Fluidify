@@ -75,6 +75,7 @@ class AirPodsAndroidController internal constructor(
             context.getSharedPreferences("airpods_pair_values_v1", Context.MODE_PRIVATE))))
     override val headSamples = repository.headSamples
     val state: StateFlow<AirPodsState> = repository.state
+    internal suspend fun cachedPairValues(pair: PairAddress) = repository.cachedPairValues(pair)
     private val mutableRuntime = MutableStateFlow(AndroidRuntimeState(
         productConformance = runCatching { productConformance() }.getOrDefault(false),
     ))
