@@ -92,10 +92,11 @@ internal fun AirPodsQuickContent(state: AirPodsUiState, dispatch: (AirPodsUiActi
     }
 }
 
-/** Existing selector, driven by the shared effective value and the local write queue. */
+/** Both selectors share the current RX or local write queue. */
 @Composable internal fun ModeControl(s: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit, tagPrefix: String,
     modifier: Modifier = Modifier) {
-    val effective = s.currentMode
+    val known = s.domain.requestedOrObserved(CommandProperty.MODE) as? PropertyValue.Number
+    val effective = s.modes.firstOrNull { s.controlsReady && it.wire == known?.value }
     key(s.domain.generation) {
         AirPodsNoiseControl(
             modes = s.modes,

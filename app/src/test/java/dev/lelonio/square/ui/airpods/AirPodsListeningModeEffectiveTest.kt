@@ -14,6 +14,8 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import dev.lelonio.square.R
 import dev.lelonio.square.airpods.*
 import dev.lelonio.square.airpods.protocol.*
+import dev.lelonio.square.airpods.runtime.storage.AirPodsPairValues
+import dev.lelonio.square.airpods.runtime.storage.SavedProperty
 import dev.lelonio.square.ui.theme.SquareTheme
 import org.junit.Assert.*
 import org.junit.Rule
@@ -136,6 +138,62 @@ class AirPodsListeningModeEffectiveTest {
         compose.mainClock.advanceTimeBy(1500)
         compose.onNodeWithTag("page-2").assertIsSelected()
         assertThumbAt("page", ListeningMode.ANC)
+    }
+
+    @Test fun explicitTransparencySendsForDefaultAndCacheButDeduplicatesKnownValue() {
+        val initial = state.value
+        val property = CommandProperty.MODE
+        state.value = initial.copy(domain = initial.domain.copy(mode = null))
+        mount(twoSurfaces = true)
+        val transparency = compose.onNodeWithTag("page-3")
+        transparency.assertHasClickAction().assertIsNotSelected().performClick()
+        transparency.assertIsSelected().assert(hasClickAction().not())
+        assertEquals(listOf(ListeningMode.TRANSPARENCY), writes)
+
+        compose.runOnIdle {
+            state.value = initial.copy(domain = initial.domain.copy(mode = null,
+                cachedValues = AirPodsPairValues(observed = mapOf(property to SavedProperty(PropertyValue.Number(3), 1)))))
+        }
+        compose.onNodeWithTag("airpods-quick-MODE-3").assertHasClickAction().assertIsNotSelected().performClick()
+        assertEquals(listOf(ListeningMode.TRANSPARENCY, ListeningMode.TRANSPARENCY), writes)
+        compose.runOnIdle {
+            state.value = initial.copy(domain = initial.domain.copy(mode = Received(ListeningMode.TRANSPARENCY, 1001, 7)))
+        }
+        transparency.assertIsSelected().assert(hasClickAction().not())
+    }
+
+    @Test fun explicitFlatResetSendsBeforeRxAndPreservesKnownEnablement() {
+        val initial = state.value
+        val property = CommandProperty.EQ
+        val flat = PropertyValue.Eq(false, 50, 50, 50)
+        val actions = mutableListOf<AirPodsUiAction>()
+        state.value = initial.copy(domain = initial.domain.copy(properties = emptyMap()))
+        compose.setContent {
+            SquareTheme(darkTheme = false, amoled = false, systemBars = false) {
+                Column(Modifier.width(360.dp)) { EqualizerPage(state.value, actions::add) }
+            }
+        }
+        val reset = compose.onNodeWithTag("airpods-eq-reset")
+        reset.assertIsEnabled().assertHasClickAction().performClick()
+        assertEquals(listOf(AirPodsUiAction.Write(7, property, flat)), actions)
+        val enabled = flat.copy(enabled = true)
+        compose.runOnIdle {
+            state.value = initial.copy(domain = initial.domain.copy(properties = emptyMap(),
+                cachedValues = AirPodsPairValues(observed = mapOf(property to SavedProperty(enabled, 1)))))
+        }
+        reset.performClick()
+        assertEquals(AirPodsUiAction.Write(7, property, enabled), actions.last())
+        compose.runOnIdle {
+            state.value = initial.copy(domain = initial.domain.copy(properties = emptyMap(), desired = mapOf(
+                property to DesiredProperty(enabled, 1, 7, DesiredStatus.SENT, 1001))))
+        }
+        reset.performClick()
+        compose.runOnIdle {
+            state.value = initial.copy(domain = initial.domain.copy(properties = mapOf(property to Received(enabled, 1001, 7))))
+        }
+        reset.performClick()
+        compose.waitForIdle()
+        assertEquals(2, actions.size)
     }
 
     @Test fun modelAndOffRestrictionFilterSlotsAndConversationIsNeverAMode() {

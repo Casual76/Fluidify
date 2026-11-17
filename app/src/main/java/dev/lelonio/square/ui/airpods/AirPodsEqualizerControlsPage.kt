@@ -24,15 +24,18 @@ import dev.lelonio.square.airpods.protocol.ControlEncoding
 import dev.lelonio.square.airpods.protocol.PropertySpec
 import dev.lelonio.square.airpods.protocol.PropertyValue
 import dev.lelonio.square.airpods.protocol.propertyEffective
+import dev.lelonio.square.airpods.protocol.requestedOrObserved
 
 /** Every packet uses the effective quadruple, including untouched fields.
  * Defaults belong to the domain; this page never manufactures missing values. */
 internal fun AirPodsUiState.equalizerWrite(
+    explicitReset: Boolean = false,
     change: (PropertyValue.Eq) -> PropertyValue.Eq,
 ): AirPodsUiAction.Write? {
     val current = domain.propertyEffective(CommandProperty.EQ)?.value as? PropertyValue.Eq ?: return null
     val next = change(current)
-    return if (next != current && writeAllowed(CommandProperty.EQ, next))
+    val previous = if (explicitReset) domain.requestedOrObserved(CommandProperty.EQ) else current
+    return if (next != previous && writeAllowed(CommandProperty.EQ, next))
         AirPodsUiAction.Write(domain.generation, CommandProperty.EQ, next) else null
 }
 
@@ -44,7 +47,7 @@ internal fun AirPodsUiState.equalizerWrite(
         val send by rememberUpdatedState(dispatch)
         val editable = s.writeAllowed(CommandProperty.EQ, eq)
         val write: ((PropertyValue.Eq) -> PropertyValue.Eq) -> Unit = { change ->
-            current.equalizerWrite(change)?.let(send)
+            current.equalizerWrite(change = change)?.let(send)
         }
         AirPodsReadableToggle(
             stringResource(R.string.airpods_feature_setting_device_eq), eq.enabled,
@@ -63,7 +66,7 @@ internal fun AirPodsUiState.equalizerWrite(
             title = stringResource(R.string.airpods_ui_high))
         PaneBlock {
             FluidButton(stringResource(R.string.airpods_cr_reset),
-                { write { it.copy(low = 50, mid = 50, high = 50) } },
+                { current.equalizerWrite(explicitReset = true) { it.copy(low = 50, mid = 50, high = 50) }?.let(send) },
                 enabled = editable, style = FluidButtonStyle.Tinted,
                 modifier = Modifier.testTag("airpods-eq-reset"))
         }

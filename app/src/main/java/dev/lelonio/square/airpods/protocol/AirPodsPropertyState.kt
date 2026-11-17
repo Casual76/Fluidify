@@ -52,6 +52,12 @@ fun AirPodsState.propertyEffective(property: CommandProperty): EffectiveProperty
     return AirPodsDisplayDefaults.value(property)?.let { EffectiveProperty(it, EffectiveSource.DEFAULT) }
 }
 
+/** Only a current-session request or RX can make another explicit request redundant. */
+internal fun AirPodsState.requestedOrObserved(property: CommandProperty): PropertyValue? =
+    desired[property]?.takeIf { it.generation == generation && it.sequence > 0 &&
+        it.status in setOf(DesiredStatus.QUEUED, DesiredStatus.WRITING, DesiredStatus.SENT) }?.requested
+        ?: propertyObserved(property)?.value
+
 /** Only the graph subscribes to this source; the gesture detector keeps the ordered events. */
 interface AirPodsHeadSampleSource {
     val headSamples: kotlinx.coroutines.flow.StateFlow<Received<HeadSample>?>
