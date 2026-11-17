@@ -242,8 +242,8 @@ class AirPodsAndroidController internal constructor(
             it.key.generation == state.value.generation && it.key.format == state.value.activePacketFormat
     }
     /** Ordered sensor input: volatile cache reads and the unchanged pinned detector only.
-     * Missing/expired context suppresses effects, not samples or detector continuity. Only a
-     * different non-null key starts a new gesture; effects still require fresh live checks. */
+     * A partial gesture can survive a brief context invalidation. A full recognition consumes
+     * its extrema even when dispatch is suppressed. Effects still require fresh live checks. */
     internal suspend fun consumeHead(event: Received<AacpEvent>) {
         val h = (event.value as? AacpEvent.Head)?.sample ?: return
         val a = ticket ?: return
@@ -257,7 +257,9 @@ class AirPodsAndroidController internal constructor(
             if (key != null) gestureContext = key
             lastHeadAt = event.atMs
             detector.processHeadOrientation(h.horizontal, h.vertical)
-            detector.detect().takeIf { input != null }
+            val detected = detector.detect()
+            if (detected != null && input == null) detector = PinnedHeadGestureDetector()
+            detected.takeIf { input != null }
         } ?: return
         key ?: return
         if (key.call.state == OrdinaryCallState.RINGING) {

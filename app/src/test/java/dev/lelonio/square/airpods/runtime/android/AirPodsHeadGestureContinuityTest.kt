@@ -89,6 +89,7 @@ class AirPodsHeadGestureContinuityTest {
         val context = SchedulingContext(RuntimeEnvironment.getApplication())
         val facts = Facts()
         val callReads = AtomicInteger()
+        val callActions = mutableListOf<Boolean>()
         @Volatile var callState = OrdinaryCallState(OrdinaryCallState.IDLE)
         val visible = MutableStateFlow(true)
         val pair = PairAddress("AA:BB:CC:DD:EE:08")
@@ -107,7 +108,10 @@ class AirPodsHeadGestureContinuityTest {
             runtimeDispatcher = Dispatchers.Unconfined, persistenceOverride = Disk(),
             callPort = object : OrdinaryCallPort {
                 override fun state(): OrdinaryCallState { callReads.incrementAndGet(); return callState }
-                override fun dispatch(answer: Boolean) = PlatformResult.RequestAccepted
+                override fun dispatch(answer: Boolean): PlatformResult {
+                    callActions += answer
+                    return PlatformResult.RequestAccepted
+                }
             })
         val repository = ReflectionHelpers.getField<AirPodsRepository>(controller, "repository")
         val port = Port()
@@ -182,6 +186,67 @@ class AirPodsHeadGestureContinuityTest {
         repeat(control) { bump -> assertEquals("bump at $bump", control, nodWithBump(bump)) }
         println("CR3 p10: control sample=$control, preserved bump positions=$control")
     }
+
+    @Test fun aWholeNodUnderAnExpiredContextMustNotFireOnFreshNeutralInput() = runBlocking<Unit> {
+        prepared { f ->
+            f.controller.consumeHead(f.head(0))
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(300))
+            assertFalse(f.fresh())
+            f.feed(nodSeq)
+            assertTrue(f.port.gestures.isEmpty())
+            f.controller.refreshHeadContext()
+            assertTrue(f.fresh())
+            f.controller.consumeHead(f.head(0))
+            assertTrue("A complete expired-context gesture must not be replayed", f.port.gestures.isEmpty())
+        }
+    }
+
+    @Test fun twoConsecutiveFreshNodsEachDispatchExactlyOnce() = runBlocking<Unit> {
+        val oneNod = nodSeq.take(nodWithBump(null) + 1)
+        prepared { f ->
+            repeat(2) { index ->
+                f.feed(oneNod)
+                f.feed(listOf(0, 0, 0))
+                assertEquals(List(index + 1) { AirPodsMediaGesture.NEXT }, f.port.gestures.toList())
+            }
+        }
+    }
+
+    @Test fun aWholeNodFromOldSamplesMustNotFireOnTimelyNeutralInput() = runBlocking<Unit> {
+        prepared { f ->
+            f.controller.consumeHead(f.head(0))
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(1_001))
+            f.controller.refreshHeadContext()
+            assertTrue(f.fresh())
+            val oldTime = android.os.SystemClock.elapsedRealtime() - 1_001
+            nodSeq.forEach { f.controller.consumeHead(f.head(it).copy(atMs = oldTime)) }
+            assertTrue(f.port.gestures.isEmpty())
+            f.controller.consumeHead(f.head(0).copy(atMs = oldTime + 1))
+            assertTrue("A timely neutral sample must not dispatch a gesture from old samples",
+                f.port.gestures.isEmpty())
+        }
+    }
+
+    @Test fun ringingCallRejectsExpiredNodAndAnswersOnlyAFreshNod() = runBlocking<Unit> {
+        prepared { f ->
+            f.callState = OrdinaryCallState(OrdinaryCallState.RINGING)
+            f.controller.refreshHeadContext()
+            f.controller.consumeHead(f.head(0))
+            org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(300))
+            assertFalse(f.fresh())
+            f.feed(nodSeq)
+            assertTrue(f.callActions.isEmpty())
+
+            f.controller.refreshHeadContext()
+            assertTrue(f.fresh())
+            f.controller.consumeHead(f.head(0))
+            assertTrue("The same ringing call must not receive an expired gesture", f.callActions.isEmpty())
+            f.feed(nodSeq)
+            assertEquals(listOf(true), f.callActions)
+            assertTrue(f.port.gestures.isEmpty())
+        }
+    }
+
     @Test fun changedTargetResetsOnlyWhenFreshAndCannotInheritNod() = runBlocking<Unit> {
         prepared { f ->
             f.feed(nodSeq.take(12)); val before = f.detector()
@@ -197,18 +262,23 @@ class AirPodsHeadGestureContinuityTest {
             assertEquals(listOf(AirPodsMediaGesture.NEXT), f.port.gestures.toList())
         }
     }
-    @Test fun expiredContextSuppressesEffectsWithoutResetOrPlatformReads() = runBlocking<Unit> {
+    @Test fun expiredContextKeepsPartialInputAndConsumesRecognitionWithoutPlatformReads() = runBlocking<Unit> {
         prepared { f ->
             f.feed(nodSeq.take(12)); val before = f.detector()
             val reads = f.port.contextReads.get(); val calls = f.callReads.get()
             org.robolectric.shadows.ShadowSystemClock.advanceBy(java.time.Duration.ofMillis(300))
             assertFalse(f.fresh())
-            f.feed(nodSeq.drop(12))
-            assertSame(before, f.detector()); assertTrue(f.port.gestures.isEmpty())
+            f.feed(nodSeq.subList(12, 14))
+            assertSame("Incomplete input survives the expired context", before, f.detector())
+            f.feed(nodSeq.drop(14))
+            val afterRecognition = f.detector()
+            assertNotSame("A completed gesture is consumed even without a fresh context", before, afterRecognition)
+            assertTrue(f.port.gestures.isEmpty())
             assertEquals(reads, f.port.contextReads.get()); assertEquals(calls, f.callReads.get())
-            // Still stale even at recognition: no queued effect is dispatched by refresh itself.
-            f.controller.refreshHeadContext(); assertTrue(f.port.gestures.isEmpty())
-            assertSame(before, f.detector())
+            f.controller.refreshHeadContext()
+            assertSame(afterRecognition, f.detector())
+            f.controller.consumeHead(f.head(0))
+            assertTrue(f.port.gestures.isEmpty())
         }
     }
     @Test fun liveTargetRecheckRejectsUnannouncedTargetChange() = runBlocking<Unit> {
