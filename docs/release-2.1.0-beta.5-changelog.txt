@@ -1,8 +1,9 @@
 Nuova beta di Fluidify per telefono e Wear OS, dedicata alle AirPods.
 
-- Le impostazioni cambiano subito quando le tocchi. Una risposta che tarda ad arrivare non annulla la scelta e non fa comparire "Riprova". Il valore cambia di nuovo se l'invio fallisce o se le cuffie riportano un valore diverso.
-- L'equalizzatore ha un cursore per ogni banda e un tasto Reset. Il cursore dell'audio adattivo e' nella pagina principale. Scegliere cosa fare con una pressione tenuta e' piu' semplice.
-- Quando manca una lettura recente, puoi vedere l'ultima percentuale nota della custodia. Le pagine sono piu' vicine a LibrePods e hanno meno testo. Configurazione resta raggiungibile anche con le cuffie gia' collegate.
-- Fluidify fa meno lavoro in background per le AirPods. Durante la riproduzione, i normali aggiornamenti del lettore interrompono meno i gesti della testa. Se la sessione di riproduzione cambia mentre il gesto viene eseguito, il comando non passa alla nuova sessione.
+- Le impostazioni cambiano subito. Il silenzio delle cuffie non annulla la scelta e non fa comparire "Riprova". Un invio fallito o una risposta diversa possono cambiare il valore mostrato. Un comando inviato fino a un secondo prima puo' spiegare una sola eco.
+- Equalizzatore a cursori con Reset, audio adattivo a cursore nella pagina principale e pressione tenuta piu' semplice.
+- Il rilevamento delle orecchie accende o spegne insieme pausa e ripresa in Fluidify. Attivare il rilevamento della conversazione abilita l'attenuazione se non hai gia' scelto la pausa. Spegnerlo conserva le preferenze locali.
+- Le pagine sono piu' vicine a LibrePods. Con le cuffie pronte spariscono la riga di connessione e la cronologia di batteria dei singoli auricolari. La custodia mostra l'ultima percentuale nota e Configurazione resta accessibile.
+- Meno lavoro in background per le AirPods e meno interruzioni dei gesti della testa durante la musica. Un cenno scaduto viene scartato e il comando non passa a una nuova sessione.
 
 Beta da provare nell'uso quotidiano. La revisione AirPods deve ancora essere provata con cuffie fisiche. Restano da fare le prove con l'orologio e alcuni controlli automatici Android sono ancora in errore dalla beta precedente. La versione stabile resta disponibile.
