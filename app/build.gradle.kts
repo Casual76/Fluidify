@@ -81,8 +81,8 @@ android {
         // cpal's Android host is AAudio, which the ndk crate gates at API 26.
         minSdk = 26
         targetSdk = 35
-        versionCode = 28
-        versionName = "2.1.0-beta.4"
+        versionCode = 29
+        versionName = "2.1.0-beta.5"
 
         // The shipped set, and only that. AGP takes the **union** of this and
         // whatever a build type adds — clearing the build type's own list does

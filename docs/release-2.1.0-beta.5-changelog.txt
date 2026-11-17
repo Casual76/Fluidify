@@ -1,0 +1,8 @@
+Nuova beta di Fluidify per telefono e Wear OS, dedicata alle AirPods.
+
+- Le impostazioni cambiano subito quando le tocchi. Una risposta che tarda ad arrivare non annulla la scelta e non fa comparire "Riprova". Il valore cambia di nuovo se l'invio fallisce o se le cuffie riportano un valore diverso.
+- L'equalizzatore ha un cursore per ogni banda e un tasto Reset. Il cursore dell'audio adattivo e' nella pagina principale. Scegliere cosa fare con una pressione tenuta e' piu' semplice.
+- Quando manca una lettura recente, puoi vedere l'ultima percentuale nota della custodia. Le pagine sono piu' vicine a LibrePods e hanno meno testo. Configurazione resta raggiungibile anche con le cuffie gia' collegate.
+- Fluidify fa meno lavoro in background per le AirPods. Durante la riproduzione, i normali aggiornamenti del lettore interrompono meno i gesti della testa. Se la sessione di riproduzione cambia mentre il gesto viene eseguito, il comando non passa alla nuova sessione.
+
+Beta da provare nell'uso quotidiano. La revisione AirPods deve ancora essere provata con cuffie fisiche. Restano da fare le prove con l'orologio e alcuni controlli automatici Android sono ancora in errore dalla beta precedente. La versione stabile resta disponibile.
