@@ -366,6 +366,36 @@ class AirPodsRepositoryTest {
         } finally { gate.countDown(); repository.close(); scope.cancel() }
     }
 
+    @Test fun sduReadBeforeWriteCannotContradictEvenWhenParsingFinishesLater() = runBlocking {
+        val scope = TestScope()
+        val now = java.util.concurrent.atomic.AtomicLong(100)
+        val parsing = CompletableDeferred<Unit>()
+        val release = CountDownLatch(1)
+        val repository = AirPodsRepository(scope, AirPodsClock(now::get), rxDiagnostics = AirPodsRxDiagnostics { _, frame ->
+            if (frame.controlIdentifier == 0x0d && parsing.complete(Unit)) {
+                check(release.await(4, java.util.concurrent.TimeUnit.SECONDS))
+            }
+        })
+        val socket = FakeTransport()
+        try {
+            ready(repository, socket)
+            val packet = AacpCodec.property(CommandProperty.MODE, ListeningMode.TRANSPARENCY.wire)
+            socket.deliver(packet)
+            withTimeout(2_000) { parsing.await() }
+            now.set(300)
+            assertTrue(repository.setMode(ListeningMode.ANC))
+            repository.sent(CommandProperty.MODE)
+            release.countDown()
+            val published = withTimeout(2_000) { repository.state.first { it.mode?.atMs == 100L } }
+            assertEquals(DesiredStatus.SENT, published.desired[CommandProperty.MODE]?.status)
+            assertEquals(PropertyValue.Number(2), published.propertyEffective(CommandProperty.MODE)?.value)
+            socket.deliver(packet)
+            val contrary = withTimeout(2_000) { repository.state.first { it.mode?.atMs == 300L } }
+            assertEquals(DesiredStatus.CONTRADICTED, contrary.desired[CommandProperty.MODE]?.status)
+            assertEquals(PropertyValue.Number(3), contrary.propertyEffective(CommandProperty.MODE)?.value)
+        } finally { release.countDown(); repository.close(); scope.cancel() }
+    }
+
     @Test fun oldSendMustNotMaskCurrentContraryRx() = runBlocking {
         val scope = TestScope()
         val now = java.util.concurrent.atomic.AtomicLong(100)

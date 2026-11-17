@@ -12,7 +12,7 @@ data class DesiredProperty(
     val generation: Long,
     val status: DesiredStatus,
     val startedMs: Long,
-    /** RX ordinal at entry to the physical writer, not at admission to its queue. */
+    /** Latest SDU ingress ordinal at entry to the physical writer. */
     val writeAfterRx: Long? = null,
 )
 

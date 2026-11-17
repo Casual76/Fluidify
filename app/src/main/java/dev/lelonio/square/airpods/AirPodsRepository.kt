@@ -9,6 +9,7 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import java.io.Closeable
+import java.util.concurrent.atomic.AtomicLong
 import dev.lelonio.square.airpods.protocol.*
 import dev.lelonio.square.airpods.runtime.storage.*
 import kotlinx.coroutines.channels.Channel
@@ -121,7 +122,7 @@ class AirPodsRepository(
     val events: SharedFlow<Received<AacpEvent>> = mutableEvents.asSharedFlow()
     private val commandQueue = mutableMapOf<CommandProperty, PendingCommand>()
     private var commandWorker: Job? = null
-    private var rxOrdinal = 0L
+    private val rxOrdinal = AtomicLong()
     private data class SentAttempt(val command: PendingCommand, val atMs: Long)
     private val sentHistory = mutableMapOf<CommandProperty, ArrayDeque<SentAttempt>>()
     internal companion object {
@@ -419,7 +420,7 @@ class AirPodsRepository(
                     val written = writeLocked(g, socket, request.packet.map { it.toByte() }.toByteArray(), request.sequence, property,
                         begin = {
                             val s = mutable.value
-                            val intent = s.desired.getValue(property).copy(status = DesiredStatus.WRITING, writeAfterRx = rxOrdinal)
+                            val intent = s.desired.getValue(property).copy(status = DesiredStatus.WRITING, writeAfterRx = rxOrdinal.get())
                             mutable.value = rememberChoice(s.copy(desired = s.desired + (property to intent)), property, intent)
                             sentHistory.getOrPut(property) { ArrayDeque() }.apply {
                                 addLast(SentAttempt(request, clock.nowMs())); while (size > 32) removeFirst()
@@ -540,19 +541,24 @@ class AirPodsRepository(
     private suspend fun readLoop(g: Long, socket: AacpTransport) {
         while (synchronized(lock) { isCurrent(g) }) {
             val sdu = socket.readSdu() ?: throw java.io.EOFException()
-            val ingressAt = clock.nowMs() // One timestamp for every frame already in this SDU.
+            // The timestamp and ordinal belong to the whole SDU, before any frame is decoded.
+            val ordinal = rxOrdinal.incrementAndGet()
+            val ingressAt = clock.nowMs()
             if (!synchronized(lock) { isCurrent(g) && transport === socket }) return
             observer.observe(QualificationEvent(QualificationStep.RX_SDU, QualificationPhase.OBSERVED, g, value = sdu.size))
             val diagnosticFrame: ((AacpRxFrame) -> Unit)? = if (rxDiagnostics === AirPodsRxDiagnostics.NONE) null
                 else { frame -> rxDiagnostics.observe(g, frame) }
             AacpCodec.decodeSdu(sdu, diagnosticFrame).forEach {
-                receive(g, it, ingressAt)
+                receive(g, it, ingressAt, ordinal)
                 if (synchronized(lock) { isCurrent(g) } && !mutableEvents.tryEmit(Received(it, ingressAt, g)))
                     throw IllegalStateException("EVENT_BUFFER_OVERFLOW")
             }
         }
     }
-    internal fun receive(g: Long, event: AacpEvent, ingressAt: Long = clock.nowMs()) = synchronized(lock) {
+    internal fun receive(g: Long, event: AacpEvent, ingressAt: Long = clock.nowMs()) =
+        receive(g, event, ingressAt, rxOrdinal.incrementAndGet())
+
+    private fun receive(g: Long, event: AacpEvent, ingressAt: Long, ordinal: Long) = synchronized(lock) {
         if (!isCurrent(g)) return@synchronized
         var s = mutable.value
         // Only enum tags and numeric control values. INFORMATION/name/serial bytes never enter this port.
@@ -591,15 +597,17 @@ class AirPodsRepository(
                 is AacpEvent.Property -> 9; is AacpEvent.Unknown -> 0
             }, values = numbers))
         val now = ingressAt
-        val ordinal = ++rxOrdinal
         fun observed(property: CommandProperty, value: PropertyValue) {
             s = s.copy(properties = s.properties + (property to Received(value, now, g)),
                 cachedValues = s.cachedValues.copy(observed = s.cachedValues.observed +
                     (property to SavedProperty(value, wallClock.nowMs().coerceAtLeast(0)))))
             s.desired[property]?.let { intent ->
                 val afterWrite = intent.writeAfterRx?.let { ordinal > it } == true
-                val reconcilable = intent.status in setOf(DesiredStatus.UNCERTAIN, DesiredStatus.FAILED) ||
-                    (afterWrite && intent.status in setOf(DesiredStatus.WRITING, DesiredStatus.SENT))
+                val reconcilable = when (intent.status) {
+                    DesiredStatus.UNCERTAIN, DesiredStatus.FAILED -> intent.writeAfterRx == null || afterWrite
+                    DesiredStatus.WRITING, DesiredStatus.SENT -> afterWrite
+                    else -> false
+                }
                 // AACP has no sequence. Each unobserved physical send can explain at most ONE
                 // late echo within 1s of that physical send (never queue time). Silence
                 // alone changes nothing. Consumed/expired evidence cannot hide a later contrary RX.
