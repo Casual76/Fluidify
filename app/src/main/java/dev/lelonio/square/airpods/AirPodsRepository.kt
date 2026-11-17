@@ -185,13 +185,6 @@ class AirPodsRepository(
             valueStore.forget(pair).also { if (it.isFailure) mutableCacheFailures.value += 1 }
         }
     }
-    private fun restoreChoices(values: AirPodsPairValues, g: Long) = values.choices.mapValues { (_, saved) ->
-        DesiredProperty(saved.value, 0, g, when (saved.status) {
-            DesiredStatus.QUEUED, DesiredStatus.WRITING, DesiredStatus.SENT -> DesiredStatus.UNCERTAIN
-            else -> saved.status
-        }, 0)
-    }
-
     fun construct(factory: () -> AacpTransport) = construct(null, factory)
 
     /** Owner supplies its admitted pair, never an INFORMATION name/serial or inferred alias. */
@@ -213,7 +206,7 @@ class AirPodsRepository(
             job = SupervisorJob(scope.coroutineContext[Job])
             session = job
             mutable.value = AirPodsState(generation, AacpStage.CONSTRUCTING,
-                desired = retained?.let { restoreChoices(it, generation) }.orEmpty(),
+                desired = retained?.restoredChoices(generation).orEmpty(),
                 cachedValues = retained ?: AirPodsPairValues(), sessionPair = pair)
             observer.observe(QualificationEvent(QualificationStep.CONSTRUCT, QualificationPhase.REQUESTED, generation))
         }
@@ -224,7 +217,7 @@ class AirPodsRepository(
                 val cached = pair?.let { cachedPairValues(it) }
                 synchronized(lock) {
                     if (isCurrent(generation) && currentPair == pair && cached != null && mutable.value.cachedValues == AirPodsPairValues())
-                        mutable.value = mutable.value.copy(cachedValues = cached, desired = restoreChoices(cached, generation))
+                        mutable.value = mutable.value.copy(cachedValues = cached, desired = cached.restoredChoices(generation))
                 }
                 val created = factory()
                 observer.observe(QualificationEvent(QualificationStep.CONSTRUCT, QualificationPhase.COMPLETED, generation))

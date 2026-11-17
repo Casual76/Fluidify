@@ -188,8 +188,11 @@ fun mapAirPodsUiState(domain: AirPodsState, data: AirPodsRuntimeData, profileCon
     val pair = data.pairs[data.selectedPair] ?: PairSettings()
 
     // An old transport can remain the repository's last state after selection changes.
-    val scoped = if (domain.sessionPair == data.selectedPair) domain else AirPodsState(
-        generation = domain.generation, cachedValues = selectedPairValues ?: AirPodsPairValues())
+    val scoped = if (domain.sessionPair == data.selectedPair) domain else {
+        val cached = selectedPairValues ?: AirPodsPairValues()
+        AirPodsState(generation = domain.generation, cachedValues = cached,
+            desired = cached.restoredChoices(domain.generation))
+    }
 
     return AirPodsUiState(scoped, pair, data.start.enabled, data.start.suppressUntilExplicitResume,
 

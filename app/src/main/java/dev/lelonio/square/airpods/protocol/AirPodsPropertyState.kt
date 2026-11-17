@@ -2,6 +2,7 @@
 package dev.lelonio.square.airpods.protocol
 
 import dev.lelonio.square.airpods.*
+import dev.lelonio.square.airpods.runtime.storage.AirPodsPairValues
 
 /** Local send state, never a firmware ACK. Silence does not change SENT into failure. */
 enum class DesiredStatus { QUEUED, WRITING, SENT, UNCERTAIN, CONFIRMED, CONTRADICTED, FAILED }
@@ -15,6 +16,14 @@ data class DesiredProperty(
     /** Latest SDU ingress ordinal at entry to the physical writer. */
     val writeAfterRx: Long? = null,
 )
+
+/** Restoring a saved choice preserves its display intent without creating a new write. */
+internal fun AirPodsPairValues.restoredChoices(generation: Long) = choices.mapValues { (_, saved) ->
+    DesiredProperty(saved.value, 0, generation, when (saved.status) {
+        DesiredStatus.QUEUED, DesiredStatus.WRITING, DesiredStatus.SENT -> DesiredStatus.UNCERTAIN
+        else -> saved.status
+    }, 0)
+}
 
 enum class EffectiveSource { OBSERVED, DESIRED, SAVED_OBSERVATION, DEFAULT }
 data class EffectiveProperty(val value: PropertyValue, val source: EffectiveSource)

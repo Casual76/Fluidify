@@ -228,10 +228,10 @@ class AirPodsI5StemHostTest {
     private fun Fixture.pairValues() = AirPodsPairValueStore(SharedPreferencesPairValuePersistence(
         context.getSharedPreferences("airpods_pair_values_v1", Context.MODE_PRIVATE)))
 
-    private suspend fun Fixture.receiveCaseFromA() {
+    private suspend fun Fixture.readyCacheTransport(address: PairAddress): AirPodsRepository {
         val repository = ReflectionHelpers.getField<AirPodsRepository>(owner, "repository")
         val closed = java.util.concurrent.CountDownLatch(1)
-        repository.construct(pair) { object : AacpTransport {
+        repository.construct(address) { object : AacpTransport {
             override fun connect() = Unit
             override fun write(packet: ByteArray) = Unit
             override fun readSdu(): ByteArray? { closed.await(); return null }
@@ -242,6 +242,12 @@ class AirPodsI5StemHostTest {
         repository.connect(); await(AacpStage.CONNECTED)
         repository.handshake(); await(AacpStage.HANDSHAKE_SENT)
         repository.subscribe(); await(AacpStage.SUBSCRIBED)
+        repository.receive(owner.state.value.generation, AacpEvent.Information(AirPodsIdentity("A3063", "Apple Inc.", "synthetic")))
+        return repository
+    }
+
+    private suspend fun Fixture.receiveCaseFromA() {
+        val repository = readyCacheTransport(pair)
         val generation = owner.state.value.generation
         repository.receive(generation, AacpEvent.Property(CommandProperty.NAME, PropertyValue.Name("Pair A")))
         repository.receive(generation, AacpEvent.Battery(mapOf(BatteryCase to BatteryValue(39, 1))))
@@ -275,6 +281,57 @@ class AirPodsI5StemHostTest {
             assertEquals(AacpStage.CLOSED, cold.owner.state.value.stage)
             assertEquals(CaseBatteryReading(39, false), cold.host.state.value.caseBatteryReading())
             assertEquals("Pair A", cold.host.state.value.headerName)
+        } finally { cold.close() }
+    }
+
+    @Test fun offlineProjectionKeepsSentRenameAndEqAcrossPairSwitchAndRepositoryRecreation() = runBlocking {
+        val first = Fixture()
+        val pairB = PairAddress("00:11:22:33:44:66")
+        val name = CommandProperty.NAME
+        val eq = CommandProperty.EQ
+        val chosenEq = PropertyValue.Eq(true, 61, 50, 49)
+        fun Fixture.assertChoice() {
+            val ui = host.state.value
+            assertEquals("A scelto", ui.headerName)
+            assertEquals(chosenEq, ui.domain.propertyEffective(eq)?.value)
+            assertNull(ui.domain.propertyObserved(name))
+            assertNull(ui.domain.propertyObserved(eq))
+            assertFalse(ui.writeAllowed(name, PropertyValue.Name("No offline write")))
+        }
+        try {
+            val repository = first.readyCacheTransport(first.pair)
+            val generation = first.owner.state.value.generation
+            repository.receive(generation, AacpEvent.Property(name, PropertyValue.Name("Sonda A")))
+            repository.receive(generation, AacpEvent.Property(eq, PropertyValue.Eq(false, 50, 50, 50)))
+            assertTrue(repository.rename("A scelto"))
+            assertTrue(repository.setEq(chosenEq))
+            withTimeout(2_000) { repository.state.first { state ->
+                listOf(name, eq).all { state.desired[it]?.status == DesiredStatus.SENT }
+            } }
+            first.host.refresh()
+            assertEquals("A scelto", first.host.state.value.headerName)
+            repository.close()
+            withTimeout(2_000) {
+                while (first.pairValues().load(first.pair).getOrThrow().choices[name]?.status != DesiredStatus.UNCERTAIN) delay(1)
+            }
+            first.owner.store.select(pairB).getOrThrow()
+            first.readyCacheTransport(pairB)
+            repository.receive(repository.state.value.generation, AacpEvent.Property(name, PropertyValue.Name("Sonda B")))
+            repository.close()
+            first.host.refresh()
+            assertEquals("Sonda B", first.host.state.value.headerName)
+            assertEquals(PropertyValue.Eq(false, 50, 50, 50), first.host.state.value.domain.propertyEffective(eq)?.value)
+            first.owner.store.select(first.pair).getOrThrow()
+            first.host.refresh()
+            first.assertChoice()
+        } finally { first.close() }
+
+        val cold = Fixture()
+        try {
+            cold.domain.value = AirPodsState()
+            cold.host.refresh()
+            assertEquals(AacpStage.CLOSED, cold.owner.state.value.stage)
+            cold.assertChoice()
         } finally { cold.close() }
     }
 }
