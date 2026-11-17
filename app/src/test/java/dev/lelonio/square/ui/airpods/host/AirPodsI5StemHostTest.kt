@@ -139,24 +139,38 @@ class AirPodsI5StemHostTest {
     }
     private fun Fixture.stem(mask: Int?, outcome: CommandOutcome? = null, pending: Boolean = false) {
         domain.value = domain.value.copy(
-            properties = mask?.let { mapOf(CommandProperty.STEM_CONFIG to Received<PropertyValue>(PropertyValue.Number(it), 2, 7)) }.orEmpty(),
+            properties = mapOf(CommandProperty.LISTENING_MODE_CONFIGS to Received<PropertyValue>(PropertyValue.Number(6), 2, 7)) +
+                mask?.let { mapOf(CommandProperty.STEM_CONFIG to Received<PropertyValue>(PropertyValue.Number(it), 2, 7)) }.orEmpty(),
             pending = if (pending) mapOf(CommandProperty.STEM_CONFIG to PendingCommand(8, 2, 1, generation = 7)) else emptyMap(),
             outcomes = outcome?.let { mapOf(CommandProperty.STEM_CONFIG to it) }.orEmpty())
     }
-    @Test fun realHostPagesKeepLocalChoiceEditableAcrossOutcomesAtFontTwo() = runBlocking {
+    @Test fun realHostPagesReconcileFailedAssistantButKeepSilentChoiceEditableAtFontTwo() = runBlocking {
         val f = Fixture()
         try {
             f.owner.store.configure(f.pair) { it.copy(leftLongPress = LongPressAction.DIGITAL_ASSISTANT) }.getOrThrow()
-            f.stem(0, CommandOutcome.SEND_FAILED); f.host.refresh(); mount(f, font = 2f)
+            f.stem(0, pending = true); f.host.refresh(); mount(f, font = 2f)
             compose.onNodeWithTag("airpods-gesture-LEFT").performScrollTo()
                 .assertTextContains(f.text(R.string.airpods_ui_digital_assistant), substring = true)
             compose.onNodeWithTag("airpods-gesture-RIGHT").performScrollTo()
                 .assertTextContains(f.text(gestureLabels.getValue(GestureAction.NOISE_CONTROL)), substring = true)
-            for (outcome in CommandOutcome.entries) {
-                f.stem(0, outcome); f.host.refresh()
+            val cases = listOf(
+                Triple(0, CommandOutcome.OBSERVED_OTHER, false),
+                Triple(0, CommandOutcome.SEND_FAILED, false),
+                Triple(8, CommandOutcome.OBSERVED_OTHER, true), // only unrelated bits differed
+                Triple(8, CommandOutcome.OBSERVED_MATCH, true),
+                Triple(0, CommandOutcome.CLOSED, true),
+            )
+            for ((mask, outcome, assistant) in cases) {
+                f.stem(mask, outcome); f.host.refresh()
+                show(AirPodsSettingsPage.Main)
+                compose.onNodeWithTag("airpods-gesture-LEFT").performScrollTo().assertTextContains(
+                    f.text(gestureLabels.getValue(if (assistant) GestureAction.DIGITAL_ASSISTANT else GestureAction.NOISE_CONTROL)),
+                    substring = true)
                 show(AirPodsSettingsPage.LongPressLeft)
-                compose.onNodeWithTag("airpods-gesture-LEFT-DIGITAL_ASSISTANT").performScrollTo().assertIsSelected().assertIsEnabled()
-                compose.onNodeWithTag("airpods-gesture-LEFT-NOISE_CONTROL").performScrollTo().assertIsNotSelected().assertIsEnabled()
+                val digital = compose.onNodeWithTag("airpods-gesture-LEFT-DIGITAL_ASSISTANT").performScrollTo().assertIsEnabled()
+                val cycle = compose.onNodeWithTag("airpods-gesture-LEFT-NOISE_CONTROL").performScrollTo().assertIsEnabled()
+                if (assistant) { digital.assertIsSelected(); cycle.assertIsNotSelected() }
+                else { digital.assertIsNotSelected(); cycle.assertIsSelected() }
                 compose.onAllNodesWithTag("airpods-stem-command").assertCountEquals(0)
                 compose.onAllNodesWithTag("airpods-stem-observation").assertCountEquals(0)
                 assertEquals(LongPressAction.DIGITAL_ASSISTANT, f.owner.store.snapshot().getOrThrow().pairs.getValue(f.pair).leftLongPress)
