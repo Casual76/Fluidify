@@ -10,6 +10,9 @@ import dev.lelonio.square.airpods.*
 import dev.lelonio.square.airpods.protocol.*
 import dev.lelonio.square.airpods.runtime.lifecycle.*
 import dev.lelonio.square.airpods.runtime.storage.*
+import dev.lelonio.square.ui.airpods.GestureAction
+import dev.lelonio.square.ui.airpods.GestureSide
+import dev.lelonio.square.ui.airpods.host.AirPodsHost
 import kotlinx.coroutines.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.test.*
@@ -251,6 +254,28 @@ class I5LongPressRuntimeTest {
             pressRight()
             assertEquals(sent.desired[CommandProperty.MODE]?.sequence, f.controller.state.value.desired[CommandProperty.MODE]?.sequence)
             assertEquals(1, transport.writes.count { it == ancPacket })
+        }
+    }
+
+    @Test fun hostFollowsCurrentStemMaskAfterMatchingEchoWithoutErasingPreference() = runBlocking<Unit> {
+        Fixture().use { f ->
+            f.admit(); val transport = f.ready(f.pair); f.rx(0)
+            val host = AirPodsHost(f.context, f.controller, associationRegistry = null)
+            try {
+                suspend fun shown() = host.refresh().let { host.state.value.gestureAssignments[GestureSide.LEFT] }
+                assertTrue(f.controller.setLongPress(left = LongPressAction.DIGITAL_ASSISTANT))
+                f.sent()
+                assertEquals(1, transport.writes.count { it == AacpCodec.property(CommandProperty.STEM_CONFIG, 8).map { it.toInt() and 255 } })
+                assertEquals(GestureAction.DIGITAL_ASSISTANT, shown()) // silence, only the pre-write RX 0
+                f.rx(8); f.outcome(CommandOutcome.OBSERVED_MATCH)
+                assertEquals(GestureAction.DIGITAL_ASSISTANT, shown())
+                f.rx(0)
+                assertEquals(DesiredStatus.CONFIRMED, f.controller.state.value.desired[CommandProperty.STEM_CONFIG]?.status)
+                assertEquals(GestureAction.NOISE_CONTROL, shown())
+                assertEquals(LongPressAction.DIGITAL_ASSISTANT, f.pairSettings().leftLongPress)
+                f.rx(8)
+                assertEquals(GestureAction.DIGITAL_ASSISTANT, shown())
+            } finally { host.close() }
         }
     }
 

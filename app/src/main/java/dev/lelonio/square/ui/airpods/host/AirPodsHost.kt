@@ -277,9 +277,9 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
             }
         }
         val p = base.pair
-        val rejectedStemInterception = base.domain.stemInterceptionRejected()
+        val hardwareStemCycle = base.domain.usesHardwareStemCycle()
         fun stemName(action: LongPressAction) = gestureName(
-            if (rejectedStemInterception) LongPressAction.CYCLE_NOISE_CONTROL_MODES else action)
+            if (hardwareStemCycle) LongPressAction.CYCLE_NOISE_CONTROL_MODES else action)
         val assignments = mapOf(GestureSide.LEFT to stemName(p.leftLongPress), GestureSide.RIGHT to stemName(p.rightLongPress),
             GestureSide.NOD to gestureName(p.nodAction), GestureSide.SHAKE to gestureName(p.shakeAction))
             .mapNotNull { (side, name) -> GestureAction.entries.firstOrNull { it.name == name }?.let { side to it } }.toMap()

@@ -144,6 +144,8 @@ class AirPodsI5StemHostTest {
             properties = mapOf(CommandProperty.LISTENING_MODE_CONFIGS to Received<PropertyValue>(PropertyValue.Number(6), 2, 7)) +
                 mask?.let { mapOf(CommandProperty.STEM_CONFIG to Received<PropertyValue>(PropertyValue.Number(it), 2, 7)) }.orEmpty(),
             pending = if (pending) mapOf(CommandProperty.STEM_CONFIG to PendingCommand(8, 2, 1, generation = 7)) else emptyMap(),
+            desired = if (pending) mapOf(CommandProperty.STEM_CONFIG to
+                DesiredProperty(PropertyValue.Number(8), 1, 7, DesiredStatus.WRITING, 2)) else emptyMap(),
             outcomes = outcome?.let { mapOf(CommandProperty.STEM_CONFIG to it) }.orEmpty())
     }
     @Test fun realHostPagesReconcileFailedAssistantButKeepSilentChoiceEditableAtFontTwo() = runBlocking {
@@ -160,7 +162,7 @@ class AirPodsI5StemHostTest {
                 Triple(0, CommandOutcome.SEND_FAILED, false),
                 Triple(8, CommandOutcome.OBSERVED_OTHER, true), // only unrelated bits differed
                 Triple(8, CommandOutcome.OBSERVED_MATCH, true),
-                Triple(0, CommandOutcome.CLOSED, true),
+                Triple(0, null, false),
             )
             for ((mask, outcome, assistant) in cases) {
                 f.stem(mask, outcome); f.host.refresh()

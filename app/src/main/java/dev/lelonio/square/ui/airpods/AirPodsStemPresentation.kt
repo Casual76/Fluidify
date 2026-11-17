@@ -46,15 +46,22 @@ internal fun AirPodsUiState.stemPresentation(): StemPresentation {
     }, command, block)
 }
 
-/** A rejected interception request can leave the local side choice saved but inactive. */
-internal fun AirPodsState.stemInterceptionRejected(): Boolean {
+/** A new request stays visible until RX settles it. Afterwards the current mask can change again. */
+internal fun AirPodsState.usesHardwareStemCycle(): Boolean {
     val property = CommandProperty.STEM_CONFIG
-    val status = desired[property]?.status ?: cachedValues.choices[property]?.status
+    val intent = desired[property]
+    val observed = (propertyObserved(property)?.value as? PropertyValue.Number)?.value
+    if (observed != null) {
+        val awaiting = intent?.takeIf { it.generation == generation }?.status in
+            setOf(DesiredStatus.QUEUED, DesiredStatus.WRITING, DesiredStatus.SENT)
+        return observed and 8 == 0 && !awaiting
+    }
+    val status = intent?.status ?: cachedValues.choices[property]?.status
     val rejected = status in setOf(DesiredStatus.CONTRADICTED, DesiredStatus.FAILED) ||
         outcomes[property] in setOf(CommandOutcome.OBSERVED_OTHER, CommandOutcome.SEND_FAILED)
     if (!rejected) return false
     // A physical write failure may close the socket before the host renders the outcome.
-    val lastMask = (propertyObserved(property)?.value ?: cachedValues.observed[property]?.value) as? PropertyValue.Number
+    val lastMask = cachedValues.observed[property]?.value as? PropertyValue.Number
     return lastMask?.value?.and(8) != 8
 }
 
