@@ -60,10 +60,17 @@ import kotlinx.coroutines.flow.collect
     val stem = s.stemPresentation()
     val editable = s.allowed("gesture.$side") && stem.editable
     val cycle = CommandProperty.LISTENING_MODE_CONFIGS
-    val cycleUnread = saved == GestureAction.NOISE_CONTROL && s.applies(AirPodsProperties.spec(cycle)!!) &&
+    val cycleSpec = AirPodsProperties.spec(cycle)!!
+    val cycleUnread = saved == GestureAction.NOISE_CONTROL && s.identity?.let(cycleSpec::candidate) == true &&
         s.domain.propertyObserved(cycle) == null
-    LaunchedEffect(s.domain.generation, side) {
-        if ((stem.blockReason == R.string.airpods_stem_need_observation || cycleUnread) && s.allowed("setup.INFORMATION")) {
+    val stemRead = s.domain.propertyObserved(CommandProperty.STEM_CONFIG) != null
+    val needsInformation = s.allowed("setup.INFORMATION") &&
+        (stem.blockReason == R.string.airpods_stem_need_observation || cycleUnread)
+    // One request to read the stem mask, then one for a still-unread cycle if it is shown.
+    var requested by remember(s.domain.generation, side) { mutableStateOf(emptySet<Boolean>()) }
+    LaunchedEffect(s.domain.generation, side, needsInformation, stemRead) {
+        if (needsInformation && stemRead !in requested) {
+            requested = requested + stemRead
             dispatch(AirPodsUiAction.Setup(SetupAction.INFORMATION))
         }
     }

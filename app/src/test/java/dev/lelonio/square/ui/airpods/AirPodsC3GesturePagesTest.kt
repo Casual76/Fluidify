@@ -112,6 +112,54 @@ class AirPodsC3GesturePagesTest {
         compose.onAllNodesWithTag("airpods-cycle-ANC").assertCountEquals(0)
     }
 
+    @Test fun switchingFromAssistantRequestsUnreadCycleWithoutReopeningEditor() {
+        val actions = mutableListOf<AirPodsUiAction>()
+        val request = AirPodsUiAction.Setup(SetupAction.INFORMATION)
+        val base = state()
+        val assistant = mapOf(GestureSide.LEFT to GestureAction.DIGITAL_ASSISTANT)
+        var shown by mutableStateOf(base.copy(gestureAssignments = assistant,
+            availability = base.availability + ("setup.INFORMATION" to UiAvailability(true)),
+            domain = base.domain.copy(properties = mapOf(CommandProperty.STEM_CONFIG to
+                Received(PropertyValue.Number(8), 1001, 7)))))
+        mount { Column { LongPressPage(shown, GestureSide.LEFT, actions::add) } }
+        compose.onNodeWithTag("airpods-gesture-LEFT-DIGITAL_ASSISTANT").assertIsSelected()
+        assertTrue(actions.isEmpty())
+        compose.runOnIdle { shown = shown.copy(gestureAssignments = base.gestureAssignments) }
+        compose.onNodeWithTag("airpods-cycle-ANC").performScrollTo().assertIsNotEnabled()
+        assertEquals(listOf(request), actions)
+
+        compose.runOnIdle { shown = shown.copy(gestureAssignments = assistant) }
+        compose.onNodeWithTag("airpods-gesture-LEFT-DIGITAL_ASSISTANT").assertIsSelected()
+        compose.runOnIdle { shown = shown.copy(gestureAssignments = base.gestureAssignments) }
+        compose.onNodeWithTag("airpods-cycle-ANC").assertIsNotEnabled()
+        assertEquals(listOf(request), actions)
+    }
+
+    @Test fun openEditorRequestsOnAdmissionAndAgainOnlyAfterCurrentStemReading() {
+        val actions = mutableListOf<AirPodsUiAction>()
+        val request = AirPodsUiAction.Setup(SetupAction.INFORMATION)
+        val base = state()
+        var shown by mutableStateOf(base.copy(domain = base.domain.copy(properties = emptyMap())))
+        mount { Column { LongPressPage(shown, GestureSide.LEFT, actions::add) } }
+        compose.waitForIdle()
+        assertTrue(actions.isEmpty())
+
+        compose.runOnIdle { shown = shown.copy(availability = shown.availability + ("setup.INFORMATION" to UiAvailability(true))) }
+        compose.waitForIdle()
+        assertEquals(listOf(request), actions)
+
+        fun observeStem(at: Long) = compose.runOnIdle {
+            shown = shown.copy(domain = shown.domain.copy(properties = mapOf(CommandProperty.STEM_CONFIG to
+                Received(PropertyValue.Number(8), at, 7))))
+        }
+        observeStem(1001)
+        compose.waitForIdle()
+        assertEquals(listOf(request, request), actions)
+        observeStem(1002)
+        compose.waitForIdle()
+        assertEquals(listOf(request, request), actions)
+    }
+
     @Test fun ordinaryHeadPageDoesNotMountGraphAndDiagnosticsDoes() {
         var diagnostics by mutableStateOf(false)
         mount { Column { if (diagnostics) DiagnosticsPage(state(), {}) else HeadGesturesPage(state(), {}) } }
