@@ -23,15 +23,24 @@
       "sizeBytes": 19849925
     },
     "beta": {
-      "version": "2.1.0-beta.4",
-      "releaseDate": "2026-11-15",
-      "changelog": "Nuova beta di Fluidify per telefono e Wear OS.\n\n- Interventi sulla riconnessione delle AirPods, sul ripristino di pausa e volume dopo una conversazione e sulla chiusura dei servizi quando non servono.\n- Comandi dell'orologio e passaggio della musica fra dispositivi rivisti; batteria delle AirPods visibile dal polso.\n- Cerca una raccolta per nome nella Libreria e quando aggiungi un brano a una playlist.\n- La coda mostra quanto ascolto resta, tenendo conto della ripetizione. Puoi accodare un album intero dopo i brani aggiunti a mano.\n- Cronologia completa degli ascolti conservati per l'account, con ricerca per titolo e artista.\n- Nuova preferenza per tenere acceso lo schermo durante la riproduzione nel player aperto a tutto schermo, inizialmente disattivata.\n- Pannello AirPods sopra il player, testi, navigazione, download e accesso all'account rivisti.\n\nBeta da provare nell'uso quotidiano: la suite automatica Android e le prove fisiche con cuffie e orologio non sono ancora completate. La versione stabile resta disponibile.",
-      "releaseTag": "beta-fluidify-v2.1.0-beta.4",
-      "apkAsset": "fluidify-2.1.0-beta.4.apk",
-      "sizeBytes": 23404720,
-      "sha256": "437207cee42a6e5c11e68e35a829739c451944dbed295008f979ffc750616fc3"
+      "version": "2.1.0-beta.5",
+      "releaseDate": "2026-11-18",
+      "changelog": "Nuova beta di Fluidify per telefono e Wear OS, dedicata alle AirPods.\n\n- Le impostazioni cambiano subito. Il silenzio delle cuffie non annulla la scelta e non fa comparire \"Riprova\". Un invio fallito o una risposta diversa possono cambiare il valore mostrato. Un comando inviato fino a un secondo prima puo' spiegare una sola eco.\n- Equalizzatore a cursori con Reset, audio adattivo a cursore nella pagina principale e pressione tenuta piu' semplice.\n- Il rilevamento delle orecchie accende o spegne insieme pausa e ripresa in Fluidify. Attivare il rilevamento della conversazione abilita l'attenuazione se non hai gia' scelto la pausa. Spegnerlo conserva le preferenze locali.\n- Le pagine sono piu' vicine a LibrePods. Con le cuffie pronte spariscono la riga di connessione e la cronologia di batteria dei singoli auricolari. La custodia mostra l'ultima percentuale nota e Configurazione resta accessibile.\n- Meno lavoro in background per le AirPods e meno interruzioni dei gesti della testa durante la musica. Un cenno scaduto viene scartato e il comando non passa a una nuova sessione.\n\nBeta da provare nell'uso quotidiano. La revisione AirPods deve ancora essere provata con cuffie fisiche. Restano da fare le prove con l'orologio e alcuni controlli automatici Android sono ancora in errore dalla beta precedente. La versione stabile resta disponibile.",
+      "releaseTag": "beta-fluidify-v2.1.0-beta.5",
+      "apkAsset": "fluidify-2.1.0-beta.5.apk",
+      "sizeBytes": 23445744,
+      "sha256": "96e8db112b8194fdc469130bdfafd1cb12593a1afd4116af4ba07d1997a8c107"
     },
     "history": [
+      {
+        "version": "2.1.0-beta.4",
+        "releaseDate": "2026-11-15",
+        "changelog": "Nuova beta di Fluidify per telefono e Wear OS.\n\n- Interventi sulla riconnessione delle AirPods, sul ripristino di pausa e volume dopo una conversazione e sulla chiusura dei servizi quando non servono.\n- Comandi dell'orologio e passaggio della musica fra dispositivi rivisti; batteria delle AirPods visibile dal polso.\n- Cerca una raccolta per nome nella Libreria e quando aggiungi un brano a una playlist.\n- La coda mostra quanto ascolto resta, tenendo conto della ripetizione. Puoi accodare un album intero dopo i brani aggiunti a mano.\n- Cronologia completa degli ascolti conservati per l'account, con ricerca per titolo e artista.\n- Nuova preferenza per tenere acceso lo schermo durante la riproduzione nel player aperto a tutto schermo, inizialmente disattivata.\n- Pannello AirPods sopra il player, testi, navigazione, download e accesso all'account rivisti.\n\nBeta da provare nell'uso quotidiano: la suite automatica Android e le prove fisiche con cuffie e orologio non sono ancora completate. La versione stabile resta disponibile.",
+        "releaseTag": "beta-fluidify-v2.1.0-beta.4",
+        "apkAsset": "fluidify-2.1.0-beta.4.apk",
+        "sizeBytes": 23404720,
+        "sha256": "437207cee42a6e5c11e68e35a829739c451944dbed295008f979ffc750616fc3"
+      },
       {
         "version": "2.1.0-beta.3",
         "releaseDate": "2026-11-11",
