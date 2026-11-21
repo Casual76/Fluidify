@@ -23,15 +23,24 @@
       "sizeBytes": 19849925
     },
     "beta": {
-      "version": "2.1.0-beta.5",
-      "releaseDate": "2026-11-18",
-      "changelog": "Nuova beta di Fluidify per telefono e Wear OS, dedicata alle AirPods.\n\n- Le impostazioni cambiano subito. Il silenzio delle cuffie non annulla la scelta e non fa comparire \"Riprova\". Un invio fallito o una risposta diversa possono cambiare il valore mostrato. Un comando inviato fino a un secondo prima puo' spiegare una sola eco.\n- Equalizzatore a cursori con Reset, audio adattivo a cursore nella pagina principale e pressione tenuta piu' semplice.\n- Il rilevamento delle orecchie accende o spegne insieme pausa e ripresa in Fluidify. Attivare il rilevamento della conversazione abilita l'attenuazione se non hai gia' scelto la pausa. Spegnerlo conserva le preferenze locali.\n- Le pagine sono piu' vicine a LibrePods. Con le cuffie pronte spariscono la riga di connessione e la cronologia di batteria dei singoli auricolari. La custodia mostra l'ultima percentuale nota e Configurazione resta accessibile.\n- Meno lavoro in background per le AirPods e meno interruzioni dei gesti della testa durante la musica. Un cenno scaduto viene scartato e il comando non passa a una nuova sessione.\n\nBeta da provare nell'uso quotidiano. La revisione AirPods deve ancora essere provata con cuffie fisiche. Restano da fare le prove con l'orologio e alcuni controlli automatici Android sono ancora in errore dalla beta precedente. La versione stabile resta disponibile.",
-      "releaseTag": "beta-fluidify-v2.1.0-beta.5",
-      "apkAsset": "fluidify-2.1.0-beta.5.apk",
-      "sizeBytes": 23445744,
-      "sha256": "96e8db112b8194fdc469130bdfafd1cb12593a1afd4116af4ba07d1997a8c107"
+      "version": "2.1.0-beta.6",
+      "releaseDate": "2026-11-21",
+      "changelog": "Nuova beta di Fluidify, dedicata agli AirPods.\n\n- Comandi AirPods molto più affidabili, allineati al comportamento di LibrePods: ogni tocco riscrive davvero l'impostazione, i controlli funzionano appena connessi e anche quando l'audio sta uscendo da un'altra parte. Niente più interruttori che sembrano accesi prima di qualsiasi lettura: finché il dispositivo non risponde, lo stato è mostrato come sconosciuto.\n- Sessione che si riprende da sola: dopo riavvio del telefono, chiusura dell'app o aggiornamento di sistema i controlli tornano senza rifare la configurazione. Nuovo avvio automatico all'accensione per le coppie abilitate.\n- Automazioni più fedeli: pausa e ripresa all'orecchio decidono all'invio come in LibrePods, un play premuto a mano con gli auricolari fuori resta in riproduzione, il volume abbassato durante una conversazione viene sempre ripristinato.\n- Equalizzatore: il reset scrive sempre e conserva accensione nota e curva ricevuta; le bande seguono lo stato reale degli auricolari. Handling dei pacchetti più tollerante verso le variazioni dei firmware (batteria, consapevolezza conversazione, gesti della testa).\n- Motivi dei controlli non disponibili più precisi: si vede subito se manca l'accesso alle notifiche media, invece di un generico errore di sessione. Le preferenze locali si possono preparare anche da scollegati.\n\nLa compatibilità AirPods continua a essere verificata sui dispositivi reali; questa beta è installata e provata su Galaxy Tab S9 con AirPods Pro. Non comprende un nuovo rilascio dell'app Wear OS.",
+      "releaseTag": "beta-fluidify-v2.1.0-beta.6",
+      "apkAsset": "fluidify-2.1.0-beta.6.apk",
+      "sizeBytes": 23472905,
+      "sha256": "843bb773091b61e503ef5d08ede13f190c90b4c411725f5b62e9649be0ba5e36"
     },
     "history": [
+      {
+        "version": "2.1.0-beta.5",
+        "releaseDate": "2026-11-18",
+        "changelog": "Nuova beta di Fluidify per telefono e Wear OS, dedicata alle AirPods.\n\n- Le impostazioni cambiano subito. Il silenzio delle cuffie non annulla la scelta e non fa comparire \"Riprova\". Un invio fallito o una risposta diversa possono cambiare il valore mostrato. Un comando inviato fino a un secondo prima puo' spiegare una sola eco.\n- Equalizzatore a cursori con Reset, audio adattivo a cursore nella pagina principale e pressione tenuta piu' semplice.\n- Il rilevamento delle orecchie accende o spegne insieme pausa e ripresa in Fluidify. Attivare il rilevamento della conversazione abilita l'attenuazione se non hai gia' scelto la pausa. Spegnerlo conserva le preferenze locali.\n- Le pagine sono piu' vicine a LibrePods. Con le cuffie pronte spariscono la riga di connessione e la cronologia di batteria dei singoli auricolari. La custodia mostra l'ultima percentuale nota e Configurazione resta accessibile.\n- Meno lavoro in background per le AirPods e meno interruzioni dei gesti della testa durante la musica. Un cenno scaduto viene scartato e il comando non passa a una nuova sessione.\n\nBeta da provare nell'uso quotidiano. La revisione AirPods deve ancora essere provata con cuffie fisiche. Restano da fare le prove con l'orologio e alcuni controlli automatici Android sono ancora in errore dalla beta precedente. La versione stabile resta disponibile.",
+        "releaseTag": "beta-fluidify-v2.1.0-beta.5",
+        "apkAsset": "fluidify-2.1.0-beta.5.apk",
+        "sizeBytes": 23445744,
+        "sha256": "96e8db112b8194fdc469130bdfafd1cb12593a1afd4116af4ba07d1997a8c107"
+      },
       {
         "version": "2.1.0-beta.4",
         "releaseDate": "2026-11-15",
