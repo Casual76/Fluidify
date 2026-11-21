@@ -55,6 +55,7 @@ import kotlinx.coroutines.flow.collect
  * The shared cycle needs a current 0x1a reading before it can be edited.
  */
 @Composable internal fun ColumnScope.LongPressPage(s: AirPodsUiState, side: GestureSide, dispatch: (AirPodsUiAction) -> Unit) {
+    SettingsPageFailure(s, AirPodsSettingsPage.LongPressLeft)
     val options = gestureOptions(side)
     val saved = s.gestureAssignments[side]?.takeIf { it in options }
     val stem = s.stemPresentation()
@@ -89,6 +90,7 @@ import kotlinx.coroutines.flow.collect
 }
 
 @Composable internal fun ColumnScope.CallsPage(state: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {
+    SettingsPageFailure(state, AirPodsSettingsPage.Calls)
     val callSpec = AirPodsProperties.spec(CommandProperty.CALL_MANAGEMENT_CONFIG)!!
     if (state.applies(callSpec)) {
         CallPressChoices(state, R.string.airpods_c3_mute, mute = true, dispatch = dispatch)
@@ -121,6 +123,9 @@ import kotlinx.coroutines.flow.collect
 }
 
 @Composable internal fun ColumnScope.HeadGesturesPage(state: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {
+    Text(stringResource(R.string.airpods_head_gestures_call_hint),
+        style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant,
+        modifier = Modifier.padding(start = PaneInset, end = PaneInset, bottom = 6.dp).testTag("airpods-head-gestures-call-hint"))
     Pane {
         LocalToggleRows(state, dispatch, gestureToggles)
         FluidListDivider()

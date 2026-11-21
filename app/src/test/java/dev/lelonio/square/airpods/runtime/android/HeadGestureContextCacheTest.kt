@@ -6,7 +6,7 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class HeadGestureContextCacheTest {
-    @Test fun ageStartsBeforeReadAndExpiresAt250MillisecondsWithoutReadingAgain() = runBlocking {
+    @Test fun ageStartsAtPublishAndExpiresAt250MillisecondsWithoutReadingAgain() = runBlocking {
         var now = 10L; var reads = 0
         val cache = HeadGestureContextCache<String>({ now })
         cache.refresh { reads++; "target" }
@@ -15,7 +15,10 @@ class HeadGestureContextCacheTest {
         now += 250; assertEquals("target", cache.current())
         now++; assertNull(cache.current())
         cache.refresh { now += 251; "late-main" }
-        assertNull(cache.current())
+        // A slow (main-thread) read is fresh from when it publishes, not from when it
+        // started: it must not be born already expired. It still expires 250ms later.
+        assertEquals("late-main", cache.current())
+        now += 251; assertNull(cache.current())
     }
     @Test fun invalidationFencesBothPublishedAndInFlightContext() = runBlocking {
         val cache = HeadGestureContextCache<String>({ 10 })

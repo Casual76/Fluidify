@@ -31,6 +31,12 @@ sealed interface AacpEvent {
     data class ConversationActivity(val rawStatus: Int) : AacpEvent
     data class Battery(val components: Map<Int, BatteryValue>) : AacpEvent
     data class Information(val identity: AirPodsIdentity) : AacpEvent
+    /** Smart routing RX (0x0E audio source, 0x11 routing response, 0x2E connected devices, pinned
+     * AACPManager.kt:507-559): another host is taking or holding the pair's audio. Only the opcode
+     * survives; the payload names and addresses other people's devices and is never kept.
+     * Upstream acts only on 0x11 (SetOwnershipToFalse/ShowNearbyUI) and on 0x0E naming a host
+     * other than itself; a consumer that pauses should weigh [opcode] accordingly. */
+    data class AudioMovedToOtherDevice(val opcode: Int) : AacpEvent
     data class Unknown(val opcode: Int?, val bytes: Int, val reason: String,
         val controlIdentifier: Int? = null, val retainedControlPayload: List<Int>? = null) : AacpEvent
 }
@@ -49,6 +55,11 @@ fun interface AirPodsRxDiagnostics {
  * Truncated/malformed known frames cannot become an observation. */
 object AacpCodec {
     private val header = byteArrayOf(4, 0, 4, 0)
+    private val BATTERY_COMPONENTS = setOf(2, 4, 8)
+    private const val BATTERY_DISCONNECTED = 4
+    /** Variable length, payload carries MACs and host names: decoded to an opcode only, and
+     * deliberately absent from [capture]'s safe set so no byte reaches capture or diagnostics. */
+    private val SMART_ROUTING_OPCODES = setOf(0x0e, 0x11, 0x2e)
     fun handshake() = byteArrayOf(0, 0, 4, 0, 1, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0)
     fun subscribe() = header + byteArrayOf(0x0f, 0, -1, -1, -1, -1)
     fun featureFlags() = header + byteArrayOf(0x4d, 0, 0xd7.toByte(), 0, 0, 0, 0, 0, 0, 0)
@@ -166,10 +177,13 @@ object AacpCodec {
                 9 -> {
                     val spec = AirPodsProperties.wire(frame[6].toInt() and 255)
                     val value = spec?.decode(frame.sliceArray(7..10).map { it.toInt() and 255 })
-                    if (spec == null || value == null) AacpEvent.Unknown(9, frame.size, "Unknown or malformed control",
+                    fun rejected() = AacpEvent.Unknown(9, frame.size, "Unknown or malformed control",
                         frame[6].toInt() and 255, frame.sliceArray(7..10).map { it.toInt() and 255 })
+                    if (spec == null || value == null) rejected()
                     else when (spec.property) {
-                        CommandProperty.MODE -> AacpEvent.Mode(ListeningMode.entries.first { it.wire == value.value })
+                        // A mode the enum cannot name stays a retained Unknown, never an exception.
+                        CommandProperty.MODE -> ListeningMode.entries.firstOrNull { it.wire == value.value }
+                            ?.let { AacpEvent.Mode(it) } ?: rejected()
                         CommandProperty.CONVERSATION -> AacpEvent.ConversationSetting(value.value == 1)
                         else -> AacpEvent.Property(spec.property, value)
                     }
@@ -183,26 +197,30 @@ object AacpCodec {
                         frameUnknown("Malformed EQ")
                     else AacpEvent.Property(CommandProperty.EQ, PropertyValue.Eq(n[9] == 2,n[10],n[11],n[12]))
                 }
-                0x17 -> {
-                    if (frame.size < 70 || !frame.sliceArray(6..9).contentEquals(byteArrayOf(0,0,0x10,0)) ||
-                        (frame[10].toInt() and 255) !in 0x44..0x45 || frame[11] != 0.toByte()) frameUnknown("Unknown tracking layout")
-                    else {
-                        fun signed(i: Int) = ((frame[i+1].toInt() shl 8) or (frame[i].toInt() and 255))
-                        AacpEvent.Head(HeadSample(signed(43),signed(45),signed(47),signed(51),signed(53),frame[10].toInt()))
-                    }
+                // Pinned AACPManager.kt:486-496 forwards any tracking frame of at least 70 bytes;
+                // the layout bytes 6..11 only classify it there. Offsets 43..54 are unchanged.
+                0x17 -> if (frame.size < 70) frameUnknown("Truncated tracking frame") else {
+                    fun signed(i: Int) = ((frame[i+1].toInt() shl 8) or (frame[i].toInt() and 255))
+                    AacpEvent.Head(HeadSample(signed(43),signed(45),signed(47),signed(51),signed(53),frame[10].toInt()))
                 }
+                // Pinned Packets.kt:188-216 reads three [component, _, level, status] slots at fixed
+                // offsets. A slot with an unknown component is dropped alone; any status is kept as
+                // received. A level above 100 or a disconnected slot is no percentage (never 0%).
                 4 -> {
-                    val components = listOf(7, 12, 17).associate { i ->
+                    val components = listOf(7, 12, 17).mapNotNull { i ->
+                        val key = frame[i].toInt() and 255
                         val level = frame[i + 2].toInt() and 255
                         val status = frame[i + 3].toInt() and 255
-                        (frame[i].toInt() and 255) to BatteryValue(level.takeIf { it <= 100 && status in setOf(1,2,5) }, status)
-                    }
-                    if (frame[6] != 3.toByte() || components.size != 3 || components.keys.any { it !in setOf(2, 4, 8) }) frameUnknown("Unsupported battery layout")
-                    else AacpEvent.Battery(components)
+                        if (key !in BATTERY_COMPONENTS) null
+                        else key to BatteryValue(level.takeIf { it <= 100 && status != BATTERY_DISCONNECTED }, status)
+                    }.toMap()
+                    if (components.isEmpty()) frameUnknown("No known battery component") else AacpEvent.Battery(components)
                 }
-                0x4b -> if (frame[6] == 2.toByte() && frame[7] == 0.toByte() && (frame[9].toInt() and 255) in setOf(1,2,6,8,9))
-                    AacpEvent.ConversationActivity(frame[9].toInt() and 255) else frameUnknown("Unknown CA activity layout")
+                // Pinned Packets.kt:242-244: status is byte 9 of the fixed frame, whatever precedes it.
+                // Statuses without a known meaning reach consumers raw and are ignored there.
+                0x4b -> AacpEvent.ConversationActivity(frame[9].toInt() and 255)
                 0x1d -> parseInformation(frame) ?: frameUnknown("Incomplete or unknown information layout")
+                in SMART_ROUTING_OPCODES -> AacpEvent.AudioMovedToOtherDevice(opcode)
                 else -> frameUnknown("Unhandled opcode")
             }
             events += event

@@ -51,4 +51,4 @@ enum class AirPodsMediaGesture { TOGGLE_PLAYBACK, NEXT, PREVIOUS, PAUSE, PLAY }
 
 /** Apply before dispatching to main; never apply to the ordered gesture input collector. */
 internal fun AacpEvent.isMediaRuntimeEvent(): Boolean =
-    this is AacpEvent.Ear || this is AacpEvent.ConversationActivity
+    this is AacpEvent.Ear || this is AacpEvent.ConversationActivity || this is AacpEvent.AudioMovedToOtherDevice

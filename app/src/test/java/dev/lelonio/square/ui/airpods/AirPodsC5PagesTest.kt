@@ -66,42 +66,56 @@ class AirPodsC5PagesTest {
 
     @Test fun eqMountsThreeSlidersAtDomainDefaultsWithoutWritingOrTextEditors() {
         mount()
+        // Bands are not offered while the equalizer is off (upstream does the same).
         listOf("low", "mid", "high").forEach {
-            slider("airpods-eq-$it").assert(SemanticsMatcher.expectValue(
-                SemanticsProperties.ProgressBarRangeInfo,
-                androidx.compose.ui.semantics.ProgressBarRangeInfo(50f, 0f..100f)))
+            compose.onNodeWithTag("airpods-eq-$it").assertExists()
+            compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.SetProgress) and
+                (hasTestTag("airpods-eq-$it") or hasAnyAncestor(hasTestTag("airpods-eq-$it"))))
+                .assertCountEquals(0)
         }
         compose.onAllNodes(SemanticsMatcher.keyIsDefined(SemanticsActions.SetText)).assertCountEquals(0)
         assertNoApply()
         compose.onNodeWithTag("airpods-switch-EQ").assertIsOff()
         compose.runOnIdle { assertTrue(writes.isEmpty()) }
+        compose.onNodeWithTag("airpods-switch-EQ").performClick()
+        listOf("low", "mid", "high").forEach {
+            slider("airpods-eq-$it").assert(SemanticsMatcher.expectValue(
+                SemanticsProperties.ProgressBarRangeInfo,
+                androidx.compose.ui.semantics.ProgressBarRangeInfo(50f, 0f..100f)))
+        }
     }
 
     @Test fun resetRestoresAllBandsAndPreservesEnabledWithoutBypassingGate() {
         mount()
+        compose.onNodeWithTag("airpods-switch-EQ").performClick()
         slider("airpods-eq-low").performSemanticsAction(SemanticsActions.SetProgress) { it(82f) }
         compose.onNodeWithTag("airpods-eq-reset").performScrollTo().performClick()
         compose.runOnIdle {
-            assertEquals(PropertyValue.Eq(false, 50, 50, 50), writes.last().value)
+            assertEquals(PropertyValue.Eq(true, 50, 50, 50), writes.last().value)
             state = state.copy(bluetoothGranted = false)
         }
         compose.onNodeWithTag("airpods-eq-reset").assertIsNotEnabled()
-        compose.runOnIdle { assertEquals(2, writes.size) }
+        compose.runOnIdle { assertEquals(3, writes.size) }
     }
 
     @Test fun talkBackBandChangeAndToggleSendCompleteEffectiveQuadruples() {
         mount()
-        slider("airpods-eq-low").performSemanticsAction(SemanticsActions.SetProgress) { it(82f) }
-        compose.waitForIdle()
-        compose.runOnIdle {
-            assertEquals(1, writes.size)
-            assertEquals(PropertyValue.Eq(false, 82, 50, 50), writes.single().value)
-        }
         compose.onNodeWithTag("airpods-switch-EQ").performClick()
         compose.onNodeWithTag("airpods-switch-EQ").assertIsOn()
         compose.runOnIdle {
+            assertEquals(1, writes.size)
+            assertEquals(PropertyValue.Eq(true, 50, 50, 50), writes.single().value)
+        }
+        slider("airpods-eq-low").performSemanticsAction(SemanticsActions.SetProgress) { it(82f) }
+        compose.waitForIdle()
+        compose.runOnIdle {
             assertEquals(2, writes.size)
             assertEquals(PropertyValue.Eq(true, 82, 50, 50), writes.last().value)
+        }
+        compose.onNodeWithTag("airpods-switch-EQ").performClick()
+        compose.runOnIdle {
+            assertEquals(3, writes.size)
+            assertEquals(PropertyValue.Eq(false, 82, 50, 50), writes.last().value)
         }
     }
 

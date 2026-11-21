@@ -14,10 +14,31 @@ class AacpCodecTest {
         for (size in 1 until packet.size) assertTrue(AacpCodec.decodeSdu(packet.copyOf(size)).all { it is AacpEvent.Unknown })
         assertEquals(listOf(AacpEvent.Mode(ListeningMode.ANC)), AacpCodec.decodeSdu(packet))
     }
-    @Test fun unknownAndMultiByteControlsNeverConfirm() {
+    @Test fun unknownOpcodeNeverConfirmsAndAKnownControlReadsOnlyItsValueByte() {
         assertTrue(AacpCodec.decodeSdu(byteArrayOf(4, 0, 4, 0, 0x7f, 0)).single() is AacpEvent.Unknown)
+        // FIX-05: pinned AACPManager keeps the four bytes and its readers look at byte 0 only.
         val packet = AacpCodec.mode(ListeningMode.ANC); packet[8] = 1
+        assertEquals(listOf(AacpEvent.Mode(ListeningMode.ANC)), AacpCodec.decodeSdu(packet))
+        packet[7] = 9 // no such mode: retained Unknown, never an exception
         assertTrue(AacpCodec.decodeSdu(packet).single() is AacpEvent.Unknown)
+    }
+    @Test fun conversationActivityAcceptsAnyLayoutByteAndStatus() {
+        assertEquals(AacpEvent.ConversationActivity(2), AacpCodec.decodeSdu(byteArrayOf(4,0,4,0,0x4b,0,2,1,0,2)).single())
+        assertEquals(AacpEvent.ConversationActivity(4), AacpCodec.decodeSdu(byteArrayOf(4,0,4,0,0x4b,0,3,0,0,4)).single())
+    }
+    @Test fun batteryWithAnExtraUnknownComponentKeepsTheKnownOnes() {
+        val packet = byteArrayOf(4,0,4,0,4,0,3, 0x11,0,50,1, 0, 2,0,80,2, 0, 8,0,99,1, 0)
+        val battery = AacpCodec.decodeSdu(packet).single() as AacpEvent.Battery
+        assertEquals(setOf(2, 8), battery.components.keys)
+        assertEquals(BatteryValue(80, 2), battery.components[2])
+        assertEquals(BatteryValue(99, 1), battery.components[8])
+    }
+    @Test fun headFrameWithVariedLayoutBytesIsStillAHeadSample() {
+        val frame = ByteArray(72)
+        byteArrayOf(4,0,4,0,0x17,0, 9,9,0x20,1,0x46,7).copyInto(frame)
+        frame[45] = 3; frame[53] = 4
+        val sample = (AacpCodec.decodeSdu(frame).single() as AacpEvent.Head).sample
+        assertEquals(3, sample.orientation2); assertEquals(4, sample.vertical); assertEquals(0x46, sample.wireVariant)
     }
     @Test fun fixedFramesSharingSduAreDecodedInOrder() {
         assertEquals(listOf(AacpEvent.Mode(ListeningMode.TRANSPARENCY), AacpEvent.ConversationSetting(true)),

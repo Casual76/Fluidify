@@ -62,6 +62,24 @@ class AacpObservedInformationCoreTest {
         assertTrue(events.single() is AacpEvent.Information)
         assertEquals("A3063", (events.single() as AacpEvent.Information).identity.modelNumber)
     }
+    /** FIX-03/26: INFORMATION and the model table decide what is offered, never whether a write leaves. */
+    @Test fun unknownOrMissingInformationNeverBlocksAWriteOnlyWhatIsOffered() {
+        val unknown = information(packet(fields().also { it[2] = "A9999" })).identity
+        val pro1 = AirPodsIdentity("A2084", "Apple Inc.", "synthetic")
+        val adaptive = dev.lelonio.square.airpods.protocol.PropertyValue.Number(ListeningMode.ADAPTIVE.wire)
+        for (id in listOf(null, unknown, pro1)) {
+            val state = AirPodsState(generation = 3, stage = AacpStage.SUBSCRIBED,
+                identity = id, identityReceived = id?.let { Received(it, 1, 3) })
+            assertTrue(state.canAttemptWrite(CommandProperty.MODE, adaptive))
+            assertTrue(state.canAttemptWrite(CommandProperty.AUTO_ANC_STRENGTH, dev.lelonio.square.airpods.protocol.PropertyValue.Number(40)))
+            assertFalse("Adaptive stays hidden for $id", state.modelOffers(CommandProperty.MODE, adaptive))
+            assertFalse(state.canAttemptWrite(CommandProperty.AUTO_ANC_STRENGTH, dev.lelonio.square.airpods.protocol.PropertyValue.Number(101)))
+        }
+        for (stage in listOf(AacpStage.CLOSED, AacpStage.CONSTRUCTED, AacpStage.CONNECTING, AacpStage.ERROR))
+            assertFalse(AirPodsState(stage = stage).canAttemptWrite(CommandProperty.MODE, adaptive))
+        for (stage in listOf(AacpStage.CONNECTED, AacpStage.HANDSHAKE_SENT))
+            assertTrue(AirPodsState(stage = stage).canAttemptWrite(CommandProperty.MODE, adaptive))
+    }
     @Test fun framingReservedByteAndUnknownEnvelopeRemainStrict() {
         val candidates = listOf(
             byteArrayOf(4,0,4,0) + packet(trailer = opaque()),

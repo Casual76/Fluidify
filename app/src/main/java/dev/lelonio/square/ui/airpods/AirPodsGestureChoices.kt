@@ -7,6 +7,7 @@ package dev.lelonio.square.ui.airpods
 import androidx.compose.foundation.layout.ColumnScope
 import androidx.compose.foundation.layout.size
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.*
 import androidx.compose.ui.Modifier
@@ -33,6 +34,28 @@ internal fun toggledCycleMask(mask: Int, mode: ListeningMode): Int? {
     // An incomplete RX can be built up, but a valid cycle cannot be reduced below two.
     return next.takeUnless { Integer.bitCount(mask) >= 2 && Integer.bitCount(next) < 2 }
 }
+
+/** What one touch on a cycle switch does. A selection that cannot be sent is never shown as selected. */
+internal sealed interface CycleTap {
+    /** The resulting mask is valid: it goes on the wire at once (no Apply). */
+    data class Dispatch(val mask: Int) : CycleTap
+    /** Fewer than two modes: remembered locally, nothing sent, nothing shown as on. */
+    data class Pending(val mask: Int) : CycleTap
+    object Ignored : CycleTap
+}
+
+internal fun cycleTap(mask: Int, mode: ListeningMode, accepts: (Int) -> Boolean, canBuild: Boolean): CycleTap {
+    val next = toggledCycleMask(mask, mode) ?: return CycleTap.Ignored
+    return when {
+        accepts(next) -> CycleTap.Dispatch(next)
+        Integer.bitCount(next) < 2 && canBuild -> CycleTap.Pending(next)
+        else -> CycleTap.Ignored
+    }
+}
+
+/** A switch is on only for a mask the AirPods reported (or that was just sent), never for a pending local build. */
+internal fun cycleSwitchChecked(mask: Int, mode: ListeningMode, pending: Boolean): Boolean =
+    !pending && mask and (1 shl (mode.wire - 1)) != 0
 
 @Composable internal fun ColumnScope.LongPressModeSwitches(s: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {
     val property = CommandProperty.LISTENING_MODE_CONFIGS
@@ -62,19 +85,29 @@ internal fun toggledCycleMask(mask: Int, mode: ListeningMode): Int? {
                     leading = leading, leadingTile = false, disclosure = false)
                 return@forEachIndexed
             }
-            val next = toggledCycleMask(mask, mode)
-            val validWrite = next != null && s.writeAllowed(property, PropertyValue.Number(next))
-            val canBuild = next != null && Integer.bitCount(next) < 2 && s.controlsReady &&
-                s.identity?.let(spec::candidate) == true
-            AirPodsReadableToggle(label, checked = mask and (1 shl (mode.wire - 1)) != 0,
+            val canBuild = s.controlsReady && s.identity?.let(spec::candidate) == true
+            val tap = cycleTap(mask, mode, { s.writeAllowed(property, PropertyValue.Number(it)) }, canBuild)
+            AirPodsReadableToggle(label, checked = cycleSwitchChecked(mask, mode, pending = incomplete != null),
                 onCheckedChange = {
-                    if (validWrite) {
-                        incomplete = null
-                        dispatch(AirPodsUiAction.Write(s.domain.generation, property, PropertyValue.Number(next)))
-                    } else if (canBuild) incomplete = next
-                }, enabled = validWrite || canBuild,
+                    when (tap) {
+                        is CycleTap.Dispatch -> {
+                            incomplete = null
+                            dispatch(AirPodsUiAction.Write(s.domain.generation, property, PropertyValue.Number(tap.mask)))
+                        }
+                        is CycleTap.Pending -> incomplete = tap.mask
+                        CycleTap.Ignored -> Unit
+                    }
+                }, enabled = tap !is CycleTap.Ignored,
                 modifier = tag, leading = leading,
                 leadingTile = false)
+        }
+        if (mask != null && Integer.bitCount(mask) < 2) {
+            FluidListDivider()
+            PaneBlock {
+                Text(stringResource(R.string.airpods_cycle_min_two), style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.testTag("airpods-cycle-min-two"))
+            }
         }
     }
 }

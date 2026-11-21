@@ -59,14 +59,14 @@ class AirPodsHostFacadeTest {
             android.provider.Settings.Secure.putString(context.contentResolver, "enabled_notification_listeners", "")
             host.refresh()
             assertEquals(context.getString(dev.lelonio.square.R.string.airpods_reason_nls),
-                host.state.value.availability.getValue("local.OTHER_APPS.enable").reason)
+                host.state.value.availability.getValue("status.OTHER_APPS").reason)
             android.provider.Settings.Secure.putString(context.contentResolver, "enabled_notification_listeners",
                 "${context.packageName}/dev.lelonio.square.airpods.runtime.media.AirPodsMediaNotificationListener")
             host.refresh()
             assertEquals(context.getString(dev.lelonio.square.R.string.airpods_reason_media),
-                host.state.value.availability.getValue("local.OTHER_APPS.enable").reason)
+                host.state.value.availability.getValue("status.OTHER_APPS").reason)
             host.dispatch(host.stamp, AirPodsUiAction.Toggle(LocalToggle.OTHER_APPS, true)) { _, _ -> fail("No launch") }
-            assertTrue(host.state.value.diagnostics.contains(context.getString(dev.lelonio.square.R.string.airpods_reason_media)))
+            assertTrue(owner.store.snapshot().getOrThrow().pairs.values.single().host.otherAppsEnabled)
             assertTrue(host.state.value.allowed("local.OTHER_APPS.disable"))
             assertNull(host.state.value.availability.getValue("local.OTHER_APPS").reason)
         } finally {
@@ -156,8 +156,8 @@ class AirPodsHostFacadeTest {
                 } } as android.bluetooth.BluetoothProfile
             ReflectionHelpers.setField(ReflectionHelpers.getField<HostBluetooth>(host,"bluetooth"),"profile",profile)
             host.refresh()
-            assertEquals(context.getString(dev.lelonio.square.R.string.airpods_reason_notifications),
-                host.state.value.availability.getValue("setup.ENABLE").reason)
+            assertNull(host.state.value.availability.getValue("setup.ENABLE").reason)
+            assertTrue(host.state.value.allowed("setup.ENABLE"))
             assertTrue(host.state.value.allowed("setup.NOTIFICATION_PERMISSION"))
             assertNull(host.state.value.availability.getValue("setup.NOTIFICATION_PERMISSION").reason)
             shadowOf(context).denyPermissions(android.Manifest.permission.BLUETOOTH_CONNECT)
@@ -247,12 +247,12 @@ class AirPodsHostFacadeTest {
         try {
             host.refresh()
             assertFalse(owner.runtime.value.mediaAvailable)
-            assertFalse(host.state.value.allowed("local.OTHER_APPS.enable"))
+            assertTrue(host.state.value.allowed("local.OTHER_APPS.enable")) // preference only; readiness is status.*
             assertTrue(host.state.value.allowed("local.OTHER_APPS"))
             host.dispatch(host.stamp, AirPodsUiAction.Toggle(LocalToggle.OTHER_APPS, false)) { _, _ -> fail("No platform launch") }
             assertFalse(owner.store.snapshot().getOrThrow().pairs.getValue(selected).host.otherAppsEnabled)
             host.dispatch(host.stamp, AirPodsUiAction.Toggle(LocalToggle.OTHER_APPS, true)) { _, _ -> fail("No platform launch") }
-            assertFalse(owner.store.snapshot().getOrThrow().pairs.getValue(selected).host.otherAppsEnabled)
+            assertTrue(owner.store.snapshot().getOrThrow().pairs.getValue(selected).host.otherAppsEnabled)
             assertFalse(owner.runtime.value.active)
         } finally { close(owner, host) }
     }

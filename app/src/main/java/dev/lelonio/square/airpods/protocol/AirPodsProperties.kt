@@ -15,16 +15,44 @@ sealed interface PropertyValue {
         override fun toString() = "Name(redacted)"
     }
 }
-enum class ControlEncoding { SCALAR, BOOLEAN_1_2, INVERTED_PERCENT, CHIME, CALL_ASSIGNMENT, MODE_MASK, STEM_MASK }
+/** [HEARING_AID_PAIR] is 0x2C's two bytes `[enrolled, active]`, packed by [HearingAidWire]. */
+enum class ControlEncoding { SCALAR, BOOLEAN_1_2, INVERTED_PERCENT, CHIME, CALL_ASSIGNMENT, MODE_MASK, STEM_MASK, HEARING_AID_PAIR }
+
+/** 0x2C carries `[enrolled, active]` (pinned HearingAidScreen.kt:115-124,209-218). Internally (RX
+ * events, stored RX, intents, persistence) one Number holds both: the enrolled byte in bits 8..15,
+ * exactly as last received; active (1 on, 2 off) in bits 0..7. Readers of the state
+ * (propertyObserved, propertyEffective) see only the plain 1/2 every other switch uses, and a
+ * write may pass 1/2: the enrolled byte always comes from RX, nothing here can make one up. */
+object HearingAidWire {
+    fun pack(enrolled: Int, enabled: Boolean): Int {
+        require(enrolled in 0..255) { "Invalid enrolled byte" }
+        return (enrolled shl 8) or (if (enabled) 1 else 2)
+    }
+    fun enrolled(value: Int): Int = (value shr 8) and 0xFF
+    fun enabled(value: Int): Boolean = (value and 0xFF) == 1
+    /** The switch value a reader sees: 1 on, 2 off. */
+    fun shown(value: PropertyValue): PropertyValue =
+        (value as? PropertyValue.Number)?.let { PropertyValue.Number(it.value and 0xFF) } ?: value
+}
+
 data class PropertySpec(
     val property: CommandProperty, val catalogId: String, val wireId: Int, val group: String,
     val range: IntRange, val options: Map<Int, String> = emptyMap(),
     val encoding: ControlEncoding = ControlEncoding.SCALAR, val capability: Capability? = null,
     val internalDependency: Boolean = false, val debounceMs: Long = 0,
 ) {
-    fun accepts(value: Int) = value in range && (encoding != ControlEncoding.MODE_MASK || Integer.bitCount(value) >= 2)
+    fun accepts(value: Int) = when (encoding) {
+        ControlEncoding.MODE_MASK -> value in range && Integer.bitCount(value) >= 2
+        ControlEncoding.HEARING_AID_PAIR -> value in 0..0xFFFF && (value and 0xFF) in 1..2
+        else -> value in range
+    }
     /** Receiving one/zero selected modes is not permission to write an invalid cycle. */
-    fun acceptsReceived(value: Int) = if (encoding == ControlEncoding.MODE_MASK) value in 0..15 else value in range
+    fun acceptsReceived(value: Int) = when (encoding) {
+        ControlEncoding.MODE_MASK -> value in 0..15
+        ControlEncoding.HEARING_AID_PAIR -> accepts(value)
+        else -> value in range
+    }
+    /** Visibility only: which controls the UI offers for a model. Never a reason to refuse a write. */
     fun candidate(identity: AirPodsIdentity) = identity.recognized &&
         (capability == null || capability in identity.modelDeclared)
     fun encode(value: Int): List<Int> {
@@ -33,20 +61,31 @@ data class PropertySpec(
             ControlEncoding.INVERTED_PERCENT -> listOf(100 - value)
             ControlEncoding.CHIME -> listOf(value, 0x50)
             ControlEncoding.CALL_ASSIGNMENT -> listOf(0, value)
+            ControlEncoding.HEARING_AID_PAIR -> listOf(HearingAidWire.enrolled(value), value and 0xFF)
             else -> listOf(value)
         }
     }
-    /** Padding is checked, never trim meaningful leading zero or accept arbitrary multibyte values. */
+    /** Pinned AACPManager reads the four value bytes and its screens look only at the byte that
+     * carries the value. So do we: every other byte is ignored, whatever it holds — CHIME is byte 0
+     * with or without its 0x50, CALL is byte 1 whatever byte 0 says. Booleans read 1 as on and 0 or
+     * 2 as off. Percentages clamp; anything else outside its domain is still not a value. */
     fun decode(bytes: List<Int>): PropertyValue.Number? {
         if (bytes.size != 4) return null
-        val length = if (encoding in setOf(ControlEncoding.CHIME, ControlEncoding.CALL_ASSIGNMENT)) 2 else 1
-        if (bytes.drop(length).any { it != 0 }) return null
-        if (encoding == ControlEncoding.CHIME && bytes[1] != 0x50) return null
-        if (encoding == ControlEncoding.CALL_ASSIGNMENT && bytes[0] != 0) return null
-        val raw = if (encoding == ControlEncoding.CALL_ASSIGNMENT) bytes[1] else bytes[0]
-        val value = if (encoding == ControlEncoding.INVERTED_PERCENT) 100 - raw else raw
+        val raw = when (encoding) {
+            ControlEncoding.CALL_ASSIGNMENT -> bytes[1]
+            else -> bytes[0]
+        }
+        val value = when (encoding) {
+            ControlEncoding.INVERTED_PERCENT -> (100 - raw).coerceIn(0, 100)
+            ControlEncoding.CHIME -> raw.coerceIn(0, 100)
+            ControlEncoding.BOOLEAN_1_2 -> booleanRaw(raw) ?: return null
+            ControlEncoding.HEARING_AID_PAIR -> (raw shl 8) or (booleanRaw(bytes[1]) ?: return null)
+            // Upstream's swipe-interval screen treats a received 0 as the default interval.
+            else -> if (property == CommandProperty.VOLUME_SWIPE_INTERVAL && raw == 0) 1 else raw
+        }
         return value.takeIf(::acceptsReceived)?.let { PropertyValue.Number(it) }
     }
+    private fun booleanRaw(raw: Int) = when (raw) { 1 -> 1; 0, 2 -> 2; else -> null }
 }
 object AirPodsProperties {
     private val bool = mapOf(1 to "on", 2 to "off")
@@ -71,6 +110,14 @@ object AirPodsProperties {
         PropertySpec(CommandProperty.PPE_TOGGLE_CONFIG, "aacp.ppe_toggle_config", 0x37, "hearing", 1..2, bool, ControlEncoding.BOOLEAN_1_2, Capability.PPE),
         PropertySpec(CommandProperty.DYNAMIC_END_OF_CHARGE, "aacp.dynamic_end_of_charge", 0x3b, "charging", 1..2, bool, ControlEncoding.BOOLEAN_1_2),
         PropertySpec(CommandProperty.STEM_CONFIG, "aacp.stem_config", 0x39, "gestures", 0..15, encoding=ControlEncoding.STEM_MASK, capability=Capability.STEM_CONFIG, internalDependency=true),
+        // Hearing (pinned HearingAidScreen.kt, HearingAidAdjustmentsScreen.kt). Internal until a page
+        // offers them: 0x2C and 0x33 are only ever written together, by AirPodsRepository.setHearingAid.
+        PropertySpec(CommandProperty.HEARING_AID, "aacp.hearing_aid", 0x2c, "hearing", 0..0xFFFF,
+            encoding=ControlEncoding.HEARING_AID_PAIR, capability=Capability.HEARING_AID),
+        PropertySpec(CommandProperty.HEARING_ASSIST_CONFIG, "aacp.hearing_assist_config", 0x33, "hearing", 1..2, bool,
+            ControlEncoding.BOOLEAN_1_2, Capability.HEARING_AID, internalDependency=true),
+        PropertySpec(CommandProperty.HPS_GAIN_SWIPE, "aacp.hps_gain_swipe", 0x2f, "hearing", 1..2, bool,
+            ControlEncoding.BOOLEAN_1_2, Capability.HEARING_AID),
     )
     fun spec(property: CommandProperty) = controls.firstOrNull { it.property == property }
     fun wire(id: Int) = controls.firstOrNull { it.wireId == id }
@@ -110,6 +157,8 @@ fun dev.lelonio.square.airpods.AirPodsState.propertyView(property: CommandProper
         excluded -> PropertyStatus.DEPENDENCY_EXCLUDED
         request != null -> PropertyStatus.PENDING
         observed != null -> PropertyStatus.OBSERVED
+        desired[property]?.takeIf { it.generation == generation }?.status == DesiredStatus.NOT_CONFIRMED ->
+            PropertyStatus.NOT_CONFIRMED
         else -> PropertyStatus.CANDIDATE
     }
     return PropertyView(spec,status,observed,request,when(status) {

@@ -71,13 +71,17 @@ data class AirPodsUiState(
 
 ) {
 
-    val verified get() = pair.verification != null && conformanceMatches
+    // A verification recorded on an older build still counts: the first session after
+    // an OTA re-records it with the current fingerprint (silent re-verification).
+    val verified get() = pair.verification != null
 
     val testAuthorized get() = functionalAuthority?.permits(domain.generation) == true
 
     val surfaceAuthorized get() = (verified && productGatePassed) || testAuthorized
 
-    val homeVisible get() = surfaceAuthorized && enabled && !suppressed && profileConnected && bluetoothGranted
+    // The A2DP profile state never gates AACP surfaces: battery samples and controls
+    // live on the control channel, which is independent of the audio profile.
+    val homeVisible get() = surfaceAuthorized && enabled && !suppressed && bluetoothGranted
 
     val playerVisible get() = surfaceAuthorized && enabled && !suppressed && bluetoothGranted
 

@@ -42,7 +42,7 @@ class AirPodsSelectorAccessibilityTest(private val language:String, private val 
   compose.setContent { SquareTheme(darkTheme=false,amoled=false,systemBars=false) {
    CompositionLocalProvider(LocalDensity provides Density(1f,font)) {
     Column(Modifier.width(360.dp)) {
-     val state=uiFixture().copy(profileConnected=ready)
+     val fixtureState=uiFixture(); val state=fixtureState.copy(profileConnected=false, domain=if(ready) fixtureState.domain else fixtureState.domain.copy(stage=AacpStage.CLOSED))
      if(quick) AirPodsQuickContent(state,writes::add) else ModeControl(state,writes::add,prefix)
     }
    }

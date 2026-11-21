@@ -76,6 +76,8 @@ class AndroidAirPodsMediaRuntime(
                 1, 2 -> core.conversation(true)
                 6, 8, 9 -> core.conversation(false)
             }
+            // Another host took the audio (smart routing): pause exactly like a removal.
+            is AacpEvent.AudioMovedToOtherDevice -> core.ear(EarState.NONE)
             // CA setting is not voice activity. Hardware stem defaults must not be duplicated.
             else -> Unit
         }

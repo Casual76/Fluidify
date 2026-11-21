@@ -62,7 +62,7 @@ class AirPodsI03HostOutcomeTest {
             audioProfileFactory = { profile }, runtimeDispatcher = Dispatchers.Unconfined).also {
             it.store.select(selected).getOrThrow()
             it.store.recordSetup(selected, PairVerification("A3063", Build.FINGERPRINT, 1)).getOrThrow()
-            it.store.transaction { data -> data.copy(start = data.start.copy(enabled = true, consentGeneration = 1)) to Unit }.getOrThrow()
+            it.store.transaction { data -> data.copy(pocMigrationCompleted = true, start = data.start.copy(enabled = true, consentGeneration = 1)) to Unit }.getOrThrow()
         }
     }
 
@@ -90,6 +90,8 @@ class AirPodsI03HostOutcomeTest {
 
     @Test(timeout = 10_000) fun connectAndDisconnectSettingsRequiredReachTheVisibleModelAndSettingsAction() = runBlocking {
         for (operation in AudioOperation.entries) {
+            // Each operation gets a fresh durable store: the previous close() stops controls.
+            context.getSharedPreferences("airpods_runtime_v1", 0).edit().clear().commit()
             val profile = Profile()
             val owner = owner(profile)
             val host = AirPodsHost(context, owner)

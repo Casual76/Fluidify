@@ -144,9 +144,14 @@ class AirPodsHostProtocolUiTest {
             val other = PropertyValue.Eq(false, 10, 20, 30)
             f.receive(HostProtocolWire.EQ_OTHER, CommandProperty.EQ, other)
             assertEquals(CommandOutcome.OBSERVED_OTHER, f.host.state.value.domain.outcomes[CommandProperty.EQ])
+            // Bands are not offered while the equalizer is off; turning it on reveals the received curve.
+            compose.onNodeWithTag("airpods-switch-EQ").performScrollTo().performClick()
+            f.await("fourth EQ payload") { f.transport.commandWrites.size == 4 }
+            assertArrayEquals(HostProtocolWire.bytes("04 00 04 00 63 00 05 00 01 02 0a 14 1e"), f.transport.commandWrites.last().toByteArray())
+            f.sent(CommandProperty.EQ)
             range("airpods-eq-low", 10); range("airpods-eq-mid", 20); range("airpods-eq-high", 30)
-            compose.onNodeWithTag("airpods-switch-EQ").performScrollTo().assertIsOff()
-            assertEquals(3, f.transport.commandWrites.size)
+            compose.onNodeWithTag("airpods-switch-EQ").performScrollTo().assertIsOn()
+            assertEquals(4, f.transport.commandWrites.size)
         }
     }
     @Test fun realWriteFailureWithdrawsIntentAndClosesControlsWithoutEcho() {

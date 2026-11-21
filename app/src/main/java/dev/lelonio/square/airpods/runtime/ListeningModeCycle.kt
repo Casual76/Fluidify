@@ -14,5 +14,5 @@ internal fun AirPodsState.nextTileListeningMode(): ListeningMode? {
     val index = order.indexOf(current)
     return (1 until order.size).asSequence()
         .map { order[(index + it) % order.size] }
-        .firstOrNull { canAttemptWrite(CommandProperty.MODE, PropertyValue.Number(it.wire)) }
+        .firstOrNull { modelOffers(CommandProperty.MODE, PropertyValue.Number(it.wire)) }
 }

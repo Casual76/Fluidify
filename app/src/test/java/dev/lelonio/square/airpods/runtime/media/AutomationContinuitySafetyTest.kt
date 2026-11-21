@@ -340,7 +340,7 @@ class AutomationContinuitySafetyTest {
         assertEquals(listOf(MediaAction.PAUSE, MediaAction.PLAY), r.actions())
     }
 
-    @Test fun pausedBystanderCannotCreateHistoryOrCompensateForMissingOrExpiredReceipt() {
+    @Test fun pausedBystanderCannotCreateHistoryOrCompensateForAnExpiredPauseSlot() {
         for (external in listOf(false, true)) for (expired in listOf(false, true)) {
             val r = Rig(external)
             r.env.autoReceipt = false
@@ -353,7 +353,10 @@ class AutomationContinuitySafetyTest {
                 if (external) r.env.provider.playbackObserved(r.env.sent.single().target, Playback.PAUSED, r.now)
             }
             r.observe(); r.resume()
-            assertEquals(listOf(MediaAction.PAUSE), r.actions())
+            // A dispatched PAUSE followed by PAUSED is ours even without a receipt; once the pause
+            // slot expired (deadline) the late PAUSED is a bystander's and grants nothing.
+            assertEquals("external=$external expired=$expired",
+                if (expired) listOf(MediaAction.PAUSE) else listOf(MediaAction.PAUSE, MediaAction.PLAY), r.actions())
         }
         val env = Env(true, AutomationClock { 100L })
         env.configureExternal(true)

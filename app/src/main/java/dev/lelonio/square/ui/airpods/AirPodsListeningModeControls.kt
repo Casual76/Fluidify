@@ -95,20 +95,28 @@ internal fun AirPodsQuickContent(state: AirPodsUiState, dispatch: (AirPodsUiActi
 /** Both selectors share the current RX or local write queue. */
 @Composable internal fun ModeControl(s: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit, tagPrefix: String,
     modifier: Modifier = Modifier) {
+    // Selection follows an admitted request like upstream (the device corrects it
+    // by RX, and NOT_CONFIRMED expiry rolls it back); a request the device has not
+    // yet reported back is ringed as awaiting instead of posing as settled fact.
     val known = s.domain.requestedOrObserved(CommandProperty.MODE) as? PropertyValue.Number
+    val observed = s.domain.propertyObserved(CommandProperty.MODE)?.value as? PropertyValue.Number
     val effective = s.modes.firstOrNull { s.controlsReady && it.wire == known?.value }
+    val awaiting = effective?.takeIf { it.wire != observed?.value }
     key(s.domain.generation) {
         AirPodsNoiseControl(
             modes = s.modes,
             effective = effective,
             onRequest = { mode ->
                 val value = PropertyValue.Number(mode.wire)
-                if (mode != effective && s.writeAllowed(CommandProperty.MODE, value)) ({
+                // Re-tapping the current mode re-sends it, like upstream: it is the
+                // user's manual retry when a previous write went nowhere.
+                if (s.writeAllowed(CommandProperty.MODE, value)) ({
                     dispatch(AirPodsUiAction.Write(s.domain.generation, CommandProperty.MODE, value))
                 }) else null
             },
             tagPrefix = tagPrefix,
             modifier = modifier,
+            awaiting = awaiting,
         )
     }
 }

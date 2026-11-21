@@ -109,7 +109,10 @@ class AirPodsPairValueStore(private val persistence: PairValuePersistence = obje
             val choices = buildMap {
                 repeat(count()) {
                     val p = CommandProperty.valueOf(input.readUTF()); val v = input.value(); val at = input.readLong()
-                    val status = DesiredStatus.valueOf(input.readUTF())
+                    // Statuses are stored by name. One this build does not know (written by a newer
+                    // build) is read as UNCERTAIN, which never wins effective, instead of failing the pair.
+                    val name = input.readUTF()
+                    val status = DesiredStatus.entries.firstOrNull { it.name == name } ?: DesiredStatus.UNCERTAIN
                     require(valid(p, v, true) && at >= 0 && p !in this)
                     put(p, SavedChoice(v, at, status))
                 }

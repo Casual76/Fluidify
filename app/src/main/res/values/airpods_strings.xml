@@ -98,4 +98,24 @@
     <string name="airpods_feature_setting_device_disconnect">Disconnect/reconnect manual control</string>
     <string name="airpods_feature_setting_extra_qs">Android Quick Settings tile behavior</string>
     <string name="airpods_feature_setting_extra_diagnostics">Diagnostics/log collection</string>
+    <string name="airpods_state_awaiting_confirmation">Waiting for the AirPods to confirm…</string>
+    <string name="airpods_state_not_confirmed">The AirPods didn\'t confirm this change. Tap again to retry.</string>
+    <string name="airpods_state_contradicted">The AirPods reported a different value.</string>
+    <string name="airpods_audio_moved_other_device">Audio moved to another device</string>
+    <string name="airpods_disconnect">Disconnect</string>
+    <string name="airpods_cycle_min_two">Choose at least two modes</string>
+    <string name="airpods_hearing_aid">Hearing aid</string>
+    <string name="airpods_hearing_aid_desc">Use the AirPods as a hearing aid with your hearing test results.</string>
+    <string name="airpods_hps_gain_swipe">Swipe to adjust hearing aid volume</string>
+    <string name="airpods_desc_allow_off">Adds Off to the listening modes. Loud sounds are not reduced while Off is selected.</string>
+    <string name="airpods_desc_ppe">Reduces loud sounds above 82 dBA.</string>
+    <string name="airpods_desc_adaptive_strength">How much outside noise Adaptive mode lets through.</string>
+    <string name="airpods_desc_conversation">Lowers the music and boosts voices when you speak.</string>
+    <string name="airpods_desc_ear_detection">Pauses audio when you take them off and resumes when you put them back.</string>
+    <string name="airpods_desc_auto_connection">Connects to this device automatically.</string>
+    <string name="airpods_desc_one_bud_anc">Allows noise cancellation with only one AirPod in your ear.</string>
+    <string name="airpods_desc_sleep_detection">Pauses media when you fall asleep.</string>
+    <string name="airpods_desc_dynamic_end_of_charge">Learns your routine to charge to an optimized limit and preserve battery life.</string>
+    <string name="airpods_desc_personalized_volume">Adjusts the media volume to your surroundings.</string>
+    <string name="airpods_head_gestures_call_hint">During an incoming call: nod to answer, shake to reject. The nod and shake actions below apply to media when no call is ringing.</string>
 </resources>

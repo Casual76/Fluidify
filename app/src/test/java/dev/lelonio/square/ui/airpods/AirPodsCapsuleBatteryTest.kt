@@ -23,12 +23,14 @@ class AirPodsCapsuleBatteryTest {
         assertEquals(CapsuleBatteryReading(5, 8), battery(8 to 5).capsuleBatteryReading())
         assertNull(battery(4 to null, 2 to null, 8 to null).capsuleBatteryReading())
     }
-    @Test fun staleFutureDisconnectedAndOldGenerationNeverBecomeLiveCharge() {
+    @Test fun staleFutureAndOldGenerationNeverBecomeLiveCharge() {
         val s = battery(4 to 80, 2 to 70, 8 to 5)
         for (invalid in listOf(s.copy(nowMs=301000), s.copy(nowMs=999),
-            s.copy(profileConnected=false), s.copy(domain=s.domain.copy(generation=8)))) {
+            s.copy(domain=s.domain.copy(generation=8)))) {
             assertNull(invalid.capsuleBatteryReading())
         }
+        // An A2DP profile drop alone no longer hides fresh AACP battery samples.
+        assertEquals(CapsuleBatteryReading(70), s.copy(profileConnected=false).capsuleBatteryReading())
     }
     @Test fun staleCaseCannotReplaceFreshEarbudAndOldEarbudCannotLowerMinimum() {
         val s = battery(4 to 80, 2 to 1, 8 to 5)

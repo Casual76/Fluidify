@@ -4,7 +4,7 @@ package dev.lelonio.square.airpods.runtime.android.platform
 import dev.lelonio.square.airpods.runtime.storage.PairAddress
 
 enum class AudioOperation { CONNECT, DISCONNECT }
-enum class AudioOrigin { MANUAL, UNWORN }
+enum class AudioOrigin { MANUAL, UNWORN, INSERTED }
 enum class PlatformFailure {
     STALE, PERMISSION, NOT_SELECTED_BONDED, CALL_OR_ROUTE_MIX, NOT_ENTITLED,
     UNWORN_NOT_AUTHORIZED, BUSY, CLOSED, PLATFORM_UNAVAILABLE, HIDDEN_API_UNAVAILABLE,
@@ -31,6 +31,8 @@ data class AudioAuthorization(
     val noCallOrRouteMix: Boolean,
     val unwornPreference: Boolean = false,
     val validatedNone: Boolean = false,
+    val insertedPreference: Boolean = false,
+    val validatedWorn: Boolean = false,
 )
 
 /** Android implementation must also re-read permission/bond immediately before invocation. */
@@ -110,6 +112,7 @@ class OrdinaryAudioOperations(
                     !a.controllerEntitled -> PlatformFailure.NOT_ENTITLED
                     !a.noCallOrRouteMix -> PlatformFailure.CALL_OR_ROUTE_MIX
                     p.origin == AudioOrigin.UNWORN && (p.operation != AudioOperation.DISCONNECT || !a.unwornPreference || !a.validatedNone) -> PlatformFailure.UNWORN_NOT_AUTHORIZED
+                    p.origin == AudioOrigin.INSERTED && (p.operation != AudioOperation.CONNECT || !a.insertedPreference || !a.validatedWorn) -> PlatformFailure.UNWORN_NOT_AUTHORIZED
                     else -> null
                 }
             }

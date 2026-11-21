@@ -89,28 +89,34 @@ class AirPodsStartGateTest {
         next.exits = first.exits; denied(GateReason.SUPPRESSED, next.attempt())
         next.resume(); assertTrue(next.attempt() is GateResult.Started)
     }
-    @Test fun emptyHistoryAndApi29UncleanMarkerRequireExplicitResume() {
+    @Test fun emptyHistoryAndApi29UncleanMarkerNoLongerSuppress() {
         for (api in listOf(29, 35)) {
             val first = Fixture(api = api); first.prepare(); first.resume(); first.attempt()
             val next = Fixture(first.disk, "epoch-B", api)
-            denied(GateReason.SUPPRESSED, next.attempt())
-            assertEquals(SuppressReason.UNCLEAN_PROCESS, next.store.snapshot().getOrThrow().start.suppressReason)
-            next.resume(); assertTrue(next.attempt() is GateResult.Started)
+            assertTrue("api $api", next.attempt() is GateResult.Started)
+            assertNull(next.store.snapshot().getOrThrow().start.suppressReason)
+            assertFalse(next.store.snapshot().getOrThrow().start.suppressUntilExplicitResume)
         }
     }
-    @Test fun historyErrorWithOldMarkerPersistsConservativeSuppression() {
+    @Test fun historyErrorWithOldMarkerFailsClosedOnlyWhileTheHistoryIsUnreadable() {
         val first = Fixture(); first.prepare(); first.resume(); first.attempt()
         val next = Fixture(first.disk, "epoch-B"); next.exits = ExitHistory.QueryFailed
         denied(GateReason.HISTORY_FAILED, next.attempt())
-        assertTrue(next.store.snapshot().getOrThrow().start.suppressUntilExplicitResume)
-        next.exits = ExitHistory.Available(emptyList()); denied(GateReason.SUPPRESSED, next.attempt())
+        assertFalse("an uncertain marker is not persisted as a suppression", next.store.snapshot().getOrThrow().start.suppressUntilExplicitResume)
+        next.exits = ExitHistory.Available(emptyList()); assertTrue(next.attempt() is GateResult.Started)
     }
-    @Test fun reliableOwnExitExplainsMarkerButOldPidRecordAndOtherProcessDoNot() {
+    @Test fun reliableOwnExitExplainsMarkerButOldPidRecordAndOtherProcessLeaveItUnexplained() {
         for (valid in listOf(true, false)) {
             val first = Fixture(); first.prepare(); first.resume(); first.attempt()
             val next = Fixture(first.disk, "epoch-B")
             next.exits = ExitHistory.Available(listOf(OwnProcessExit(ExitKey(if (valid) 101 else 99, 7, "own.process", 4), ExitCause.RELIABLE_OTHER)))
-            if (valid) assertTrue(next.attempt() is GateResult.Started) else denied(GateReason.SUPPRESSED, next.attempt())
+            // Neither case suppresses (an uncertain exit is not a user stop); only a matching reliable
+            // exit of the marker's own pid explains and concludes the old marker.
+            val generation = next.store.snapshot().getOrThrow().start.consentGeneration
+            assertNull(next.gate.platformAuthorization(first.pair, generation))
+            assertEquals("valid=$valid", valid, next.store.snapshot().getOrThrow().start.marker!!.clean)
+            assertTrue(next.attempt() is GateResult.Started)
+            assertFalse(next.store.snapshot().getOrThrow().start.suppressUntilExplicitResume)
         }
         val f = Fixture(); f.prepare(); f.resume(); f.exits = ExitHistory.Available(listOf(f.userExit(process = "foreign")))
         assertTrue(f.attempt() is GateResult.Started)
@@ -141,17 +147,23 @@ class AirPodsStartGateTest {
         denied(GateReason.PERSISTENCE_FAILED, f.gate.attempt(StartIngress.RESTORE, ConnectionAdmission(f.pair, "c", true, true, true, true, "test-build", 1)))
         assertEquals(0, f.starts)
     }
-    @Test fun disconnectDeduplicatesSameConnectionAndStartFailureDoesNotAutoRetry() {
+    @Test fun disconnectDeduplicatesStartedConnectionButFailedStartDoesNotConsumeTheLink() {
         val f = Fixture(); f.prepare(); f.resume(); f.attempt(); f.disconnect()
         denied(GateReason.DUPLICATE_CONNECTION, f.attempt()); assertTrue(f.attempt("connection-2") is GateResult.Started)
         f.disconnect("connection-2"); f.startAllowed = false
         denied(GateReason.START_FAILED, f.attempt("connection-3"))
-        denied(GateReason.DUPLICATE_CONNECTION, f.attempt("connection-3"))
+        // A failed start does not consume the link: the second attempt reaches owner.start again.
+        denied(GateReason.START_FAILED, f.attempt("connection-3"))
         assertFalse(f.store.snapshot().getOrThrow().start.suppressUntilExplicitResume)
-        assertEquals(3, f.starts)
-        f.startAllowed = true
-        assertTrue("a new real link recovers without new consent", f.attempt("connection-4") is GateResult.Started)
         assertEquals(4, f.starts)
+        f.startAllowed = true
+        assertTrue("the same link recovers without new consent once the owner can start", f.attempt("connection-3") is GateResult.Started)
+        assertEquals(5, f.starts)
+        // Only the successful start consumes it.
+        f.disconnect("connection-3")
+        denied(GateReason.DUPLICATE_CONNECTION, f.attempt("connection-3"))
+        assertTrue(f.attempt("connection-4") is GateResult.Started)
+        assertEquals(6, f.starts)
     }
     @Test fun revokeAndUnpairPersistBeforeCallbackAdmission() {
         val f = Fixture(); f.prepare(); f.resume(); f.attempt(); f.gate.stop(SuppressReason.REVOKED)
@@ -176,9 +188,19 @@ class AirPodsStartGateTest {
             a.copy(bonded = false) to GateReason.NOT_BONDED,
             a.copy(actuallyConnected = false) to GateReason.NOT_CONNECTED,
             a.copy(foregroundStartAllowed = false) to GateReason.FGS_DENIED,
-            a.copy(conformanceBuild = "different-build") to GateReason.SETUP_REQUIRED,
+            a.copy(productConformance = false) to GateReason.SETUP_REQUIRED,
         ).forEach { (admission, reason) -> denied(reason, f.gate.attempt(StartIngress.COMPANION, admission)) }
         assertEquals(0, f.starts)
+    }
+    @Test fun setupRequiredOnlyWithoutAnyVerificationNotForAnOldFingerprint() {
+        val f = Fixture(); f.store.select(f.pair).getOrThrow(); f.resume()
+        denied(GateReason.SETUP_REQUIRED, f.attempt())
+        assertEquals(0, f.starts)
+    }
+    @Test fun verifiedPairWithDifferentFingerprintIsAdmittedForSilentReverification() {
+        val f = Fixture(); f.prepare(); f.resume()
+        val result = f.gate.attempt(StartIngress.COMPANION, f.admission().copy(conformanceBuild = "different-build"))
+        assertTrue(result is GateResult.Started); assertEquals(1, f.starts)
     }
     @Test fun staleDisconnectCannotStopNewConnectionAndResumeAllowsManualRetry() {
         val f = Fixture(); f.prepare(); f.resume(); f.attempt(); val oldGeneration = f.admission().expectedConsentGeneration

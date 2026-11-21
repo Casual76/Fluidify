@@ -113,18 +113,29 @@ class OrdinaryPlatformOperationsTest {
         val f = Assistant()
         assertEquals(PlatformResult.RequestAccepted, f.request()); assertEquals(1, f.calls)
     }
-    @Test fun companionIsNotBlanketBackgroundPermissionOrSyntheticGestureGrant() {
+    @Test fun permissionBondingEntitlementAndPhysicalLongPressRemainMandatory() {
         val denied = listOf(
-            AssistantAuthorization(true, true, true, true, false, false, true, true),
-            AssistantAuthorization(true, true, true, true, false, true, false, true),
-            AssistantAuthorization(true, true, true, true, false, true, true, false),
+            AssistantAuthorization(true, true, true, true, false, true, true, false), // not a physical long press
+            AssistantAuthorization(true, true, true, true, true, true, true, false),  // visible does not replace it
             AssistantAuthorization(false, true, true, true, false, true, true, true),
             AssistantAuthorization(true, false, true, true, false, true, true, true),
             AssistantAuthorization(true, true, false, true, false, true, true, true),
-            AssistantAuthorization(true, true, true, false, false, true, true, true),
         )
         denied.forEach { facts -> val f = Assistant(); f.facts = facts
             assertTrue(f.request() is PlatformResult.Denied); assertEquals(0, f.calls) }
+    }
+    @Test fun physicalLongPressFalseIsDeniedAsNotAuthorized() {
+        val f = Assistant(); f.facts = f.facts.copy(physicalLongPress = false)
+        assertEquals(PlatformResult.Denied(PlatformFailure.BACKGROUND_NOT_AUTHORIZED), f.request())
+        assertEquals(0, f.calls)
+    }
+    @Test fun physicalPressInBackgroundWithoutAssociationOrOptInIsAccepted() {
+        val f = Assistant(); f.facts = f.facts.copy(visible = false, ownAssociation = false, backgroundOptIn = false)
+        assertEquals(PlatformResult.RequestAccepted, f.request()); assertEquals(1, f.calls)
+    }
+    @Test fun callOrRouteMixDoesNotGateAPhysicalPress() {
+        val f = Assistant(); f.facts = f.facts.copy(noCallOrRouteMix = false)
+        assertEquals(PlatformResult.RequestAccepted, f.request()); assertEquals(1, f.calls)
     }
     @Test fun visiblePhysicalActionDoesNotRequireCompanionBackgroundOptIn() {
         val f = Assistant(); f.facts = f.facts.copy(visible = true, ownAssociation = false, backgroundOptIn = false)

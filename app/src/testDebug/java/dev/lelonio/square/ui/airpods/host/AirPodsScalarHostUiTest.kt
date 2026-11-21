@@ -219,7 +219,8 @@ class AirPodsScalarHostUiTest {
                 if (c.needsCapability) {
                     if (c.kind == ScalarEditorKind.MASK) compose.onAllNodesWithTag("airpods-cycle-ANC").assertCountEquals(0)
                     else control(c).assertDoesNotExist()
-                    assertFalse(c.catalogId, f.host.state.value.writeAllowed(c.property, c.requested.number))
+                    // Not offered in the UI, but capability no longer refuses a direct write.
+                    assertTrue(c.catalogId, f.host.state.value.writeAllowed(c.property, c.requested.number))
                 } else control(c).assertExists()
             }
             assertTrue(f.transport.commandWrites.isEmpty())

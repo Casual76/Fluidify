@@ -135,7 +135,7 @@ class AirPodsControllerBootstrapTest {
                 "00 00 04 00 01 00 02 00 00 00 00 00 00 00 00 00",
                 "04 00 04 00 4d 00 d7 00 00 00 00 00 00 00",
                 "04 00 04 00 0f 00 ff ff ff ff",
-                "04 00 04 00 29 00 00 ff ff ff ff ff ff ff",
+                // 0x29 belongs to the second (200ms cadence) burst, never the first.
             ).map { row -> row.split(" ").map { it.toInt(16) } }
             assertEquals(expected, transport.writes.toList())
             assertEquals(1, transport.connects.get())

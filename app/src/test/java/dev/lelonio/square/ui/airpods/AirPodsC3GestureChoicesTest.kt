@@ -40,6 +40,45 @@ class AirPodsC3GestureChoicesTest {
         assertEquals(6, second)
     }
 
+    private val spec = AirPodsProperties.spec(CommandProperty.LISTENING_MODE_CONFIGS)!!
+
+    @Test fun firstTouchFromZeroOrSingleBitNeverShowsOnWithoutDispatch() {
+        for (mask in 0..15) {
+            if (Integer.bitCount(mask) >= 2) continue
+            for (mode in ListeningMode.entries) {
+                val tap = cycleTap(mask, mode, spec::accepts, canBuild = true)
+                val next = mask xor (1 shl (mode.wire - 1))
+                if (Integer.bitCount(next) < 2) {
+                    // Not sendable: remembered locally, never dispatched, and no switch is on for it.
+                    assertEquals(CycleTap.Pending(next), tap)
+                    ListeningMode.entries.forEach { assertFalse(cycleSwitchChecked(next, it, pending = true)) }
+                } else {
+                    assertEquals(CycleTap.Dispatch(next), tap)
+                }
+            }
+        }
+    }
+
+    @Test fun secondModeFromPendingSelectionDispatchesTwoBitMask() {
+        val first = cycleTap(0, ListeningMode.TRANSPARENCY, spec::accepts, canBuild = true) as CycleTap.Pending
+        val second = cycleTap(first.mask, ListeningMode.ANC, spec::accepts, canBuild = true)
+        assertEquals(CycleTap.Dispatch(6), second)
+        assertEquals(2, Integer.bitCount((second as CycleTap.Dispatch).mask))
+        // From a received single-bit mask the second mode also dispatches at two bits.
+        val fromOne = cycleTap(first.mask, ListeningMode.ADAPTIVE, spec::accepts, canBuild = true)
+        assertEquals(2, Integer.bitCount((fromOne as CycleTap.Dispatch).mask))
+    }
+
+    @Test fun pendingBuildIsRefusedWhenControlsAreNotReady() {
+        assertEquals(CycleTap.Ignored, cycleTap(0, ListeningMode.TRANSPARENCY, spec::accepts, canBuild = false))
+    }
+
+    @Test fun reducingBelowTwoIsIgnoredAndReceivedMaskStaysChecked() {
+        assertEquals(CycleTap.Ignored, cycleTap(6, ListeningMode.ANC, spec::accepts, canBuild = true))
+        assertTrue(cycleSwitchChecked(6, ListeningMode.ANC, pending = false))
+        assertFalse(cycleSwitchChecked(6, ListeningMode.ADAPTIVE, pending = false))
+    }
+
     @Test fun localSideActionsAreIndependentOfReceivedMask() {
         val base = uiFixture().copy(gestureAssignments = mapOf(GestureSide.LEFT to GestureAction.DIGITAL_ASSISTANT,
             GestureSide.RIGHT to GestureAction.NOISE_CONTROL))

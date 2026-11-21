@@ -70,7 +70,18 @@ class AirPodsAutomationCoordinatorTest {
     }
     @Test fun initialNoneLeftAndInitialNoneBothDoNotAutoplay() {
         for (end in listOf(EarState.LEFT, EarState.RIGHT, EarState.BOTH)) {
-            val r = Rig(); r.ear(EarState.NONE); r.ear(end)
+            // Cold baseline is NONE, so a first NONE while playing is a (repeated) NONE: it pauses.
+            val r = Rig(); r.ear(EarState.NONE)
+            assertEquals(1, r.count(MediaAction.PAUSE))
+            // The pause was never confirmed, so inserting the buds owns nothing and never plays.
+            r.ear(end)
+            assertEquals(0, r.count(MediaAction.PLAY)); assertFalse(r.status().ownsPause)
+            assertEquals(1, r.sent.size)
+        }
+        // Nothing playing: the same initial NONE and insertion are completely silent.
+        for (end in listOf(EarState.LEFT, EarState.RIGHT, EarState.BOTH)) {
+            val r = Rig(); r.observe { it.copy(playback = Playback.PAUSED) }
+            r.ear(EarState.NONE); r.ear(end)
             assertTrue(r.sent.isEmpty()); assertFalse(r.status().ownsPause)
         }
     }
@@ -90,18 +101,79 @@ class AirPodsAutomationCoordinatorTest {
             assertEquals(1, r.count(MediaAction.PAUSE))
         }
     }
-    @Test fun everyBaselineAndDuplicateIsSilent() {
+    @Test fun wornAndUnknownBaselinesAndDuplicatesAreSilentWhileNonePausesOnlyOnce() {
         for (state in EarState.values()) {
             val r = Rig(); r.ear(state); r.ear(state)
-            assertTrue(r.sent.isEmpty()); assertFalse(r.status().ownsPause)
+            // A (cold or repeated) NONE re-pauses playing media once; the duplicate adds nothing.
+            assertEquals(state.toString(), if (state == EarState.NONE) 1 else 0, r.sent.size)
+            assertEquals(0, r.count(MediaAction.PLAY)); assertFalse(r.status().ownsPause)
         }
     }
-    @Test fun unknownInvalidatesAndNextValidIsBaseline() {
+    @Test fun liveUnknownIsIgnoredAndPreservesBaselineAndResume() {
         for (state in EarState.values().filter { it != EarState.UNKNOWN }) {
             val r = Rig(); r.ear(EarState.BOTH); r.ear(EarState.LEFT); r.confirmPause()
-            r.ear(EarState.UNKNOWN); r.ear(state)
+            r.ear(EarState.UNKNOWN)
+            assertTrue("$state", r.status().ownsPause); assertEquals(EarState.LEFT, r.status().ear)
+            r.ear(state)
+            // Only the real reinsertion releases the pause we own.
+            assertEquals(state.toString(), if (state == EarState.BOTH) 1 else 0, r.count(MediaAction.PLAY))
+        }
+    }
+    @Test fun cachedUnknownInvalidatesAndNextValidIsFreshBaseline() {
+        for (state in EarState.values().filter { it != EarState.UNKNOWN }) {
+            val r = Rig(); r.ear(EarState.BOTH); r.ear(EarState.LEFT); r.confirmPause()
+            r.ear(EarState.UNKNOWN, live = false); r.ear(state)
             assertFalse(r.status().ownsPause); assertEquals(0, r.count(MediaAction.PLAY))
         }
+    }
+    @Test fun unknownBetweenOwnedPauseAndReinsertionDoesNotLoseTheResume() {
+        val r = Rig(); r.ear(EarState.BOTH); r.ear(EarState.NONE); r.confirmPause()
+        r.ear(EarState.UNKNOWN); r.ear(EarState.UNKNOWN); r.ear(EarState.BOTH)
+        assertEquals(listOf(MediaAction.PAUSE, MediaAction.PLAY), r.sent.map { it.action })
+    }
+    @Test fun dispatchedPauseOwnsOnPausedWithoutReceiptAndResumes() {
+        val r = Rig(); r.ear(EarState.BOTH); r.ear(EarState.NONE)
+        r.coordinator.onDispatched(r.sent.last(), accepted = true)
+        // Accepted dispatch alone is not ownership: the target must be observed PAUSED.
+        assertTrue(r.status().pausePending); assertFalse(r.status().ownsPause)
+        r.observe { it.copy(playback = Playback.PAUSED) } // no receipt id at all
+        assertTrue(r.status().ownsPause); assertFalse(r.status().pausePending)
+        r.ear(EarState.BOTH)
+        assertEquals(listOf(MediaAction.PAUSE, MediaAction.PLAY), r.sent.map { it.action })
+    }
+    @Test fun dispatchedPauseWithMatchingReceiptStillOwnsAndWithDifferentReceiptCancelsPending() {
+        val own = Rig(); own.ear(EarState.BOTH); own.ear(EarState.NONE)
+        own.coordinator.onDispatched(own.sent.last(), accepted = true); own.confirmPause()
+        assertTrue(own.status().ownsPause)
+        val other = Rig(); other.ear(EarState.BOTH); other.ear(EarState.NONE)
+        other.coordinator.onDispatched(other.sent.last(), accepted = true)
+        other.observe { it.copy(playback = Playback.PAUSED, observedPauseEffect = other.sent.last().id + 1) }
+        assertFalse(other.status().ownsPause); assertFalse(other.status().pausePending)
+        assertEquals(1, other.cancelledEffects.size)
+        other.ear(EarState.BOTH); assertEquals(0, other.count(MediaAction.PLAY))
+    }
+    @Test fun rejectedDispatchFreesThePauseSlotAndNeverOwns() {
+        val r = Rig(); r.ear(EarState.BOTH); r.ear(EarState.NONE)
+        r.coordinator.onDispatched(r.sent.last(), accepted = false)
+        assertFalse(r.status().pausePending)
+        r.observe { it.copy(playback = Playback.PAUSED) }
+        assertFalse(r.status().ownsPause); r.ear(EarState.BOTH)
+        assertEquals(0, r.count(MediaAction.PLAY))
+    }
+    @Test fun repeatedNoneRepausesPlayingMediaExceptAfterManualTransportWhileOut() {
+        val again = Rig(); again.ear(EarState.BOTH); again.ear(EarState.NONE)
+        again.advance(2_000) // the first pause never landed and its slot expired
+        again.ear(EarState.NONE)
+        assertEquals(2, again.count(MediaAction.PAUSE))
+
+        val r = Rig(); r.ear(EarState.BOTH); r.ear(EarState.NONE); r.confirmPause()
+        r.observe { it.copy(playback = Playback.PLAYING, transportOverride = true) } // user pressed play by hand
+        r.observe { it.copy(transportOverride = false) }
+        r.ear(EarState.NONE)
+        assertEquals("manual play while out of the ear sticks", 1, r.count(MediaAction.PAUSE))
+        r.ear(EarState.BOTH) // wearing them again clears the override
+        r.ear(EarState.NONE)
+        assertEquals(2, r.count(MediaAction.PAUSE))
     }
     @Test fun earThenConversationReinsertionCannotReleaseConversation() {
         val r = Rig(); r.ear(EarState.BOTH); r.ear(EarState.LEFT); r.confirmPause(); r.ca(true)
@@ -199,15 +271,23 @@ class AirPodsAutomationCoordinatorTest {
             assertEquals(0, r.count(MediaAction.PLAY))
         }
     }
-    @Test fun missingPermissionAmbiguousTargetAndWrongRouteProduceNoCommands() {
+    @Test fun missingPermissionAmbiguousTargetAndCallProduceNoCommands() {
         val changes: List<(MediaSnapshot) -> MediaSnapshot> = listOf(
             { it.copy(permitted = false) }, { it.copy(unambiguous = false) },
-            { it.copy(target = null) }, { it.copy(routedToPair = false) },
+            { it.copy(target = null) }, { it.copy(callActive = true) },
         )
         for (change in changes) {
             val r = Rig(); r.observe(change); r.ear(EarState.BOTH); r.ear(EarState.NONE); r.ca(true)
             assertTrue(r.sent.isEmpty())
         }
+    }
+    @Test fun routeToPairIsNotAPlayPauseOrVolumeCondition() {
+        val r = Rig(); r.observe { it.copy(routedToPair = false) }
+        r.ear(EarState.BOTH); r.ear(EarState.NONE); r.confirmPause(); r.ear(EarState.BOTH)
+        assertEquals(listOf(MediaAction.PAUSE, MediaAction.PLAY), r.sent.map { it.action })
+        val d = Rig(duck()); d.observe { it.copy(routedToPair = false) }
+        d.ca(true); d.advance(300)
+        assertEquals(20, d.sent.last().volume)
     }
     @Test fun timeoutAndLatePauseCallbackCannotGrantOwnership() {
         val r = Rig(); r.ear(EarState.BOTH); r.ear(EarState.LEFT)
@@ -233,7 +313,7 @@ class AirPodsAutomationCoordinatorTest {
         val r = Rig(AutomationConfig("pair")); r.ear(EarState.BOTH); r.ear(EarState.NONE); r.ca(true)
         assertTrue(r.sent.isEmpty())
         r.coordinator.configure(enabled(), 1); r.coordinator.onMedia(r.snapshot.copy(sequence = 2))
-        r.ear(EarState.NONE, live = false); r.ear(EarState.NONE)
+        r.ear(EarState.NONE, live = false); r.ear(EarState.BOTH)
         r.coordinator.onConversation(r.session, true, live = false)
         assertTrue(r.sent.isEmpty())
         r.ca(true) // fresh device event, distinct from cached state
@@ -266,35 +346,60 @@ class AirPodsAutomationCoordinatorTest {
         r.advance(50); assertEquals(20, r.sent.last().volume)
         r.confirmVolume(); r.ca(true); r.advance(500); assertEquals(2, r.sent.size)
     }
-    @Test fun manualVolumeDuringDuckAndRestoreCancelsRampAndRestore() {
-        for (restore in listOf(false, true)) {
-            val r = Rig(duck()); r.ca(true); r.advance(300); r.confirmVolume()
-            if (restore) { r.ca(false); r.advance(100) }
-            val count = r.sent.size; val lease = r.status().lease
-            r.observe { it.copy(volume = MediaVolume(33, 100), volumeOverride = true) }
-            r.advance(5_000); r.ca(false)
-            assertEquals(count, r.sent.size); assertFalse(r.status().volumeOwned)
-            assertTrue(lease in r.cancelled)
-        }
+    @Test fun manualVolumeDuringDuckRebasesTheBaselineAndRestoreTargetsTheUserLevel() {
+        val r = Rig(duck()); r.ca(true); r.advance(300); r.confirmVolume()
+        val lease = r.status().lease
+        r.observe { it.copy(volume = MediaVolume(33, 100), volumeOverride = true) }
+        r.observe { it.copy(volumeOverride = false) }
+        // The duck survives: same lease, nothing cancelled, ramp keeps going toward its goal.
+        assertEquals(lease, r.status().lease); assertTrue(r.status().rampActive)
+        r.advance(5_000); assertEquals(listOf(20, 20), r.sent.map { it.volume }); r.confirmVolume()
+        r.ca(false); r.advance(300)
+        assertEquals("restore lands on the level the user chose, never the pre-duck 50", 33, r.sent.last().volume)
+        r.confirmVolume()
+        assertFalse(r.status().volumeOwned); assertFalse(r.status().rampActive)
     }
-    @Test fun matchingLevelAloneCannotRestoreButReceiptAfterConversationEndCan() {
+    @Test fun manualVolumeDuringRestoreFinishesAtTheUserLevelWithoutWritingTheOldBaseline() {
+        val r = Rig(duck()); r.ca(true); r.advance(300); r.confirmVolume()
+        r.ca(false); r.advance(100)
+        val count = r.sent.size
+        r.observe { it.copy(volume = MediaVolume(33, 100), volumeOverride = true) }
+        r.advance(5_000); r.ca(false)
+        assertEquals(count, r.sent.size)
+        assertTrue(r.sent.none { it.volume == 50 })
+        assertFalse(r.status().volumeOwned); assertFalse(r.status().rampActive)
+    }
+    @Test fun explicitManualVolumeLevelRebasesTheDuckThroughTheCoordinator() {
+        val r = Rig(duck()); r.ca(true); r.advance(300); r.confirmVolume()
+        r.coordinator.onManualVolumeLevel(33)
+        r.advance(300); assertEquals(20, r.sent.last().volume); r.confirmVolume()
+        r.ca(false); r.advance(300)
+        assertEquals(33, r.sent.last().volume); r.confirmVolume()
+        assertFalse(r.status().rampActive)
+        // With no duck at all the notice is inert.
+        val q = Rig(duck()); q.coordinator.onManualVolumeLevel(33); assertTrue(q.sent.isEmpty())
+    }
+    @Test fun matchingLevelAloneDoesNotCompleteAStepButItsTimeoutStillRestoresAtConversationEnd() {
         val r = Rig(duck()); r.ca(true); r.advance(300)
         r.observe { it.copy(volume = MediaVolume(20, 100)) }; r.ca(false); r.advance(300)
-        assertEquals(1, r.sent.size); assertFalse(r.status().volumeOwned)
-        r.advance(2_000); r.confirmVolume(); r.advance(300)
-        assertEquals("late receipt cannot resurrect expired ownership", 1, r.sent.size)
+        assertEquals("a matching level without receipt is only a pending read", 1, r.sent.size)
+        assertFalse(r.status().volumeOwned)
+        r.advance(2_000) // step deadline: current level accepted, the restore still happens
+        assertEquals(listOf(20, 50), r.sent.map { it.volume }); r.confirmVolume()
+        assertFalse(r.status().volumeOwned); assertFalse(r.status().rampActive)
         val q = Rig(duck()); q.ca(true); q.advance(150); q.ca(false); q.confirmVolume(); q.advance(1_000)
         assertEquals(listOf(35, 50), q.sent.map { it.volume }); q.confirmVolume()
         assertFalse(q.status().volumeOwned); assertFalse(q.status().rampActive)
     }
-    @Test fun explicitManualVolumeAtRequestedLevelRevokesBeforeDelayedOwnReceipt() {
+    @Test fun explicitManualVolumeAtRequestedLevelRebasesBeforeDelayedOwnReceipt() {
         val r = Rig(duck()); r.ca(true); r.advance(150)
         assertEquals(35, r.sent.single().volume)
         r.observe { it.copy(volume = MediaVolume(35, 100), volumeOverride = true) }
-        assertFalse(r.status().volumeOwned); assertFalse(r.status().rampActive)
+        assertFalse("our write is not acknowledged by a manual move", r.status().volumeOwned)
         r.observe { it.copy(volumeOverride = false) }
         r.confirmVolume(); r.ca(false); r.advance(300)
-        assertEquals("matching manual volume cannot be reclaimed by our late receipt", 1, r.sent.size)
+        assertEquals("the manual level is the new baseline: nothing to restore", 1, r.sent.size)
+        assertFalse(r.status().rampActive)
     }
     @Test fun foreignDuckAndMissingVolumeDoNotAttenuate() {
         for (foreign in listOf(false, true)) {
@@ -361,14 +466,30 @@ class AirPodsAutomationCoordinatorTest {
         assertEquals(0, r.count(MediaAction.PLAY))
     }
 
-    @Test fun volumeTimeoutLateCallbackAndTargetChangeDuringRampDoNotRestore() {
-        for (changeTarget in listOf(false, true)) {
-            val r = Rig(duck()); r.ca(true); r.advance(150)
-            if (changeTarget) r.observe { it.copy(target = it.target!!.copy(sessionId = "new")) }
-            else r.advance(2_000)
-            r.confirmVolume(); r.ca(false); r.advance(1_000)
-            assertEquals(1, r.sent.size); assertFalse(r.status().volumeOwned)
-        }
+    @Test fun expiredDuckStepAcceptsTheCurrentLevelKeepsRampingAndStillRestoresAtConversationEnd() {
+        val r = Rig(duck()); r.ca(true); r.advance(150)
+        assertEquals(35, r.sent.last().volume)
+        r.advance(2_000) // step never acknowledged: accept the current level, ramp continues
+        assertEquals(listOf(35, 20), r.sent.map { it.volume })
+        r.confirmVolume(); r.ca(false); r.advance(1_000)
+        assertEquals(listOf(35, 20, 50), r.sent.map { it.volume })
+        r.confirmVolume()
+        assertFalse(r.status().volumeOwned); assertFalse(r.status().rampActive)
+    }
+    @Test fun targetChangeDuringRampDoesNotRestore() {
+        val r = Rig(duck()); r.ca(true); r.advance(150)
+        r.observe { it.copy(target = it.target!!.copy(sessionId = "new")) }
+        r.confirmVolume(); r.ca(false); r.advance(1_000)
+        assertEquals(1, r.sent.size); assertFalse(r.status().volumeOwned)
+    }
+    @Test fun pendingPauseDeadlineDropsOnlyThePauseSlotAndLeavesTheDuckAlone() {
+        val r = Rig(duck().copy(conversationPause = true)); r.ca(true); r.advance(300); r.confirmVolume()
+        assertTrue(r.status().pausePending)
+        r.advance(2_000) // the PAUSE never landed
+        assertFalse(r.status().pausePending); assertTrue(r.status().volumeOwned)
+        r.ca(false); r.advance(300)
+        assertEquals(50, r.sent.last().volume); r.confirmVolume()
+        assertFalse(r.status().volumeOwned); assertFalse(r.status().rampActive)
     }
 
     @Test fun lateInputCallbacksAfterReconfigureSameConnectionAreRejected() {
@@ -382,7 +503,7 @@ class AirPodsAutomationCoordinatorTest {
         assertTrue(r.sent.isEmpty()); assertNull(r.status().ear)
         assertTrue(r.status().reasons.isEmpty())
     }
-    @Test fun earCacheUnknownAndBaselinePreserveOnlyConversationOrigin() {
+    @Test fun earCacheInvalidatesEarOriginButLiveUnknownAndBaselinePreserveEverything() {
         for (caFirst in listOf(false, true)) for (owned in listOf(false, true))
             for (cached in listOf(false, true)) {
                 val r = Rig(); r.ear(EarState.BOTH)
@@ -390,12 +511,15 @@ class AirPodsAutomationCoordinatorTest {
                 else { r.ear(EarState.NONE); r.ca(true) }
                 if (owned) r.confirmPause()
                 r.ear(if (cached) EarState.NONE else EarState.UNKNOWN, live = !cached)
-                r.ear(EarState.BOTH) // fresh baseline, never a release
-                assertEquals(caFirst && !owned, r.status().pausePending)
-                assertEquals(caFirst && owned, r.status().ownsPause)
+                r.ear(EarState.BOTH) // never a release that emits PLAY by itself
+                // A cached sample invalidates the EAR-origin request only; a live UNKNOWN is a glitch
+                // frame and is ignored entirely, so even an EAR-origin pause/resume survives it.
+                val preserved = caFirst || !cached
+                assertEquals(preserved && !owned, r.status().pausePending)
+                assertEquals(preserved && owned, r.status().ownsPause)
                 if (!owned) r.confirmPause()
                 r.ca(false)
-                assertEquals(if (caFirst) 1 else 0, r.count(MediaAction.PLAY))
+                assertEquals(if (preserved) 1 else 0, r.count(MediaAction.PLAY))
             }
     }
 
@@ -405,11 +529,15 @@ class AirPodsAutomationCoordinatorTest {
         r.ear(EarState.NONE, live = false)
         r.ear(EarState.BOTH); r.ca(false)
         assertEquals(1, r.count(MediaAction.PLAY))
+        // A cached sample is no baseline: the next live sample starts cold from NONE, so a live NONE
+        // is a repeated NONE (pauses playing media) and nothing is ever resumed without an owned pause.
         val q = Rig(); q.ear(EarState.BOTH, live = false); q.ear(EarState.NONE)
-        assertTrue(q.sent.isEmpty())
+        assertEquals(listOf(MediaAction.PAUSE), q.sent.map { it.action })
+        val w = Rig(); w.ear(EarState.BOTH, live = false); w.ear(EarState.BOTH)
+        assertTrue(w.sent.isEmpty())
     }
 
-    @Test fun earInvalidationCancelsQueuedEarResumeButPreservesConversationResume() {
+    @Test fun earCacheInvalidationCancelsQueuedEarResumeButPreservesConversationResume() {
         for (caOrigin in listOf(false, true)) {
             val r = Rig(); r.ear(EarState.BOTH)
             if (caOrigin) r.ca(true) else r.ear(EarState.NONE)
@@ -417,7 +545,9 @@ class AirPodsAutomationCoordinatorTest {
             if (caOrigin) r.ca(false) else r.ear(EarState.BOTH)
             val play = r.sent.last()
             assertEquals(MediaAction.PLAY, play.action)
-            r.ear(EarState.UNKNOWN)
+            r.ear(EarState.UNKNOWN) // live glitch frame: ignored, cancels nothing
+            assertFalse(play in r.cancelledEffects)
+            r.ear(EarState.UNKNOWN, live = false) // cache/non-live input invalidates the ear-dependent resume
             assertEquals(!caOrigin, play in r.cancelledEffects)
         }
     }

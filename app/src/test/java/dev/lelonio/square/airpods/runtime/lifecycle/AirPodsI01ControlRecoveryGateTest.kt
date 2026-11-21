@@ -126,13 +126,19 @@ class AirPodsI01ControlRecoveryGateTest {
         }
     }
 
-    @Test fun schedulingFailureIsRecoverableButNotARetryLoopOnTheSameOpening() {
+    @Test fun schedulingFailureDoesNotConsumeTheLinkSoTheSameLinkIsRetryable() {
         val f = Fixture(); f.prepare(); f.schedule = false
         assertEquals(GateResult.Denied(GateReason.START_FAILED), f.open(epoch = 3))
         assertFalse(f.state().suppressUntilExplicitResume); assertTrue(f.state().marker!!.clean)
-        assertEquals(GateResult.Denied(GateReason.DUPLICATE_CONNECTION), f.open(epoch = 3))
+        // The link ordinal is consumed only by a successful start: the same link reaches the owner again.
+        assertEquals(GateResult.Denied(GateReason.START_FAILED), f.open(epoch = 3))
+        assertEquals(2, f.starts)
         f.schedule = true
-        assertTrue(f.open(epoch = 4) is GateResult.Started); assertEquals(2, f.starts)
+        assertTrue(f.open(epoch = 4) is GateResult.Started); assertEquals(3, f.starts)
+        // Once started, that link is consumed for real.
+        f.gate.disconnected(f.admission().connectionId, f.admission().expectedConsentGeneration)
+        assertEquals(GateResult.Denied(GateReason.DUPLICATE_CONNECTION), f.open(epoch = 5))
+        assertEquals(3, f.starts)
     }
 
     @Test fun retryStillRequiresCurrentPermissionHistoryConsentAndForegroundEligibility() {
@@ -156,13 +162,15 @@ class AirPodsI01ControlRecoveryGateTest {
         assertEquals(first.state().consentGeneration, next.state().consentGeneration)
     }
 
-    @Test fun failedMarkerConclusionDoesNotBecomePermissionToRecover() {
+    @Test fun failedMarkerConclusionLatchesTheProcessButAnUncertainMarkerNoLongerSuppressesTheNextOne() {
         val first = Fixture(); first.prepare(); val a = first.start(); first.disk.failCommit = true
         assertEquals(GateResult.Denied(GateReason.PERSISTENCE_FAILED), first.gate.connectionFailed(a))
         first.disk.failCommit = false
+        // The process that could not conclude its marker stays latched in memory...
         assertEquals(GateResult.Denied(GateReason.SUPPRESSED), first.open())
+        // ...but an unexplained unclean marker is not a user stop: a new process starts again.
         val next = Fixture(first.disk, "i01-second")
-        assertEquals(GateResult.Denied(GateReason.SUPPRESSED), next.open())
-        assertEquals(SuppressReason.UNCLEAN_PROCESS, next.state().suppressReason)
+        assertTrue(next.open() is GateResult.Started)
+        assertNull(next.state().suppressReason); assertFalse(next.state().suppressUntilExplicitResume)
     }
 }

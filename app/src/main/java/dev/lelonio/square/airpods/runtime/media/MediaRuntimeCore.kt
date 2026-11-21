@@ -21,7 +21,7 @@ data class MediaCandidate(
     val permitted: Boolean,
     val routedToPair: Boolean,
     val callActive: Boolean,
-    val foreignDuckActive: Boolean = true,
+    val foreignDuckActive: Boolean = false,
     val transportRevision: Long = 0,
     val volumeRevision: Long = 0,
     // Only a corroborated origin receipt, never inferred from matching state/value.
@@ -133,8 +133,12 @@ class MediaRuntimeCore(
         return selectMediaCandidate(candidates, previous?.target)
     }
 
+    // A2DP route proof is not a play/pause condition for the local candidate
+    // (LibrePods sends the global media key); for an external candidate,
+    // routedToPair carries the C6 provider's validity verdict, not a route claim.
+    // it remains enforced by the runtime for destructive route operations (disconnect).
     private fun accessible(c: MediaCandidate): Boolean = authority() && c.permitted &&
-        c.routedToPair && !c.callActive && (visible || settings.fluidifyBackgroundEnabled) &&
+        (c.local || c.routedToPair || c.routeEvidence != RouteEvidence.UNAVAILABLE) && !c.callActive && (visible || settings.fluidifyBackgroundEnabled) &&
         (if (c.local) true else
             settings.automationsEnabled && settings.otherAppsEnabled && c.evidence == MediaEvidence.EXTERNAL_BEST_EFFORT)
 
@@ -160,7 +164,7 @@ class MediaRuntimeCore(
             c != null, c?.routedToPair == true, c?.callActive == true,
             old?.target == c?.target && old?.transportRevision != c?.transportRevision,
             old?.target == c?.target && old?.volumeRevision != c?.volumeRevision,
-            c?.observedPauseEffect, c?.observedVolumeEffect, c?.foreignDuckActive ?: true,
+            c?.observedPauseEffect, c?.observedVolumeEffect, c?.foreignDuckActive ?: false,
             c?.evidence ?: MediaEvidence.LOCAL_CORROBORATED,
             settings.automationsEnabled && settings.otherAppsEnabled,
             c?.correlatedPauseEffect, c?.correlatedVolumeEffect,
@@ -210,15 +214,20 @@ class MediaRuntimeCore(
         val input = coordinator.status().inputEpoch
         trace.observe(QualificationEvent(QualificationStep.MEDIA_REQUEST, QualificationPhase.REQUESTED,
             effect.session.generation, sequence = effect.lease, token = effect.id, value = effect.action.ordinal))
+        // Synchronous pre-validation: submit() must not claim acceptance for an effect
+        // already known dead (upstream dispatches synchronously and reports the truth).
+        val statusNow = coordinator.status()
+        if (!authority() || effect.session != session || effect.lease != statusNow.lease ||
+            effect.lease <= cancelledThrough || effect.id in cancelledEffects) return false
         queue.post {
             if (!authority() || captured != epoch || effect.lease <= cancelledThrough || effect.id in cancelledEffects ||
                 effect.session != session || effect.lease != coordinator.status().lease ||
-                input != coordinator.status().inputEpoch) return@post
+                input != coordinator.status().inputEpoch) { coordinator.onDispatched(effect, false, input); return@post }
             val c = refresh(input)
             // refresh may revoke the lease on account/route/permission/target/override change.
             if (c == null || !allowed(c) || c.target != effect.target ||
-                effect.lease != coordinator.status().lease || effect.id in cancelledEffects) return@post
-            if (effect.action == MediaAction.SET_VOLUME && c.foreignDuckActive) return@post
+                effect.lease != coordinator.status().lease || effect.id in cancelledEffects) { coordinator.onDispatched(effect, false, input); return@post }
+            if (effect.action == MediaAction.SET_VOLUME && c.foreignDuckActive) { coordinator.onDispatched(effect, false, input); return@post }
             val accepted = environment.execute(effect.target, effect.action, effect.volume, effect.id)
             trace.observe(QualificationEvent(QualificationStep.MEDIA_RESULT, QualificationPhase.UNCONFIRMED,
                 effect.session.generation, sequence = effect.lease, token = effect.id,
@@ -248,15 +257,18 @@ class MediaRuntimeCore(
      */
     fun manualVolume(value: Int, stillCurrent: () -> Boolean = { true }): Boolean {
         val admitted = session ?: return false
-        if (!visible || !stillCurrent()) return false
+        // No visibility requirement: tile/quick-settings volume is a background user
+        // action too. The caller's stillCurrent guard remains the authority fence.
+        if (!stillCurrent()) return false
         val before = phoneVolume() ?: return false
         if (value !in 0..before.volume.maximum) return false
         revokeManual()
         val now = phoneVolume()
-        val accepted = authority() && session == admitted && visible && stillCurrent() && now != null &&
+        val accepted = authority() && session == admitted && stillCurrent() && now != null &&
             now.domain == before.domain && now.volume.maximum == before.volume.maximum &&
             value in 0..now.volume.maximum &&
             runCatching { environment.writePhoneVolume(now, value) }.getOrDefault(false)
+        if (accepted) coordinator.onManualVolumeLevel(value)
         // Publish a fresh platform read, including after a rejected/failed set. No callback echo.
         publishPhoneVolume()
         trace.observe(QualificationEvent(QualificationStep.MEDIA_RESULT, QualificationPhase.UNCONFIRMED,
@@ -278,9 +290,12 @@ class MediaRuntimeCore(
     }
 
     private fun revokeManual() {
-        coordinator.onManualIntent()
+        // Manual volume revokes pause transport authority, but the duck keeps living:
+        // the next snapshot rebases it onto the level the user just chose, so the
+        // conversation-end restore targets that level instead of orphaning volume.
+        coordinator.onManualTransportIntent()
         publishRetention()
-        tick?.close(); tick = null
+        scheduleTick()
     }
 
     fun stop() {

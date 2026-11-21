@@ -23,11 +23,11 @@ class AirPodsUiModelTest {
             assertEquals(listOf(GestureAction.NONE, GestureAction.PLAY_PAUSE, GestureAction.NEXT, GestureAction.PREVIOUS), gestureOptions(it))
         }
     }
-    @Test fun uiFreshBatteryRequiresCurrentConnectionAndStrictAge() {
+    @Test fun uiFreshBatteryRequiresLiveSessionAndStrictAgeNotAudioProfile() {
         val s = uiFixture()
         assertEquals(80, s.freshBattery(4)?.percent)
         assertNull(s.freshBattery(2)); assertNull(s.freshBattery(8))
-        assertNull(s.copy(profileConnected=false).freshBattery(4))
+        assertEquals(80, s.copy(profileConnected=false).freshBattery(4)?.percent) // AACP samples outlive an A2DP drop
         assertNull(s.copy(nowMs=301000).freshBattery(4))
         assertEquals(80, s.copy(nowMs=300999).freshBattery(4)?.percent)
         assertNull(s.copy(domain=s.domain.copy(generation=8)).freshBattery(4))
@@ -40,7 +40,9 @@ class AirPodsUiModelTest {
     }
     @Test fun allVisibilityGatesAreRequired() {
         val s=uiFixture();assertTrue(s.homeVisible)
-        listOf(s.copy(enabled=false),s.copy(suppressed=true),s.copy(profileConnected=false),s.copy(bluetoothGranted=false),s.copy(productGatePassed=false),s.copy(conformanceMatches=false),s.copy(pair=PairSettings())).forEach {assertFalse(it.homeVisible)}
+        listOf(s.copy(enabled=false),s.copy(suppressed=true),s.copy(bluetoothGranted=false),s.copy(productGatePassed=false),s.copy(pair=PairSettings())).forEach {assertFalse(it.homeVisible)}
+        assertTrue(s.copy(profileConnected=false).homeVisible) // AACP surfaces ignore the A2DP profile
+        assertTrue(s.copy(conformanceMatches=false).homeVisible) // old-build verification re-verifies silently
         assertTrue(s.copy(profileConnected=false).playerVisible)
     }
     @Test fun socketErrorKeepsAudioCapsuleButDisablesCommands() {
@@ -76,11 +78,11 @@ class AirPodsUiModelTest {
         val address=PairAddress("00:11:22:33:44:55")
         val data=AirPodsRuntimeData(selectedPair=address,pairs=mapOf(address to uiFixture().pair))
         val s=mapAirPodsUiState(uiFixture().domain,data,true,true,false,"different",1001)
-        assertFalse(s.enabled);assertFalse(s.verified);assertFalse(s.pair.host.otherAppsEnabled)
+        assertFalse(s.enabled);assertTrue(s.verified);assertFalse(s.conformanceMatches);assertFalse(s.pair.host.otherAppsEnabled)
         assertTrue(s.pair.headPacketAlternate)
     }
     @Test fun registryHasAll35TitlesAndMasksRequireTwoModes() {
-        assertEquals(35,AirPodsFeatures.includedIds.size)
+        assertEquals(37,AirPodsFeatures.includedIds.size)
         assertEquals(AirPodsFeatures.includedIds,featureTitles.keys)
         val cycle=AirPodsProperties.spec(CommandProperty.LISTENING_MODE_CONFIGS)!!
         assertFalse(cycle.accepts(1));assertTrue(cycle.accepts(3))

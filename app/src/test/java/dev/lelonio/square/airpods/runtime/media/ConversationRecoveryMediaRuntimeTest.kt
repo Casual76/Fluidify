@@ -265,17 +265,21 @@ class ConversationRecoveryMediaRuntimeTest {
         }
     }
 
-    @Test fun pendingWriteDirectionChangeDoesNotExtendReceiptDeadline() {
+    @Test fun pendingWriteDirectionChangeDoesNotExtendTheStepDeadlineAndTheOriginalLevelIsStillRestored() {
         for (external in listOf(false, true)) {
             val r = Rig(external, pause = false)
             r.env.deferVolumeReceipt = true
             r.conversation(true); r.step(150)
             r.conversation(false); r.step(1_900)
-            r.conversation(true); r.step(100)
+            r.conversation(true); r.step(100) // the ORIGINAL deadline expires here: the ramp goes on
+            assertEquals("external=$external", 35, r.volumes().first())
+            assertEquals("the expired step is accepted and the ramp continues", 2, r.volumes().size)
             r.env.completeVolume(); r.queue.drain()
-            r.conversation(false); r.step(300)
-            assertEquals(listOf(35), r.volumes())
-            assertTrue(r.queue.timers.isEmpty())
+            r.conversation(false); r.step(300); r.step(2_000)
+            // Restore at conversation end is unconditional: the pre-duck level comes back.
+            assertEquals("external=$external", 50, r.env.main.volume!!.current)
+            r.env.completeVolume(); r.queue.drain(); r.env.completeVolume(); r.queue.drain(); r.step(300)
+            r.step(300); r.step(2_000) // a clobbered restore receipt still closes the duck at its deadline
         }
     }
 
@@ -374,15 +378,19 @@ class ConversationRecoveryMediaRuntimeTest {
         }
     }
 
-    @Test fun manualTransportDoesNotExtendPendingVolumeReceiptDeadline() {
+    @Test fun manualTransportDoesNotExtendPendingStepDeadlineAndRestoreStillHappensAtItsExpiry() {
         for (external in listOf(false, true)) {
             val r = Rig(external, pause = false)
             r.env.deferVolumeReceipt = true
             r.conversation(true); r.step(150)
             assertTrue(r.core.gesture(AirPodsMediaGesture.PAUSE)); r.queue.drain()
             r.conversation(false); r.step(2_000)
-            r.env.completeVolume(); r.queue.drain(); r.step(300)
-            assertEquals(listOf(35), r.volumes())
+            r.env.completeVolume(); r.queue.drain()
+            if (!external && r.env.pendingVolumes.isNotEmpty()) { r.env.completeVolume(); r.queue.drain() }
+            r.step(300)
+            // Local: the step expires, is accepted and the restore proceeds. The external C6 provider
+            // is invalidated by the manual transport, which revokes media authority altogether.
+            assertEquals("external=$external", if (external) listOf(35) else listOf(35, 50), r.volumes())
             assertEquals(0, r.plays())
             assertNull(r.env.retained)
             assertTrue(r.queue.timers.isEmpty())

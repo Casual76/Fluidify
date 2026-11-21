@@ -101,6 +101,13 @@ class CompanionObservationPolicy(private val apiLevel: Int, private val ownPacka
     }
 
     /** Controller calls after durable explicit selection and confirmed local stop. */
+    /** Explicit re-selection of the already selected pair is a new setup confirmation:
+     * with no live registration the remembered handle may be stale (the OS can hand
+     * out a fresh association id), so the next forget must re-query, not trust it. */
+    @Synchronized fun explicitReselectionConfirmed() {
+        if (registration == null) owned = null
+    }
+
     @Synchronized fun explicitSetupSelected() {
         check(registration == null)
         owned = null

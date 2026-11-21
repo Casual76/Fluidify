@@ -19,6 +19,7 @@ import dev.antigravity.fluidengine.ui.fluid.FluidToggleRow
 import dev.antigravity.fluidengine.ui.theme.FluidListDivider
 import dev.lelonio.square.R
 import dev.lelonio.square.airpods.CommandProperty
+import dev.lelonio.square.airpods.protocol.AirPodsDisplayDefaults
 import dev.lelonio.square.airpods.protocol.AirPodsProperties
 import dev.lelonio.square.airpods.protocol.ControlEncoding
 import dev.lelonio.square.airpods.protocol.PropertySpec
@@ -39,13 +40,28 @@ internal fun AirPodsUiState.equalizerWrite(
         AirPodsUiAction.Write(domain.generation, CommandProperty.EQ, next) else null
 }
 
+internal fun PropertyValue.Eq.isFlat(): Boolean = low == 50 && mid == 50 && high == 50
+
+/** With the equalizer off the bands do nothing on the device, so they are not offered (upstream does the same). */
+internal fun equalizerBandsEnabled(editable: Boolean, eq: PropertyValue.Eq): Boolean = editable && eq.enabled
+
+/** Resetting an already flat curve would be a silent no-op, so the button is off there. */
+internal fun equalizerResetEnabled(editable: Boolean, eq: PropertyValue.Eq, knownFlat: Boolean = true): Boolean =
+    editable && (!eq.isFlat() || !knownFlat)
+
 @Composable internal fun EqEditor(s: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {
-    val eq = s.domain.propertyEffective(CommandProperty.EQ)?.value as? PropertyValue.Eq ?: return
+    val effectiveEq = s.domain.propertyEffective(CommandProperty.EQ)
+    val eq = effectiveEq?.value as? PropertyValue.Eq ?: return
+    // Only this session's request or RX can make an explicit reset redundant; a saved
+    // flat curve is not device truth yet, so the tap must still write (preserving enablement).
+    val curveKnown = s.domain.requestedOrObserved(CommandProperty.EQ) ==
+        eq.copy(low = 50, mid = 50, high = 50)
     // Dispose pending debounce on session replacement, even with identical values.
     key(s.domain.generation) {
         val current by rememberUpdatedState(s)
         val send by rememberUpdatedState(dispatch)
         val editable = s.writeAllowed(CommandProperty.EQ, eq)
+        val bandsEnabled = equalizerBandsEnabled(editable, eq)
         val write: ((PropertyValue.Eq) -> PropertyValue.Eq) -> Unit = { change ->
             current.equalizerWrite(change = change)?.let(send)
         }
@@ -56,28 +72,30 @@ internal fun AirPodsUiState.equalizerWrite(
         )
         FluidListDivider()
         AirPodsLiveSlider(eq.low, { value -> write { it.copy(low = value) } },
-            Modifier.testTag("airpods-eq-low"), debounceMs = 100L, enabled = editable,
+            Modifier.testTag("airpods-eq-low"), debounceMs = 100L, enabled = bandsEnabled,
             title = stringResource(R.string.airpods_ui_low))
         AirPodsLiveSlider(eq.mid, { value -> write { it.copy(mid = value) } },
-            Modifier.testTag("airpods-eq-mid"), debounceMs = 100L, enabled = editable,
+            Modifier.testTag("airpods-eq-mid"), debounceMs = 100L, enabled = bandsEnabled,
             title = stringResource(R.string.airpods_ui_mid))
         AirPodsLiveSlider(eq.high, { value -> write { it.copy(high = value) } },
-            Modifier.testTag("airpods-eq-high"), debounceMs = 100L, enabled = editable,
+            Modifier.testTag("airpods-eq-high"), debounceMs = 100L, enabled = bandsEnabled,
             title = stringResource(R.string.airpods_ui_high))
         PaneBlock {
             FluidButton(stringResource(R.string.airpods_cr_reset),
                 { current.equalizerWrite(explicitReset = true) { it.copy(low = 50, mid = 50, high = 50) }?.let(send) },
-                enabled = editable, style = FluidButtonStyle.Tinted,
+                enabled = equalizerResetEnabled(editable, eq, curveKnown), style = FluidButtonStyle.Tinted,
                 modifier = Modifier.testTag("airpods-eq-reset"))
         }
     }
 }
 
 @Composable internal fun ColumnScope.EqualizerPage(state: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {
+    SettingsPageFailure(state, AirPodsSettingsPage.Equalizer)
     Pane { EqEditor(state, dispatch) }
 }
 
 @Composable internal fun ColumnScope.ControlsPage(state: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {
+    SettingsPageFailure(state, AirPodsSettingsPage.Controls)
     key(state.domain.generation) {
         // AccessibilitySettingsScreen order, excluding ATT-only settings.
         val order = listOf(CommandProperty.DOUBLE_CLICK_INTERVAL, CommandProperty.CLICK_HOLD_INTERVAL,
@@ -96,7 +114,10 @@ internal fun AirPodsUiState.equalizerWrite(
 ) {
     val current by rememberUpdatedState(state)
     val send by rememberUpdatedState(dispatch)
-    val value = effectiveNumber(state, spec.property) ?: return
+    // Never read this session: switches render off/unknown, sliders and choices sit at
+    // the display default position — the control must not silently disappear.
+    val value = effectiveNumber(state, spec.property) ?: if (spec.encoding == ControlEncoding.BOOLEAN_1_2) 2
+        else (AirPodsDisplayDefaults.value(spec.property) as? PropertyValue.Number)?.value ?: return
     val title = stringResource(featureTitles.getValue(spec.catalogId))
     val write: (Int) -> Unit = { number ->
         val next = PropertyValue.Number(number)

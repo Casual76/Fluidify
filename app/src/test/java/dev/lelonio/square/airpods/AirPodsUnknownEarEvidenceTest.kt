@@ -54,12 +54,25 @@ class AirPodsUnknownEarEvidenceTest {
         assertNull(repository.state.value.ears)
     }
 
-    @Test fun rejectedPaddingCannotBePromotedFromItsFirstByteToOn() = session { repository, generation, rows ->
+    /** FIX-05 reverses the former rule: pinned AACPManager keeps all four bytes and every reader
+     * looks at byte 0, so dirty padding no longer hides an ON the device did send. */
+    @Test fun dirtyPaddingIsReadFromTheValueByteLikeUpstream() = session { repository, generation, rows ->
         val event = AacpCodec.decodeSdu(packet(1, third = 255)).single()
-        assertTrue(event is AacpEvent.Unknown)
+        assertEquals(AacpEvent.Property(CommandProperty.EAR_DETECTION_CONFIG, PropertyValue.Number(1)), event)
         repository.receive(generation, event)
-        unknown(rx(rows).single(), listOf(1, 0x0a, 1, 0, 255, 0))
-        assertNull(repository.state.value.properties[CommandProperty.EAR_DETECTION_CONFIG])
+        val row = rx(rows).single()
+        assertEquals(9, row.flags); assertEquals(1, row.value); assertTrue(row.values.isEmpty())
+        assertEquals(PropertyValue.Number(1), repository.state.value.properties[CommandProperty.EAR_DETECTION_CONFIG]?.value)
+    }
+
+    @Test fun zeroOneEncodingOfEarConfigurationIsObserved() = session { repository, generation, rows ->
+        for ((raw, expected) in listOf(0 to 2, 1 to 1)) {
+            val event = AacpCodec.decodeSdu(packet(raw)).single()
+            assertEquals(AacpEvent.Property(CommandProperty.EAR_DETECTION_CONFIG, PropertyValue.Number(expected)), event)
+            repository.receive(generation, event)
+            assertEquals(PropertyValue.Number(expected), repository.state.value.properties[CommandProperty.EAR_DETECTION_CONFIG]?.value)
+        }
+        assertTrue(rx(rows).all { it.flags == 9 && it.values.isEmpty() })
     }
 
     @Test fun otherControlIdentifiersNeverExportTheirPayload() = session { repository, generation, rows ->

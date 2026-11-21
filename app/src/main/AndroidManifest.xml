@@ -25,6 +25,8 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_CONNECTED_DEVICE" />
     <uses-permission android:name="android.permission.REQUEST_OBSERVE_COMPANION_DEVICE_PRESENCE" />
     <uses-permission android:name="android.permission.REQUEST_COMPANION_START_FOREGROUND_SERVICES_FROM_BACKGROUND" />
+    <!-- AirPods controls return after reboot/app update only for an explicitly enabled pair. -->
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
     <!-- Devices without companion setup retain the explicit/manual AirPods path. -->
     <uses-feature android:name="android.software.companion_device_setup" android:required="false" />
     <!-- Downloads keep running with the app in the background; see DownloadService. -->
@@ -77,6 +79,15 @@
             android:name=".airpods.runtime.android.AirPodsControlService"
             android:exported="false"
             android:foregroundServiceType="connectedDevice" />
+        <receiver
+            android:name=".airpods.runtime.android.AirPodsBootReceiver"
+            android:enabled="true"
+            android:exported="false">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
         <service
             android:name=".airpods.runtime.android.AirPodsCompanionService"
             tools:targetApi="31"

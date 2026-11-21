@@ -135,17 +135,29 @@ class Corrective8MediaRuntimeTest {
         }
     }
 
-    @Test fun noReplayOfRemovalBeforePlaybackOrUnknownSensorBaseline() {
+    @Test fun noReplayOfRemovalBeforePlaybackButAFreshNoneActsAndLiveUnknownIsIgnored() {
         for (external in listOf(false, true)) {
             val r = Rig(external, playing = false)
             r.core.ear(EarState.BOTH); r.core.ear(EarState.NONE); r.queue.drain()
             r.env.startPlayback(); r.queue.drain()
-            r.core.ear(EarState.NONE); r.queue.drain()
-            assertTrue(r.actions().isEmpty())
-            r.core.ear(EarState.UNKNOWN); r.core.ear(EarState.LEFT); r.queue.drain()
-            assertTrue(r.actions().isEmpty())
-            r.core.ear(EarState.NONE); r.queue.drain()
-            assertEquals(listOf(MediaAction.PAUSE), r.actions())
+            assertTrue("starting playback never replays the earlier removal", r.actions().isEmpty())
+            if (external) {
+                // The C6 provider sees playback that started while the buds were out as a manual play:
+                // the repeated NONE must not undo it; wearing them again clears that override.
+                r.core.ear(EarState.NONE); r.queue.drain()
+                assertTrue(r.actions().isEmpty())
+                r.core.ear(EarState.UNKNOWN); r.core.ear(EarState.LEFT); r.queue.drain()
+                assertTrue(r.actions().isEmpty())
+                r.core.ear(EarState.NONE); r.queue.drain()
+                assertEquals(listOf(MediaAction.PAUSE), r.actions())
+            } else {
+                // A fresh live NONE while playing is a repeated NONE: it re-pauses (upstream checks every packet).
+                r.core.ear(EarState.NONE); r.queue.drain()
+                assertEquals(listOf(MediaAction.PAUSE), r.actions())
+                // Live UNKNOWN is ignored (baseline and resume preserved): the reinsertion resumes our pause.
+                r.core.ear(EarState.UNKNOWN); r.core.ear(EarState.LEFT); r.queue.drain()
+                assertEquals(listOf(MediaAction.PAUSE, MediaAction.PLAY), r.actions())
+            }
         }
     }
 
@@ -208,7 +220,7 @@ class Corrective8MediaRuntimeTest {
         }
     }
 
-    @Test fun hiddenRemovalAndQueuedEffectsCannotRunAfterForegroundRecovery() {
+    @Test fun hiddenRemovalAndQueuedEffectsCannotRunAfterForegroundRecoveryButAFreshNoneActs() {
         for (external in listOf(false, true)) for (queued in listOf(false, true)) {
             val r = Rig(external, all.copy(fluidifyBackgroundEnabled = false))
             r.core.ear(EarState.BOTH)
@@ -216,8 +228,10 @@ class Corrective8MediaRuntimeTest {
             r.core.visible(false)
             if (!queued) r.core.ear(EarState.NONE)
             r.core.visible(true); r.queue.drain()
-            r.core.ear(EarState.NONE); r.queue.drain()
             assertTrue("external=$external queued=$queued", r.actions().isEmpty())
+            // Recovery replays nothing; only a fresh live NONE sample is a new decision (repeated NONE).
+            r.core.ear(EarState.NONE); r.queue.drain()
+            assertEquals("external=$external queued=$queued", listOf(MediaAction.PAUSE), r.actions())
         }
     }
 

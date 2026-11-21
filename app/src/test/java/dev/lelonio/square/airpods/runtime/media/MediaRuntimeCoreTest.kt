@@ -91,31 +91,38 @@ class MediaRuntimeCoreTest {
         f.core.ear(EarState.BOTH); f.core.ear(EarState.LEFT); f.queue.drain()
         assertEquals(listOf(MediaAction.PAUSE), f.env.effects.map { it.first })
     }
-    @Test fun unknownWhileDisabledCannotBecomeAUsableBaselineOnEnable() {
+    @Test fun liveUnknownWhileDisabledIsIgnoredSoTheObservedBaselineSurvivesEnable() {
         val f = Fixture(enabled.copy(automationsEnabled = false))
         f.core.ear(EarState.BOTH); f.core.ear(EarState.UNKNOWN)
-        f.core.configure(enabled); f.core.ear(EarState.LEFT); f.queue.drain()
-        assertTrue(f.env.effects.isEmpty())
+        f.core.configure(enabled); f.queue.drain()
+        assertTrue("Enabling must not replay a sensor action", f.env.effects.isEmpty())
+        f.core.ear(EarState.LEFT); f.queue.drain()
+        assertEquals(listOf(MediaAction.PAUSE), f.env.effects.map { it.first })
     }
     @Test fun queuedPauseRechecksPermission() {
         val f = Fixture(); f.removal()
         f.env.candidate = f.env.candidate.copy(permitted = false); f.queue.drain()
         assertTrue(f.env.effects.isEmpty())
     }
-    @Test fun queuedPauseRechecksRouteAndCall() {
-        for (remote in listOf(true, false)) {
-            val f = Fixture(); f.removal()
-            f.env.candidate = if (remote) f.env.candidate.copy(routedToPair = false)
-                else f.env.candidate.copy(callActive = true)
-            f.queue.drain(); assertTrue(f.env.effects.isEmpty())
-        }
+    @Test fun queuedPauseRechecksCall() {
+        val f = Fixture(); f.removal()
+        f.env.candidate = f.env.candidate.copy(callActive = true)
+        f.queue.drain(); assertTrue(f.env.effects.isEmpty())
+    }
+    @Test fun routeToPairIsNotAConditionOfTheQueuedPause() {
+        val f = Fixture(); f.removal()
+        f.env.candidate = f.env.candidate.copy(routedToPair = false)
+        f.queue.drain()
+        assertEquals(listOf(MediaAction.PAUSE), f.env.effects.map { it.first })
     }
     @Test fun logoutAndNewAccountWithSameSessionTokenRejectOldEffect() {
         val f = Fixture(); f.removal()
         f.env.candidate = f.env.candidate.copy(target = f.env.candidate.target.copy(accountEpoch = "account-2"))
         f.queue.drain(); assertTrue(f.env.effects.isEmpty())
-        // New account starts with ear baseline, without replay of the old removal.
-        f.core.ear(EarState.NONE); f.queue.drain(); assertTrue(f.env.effects.isEmpty())
+        // The old removal is never replayed. A NONE sample after the switch is a repeated NONE
+        // on the (new) playing target, so it pauses exactly once: that is a new decision.
+        f.core.ear(EarState.NONE); f.queue.drain()
+        assertEquals(listOf(MediaAction.PAUSE), f.env.effects.map { it.first })
     }
     @Test fun ambiguityOrReplacementCannotInheritTarget() {
         for (ambiguity in listOf(true, false)) {
@@ -132,9 +139,16 @@ class MediaRuntimeCoreTest {
             callback(); f.queue.drain(); assertTrue(f.env.effects.isEmpty())
         }
     }
-    @Test fun genericPausedCallbackDoesNotOwnPause() {
+    @Test fun dispatchedPauseOwnsOnPausedWithoutReceiptAndResumes() {
+        val f = Fixture(); f.removal(); f.queue.drain() // PAUSE accepted by the target (dispatched)
+        f.env.candidate = f.env.candidate.copy(playback = Playback.PAUSED) // no receipt id
+        f.observe(); f.core.ear(EarState.BOTH); f.queue.drain()
+        assertEquals(listOf(MediaAction.PAUSE, MediaAction.PLAY), f.env.effects.map { it.first })
+    }
+    @Test fun pausedWithAForeignReceiptDoesNotOwnEvenAfterDispatch() {
         val f = Fixture(); f.removal(); f.queue.drain()
-        f.env.candidate = f.env.candidate.copy(playback = Playback.PAUSED)
+        f.env.candidate = f.env.candidate.copy(playback = Playback.PAUSED,
+            observedPauseEffect = f.env.effects.single().third!! + 1000)
         f.observe(); f.core.ear(EarState.BOTH); f.queue.drain()
         assertEquals(listOf(MediaAction.PAUSE), f.env.effects.map { it.first })
     }
@@ -174,7 +188,19 @@ class MediaRuntimeCoreTest {
         f.now = 300; val timer = f.queue.timers.first(); timer()
         assertTrue(f.core.manualVolume(7)); f.queue.drain()
         f.core.conversation(false); f.queue.drain()
+        // The manual level rebases the duck (it no longer destroys it) but a step queued BEFORE the
+        // manual intent must not run after it and overwrite the level the user just chose.
         assertEquals(listOf(Triple(MediaAction.SET_VOLUME, 7, null)), f.env.effects)
+    }
+    @Test fun manualVolumeNeedsNoVisibilityAndRebasesInsteadOfDestroyingTheDuck() {
+        // Background-enabled settings, never made visible: the tile/quick-settings case.
+        val f = Fixture(enabled.copy(conversationDuck = true))
+        f.core.conversation(false); f.core.conversation(true)
+        assertTrue(f.core.manualVolume(7))
+        assertEquals(listOf(Triple(MediaAction.SET_VOLUME, 7, null)), f.env.effects)
+        // A refused guard still wins over everything.
+        assertFalse(f.core.manualVolume(6) { false })
+        assertEquals(1, f.env.effects.size)
     }
     @Test fun foreignFocusDuckPreventsSecondAttenuation() {
         val f = Fixture(enabled.copy(conversationDuck = true))
@@ -187,7 +213,7 @@ class MediaRuntimeCoreTest {
         assertEquals(listOf(MediaAction.PAUSE), f.env.effects.map { it.first })
         assertTrue(f.queue.timers.isEmpty())
     }
-    @Test fun matchingVolumeReadIsNotReceiptAndManualChangeAbandonsRestore() {
+    @Test fun matchingVolumeReadIsNotReceiptAndManualChangeRebasesInsteadOfRestoring() {
         for (manual in listOf(false, true)) {
             val f = Fixture(enabled.copy(conversationDuck = true))
             f.core.conversation(false); f.core.conversation(true)
@@ -222,6 +248,50 @@ class MediaRuntimeCoreTest {
             f.removal(); f.queue.drain()
             assertTrue(f.env.effects.isEmpty()); assertFalse(f.core.gesture(AirPodsMediaGesture.PLAY))
         }
+    }
+    private fun MediaRuntimeCore.lease(): Long {
+        val field = MediaRuntimeCore::class.java.getDeclaredField("coordinator").apply { isAccessible = true }
+        return (field.get(this) as AirPodsAutomationCoordinator).status().lease
+    }
+    private fun Fixture.effect(lease: Long, session: AutomationSession = AutomationSession("pair", 7), id: Long = 900) =
+        MediaEffect(id, lease, session, env.candidate.target, MediaAction.PAUSE)
+    @Test fun submitWithStaleLeaseOrForeignSessionIsRefusedSynchronouslyAndQueuesNothing() {
+        val f = Fixture(); val lease = f.core.lease()
+        f.core.configure(enabled.copy(earResume = false)) // new lease: the old one is now stale
+        assertNotEquals(lease, f.core.lease())
+        assertFalse(f.core.submit(f.effect(lease)))
+        assertFalse(f.core.submit(f.effect(f.core.lease(), session = AutomationSession("pair", 99))))
+        assertTrue("no effect may be queued for a refused submit", f.queue.work.isEmpty())
+        f.queue.drain(); assertTrue(f.env.effects.isEmpty())
+    }
+    @Test fun submitOfACancelledEffectOrLeaseIsRefusedSynchronously() {
+        val f = Fixture(); val lease = f.core.lease(); val e = f.effect(lease)
+        f.core.cancelEffect(e)
+        assertFalse(f.core.submit(e))
+        assertTrue(f.queue.work.isEmpty())
+        val g = Fixture(); val gLease = g.core.lease()
+        g.core.cancel(gLease)
+        assertFalse(g.core.submit(g.effect(gLease)))
+        assertTrue(g.queue.work.isEmpty())
+    }
+    @Test fun submitWithoutAuthorityOrAfterStopIsRefusedSynchronously() {
+        var granted = true
+        val env = Env(); val queue = Queue()
+        val core = MediaRuntimeCore(env, queue, AutomationClock { 0 }, authority = { granted })
+        core.start(AutomationSession("pair", 7), enabled)
+        val e = MediaEffect(900, core.lease(), AutomationSession("pair", 7), env.candidate.target, MediaAction.PAUSE)
+        granted = false
+        assertFalse(core.submit(e)); assertTrue(queue.work.isEmpty())
+        granted = true
+        core.stop()
+        assertFalse(core.submit(e)); assertTrue(queue.work.isEmpty())
+    }
+    @Test fun submitOfACurrentEffectIsAcceptedAndExecutesOnTheQueue() {
+        val f = Fixture(); val e = f.effect(f.core.lease())
+        assertTrue(f.core.submit(e))
+        assertEquals(1, f.queue.work.size); assertTrue(f.env.effects.isEmpty())
+        f.queue.drain()
+        assertEquals(listOf(Triple(MediaAction.PAUSE, null, 900L)), f.env.effects)
     }
     companion object {
         private val enabled = HostSettings(automationsEnabled = true, fluidifyBackgroundEnabled = true,

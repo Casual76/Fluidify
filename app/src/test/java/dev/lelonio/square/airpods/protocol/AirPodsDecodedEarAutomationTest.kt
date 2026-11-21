@@ -85,14 +85,14 @@ class AirPodsDecodedEarAutomationTest {
         }
     }
 
-    @Test fun unknownOrTruncatedCodesCannotInventTheMissingRemoval() {
+    @Test fun unknownCodeIsIgnoredNotABaselineResetAndTruncatedFrameInventsNothing() {
         Rig().use { r ->
             r.sdu("04 00 04 00 06 00 02 00")
             r.sdu("04 00 04 00 06 00 02") // truncated, no event
             assertTrue(r.environment.actions.isEmpty())
-            r.sdu("04 00 04 00 06 00 03 01") // unknown invalidates baseline
-            r.sdu("04 00 04 00 06 00 02 01") // first complete known sample is baseline
-            assertTrue(r.environment.actions.isEmpty())
+            r.sdu("04 00 04 00 06 00 03 01") // unknown code: ignored, baseline preserved
+            r.sdu("04 00 04 00 06 00 02 01") // real removal after the glitch: mono -> NONE
+            assertEquals(listOf(MediaAction.PAUSE), r.environment.actions)
         }
     }
 }

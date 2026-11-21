@@ -287,8 +287,9 @@ class AirPodsUiReuseTest {
         // The state did not change, because nothing was received: neither did the selection.
         compose.onNodeWithTag("airpods-quick-MODE-2").assertIsSelected()
         compose.onNodeWithTag("airpods-quick-MODE-3").assertIsNotSelected()
-        // The received mode is not a request: touching it sends nothing.
-        compose.onNodeWithTag("airpods-quick-MODE-2").assert(hasClickAction().not())
+        // The received mode can be asked for again: re-tapping it re-sends (manual retry).
+        compose.onNodeWithTag("airpods-quick-MODE-2").assertHasClickAction().performClick()
+        assertEquals(2, actions.size)
     }
 
     @Test fun draggingTheThumbToAnotherSlotIsOneRequestForThatSlotAndNotASelection() {
@@ -443,8 +444,10 @@ class AirPodsUiReuseTest {
     @Test fun aDisconnectedCapsuleStillOnlyOpensThePaneAndConnectingIsAskedThere() {
         val actions = mutableListOf<AirPodsUiAction>()
         var opens = 0
-        val state = uiFixture().copy(profileConnected = false,
-            availability = mapOf("setup.CONNECT" to UiAvailability(true)))
+        // Disconnected means no AACP session: an A2DP drop alone keeps the controls.
+        val state = uiFixture().let { it.copy(profileConnected = false,
+            domain = it.domain.copy(stage = AacpStage.CLOSED),
+            availability = mapOf("setup.CONNECT" to UiAvailability(true))) }
         var quick by mutableStateOf(false)
         mount {
             AirPodsCapsule(AirPodsUiBinding(state, actions::add, { opens++; quick = true }), Modifier.width(160.dp))

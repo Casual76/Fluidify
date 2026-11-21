@@ -44,7 +44,7 @@ class AirPodsTransportOwnership {
                 }
             } catch (failure: Throwable) {
                 // Factory owns cleanup of resources it never returned. Once returned, this
-                // lease retains any close failure, even if repository swallows the exception.
+                // a close failure still retires this lease via close() below.
                 synchronized(lock) { stopping = true }
                 throw failure
             } finally {
@@ -60,7 +60,7 @@ class AirPodsTransportOwnership {
         }
 
         /** Close interrupts I/O, but successful close alone is insufficient while connect,
-         * read, write or construction is still executing. Failed close retains ownership;
+         * read, write or construction is still executing. A failed close still retires the lease;
          * only a later explicit cleanup may retry it. No retry worker is scheduled here. */
         override fun close() {
             val target = synchronized(lock) {
@@ -69,9 +69,10 @@ class AirPodsTransportOwnership {
                 if (closing || closed) { releaseIfTerminal(); return }
                 raw?.also { closing = true } ?: run { releaseIfTerminal(); return }
             }
-            var success = false
-            try { target.close(); success = true } finally {
-                synchronized(lock) { closing = false; closed = success; releaseIfTerminal() }
+            // A throwing close still retires the lease (closed=true below): the transport is
+            // unusable either way, and retaining ownership would wedge every later session.
+            try { target.close() } finally {
+                synchronized(lock) { closing = false; closed = true; releaseIfTerminal() }
             }
         }
 

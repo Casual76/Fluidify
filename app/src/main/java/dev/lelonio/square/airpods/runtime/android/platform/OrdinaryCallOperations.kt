@@ -38,8 +38,11 @@ class OrdinaryCallOperations(private val port: OrdinaryCallPort) {
         val value = observe()
         if (epoch != expectedEpoch || !authorized()) return PlatformResult.Denied(PlatformFailure.STALE)
         if (value.state != OrdinaryCallState.RINGING || value.ambiguous) return PlatformResult.Denied(PlatformFailure.CALL_OR_ROUTE_MIX)
-        sent = true // never retry on rejection or a duplicate gesture
-        return port.dispatch(answer)
+        val result = port.dispatch(answer)
+        // A platform rejection may be retried by a later gesture within this ringing
+        // epoch; only an accepted dispatch latches. Upstream has no one-shot latch.
+        if (result == PlatformResult.RequestAccepted || result == PlatformResult.Queued) sent = true
+        return result
     }
     @Synchronized fun reset() { previous = OrdinaryCallState(OrdinaryCallState.UNKNOWN); waiting = false; sent = false; epoch++ }
 }

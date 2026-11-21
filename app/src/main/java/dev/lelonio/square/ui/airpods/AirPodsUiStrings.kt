@@ -35,5 +35,22 @@ internal val featureTitles = mapOf(
     "host.disconnect_unworn" to R.string.airpods_feature_setting_host_disconnect_unworn,
     "device.disconnect" to R.string.airpods_feature_setting_device_disconnect,
     "extra.qs" to R.string.airpods_feature_setting_extra_qs,
-    "extra.diagnostics" to R.string.airpods_feature_setting_extra_diagnostics,
+    "extra.diagnostics" to R.string.airpods_feature_setting_extra_diagnostics,
+    "aacp.hearing_aid" to R.string.airpods_hearing_aid,
+    "aacp.hps_gain_swipe" to R.string.airpods_hps_gain_swipe,
+)
+
+/** One-line explanations under the main switches, like upstream's settings rows. */
+internal val featureDescriptions = mapOf(
+    "aacp.allow_off_option" to R.string.airpods_desc_allow_off,
+    "aacp.ppe_toggle_config" to R.string.airpods_desc_ppe,
+    "aacp.auto_anc_strength" to R.string.airpods_desc_adaptive_strength,
+    "aacp.conversation_detect_config" to R.string.airpods_desc_conversation,
+    "aacp.ear_detection_config" to R.string.airpods_desc_ear_detection,
+    "aacp.automatic_connection_config" to R.string.airpods_desc_auto_connection,
+    "aacp.one_bud_anc_mode" to R.string.airpods_desc_one_bud_anc,
+    "aacp.sleep_detection_config" to R.string.airpods_desc_sleep_detection,
+    "aacp.dynamic_end_of_charge" to R.string.airpods_desc_dynamic_end_of_charge,
+    "aacp.adaptive_volume_config" to R.string.airpods_desc_personalized_volume,
+    "aacp.hearing_aid" to R.string.airpods_hearing_aid_desc,
 )

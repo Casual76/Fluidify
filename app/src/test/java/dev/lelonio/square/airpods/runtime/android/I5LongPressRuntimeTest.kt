@@ -156,21 +156,19 @@ class I5LongPressRuntimeTest {
         controller.state.first { it.desired[CommandProperty.STEM_CONFIG]?.status == DesiredStatus.SENT }
     }
 
-    @Test fun changingOneSideRequiresKnownOtherStemBits() = runBlocking {
+    @Test fun changingOneSideWithoutObservationWritesFromSavedOrZeroBase() = runBlocking {
         Fixture().use { f ->
             f.admit()
             val transport = f.ready(f.pair)
             assertNull(f.controller.state.value.propertyObserved(CommandProperty.STEM_CONFIG))
             val before = f.pairSettings()
             val accepted = f.controller.setLongPress(left = LongPressAction.DIGITAL_ASSISTANT)
-            if (accepted) {
-                f.sent()
-                val overwritten = AacpCodec.property(CommandProperty.STEM_CONFIG, 8).map { it.toInt() and 255 }
-                assertTrue("Unobserved base sent 0x08, clearing the other stem bits", transport.writes.contains(overwritten))
-            }
-            assertFalse("Writing the shared mask requires a current-generation observation", accepted)
-            assertEquals(before, f.pairSettings())
-            assertTrue(f.controller.state.value.pending.isEmpty())
+            // No session observation and nothing saved: like upstream the mask is built
+            // from host config alone (base 0). The write is accepted, not refused.
+            assertTrue(accepted); f.sent()
+            val overwritten = AacpCodec.property(CommandProperty.STEM_CONFIG, 8).map { it.toInt() and 255 }
+            assertTrue("Unobserved base sent 0x08 from host config alone", transport.writes.contains(overwritten))
+            assertEquals(LongPressAction.DIGITAL_ASSISTANT, f.pairSettings().leftLongPress)
 
             f.rx(5)
             assertTrue(f.controller.setLongPress(left = LongPressAction.DIGITAL_ASSISTANT))
@@ -227,10 +225,10 @@ class I5LongPressRuntimeTest {
             f.repository.receive(generation, AacpEvent.Mode(ListeningMode.TRANSPARENCY))
             f.repository.receive(generation, AacpEvent.Mode(ListeningMode.ADAPTIVE))
             pressRight()
-            assertEquals("The beta.4 stem order enters at ANC before Transparency", PropertyValue.Number(2),
+            assertEquals("The shared tile/stem order enters at Transparency before ANC", PropertyValue.Number(3),
                 f.controller.state.value.desired[CommandProperty.MODE]?.requested)
             withTimeout(2_000) { f.controller.state.first { it.desired[CommandProperty.MODE]?.status == DesiredStatus.SENT } }
-            assertTrue(transport.writes.contains(AacpCodec.property(CommandProperty.MODE, 2).map { it.toInt() and 255 }))
+            assertTrue(transport.writes.contains(AacpCodec.property(CommandProperty.MODE, 3).map { it.toInt() and 255 }))
         }
     }
     @Test fun longPressEntersOnlyAllowedModeAndDoesNotResendItWhenAlreadyActive() = runBlocking<Unit> {

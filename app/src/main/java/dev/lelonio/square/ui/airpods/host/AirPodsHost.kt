@@ -42,7 +42,7 @@ internal class HostBluetooth(
         requested = true
         val accepted = runCatching { requestProfile(object: BluetoothProfile.ServiceListener {
             override fun onServiceConnected(p: Int, proxy: BluetoothProfile) {
-                if (closed || p != BluetoothProfile.A2DP) releaseProfile(p, proxy) else profile = proxy
+                if (closed || p != BluetoothProfile.A2DP) runCatching { releaseProfile(p, proxy) } else profile = proxy
             }
             override fun onServiceDisconnected(p: Int) {
                 if (p == BluetoothProfile.A2DP) { profile = null; requested = false }
@@ -55,7 +55,7 @@ internal class HostBluetooth(
         adapter?.isEnabled == true && profile?.connectedDevices?.any { it.address.equals(pair.value, true) } == true
     }.getOrDefault(false)
     fun label(pair: PairAddress): String? = if (!granted()) null else runCatching { adapter?.getRemoteDevice(pair.value)?.name }.getOrNull()
-    fun close() { closed = true; profile?.let { releaseProfile(BluetoothProfile.A2DP, it) }; profile = null }
+    fun close() { closed = true; profile?.let { runCatching { releaseProfile(BluetoothProfile.A2DP, it) } }; profile = null }
 }
 
 internal class AirPodsHost(private val context: Context, val owner: AirPodsAndroidController?,
@@ -134,8 +134,8 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
         val liveReason = commonReason ?: when {
             base.suppressed -> R.string.airpods_reason_resume
             !data.start.enabled -> R.string.airpods_reason_enable
-            !notifications -> R.string.airpods_reason_notifications
-            !base.profileConnected -> R.string.airpods_reason_connection
+            // POST_NOTIFICATIONS and the A2DP profile state never gate device actions:
+            // the foreground service runs without the grant, and writes ride the AACP socket.
             !ready -> R.string.airpods_reason_session
             else -> null
         }
@@ -216,8 +216,8 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
                     SetupAction.CALL_PERMISSION -> !callAccess.granted
                     SetupAction.MEDIA_ACCESS -> !nls
                     SetupAction.COMPANION_ASSOCIATION -> selected && base.bluetoothGranted && companionFeature && associations != null && !alreadyAssociated
-                    SetupAction.VERIFY_SELECTED -> !o.isFunctionalTest && selected && base.bluetoothGranted && base.profileConnected && notifications && !runtime.verifying
-                    SetupAction.ENABLE, SetupAction.RESUME -> !o.isFunctionalTest && configured && base.profileConnected && notifications
+                    SetupAction.VERIFY_SELECTED -> !o.isFunctionalTest && selected && base.bluetoothGranted && base.profileConnected && !runtime.verifying
+                    SetupAction.ENABLE, SetupAction.RESUME -> !o.isFunctionalTest && configured && base.profileConnected
                     SetupAction.CONNECT -> configured && !base.suppressed && data.start.enabled && !base.profileConnected
                     SetupAction.DISCONNECT -> configured && !base.suppressed && data.start.enabled && base.profileConnected
                     SetupAction.DISABLE, SetupAction.STOP -> selected
@@ -232,9 +232,12 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
                 putAllowed("setup.$action", allowed)
             }
             LocalToggle.entries.forEach { toggle ->
-                val canEnable = configured && when(toggle) {
-                LocalToggle.OTHER_APPS -> nls && runtime.mediaAvailable
-                LocalToggle.HEAD_GESTURES, LocalToggle.ALTERNATE_PACKETS -> base.identity?.modelDeclared?.contains(Capability.HEAD_GESTURES) == true
+                // Local preferences can be preconfigured while disconnected; they take
+                // effect at the next connection. Readiness stays reported via status.*.
+                val canEnable = selected && when(toggle) {
+                LocalToggle.OTHER_APPS -> true
+                LocalToggle.HEAD_GESTURES, LocalToggle.ALTERNATE_PACKETS -> base.identity == null ||
+                    base.identity?.modelDeclared?.contains(Capability.HEAD_GESTURES) == true
                 LocalToggle.DISCONNECT_UNWORN -> true
                 else -> true
                 }
@@ -245,15 +248,17 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
             }
             // Readiness is observational, never a receipt of an external media action or route.
             for (toggle in listOf(LocalToggle.AUTOMATIONS, LocalToggle.BACKGROUND, LocalToggle.OTHER_APPS)) {
-                val reason = liveReason?.let(::text) ?: when {
+                // Family-specific blockers first: a missing listener grant is what the
+                // user can fix, and must not hide behind a generic session reason.
+                val reason = when {
                     !base.pair.host.automationsEnabled -> text(R.string.airpods_reason_automations_off)
                     toggle == LocalToggle.OTHER_APPS && !nls -> text(R.string.airpods_reason_nls)
                     toggle == LocalToggle.OTHER_APPS && !runtime.mediaAvailable -> text(R.string.airpods_reason_media)
-                    else -> null
+                    else -> liveReason?.let(::text)
                 }
                 putAllowed("status.$toggle", reason == null, reason ?: "")
             }
-            putAllowed("host.ca_volume", configured)
+            putAllowed("host.ca_volume", selected)
             putAllowed("host.volume", ready && o.volume.value != null)
             putAllowed("local.preferredMode", configured && base.modes.isNotEmpty())
             GestureSide.entries.forEach { side -> putAllowed("gesture.$side", configured && when(side) {
@@ -268,11 +273,9 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
             putAllowed("tracking.start", ready && trackingStartBlock == null && base.identity?.modelDeclared?.contains(Capability.HEAD_GESTURES) == true)
             putAllowed("tracking.stop", ready && trackingStopBlock == null && domain.activePacketFormat != null)
             AirPodsProperties.controls.forEach { spec ->
-                val reason = liveReason ?: when {
-                    base.identity?.recognized != true -> R.string.airpods_reason_information
-                    !spec.candidate(base.identity!!) -> R.string.airpods_reason_capability
-                    else -> null
-                }
+                // Capability is a visibility rule (pages filter candidates), never a
+                // write refusal: an unknown model still gets its packets sent.
+                val reason = liveReason
                 putAllowed("property.${spec.property}", reason == null, reason?.let(::text) ?: "")
             }
         }
@@ -341,6 +344,8 @@ internal class AirPodsHost(private val context: Context, val owner: AirPodsAndro
                 val admitted = action.generation == o.state.value.generation && s.writeAllowed(action.property, action.value) && when(action.property) {
                     CommandProperty.NAME -> (action.value as? PropertyValue.Name)?.let { o.rename(it.value) } == true
                     CommandProperty.EQ -> (action.value as? PropertyValue.Eq)?.let(o::setEq) == true
+                    // Hearing aid is a paired write (0x2C+0x33) owned by the repository.
+                    CommandProperty.HEARING_AID -> (action.value as? PropertyValue.Number)?.let { o.setHearingAid(it.value == 1) } == true
                     else -> o.setProperty(action.property, action.value)
                 }
                 if (airPodsSettingsPageOf(action.property) == AirPodsSettingsPage.Main) {

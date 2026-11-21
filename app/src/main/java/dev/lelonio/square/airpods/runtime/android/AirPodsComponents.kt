@@ -22,6 +22,12 @@ class AirPodsControlService : Service() {
     override fun onBind(intent: Intent?) = null
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val owner = attachedOwner ?: AirPodsServiceOwnerRegistry.resolve()
+        // Remember whose start this was even if admission is denied below: onDestroy must
+        // be able to tell THAT owner (and only that owner) this service never attached.
+        if (attachedOwner == null && owner != null) {
+            attachedOwner = owner
+            attachedStopAction = owner.serviceStopAction
+        }
         if (intent?.action?.startsWith(ACTION_STOP) == true) {
             if (intent.action != owner?.serviceStopAction) return START_NOT_STICKY
             if (owner != null) CoroutineScope(Dispatchers.IO).launch { owner.stopControls() }
@@ -45,11 +51,15 @@ class AirPodsControlService : Service() {
             if (owner != null) CoroutineScope(Dispatchers.IO).launch { owner.stopControls(dev.lelonio.square.airpods.runtime.storage.SuppressReason.START_FAILED) }
             finishFromOwner()
         }
-        return START_NOT_STICKY
+        return START_STICKY
     }
     internal fun finishFromOwner() { Handler(Looper.getMainLooper()).post { stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() } }
     override fun onDestroy() {
-        attachedOwner?.let { owner -> AirPodsServiceOwnerRegistry.serviceEnded(owner, attachedStopAction); owner.serviceDestroyed(this) }
+        // attachedOwner is set from the first start attempt, so even a denied start
+        // (stopSelf before attach) reports its destruction to the right owner.
+        attachedOwner?.let { owner ->
+            AirPodsServiceOwnerRegistry.serviceEnded(owner, attachedStopAction); owner.serviceDestroyed(this)
+        }
         super.onDestroy()
     }
     companion object {

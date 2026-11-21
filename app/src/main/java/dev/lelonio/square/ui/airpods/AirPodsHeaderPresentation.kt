@@ -17,6 +17,12 @@ internal val AirPodsUiState.headerName: String?
 /** Follow late INFORMATION when idle or after submit, preserving an unsent edit. */
 internal data class AirPodsRenameDraft(val text: String, val edited: Boolean = false) {
     fun edit(value: String) = copy(text = value, edited = true)
-    fun reconcile(knownName: String) = if (edited) this else copy(text = knownName)
-    fun submitted() = copy(edited = false)
+    // A submitted draft is confirmed only when the device reports that very name back:
+    // until then it stays "edited", so a rejected/slow rename never silently reverts.
+    fun reconcile(knownName: String) = when {
+        knownName == text -> copy(edited = false)
+        edited -> this
+        else -> copy(text = knownName)
+    }
+    fun submitted() = this
 }

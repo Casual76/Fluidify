@@ -19,10 +19,11 @@ import org.robolectric.annotation.Config
 @Config(application = Application::class, sdk = [35],
     instrumentedPackages = ["dev.lelonio.square.airpods"], shadows = [HostProtocolSocketShadow::class])
 class AirPodsScalarHostTest {
-    @Test fun explicitMatrixCoversExactlyTheNineteenPublicScalarFamilies() {
-        assertEquals(19, ScalarHostCases.all.size)
-        assertEquals(19, ScalarHostCases.all.map { it.property }.toSet().size)
-        assertEquals(AirPodsProperties.controls.filterNot { it.internalDependency }.map { it.catalogId }.toSet(),
+    @Test fun explicitMatrixCoversExactlyTheTwentyPublicScalarFamilies() {
+        assertEquals(20, ScalarHostCases.all.size)
+        assertEquals(20, ScalarHostCases.all.map { it.property }.toSet().size)
+        // HEARING_AID is a paired write, covered by the repository tests, not a scalar family.
+        assertEquals(AirPodsProperties.controls.filterNot { it.internalDependency || it.property == CommandProperty.HEARING_AID }.map { it.catalogId }.toSet(),
             ScalarHostCases.all.map { it.catalogId }.toSet())
         ScalarHostCases.all.forEach { c ->
             assertEquals(c.catalogId, AirPodsProperties.spec(c.property)?.catalogId)
@@ -50,13 +51,15 @@ class AirPodsScalarHostTest {
                 assertEquals(c.catalogId, c.requested.number, f.host.state.value.domain.propertyEffective(c.property)?.value)
                 assertTrue(c.catalogId, f.host.state.value.writeAllowed(c.property, c.requested.number))
                 f.write(c.property, c.requested.number)
-                assertEquals(c.catalogId, before + 1, f.transport.commandWrites.size)
-                assertEquals(c.catalogId, request.sequence, f.owner.state.value.desired.getValue(c.property).sequence)
-
-                // Every scalar rejects nonzero trailing padding through the REAL read loop.
-                // The following activity event is an ordered decoder fence, not a sleep or ACK.
+                f.await("${c.catalogId} identical intent re-sends") { f.transport.commandWrites.size == before + 2 }
+                f.sent(c.property)
+                val resent = f.owner.state.value.desired.getValue(c.property)
+                assertTrue(c.catalogId, resent.sequence > request.sequence)
+                // trailing padding is tolerated now, like upstream).
+                // A truncated frame is rejected through the REAL read loop (nonzero
+                // trailing padding is tolerated now, like upstream). The following
                 val activityEvents = f.events.count { it.step == QualificationStep.RX && it.flags == 5 }
-                f.transport.deliver(c.requested.hex.dropLast(2) + "01")
+                f.transport.deliver(c.requested.hex.take(16))
                 f.transport.deliver(ScalarHostCases.CONVERSATION_ACTIVITY_START)
                 f.await("${c.catalogId} malformed + unrelated RX fence") {
                     f.events.count { it.step == QualificationStep.RX && it.flags == 5 } > activityEvents &&
@@ -65,7 +68,7 @@ class AirPodsScalarHostTest {
                 assertEquals(c.catalogId, previous, f.observed(c.property))
                 val afterFence = f.owner.state.value
                 assertEquals(c.catalogId, DesiredStatus.SENT, afterFence.desired[c.property]?.status)
-                assertEquals(c.catalogId, request.sequence, afterFence.desired.getValue(c.property).sequence)
+                assertEquals(c.catalogId, resent.sequence, afterFence.desired.getValue(c.property).sequence)
                 f.receiveScalar(c.different.hex, c.property, c.different.number)
                 assertEquals(c.catalogId, CommandOutcome.OBSERVED_OTHER, f.owner.state.value.outcomes[c.property])
                 assertEquals(c.catalogId, PropertyStatus.OBSERVED, f.host.state.value.domain.propertyView(c.property)?.status)
@@ -122,7 +125,7 @@ class AirPodsScalarHostTest {
         }
     }
 
-    @Test fun recognizedModelWithoutCapabilitiesDeniesGatedFamiliesButKeepsUngatedCandidates() {
+    @Test fun recognizedModelWithoutCapabilitiesStillSendsGatedFamiliesLikeUpstream() {
         HostProtocolFixture().use { f ->
             f.start()
             f.receiveModel(ScalarHostCases.INFORMATION_A1523, "A1523")
@@ -131,7 +134,11 @@ class AirPodsScalarHostTest {
                 if (c.needsCapability) {
                     assertEquals(c.catalogId, PropertyStatus.DEPENDENCY_EXCLUDED,
                         f.host.state.value.domain.propertyView(c.property)?.status)
-                    denied(f, c)
+                    // Capability is visibility-only: a direct write is still sent. 
+                    val count = f.transport.commandWrites.size
+                    f.write(c.property, c.requested.number)
+                    f.await("gated ${c.catalogId} raw TX") { f.transport.commandWrites.size == count + 1 }
+                    f.receiveScalar(c.requested.hex, c.property, c.requested.number)
                 } else {
                     assertTrue(c.catalogId, f.host.state.value.writeAllowed(c.property, c.requested.number))
                     val count = f.transport.commandWrites.size
@@ -147,22 +154,26 @@ class AirPodsScalarHostTest {
         }
     }
 
-    @Test fun modeSpecificGatesRejectAdaptiveOnPro1AndOffAndOffMasksWhenOffWasReceivedDisabled() {
+    @Test fun modeWritesAreSentWithoutModelOrAllowOffGatesWhileVisibilityStillFollowsThem() {
         HostProtocolFixture().use { f ->
             f.start()
             val mode = ScalarHostCases.get(CommandProperty.MODE)
             f.receiveModel(ScalarHostCases.INFORMATION_A2084, "A2084")
             assertTrue(f.host.state.value.controlsReady)
             assertTrue(f.host.state.value.writeAllowed(CommandProperty.MODE, PropertyValue.Number(2)))
-            denied(f, mode, PropertyValue.Number(4))
+            f.write(mode.property, PropertyValue.Number(4)); f.await("adaptive raw TX") { f.transport.commandWrites.isNotEmpty() }
             f.receiveModel(HostProtocolWire.INFORMATION, "A3063")
             val off = ScalarHostCases.get(CommandProperty.ALLOW_OFF_OPTION)
             f.receiveScalar(off.initial.hex, off.property, off.initial.number)
             assertFalse(ListeningMode.OFF in f.host.state.value.modes)
-            denied(f, mode, PropertyValue.Number(1))
+            val offCount = f.transport.commandWrites.size
+            f.write(mode.property, PropertyValue.Number(1))
+            f.await("off mode raw TX") { f.transport.commandWrites.size == offCount + 1 }
             val mask = ScalarHostCases.get(CommandProperty.LISTENING_MODE_CONFIGS)
             f.receiveScalar(mask.initial.hex, mask.property, mask.initial.number)
-            denied(f, mask, PropertyValue.Number(15))
+            val maskCount = f.transport.commandWrites.size
+            f.write(mask.property, PropertyValue.Number(15))
+            f.await("off mask raw TX") { f.transport.commandWrites.size == maskCount + 1 }
             assertTrue(f.host.state.value.writeAllowed(mask.property, PropertyValue.Number(6)))
             // Re-enabling changes the effective policy immediately, without manufacturing RX.
             f.write(off.property, off.requested.number)

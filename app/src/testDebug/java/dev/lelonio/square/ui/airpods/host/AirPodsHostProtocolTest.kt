@@ -52,28 +52,27 @@ class AirPodsHostProtocolTest {
                         f.host.state.value.domain.propertyView(case.property)?.status)
                 }
                 assertEquals(case.value, f.host.state.value.domain.propertyEffective(case.property)?.value)
-                // Identical intent is accepted and deduplicated; another choice remains available.
+                // Identical intent is re-sent like upstream; another choice remains available.
                 f.write(case.property, case.value)
-                assertEquals(before + 1, f.transport.commandWrites.size)
-                assertEquals(request.sequence, f.owner.state.value.desired.getValue(case.property).sequence)
+                f.await("identical intent re-sends") { f.transport.commandWrites.size == before + 2 }
+                assertTrue(f.owner.state.value.desired.getValue(case.property).sequence > request.sequence)
                 f.receive(case.rx, case.property, case.value)
                 assertEquals(CommandOutcome.OBSERVED_MATCH, f.host.state.value.domain.outcomes[case.property])
                 assertTrue(f.host.state.value.writeAllowed(case.property, case.value))
                 assertFalse(f.host.state.value.productGatePassed)
                 assertNull(f.owner.store.snapshot().getOrThrow().pairs.getValue(HostProtocolFixture.PAIR).verification)
             }
-            assertEquals(cases.size, f.transport.commandWrites.size)
+            assertEquals(cases.size * 2, f.transport.commandWrites.size)
         }
     }
 
-    @Test fun malformedAndUnrelatedRxLeavePendingThenDifferentValueIsObservedOther() {
+    @Test fun unrelatedRxLeavesPendingThenDifferentValueIsObservedOtherAndTolerantChimeDecodes() {
         HostProtocolFixture().use { f ->
             f.start()
             f.write(CommandProperty.CHIME_VOLUME, PropertyValue.Number(37))
             f.await("chime raw write") { f.transport.count(HostProtocolWire.CHIME_37) == 1 }
             f.sent(CommandProperty.CHIME_VOLUME)
-            f.transport.deliver(HostProtocolWire.CHIME_BAD)
-            f.transport.deliver(HostProtocolWire.MIC_LEFT) // ordered read-loop fence after malformed chime
+            f.transport.deliver(HostProtocolWire.MIC_LEFT) // ordered read-loop fence after unrelated RX
             f.await("unrelated decoded RX") { f.observed(CommandProperty.MIC_MODE) == PropertyValue.Number(2) }
             f.refresh()
             assertNull(f.observed(CommandProperty.CHIME_VOLUME))
@@ -82,6 +81,10 @@ class AirPodsHostProtocolTest {
             f.receive(HostProtocolWire.CHIME_40, CommandProperty.CHIME_VOLUME, PropertyValue.Number(40))
             assertEquals(CommandOutcome.OBSERVED_OTHER, f.host.state.value.domain.outcomes[CommandProperty.CHIME_VOLUME])
             assertEquals(PropertyStatus.OBSERVED, f.host.state.value.domain.propertyView(CommandProperty.CHIME_VOLUME)?.status)
+            // A chime frame whose second byte is not 0x50 now decodes (tolerant decode):
+            // only the value byte decides, exactly like upstream.
+            f.transport.deliver(HostProtocolWire.CHIME_BAD)
+            f.await("tolerant chime RX") { f.observed(CommandProperty.CHIME_VOLUME) == PropertyValue.Number(37) }
             assertEquals(1, f.transport.count(HostProtocolWire.CHIME_37))
         }
     }

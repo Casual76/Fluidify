@@ -1,4 +1,4 @@
-﻿// SPDX-License-Identifier: GPL-3.0-or-later
+// SPDX-License-Identifier: GPL-3.0-or-later
 package dev.lelonio.square.ui.airpods
 
 import android.app.Application
@@ -140,14 +140,14 @@ class AirPodsListeningModeEffectiveTest {
         assertThumbAt("page", ListeningMode.ANC)
     }
 
-    @Test fun explicitTransparencySendsForDefaultAndCacheButDeduplicatesKnownValue() {
+    @Test fun explicitTransparencySendsForDefaultAndCacheAndResendsKnownValue() {
         val initial = state.value
         val property = CommandProperty.MODE
         state.value = initial.copy(domain = initial.domain.copy(mode = null))
         mount(twoSurfaces = true)
         val transparency = compose.onNodeWithTag("page-3")
         transparency.assertHasClickAction().assertIsNotSelected().performClick()
-        transparency.assertIsSelected().assert(hasClickAction().not())
+        transparency.assertIsSelected().assertHasClickAction()
         assertEquals(listOf(ListeningMode.TRANSPARENCY), writes)
 
         compose.runOnIdle {
@@ -159,7 +159,7 @@ class AirPodsListeningModeEffectiveTest {
         compose.runOnIdle {
             state.value = initial.copy(domain = initial.domain.copy(mode = Received(ListeningMode.TRANSPARENCY, 1001, 7)))
         }
-        transparency.assertIsSelected().assert(hasClickAction().not())
+        transparency.assertIsSelected().assertHasClickAction()
     }
 
     @Test fun explicitFlatResetSendsBeforeRxAndPreservesKnownEnablement() {

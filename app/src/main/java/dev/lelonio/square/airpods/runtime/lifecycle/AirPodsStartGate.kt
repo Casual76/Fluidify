@@ -98,6 +98,12 @@ class AirPodsStartGate(
     // foreground opening. Receiver/Companion duplicates still share the consumed link ID.
     private var failedConnection: ConnectionAdmission? = null
     private var lastRecoveryOpening = -1L
+    private var cleanupPendingSinceMs = 0L
+    private companion object {
+        /** Far beyond any thread handoff: a cleanup confirmation missing this long is a
+         * wedged owner, force-completed by settleCleanup instead of blocking forever. */
+        const val CLEANUP_TIMEOUT_MS = 10_000L
+    }
 
     init { require(processEpoch.isNotBlank() && ownPid > 0 && ownProcessName.isNotBlank()) }
 
@@ -194,7 +200,11 @@ class AirPodsStartGate(
         } else if (admission.purpose == ConnectionPurpose.QUALIFICATION_TEST) {
             if (ingress !in setOf(StartIngress.EXPLICIT_ENABLE, StartIngress.EXPLICIT_RESUME, StartIngress.RECEIVER, StartIngress.COMPANION) ||
                 admission.productConformance || !qualificationEntitled(admission)) return denied(GateReason.SETUP_REQUIRED)
-        } else if (!admission.productConformance || pair?.verification?.conformanceBuild != admission.conformanceBuild) return denied(GateReason.SETUP_REQUIRED)
+        } else if (!admission.productConformance || pair?.verification == null) return denied(GateReason.SETUP_REQUIRED)
+        // A verified pair whose conformanceBuild predates an OTA is admitted as a silent
+        // re-verification session: the owner re-records verification with the current
+        // build on SUBSCRIBED. LibrePods has no fingerprint gate at all; blocking every
+        // control after each system update until a manual Setup is the reported bug.
         if (!admission.bluetoothPermission) return denied(GateReason.PERMISSION_DENIED)
         if (!admission.bonded) return denied(GateReason.NOT_BONDED)
         if (!admission.actuallyConnected) return denied(GateReason.NOT_CONNECTED)
@@ -231,7 +241,8 @@ class AirPodsStartGate(
             if (finishMarker().isFailure) { locallyStopped = true; return denied(GateReason.PERSISTENCE_FAILED) }
             return denied(GateReason.FGS_DENIED)
         }
-        if (ordinal != null) highestConnectionOrdinal = ordinal else attempts.add(connection)
+        // The link is consumed only by a successful start (below): a scheduling/transport
+        // failure must leave this same link retryable by any later real event.
         if (ingress == StartIngress.APP_OPEN && recoveryOpening != null)
             lastRecoveryOpening = maxOf(lastRecoveryOpening, recoveryOpening)
         failedConnection = null
@@ -240,10 +251,11 @@ class AirPodsStartGate(
         val started = runCatching { owner.start(admission, state.consentGeneration) }.getOrDefault(false)
         if (!started) {
             // Scheduling/transport failure is not a withdrawal of the user's consent. The link
-            // remains consumed; only a new link or a later real opening can acquire again.
+            // (consumption happens only on the successful start below).
             connectionFailed(admission)
             return denied(GateReason.START_FAILED)
         }
+        if (ordinal != null) highestConnectionOrdinal = ordinal else attempts.add(connection)
         return GateResult.Started(state.consentGeneration)
     }
 
@@ -265,7 +277,7 @@ class AirPodsStartGate(
         }
         active = false
         activeConnection = null
-        cleanupPending = true
+        cleanupPending = true; cleanupPendingSinceMs = clock.nowMillis()
         outstanding = null
         settlement = null
         val cleanup = ownerCleanup()
@@ -289,7 +301,10 @@ class AirPodsStartGate(
         if (!cleanupPending) return settlement ?: store.snapshot().fold(
             { GateResult.Stopped(it.start.consentGeneration) }, { GateResult.Denied(GateReason.PERSISTENCE_FAILED) })
         val pending = outstanding ?: return GateResult.Denied(GateReason.CLEANUP_FAILED)
-        return when (runCatching { owner.cleanup() }.getOrDefault(OwnerCleanup.FAILED)) {
+        val answer = runCatching { owner.cleanup() }.getOrDefault(OwnerCleanup.FAILED)
+        val effective = if (answer == OwnerCleanup.OUTSTANDING &&
+            clock.nowMillis() - cleanupPendingSinceMs >= CLEANUP_TIMEOUT_MS) OwnerCleanup.COMPLETE else answer
+        return when (effective) {
             OwnerCleanup.OUTSTANDING -> GateResult.Denied(GateReason.CLEANUP_PENDING)
             OwnerCleanup.FAILED -> {
                 outstanding = null
@@ -329,7 +344,7 @@ class AirPodsStartGate(
         if (connection.connectionId != connectionId || connection.expectedConsentGeneration != expectedConsentGeneration) return GateResult.Denied(GateReason.STALE_GENERATION)
         active = false
         activeConnection = null
-        cleanupPending = true
+        cleanupPending = true; cleanupPendingSinceMs = clock.nowMillis()
         outstanding = null
         settlement = null
         val cleanup = ownerCleanup()
@@ -362,8 +377,9 @@ class AirPodsStartGate(
             it.key.pid == oldMarker.pid && it.key.processName == oldMarker.processName &&
                 it.key.timestampMillis >= oldMarker.startedAtMillis && it.cause == ExitCause.RELIABLE_OTHER
         }
-        val uncertain = oldMarker != null && !explained
-        val reason = when { freshStops.isNotEmpty() -> SuppressReason.USER_REQUESTED_EXIT; uncertain -> SuppressReason.UNCLEAN_PROCESS; else -> null }
+        // An unexplained old marker (single LMK kill, reboot, crash elsewhere) is not a user
+        // stop: it no longer suppresses. Only an exit Android attributes to the user does.
+        val reason = if (freshStops.isNotEmpty()) SuppressReason.USER_REQUESTED_EXIT else null
         val keys = state.consumedExits + freshStops.map { it.key }
         return state.copy(suppressUntilExplicitResume = state.suppressUntilExplicitResume || reason != null,
             suppressReason = reason ?: state.suppressReason, consumedExits = bounded(keys),

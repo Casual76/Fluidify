@@ -98,4 +98,24 @@
     <string name="airpods_feature_setting_device_disconnect">Connessione dei controlli</string>
     <string name="airpods_feature_setting_extra_qs">Riquadro Impostazioni rapide Android</string>
     <string name="airpods_feature_setting_extra_diagnostics">Diagnostica</string>
+    <string name="airpods_state_awaiting_confirmation">In attesa di conferma dalle AirPods…</string>
+    <string name="airpods_state_not_confirmed">Le AirPods non hanno confermato questa modifica. Tocca di nuovo per riprovare.</string>
+    <string name="airpods_state_contradicted">Le AirPods hanno riportato un valore diverso.</string>
+    <string name="airpods_audio_moved_other_device">Audio spostato su un altro dispositivo</string>
+    <string name="airpods_disconnect">Disconnetti</string>
+    <string name="airpods_cycle_min_two">Scegli almeno due modalità</string>
+    <string name="airpods_hearing_aid">Apparecchio acustico</string>
+    <string name="airpods_hearing_aid_desc">Usa le AirPods come apparecchio acustico con i risultati del tuo test dell\'udito.</string>
+    <string name="airpods_hps_gain_swipe">Scorri per regolare il volume dell\'apparecchio acustico</string>
+    <string name="airpods_desc_allow_off">Aggiunge Off alle modalità di ascolto. Con Off i suoni forti non vengono ridotti.</string>
+    <string name="airpods_desc_ppe">Riduce i suoni forti sopra 82 dBA.</string>
+    <string name="airpods_desc_adaptive_strength">Quanto rumore esterno lascia passare la modalità Adattiva.</string>
+    <string name="airpods_desc_conversation">Abbassa la musica e potenzia le voci quando parli.</string>
+    <string name="airpods_desc_ear_detection">Mette in pausa l\'audio quando le togli e riprende quando le rimetti.</string>
+    <string name="airpods_desc_auto_connection">Si connette a questo dispositivo in automatico.</string>
+    <string name="airpods_desc_one_bud_anc">Consente la cancellazione del rumore con una sola AirPod nell\'orecchio.</string>
+    <string name="airpods_desc_sleep_detection">Mette in pausa i contenuti quando ti addormenti.</string>
+    <string name="airpods_desc_dynamic_end_of_charge">Impara le tue abitudini per caricare fino a un limite ottimizzato e preservare la batteria.</string>
+    <string name="airpods_desc_personalized_volume">Regola il volume dei contenuti in base all\'ambiente.</string>
+    <string name="airpods_head_gestures_call_hint">Durante una chiamata in arrivo: annuisci per rispondere, scuoti la testa per rifiutare. Le azioni di annuire e scuotere qui sotto valgono per i media quando non sta squillando nessuna chiamata.</string>
 </resources>

@@ -21,7 +21,9 @@ enum class AacpStage { CLOSED, CONSTRUCTING, CONSTRUCTED, CONNECTING, CONNECTED,
 enum class CommandProperty { MODE, CONVERSATION, MIC_MODE, DOUBLE_CLICK_INTERVAL, CLICK_HOLD_INTERVAL,
     LISTENING_MODE_CONFIGS, ONE_BUD_ANC_MODE, CHIME_VOLUME, VOLUME_SWIPE_INTERVAL, CALL_MANAGEMENT_CONFIG,
     VOLUME_SWIPE_MODE, ADAPTIVE_VOLUME_CONFIG, AUTO_ANC_STRENGTH, ALLOW_OFF_OPTION, SLEEP_DETECTION_CONFIG,
-    EAR_DETECTION_CONFIG, AUTOMATIC_CONNECTION_CONFIG, PPE_TOGGLE_CONFIG, DYNAMIC_END_OF_CHARGE, STEM_CONFIG, EQ, NAME }
+    EAR_DETECTION_CONFIG, AUTOMATIC_CONNECTION_CONFIG, PPE_TOGGLE_CONFIG, DYNAMIC_END_OF_CHARGE, STEM_CONFIG, EQ, NAME,
+    // Appended: existing ordinals never move.
+    HEARING_AID, HEARING_ASSIST_CONFIG, HPS_GAIN_SWIPE }
 enum class CommandOutcome { OBSERVED_MATCH, OBSERVED_OTHER, NOT_CONFIRMED, SEND_FAILED, CLOSED }
 data class PendingCommand(val value: Int, val startedMs: Long, val sequence: Long, val requested: PropertyValue = PropertyValue.Number(value),
     val packet: List<Int> = emptyList(), val generation: Long = 0)
@@ -50,6 +52,9 @@ data class AirPodsState(
     val diagnostic: String = "Physical compatibility and dual-channel coexistence: NV",
     /** Address of the transport that produced this state, including after it closes. */
     val sessionPair: PairAddress? = null,
+    /** A smart-routing frame (0x0E/0x11/0x2E) said the pair's audio went to another host.
+     * Only the fact and when: no MAC, name or other payload byte is kept. */
+    val audioMovedElsewhere: Received<Boolean>? = null,
 ) {
     fun propertyObserved(property: CommandProperty): Received<PropertyValue>? {
         val received = properties[property] ?: when (property) {
@@ -58,22 +63,20 @@ data class AirPodsState(
             else -> null
         }
         return received?.takeIf { it.generation == generation && stage == AacpStage.SUBSCRIBED }
+            ?.let { if (property == CommandProperty.HEARING_AID) it.copy(value = HearingAidWire.shown(it.value)) else it }
     }
+    /** Like pinned AACPManager.sendPacket: a connected control socket and a well-formed value.
+     * Identity, model, capabilities, ALLOW_OFF and earlier RX decide what the UI offers
+     * ([modelOffers]), never whether a requested packet leaves. One exception keeps a health
+     * setting honest: a 0x2C write needs the enrolled byte as received ([hearingAidWireValue]);
+     * HEARING_AID accepts the plain 1/2 a switch shows. */
     fun canAttemptWrite(property: CommandProperty, value: PropertyValue): Boolean {
-        val id = identityReceived?.takeIf { it.generation == generation }?.value ?: return false
-        if (stage != AacpStage.SUBSCRIBED || !id.recognized) return false
+        if (stage !in WRITABLE_STAGES) return false
         val spec = AirPodsProperties.spec(property)
         if (spec != null) {
             val number = (value as? PropertyValue.Number)?.value ?: return false
-            if (!spec.candidate(id) || !spec.accepts(number)) return false
-            if (property == CommandProperty.MODE && id.modes.none { it.wire == number }) return false
-            val offDisabled = (propertyEffective(CommandProperty.ALLOW_OFF_OPTION)?.value as? PropertyValue.Number)?.value == 2
-            if (offDisabled && ((property == CommandProperty.MODE && number == 1) ||
-                (property == CommandProperty.LISTENING_MODE_CONFIGS && (number and 1) != 0))) return false
-            if (property == CommandProperty.LISTENING_MODE_CONFIGS) {
-                if (propertyObserved(property) == null) return false
-                if ((number and 8) != 0 && Capability.ADAPTIVE_AUDIO !in id.modelDeclared) return false
-            }
+            if (!spec.accepts(number)) return false
+            if (spec.encoding == ControlEncoding.HEARING_AID_PAIR) return hearingAidWireValue(number) != null
             return true
         }
         return when (property) {
@@ -81,6 +84,27 @@ data class AirPodsState(
             CommandProperty.NAME -> value is PropertyValue.Name && runCatching { AacpCodec.rename(value.value) }.isSuccess
             else -> false
         }
+    }
+    /** Visibility only, for pickers and cycles that should list what this model declares: the
+     * former write gate (recognized current INFORMATION, capability, model modes, the Adaptive bit
+     * and the ALLOW_OFF interlock) on top of [canAttemptWrite]. A false here never blocks a send. */
+    fun modelOffers(property: CommandProperty, value: PropertyValue): Boolean {
+        if (!canAttemptWrite(property, value)) return false
+        val id = identityReceived?.takeIf { it.generation == generation }?.value ?: return false
+        if (!id.recognized) return false
+        val spec = AirPodsProperties.spec(property) ?: return true
+        val number = (value as? PropertyValue.Number)?.value ?: return false
+        if (!spec.candidate(id)) return false
+        if (property == CommandProperty.MODE && id.modes.none { it.wire == number }) return false
+        val offDisabled = (propertyEffective(CommandProperty.ALLOW_OFF_OPTION)?.value as? PropertyValue.Number)?.value == 2
+        if (offDisabled && ((property == CommandProperty.MODE && number == 1) ||
+            (property == CommandProperty.LISTENING_MODE_CONFIGS && (number and 1) != 0))) return false
+        if (property == CommandProperty.LISTENING_MODE_CONFIGS &&
+            (number and 8) != 0 && Capability.ADAPTIVE_AUDIO !in id.modelDeclared) return false
+        return true
+    }
+    private companion object {
+        val WRITABLE_STAGES = setOf(AacpStage.CONNECTED, AacpStage.HANDSHAKE_SENT, AacpStage.SUBSCRIBED)
     }
     fun liveBattery(component: Int, nowMs: Long): BatteryValue? = batteries[component]?.takeIf {
         it.generation == generation && stage in setOf(AacpStage.CONNECTED, AacpStage.HANDSHAKE_SENT, AacpStage.SUBSCRIBED) &&
@@ -128,6 +152,7 @@ class AirPodsRepository(
     internal companion object {
         const val EVENT_CAPACITY = 1024
         const val LATE_ECHO_WINDOW_MS = 1_000L
+        val BOOTSTRAPPING = setOf(AacpStage.CONNECTED, AacpStage.HANDSHAKE_SENT)
     }
     private var currentPair: PairAddress? = null
     private val pairCache = mutableMapOf<PairAddress, AirPodsPairValues>()
@@ -273,9 +298,12 @@ class AirPodsRepository(
     // Explicit diagnostic step retained; bootstrap() sends the same pinned flags.
     fun featureFlags() = sendStage(AacpStage.HANDSHAKE_SENT, AacpStage.HANDSHAKE_SENT, AacpCodec.featureFlags())
 
-    /** One ordered initialization per connected generation, using pinned LibrePods bytes.
-     * This does not request proximity keys, claim connection ownership or start tracking.
-     * SUBSCRIBED means local writes completed, never firmware acknowledgement/capability. */
+    /** One ordered initialization per connected generation, using pinned LibrePods bytes and order
+     * (AirPodsService.kt:2738-2762): handshake, flags and subscribe at once; 0x29 only in the
+     * second burst. This does not request proximity keys, claim connection ownership or start
+     * tracking. Like pinned AACPManager.sendPacket a failed handshake or flags write is logged and
+     * the sequence goes on; only a failed subscribe ends the generation, explicitly.
+     * SUBSCRIBED means the subscribe write completed, never firmware acknowledgement/capability. */
     fun bootstrap() {
         val g: Long; val socket: AacpTransport; val job: Job
         synchronized(lock) {
@@ -285,27 +313,50 @@ class AirPodsRepository(
             bootstrapGeneration = g
         }
         scope.launch(job + io) {
+            var subscribed = false
             try {
                 writer.withLock {
-                    val packets = listOf(AacpCodec.handshake(), AacpCodec.featureFlags(),
-                        AacpCodec.subscribe(), AacpCodec.bootstrapExtension())
+                    val packets = listOf(AacpCodec.handshake(), AacpCodec.featureFlags(), AacpCodec.subscribe())
                     for ((index, packet) in packets.withIndex()) {
-                        val from = if (index == 0) AacpStage.CONNECTED else AacpStage.HANDSHAKE_SENT
-                        val step = if (index == 2) QualificationStep.SUBSCRIBE else QualificationStep.BOOTSTRAP
+                        val subscribe = index == packets.lastIndex
+                        val step = if (subscribe) QualificationStep.SUBSCRIBE else QualificationStep.BOOTSTRAP
                         observer.observe(QualificationEvent(step, QualificationPhase.REQUESTED, g))
-                        val written = writeLocked(g, socket, packet) { mutable.value.stage == from }
+                        val written = try {
+                            writeLocked(g, socket, packet) { mutable.value.stage in BOOTSTRAPPING }
+                        } catch (e: Exception) {
+                            if (subscribe) throw e
+                            // Non-fatal like upstream: recorded, and the sequence continues.
+                            observer.observe(QualificationEvent(step, QualificationPhase.FAILED, g, value = index))
+                            synchronized(lock) {
+                                if (isCurrent(g)) mutable.value = mutable.value.copy(diagnostic =
+                                    "bootstrap write ${index + 1} failed: ${e.javaClass.simpleName}; continued")
+                            }
+                            continue
+                        }
                         observer.observe(QualificationEvent(step, if (written) QualificationPhase.COMPLETED else QualificationPhase.REJECTED, g))
                         if (!written) return@withLock
                         synchronized(lock) {
-                            if (isCurrent(g) && mutable.value.stage == from) {
-                                val to = if (index == packets.lastIndex) AacpStage.SUBSCRIBED else AacpStage.HANDSHAKE_SENT
-                                mutable.value = mutable.value.copy(stage = to)
+                            if (isCurrent(g) && mutable.value.stage in BOOTSTRAPPING) {
+                                if (subscribe) {
+                                    mutable.value = mutable.value.copy(stage = AacpStage.SUBSCRIBED)
+                                    subscribed = true
+                                } else if (index == 0) mutable.value = mutable.value.copy(stage = AacpStage.HANDSHAKE_SENT)
                             }
                         }
                     }
                 }
-                scheduleInitializationRefresh(g, socket, job)
-            } catch (e: Exception) { fail(g, "bootstrap write", e) }
+                if (subscribed) scheduleInitializationRefresh(g, socket, job)
+                // A subscribe that could not leave while this generation lives is a failure, never a stall.
+                else if (synchronized(lock) { isCurrent(g) && mutable.value.stage != AacpStage.SUBSCRIBED })
+                    fail(g, "bootstrap subscribe", null)
+            } catch (e: Exception) { fail(g, "bootstrap subscribe write", e) }
+            finally {
+                // Never leave a living, unsubscribed generation unable to bootstrap again.
+                synchronized(lock) {
+                    if (bootstrapGeneration == g && isCurrent(g) && mutable.value.stage != AacpStage.SUBSCRIBED)
+                        bootstrapGeneration = null
+                }
+            }
         }
     }
 
@@ -313,24 +364,35 @@ class AirPodsRepository(
         // Pinned AirPodsService: 200ms between handshake, flags, subscribe and 0x29;
         // another 200ms, then the final handshake/flags/subscribe after 5 seconds.
         // No proximity keys, ownership requests or implicit head tracking. Delays inherit
-        // the owner's scheduler; only blocking writes switch to IO.
+        // the owner's scheduler; only blocking writes switch to IO. A failed write is recorded
+        // and the refresh goes on, like upstream; a retired generation stops it.
         scope.launch(job) {
-            try {
-                for (packet in listOf(AacpCodec.handshake(), AacpCodec.featureFlags(),
-                    AacpCodec.subscribe(), AacpCodec.bootstrapExtension())) {
-                    delay(200)
-                    if (!withContext(io) { write(g, socket, packet) { mutable.value.stage == AacpStage.SUBSCRIBED } }) return@launch
-                }
+            for (packet in listOf(AacpCodec.handshake(), AacpCodec.featureFlags(),
+                AacpCodec.subscribe(), AacpCodec.bootstrapExtension())) {
                 delay(200)
-                delay(5_000)
-                withContext(io) {
-                    writer.withLock {
-                        for (packet in listOf(AacpCodec.handshake(), AacpCodec.featureFlags(), AacpCodec.subscribe()))
-                            if (!writeLocked(g, socket, packet) { mutable.value.stage == AacpStage.SUBSCRIBED }) return@withLock
-                    }
+                if (refreshWrite(g) { write(g, socket, packet) { mutable.value.stage == AacpStage.SUBSCRIBED } } == false) return@launch
+            }
+            delay(200)
+            delay(5_000)
+            withContext(io) {
+                writer.withLock {
+                    for (packet in listOf(AacpCodec.handshake(), AacpCodec.featureFlags(), AacpCodec.subscribe()))
+                        if (refreshWrite(g) { writeLocked(g, socket, packet) { mutable.value.stage == AacpStage.SUBSCRIBED } } == false) return@withLock
                 }
-            } catch (e: Exception) { fail(g, "bootstrap refresh write", e) }
+            }
         }
+    }
+    /** False: rejected (retired generation or stage). Null: the write threw and was recorded. */
+    private suspend fun refreshWrite(g: Long, write: suspend () -> Boolean): Boolean? = try {
+        withContext(io) { write() }
+    } catch (e: CancellationException) { throw e
+    } catch (e: Exception) {
+        observer.observe(QualificationEvent(QualificationStep.BOOTSTRAP, QualificationPhase.FAILED, g))
+        synchronized(lock) {
+            if (isCurrent(g)) mutable.value = mutable.value.copy(diagnostic =
+                "bootstrap refresh write failed: ${e.javaClass.simpleName}; continued")
+        }
+        null
     }
 
     private fun sendStage(from: AacpStage, to: AacpStage, packet: ByteArray) {
@@ -355,7 +417,32 @@ class AirPodsRepository(
     fun setProperty(property: CommandProperty, value: Int) = setProperty(property, PropertyValue.Number(value))
     fun rename(name: String) = setProperty(CommandProperty.NAME, PropertyValue.Name(name))
     fun setEq(value: PropertyValue.Eq) = setProperty(CommandProperty.EQ, value)
+
+    /** Pinned HearingAidScreen.kt:115-124,209-218: 0x2C `[enrolled, 1|2]` then 0x33 `1|2`, always as
+     * a pair. The enrolled byte is the one received (this session, else this pair's saved RX); with
+     * none known nothing is sent and this returns false. Admission of both is atomic. */
+    fun setHearingAid(enabled: Boolean): Boolean = synchronized(lock) {
+        val s = mutable.value
+        val enrolled = s.hearingAidEnrolled() ?: return false
+        val aid = PropertyValue.Number(HearingAidWire.pack(enrolled, enabled))
+        val assist = PropertyValue.Number(if (enabled) 1 else 2)
+        if (!s.canAttemptWrite(CommandProperty.HEARING_AID, aid) ||
+            !s.canAttemptWrite(CommandProperty.HEARING_ASSIST_CONFIG, assist)) return false
+        enqueue(CommandProperty.HEARING_AID, aid) && enqueue(CommandProperty.HEARING_ASSIST_CONFIG, assist)
+    }
+
+    /** Every call is a new physical write, like pinned AirPodsViewModel/ControlCommandRepository:
+     * touching the same value again resends it. Only values not yet written coalesce (A->B->C sends C).
+     * HEARING_AID never leaves alone: 1/2 (or a packed value with the received enrolled byte) is
+     * sent as the [setHearingAid] pair. */
     fun setProperty(property: CommandProperty, value: PropertyValue): Boolean {
+        if (property != CommandProperty.HEARING_AID) return enqueue(property, value)
+        val requested = (value as? PropertyValue.Number)?.value ?: return false
+        val wire = synchronized(lock) { mutable.value.hearingAidWireValue(requested) } ?: return false
+        return setHearingAid(HearingAidWire.enabled(wire))
+    }
+
+    private fun enqueue(property: CommandProperty, value: PropertyValue): Boolean {
         val packet = try { when (value) {
             is PropertyValue.Number -> AacpCodec.property(property, value.value)
             is PropertyValue.Eq -> { require(property == CommandProperty.EQ); AacpCodec.eq(value) }
@@ -365,9 +452,6 @@ class AirPodsRepository(
             val s = mutable.value
             if (!s.canAttemptWrite(property, value)) return false
             val socket = transport ?: return false; val job = session ?: return false; val g = s.generation
-            // Identical queued/in-flight/sent intent is already represented. Never resend on RX.
-            if (s.desired[property]?.let { it.requested == value && it.status in setOf(
-                    DesiredStatus.QUEUED, DesiredStatus.WRITING, DesiredStatus.SENT) } == true) return true
             val pending = PendingCommand((value as? PropertyValue.Number)?.value ?: 0, clock.nowMs(), ++sequence,
                 value, packet.map { it.toInt() and 255 }, g)
             val choice = DesiredProperty(value, pending.sequence, g, DesiredStatus.QUEUED, pending.startedMs)
@@ -430,6 +514,8 @@ class AirPodsRepository(
                                 // An RX may have reconciled this intent while socket.write blocked.
                                 val updated = if (!written) intent.copy(status = DesiredStatus.FAILED)
                                     else if (intent.status == DesiredStatus.WRITING) intent.copy(status = DesiredStatus.SENT) else intent
+                                // Armed before SENT is published: whoever sees SENT also has its deadline.
+                                if (updated.status == DesiredStatus.SENT) scheduleConfirmationDeadline(g, property, updated.sequence)
                                 mutable.value = rememberChoice(s.copy(pending = s.pending - property,
                                     desired = s.desired + (property to updated),
                                     outcomes = when (updated.status) {
@@ -456,6 +542,24 @@ class AirPodsRepository(
                 }
                 fail(g, "command write", e)
                 return
+            }
+        }
+    }
+
+    /** Caller holds [lock]. If this exact send is still SENT after [CONFIRMATION_WINDOW_MS] it
+     * becomes NOT_CONFIRMED: effective falls back to RX. A later matching RX still reconciles it. */
+    private fun scheduleConfirmationDeadline(g: Long, property: CommandProperty, sequence: Long) {
+        val job = session ?: return
+        scope.launch(job) {
+            delay(CONFIRMATION_WINDOW_MS)
+            synchronized(lock) {
+                if (!isCurrent(g)) return@synchronized
+                val s = mutable.value
+                val intent = s.desired[property]?.takeIf { it.sequence == sequence && it.status == DesiredStatus.SENT }
+                    ?: return@synchronized
+                val expired = intent.copy(status = DesiredStatus.NOT_CONFIRMED)
+                mutable.value = rememberChoice(s.copy(desired = s.desired + (property to expired),
+                    outcomes = s.outcomes + (property to CommandOutcome.NOT_CONFIRMED)), property, expired)
             }
         }
     }
@@ -543,8 +647,13 @@ class AirPodsRepository(
                 else { frame -> rxDiagnostics.observe(g, frame) }
             AacpCodec.decodeSdu(sdu, diagnosticFrame).forEach {
                 receive(g, it, ingressAt, ordinal)
-                if (synchronized(lock) { isCurrent(g) } && !mutableEvents.tryEmit(Received(it, ingressAt, g)))
-                    throw IllegalStateException("EVENT_BUFFER_OVERFLOW")
+                if (synchronized(lock) { isCurrent(g) } && !mutableEvents.tryEmit(Received(it, ingressAt, g))) {
+                    // Head samples are a stream: under backlog the excess is dropped, the session lives.
+                    // Every other event is state a consumer must not miss: overflow ends the generation.
+                    if (it is AacpEvent.Head) observer.observe(QualificationEvent(QualificationStep.RX,
+                        QualificationPhase.REJECTED, g, flags = 8))
+                    else throw IllegalStateException("EVENT_BUFFER_OVERFLOW")
+                }
             }
         }
     }
@@ -588,6 +697,8 @@ class AirPodsRepository(
                 is AacpEvent.ConversationSetting -> 4; is AacpEvent.ConversationActivity -> 5
                 is AacpEvent.Ear -> 6; is AacpEvent.Stem -> 7; is AacpEvent.Head -> 8
                 is AacpEvent.Property -> 9; is AacpEvent.Unknown -> 0
+                // Opcode only: the frame names and addresses other hosts, none of it is exported.
+                is AacpEvent.AudioMovedToOtherDevice -> 10
             }, values = numbers))
         val now = ingressAt
         fun observed(property: CommandProperty, value: PropertyValue) {
@@ -597,7 +708,9 @@ class AirPodsRepository(
             s.desired[property]?.let { intent ->
                 val afterWrite = intent.writeAfterRx?.let { ordinal > it } == true
                 val reconcilable = when (intent.status) {
-                    DesiredStatus.UNCERTAIN, DesiredStatus.FAILED -> intent.writeAfterRx == null || afterWrite
+                    // A late RX still settles an intent whose 5s window expired.
+                    DesiredStatus.UNCERTAIN, DesiredStatus.FAILED, DesiredStatus.NOT_CONFIRMED ->
+                        intent.writeAfterRx == null || afterWrite
                     DesiredStatus.WRITING, DesiredStatus.SENT -> afterWrite
                     else -> false
                 }
@@ -645,9 +758,12 @@ class AirPodsRepository(
             is AacpEvent.Information -> {
                 event.identity.name?.let { observed(CommandProperty.NAME, PropertyValue.Name(it)) }
                 s = s.copy(identity=event.identity, identityReceived=Received(event.identity,now,g),
-                    diagnostic=if(event.identity.recognized) "Model identified; physical gate still NV" else "Unknown model; controls unavailable")
+                    diagnostic=if(event.identity.recognized) "Model identified; physical gate still NV"
+                        else "Unknown model; controls still sent, model features not offered")
             }
             is AacpEvent.Unknown -> s = s.copy(diagnostic = "RX opcode=${event.opcode} bytes=${event.bytes}: ${event.reason}")
+            is AacpEvent.AudioMovedToOtherDevice -> s = s.copy(audioMovedElsewhere = Received(true, now, g),
+                diagnostic = "RX opcode=${event.opcode}: audio moved to another device; payload not retained")
         }
         mutable.value = s
         if (event is AacpEvent.Property || event is AacpEvent.Mode || event is AacpEvent.ConversationSetting ||

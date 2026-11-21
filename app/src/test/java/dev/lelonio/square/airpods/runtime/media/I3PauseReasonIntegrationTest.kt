@@ -23,6 +23,8 @@ class I3PauseReasonIntegrationTest {
             routeEvidence = if (external) RouteEvidence.EXTERNAL_STREAMING_INFERENCE else RouteEvidence.LOCAL_RENDERER)
         var observer: (() -> Unit)? = null
         var receipts = true
+        /** Shifts the receipt id inside the CORRECT evidence domain (a receipt for another request). */
+        var receiptOffset = 0L
         val sent = mutableListOf<MediaAction>()
         override fun read() = listOf(candidate)
         override fun observe(changed: () -> Unit): Closeable {
@@ -33,8 +35,8 @@ class I3PauseReasonIntegrationTest {
             sent.add(action)
             candidate = when (action) {
                 MediaAction.PAUSE -> candidate.copy(playback = Playback.PAUSED,
-                    observedPauseEffect = effectId.takeIf { receipts && candidate.local },
-                    correlatedPauseEffect = effectId.takeIf { receipts && !candidate.local })
+                    observedPauseEffect = effectId?.plus(receiptOffset).takeIf { receipts && candidate.local },
+                    correlatedPauseEffect = effectId?.plus(receiptOffset).takeIf { receipts && !candidate.local })
                 MediaAction.PLAY -> candidate.copy(playback = Playback.PLAYING)
                 MediaAction.SET_VOLUME -> error("duck disabled in this fixture")
             }
@@ -84,13 +86,17 @@ class I3PauseReasonIntegrationTest {
         }
     }
 
-    @Test fun earOnlyQueuedAndOwnedLoseResumeOnUnknownOrCache() {
+    @Test fun earOnlyQueuedAndOwnedLoseResumeOnCacheButLiveUnknownIsIgnored() {
         for (external in listOf(false, true)) for (owned in listOf(false, true))
             for (cache in listOf(false, true)) {
                 val r = Rig(external); r.ear(EarState.BOTH); r.ear(EarState.NONE)
                 if (owned) r.drain()
                 r.invalidate(cache); r.ear(EarState.BOTH); r.drain()
-                if (owned) r.assertActions(MediaAction.PAUSE) else r.assertActions()
+                // The reinsertion cancels a still-queued PAUSE; an owned pause resumes unless a cached
+                // (non-live) sample invalidated the ear resume. A live UNKNOWN changes nothing.
+                if (!owned) r.assertActions()
+                else if (cache) r.assertActions(MediaAction.PAUSE)
+                else r.assertActions(MediaAction.PAUSE, MediaAction.PLAY)
             }
     }
 
@@ -105,7 +111,9 @@ class I3PauseReasonIntegrationTest {
                 if (earReleasedFirst) r.ear(EarState.BOTH)
                 r.invalidate(cache); r.ear(EarState.BOTH); r.drain()
                 r.ca(false); r.drain()
-                val expected = if (caOrigin) listOf(MediaAction.PAUSE, MediaAction.PLAY)
+                // Cache input invalidates only an EAR-origin request. A live UNKNOWN is ignored, so
+                // the EAR-origin pause still lands, is owned while CA is active, and CA end resumes it.
+                val expected = if (caOrigin || !cache) listOf(MediaAction.PAUSE, MediaAction.PLAY)
                     else if (owned) listOf(MediaAction.PAUSE) else emptyList()
                 assertEquals("external=$external caOrigin=$caOrigin owned=$owned earReleased=$earReleasedFirst",
                     expected, r.env.sent)
@@ -134,7 +142,8 @@ class I3PauseReasonIntegrationTest {
                 if (earLast) { r.ca(false); r.ear(EarState.BOTH) }
                 else { r.ear(EarState.BOTH); r.ca(false) }
                 r.invalidate(cache); r.drain()
-                if (caOrigin && !earLast) r.assertActions(MediaAction.PAUSE, MediaAction.PLAY)
+                // Only cached input cancels the ear-dependent PLAY; a live UNKNOWN is ignored.
+                if (!cache || (caOrigin && !earLast)) r.assertActions(MediaAction.PAUSE, MediaAction.PLAY)
                 else r.assertActions(MediaAction.PAUSE)
             }
     }
@@ -150,29 +159,38 @@ class I3PauseReasonIntegrationTest {
         }
     }
 
-    @Test fun pausedWithoutReceiptCannotAcquireCaOwnershipInEitherEvidenceDomain() {
+    @Test fun dispatchedPauseWithoutReceiptOwnsCaPauseInEitherEvidenceDomain() {
         for (external in listOf(false, true)) {
             val r = Rig(external); r.env.receipts = false
             r.ca(true); r.drain(); r.ear(EarState.UNKNOWN); r.ca(false); r.drain()
+            r.assertActions(MediaAction.PAUSE, MediaAction.PLAY)
+        }
+    }
+
+    @Test fun pausedWithAnotherRequestsReceiptInTheSameDomainDoesNotOwn() {
+        for (external in listOf(false, true)) {
+            val r = Rig(external); r.env.receiptOffset = 1_000
+            r.ca(true); r.drain(); r.ca(false); r.drain()
             r.assertActions(MediaAction.PAUSE)
         }
     }
 
-    @Test fun receiptsCannotCrossLocalAndC6EvidenceDomains() {
+    @Test fun receiptsInTheOtherEvidenceDomainAreInertAndDispatchOwnershipStillResumes() {
         for (external in listOf(false, true)) {
             val r = Rig(external); r.env.receipts = false
             r.ca(true); r.drain()
-            // First request ID is 1; place it exclusively in the wrong evidence domain.
+            // First request ID is 1; place it exclusively in the wrong evidence domain: it is neither
+            // read as ours nor as someone else's, so it can neither revoke nor grant anything.
             r.env.candidate = if (external) r.env.candidate.copy(observedPauseEffect = 1L)
                 else r.env.candidate.copy(correlatedPauseEffect = 1L)
             r.ear(EarState.UNKNOWN); r.ca(false); r.drain()
-            r.assertActions(MediaAction.PAUSE)
+            r.assertActions(MediaAction.PAUSE, MediaAction.PLAY)
         }
     }
 
     @Test fun preservedCaOriginStillRechecksRevocationsBeforeQueuedPauseAndPlay() {
         val changes: List<(MediaCandidate) -> MediaCandidate> = listOf(
-            { it.copy(permitted = false) }, { it.copy(routedToPair = false) },
+            { it.copy(permitted = false) },
             { it.copy(callActive = true) }, { it.copy(playback = Playback.UNKNOWN) },
             { it.copy(transportRevision = 1) },
             { it.copy(target = it.target.copy(accountEpoch = "other")) },
@@ -184,6 +202,15 @@ class I3PauseReasonIntegrationTest {
             if (resume) { r.drain(); r.ca(false) }
             r.ear(EarState.UNKNOWN); r.env.candidate = change(r.env.candidate); r.drain()
             if (resume) r.assertActions(MediaAction.PAUSE) else r.assertActions()
+        }
+    }
+
+    @Test fun routeToPairChangeDoesNotRevokeQueuedPauseOrPlay() {
+        for (external in listOf(false, true)) for (resume in listOf(false, true)) {
+            val r = Rig(external); r.ear(EarState.BOTH); r.ca(true)
+            if (resume) { r.drain(); r.ca(false) }
+            r.env.candidate = r.env.candidate.copy(routedToPair = false); r.drain()
+            if (resume) r.assertActions(MediaAction.PAUSE, MediaAction.PLAY) else r.assertActions(MediaAction.PAUSE)
         }
     }
 

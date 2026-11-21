@@ -53,6 +53,32 @@ class AirPodsC5EqualizerTest {
         }
     }
 
+    private fun fixtureEq(eq: PropertyValue.Eq) = uiFixture().let { it.copy(domain = it.domain.copy(properties = mapOf(
+        CommandProperty.EQ to Received(eq, 1100, 7)))) }
+
+    @Test fun bandsAreDisabledWhileEqIsOffAndEnabledWhenOn() {
+        val off = PropertyValue.Eq(false, 40, 50, 60)
+        val on = off.copy(enabled = true)
+        assertTrue(fixtureEq(off).writeAllowed(CommandProperty.EQ, off))
+        assertFalse(equalizerBandsEnabled(true, off))
+        assertTrue(equalizerBandsEnabled(true, on))
+        assertFalse(equalizerBandsEnabled(false, on))
+    }
+
+    @Test fun resetIsDisabledOnFlatCurveAndEnabledOtherwise() {
+        assertFalse(equalizerResetEnabled(true, PropertyValue.Eq(true, 50, 50, 50)))
+        assertFalse(equalizerResetEnabled(true, PropertyValue.Eq(false, 50, 50, 50)))
+        assertTrue(equalizerResetEnabled(true, PropertyValue.Eq(true, 40, 50, 50)))
+        assertTrue(equalizerResetEnabled(true, PropertyValue.Eq(false, 50, 50, 61)))
+        assertFalse(equalizerResetEnabled(false, PropertyValue.Eq(true, 40, 50, 50)))
+    }
+
+    @Test fun resetFromNonFlatCurveWritesFlatBandsKeepingEnabled() {
+        val state = fixtureEq(PropertyValue.Eq(true, 40, 50, 60))
+        val write = requireNotNull(state.equalizerWrite(explicitReset = true) { it.copy(low = 50, mid = 50, high = 50) })
+        assertEquals(PropertyValue.Eq(true, 50, 50, 50), write.value)
+    }
+
     @Test fun fastDragFlushesOneCompleteFinalPacketAndCancelsTimer() = runTest {
         val packets = mutableListOf<ByteArray>()
         val gesture = AirPodsLiveSliderGesture(this, 0..100, 100L) { low ->

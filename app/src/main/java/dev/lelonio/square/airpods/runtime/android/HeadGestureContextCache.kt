@@ -13,10 +13,11 @@ internal class HeadGestureContextCache<T>(
     fun invalidate() { revision.incrementAndGet(); snapshot = null }
     suspend fun refresh(read: suspend () -> T) {
         val version = revision.get()
-        val started = clock()
+        // Freshness starts at publish: a refresh blocked on a main-thread read must not
         val value = read()
-        // Age begins BEFORE a possibly blocked main read. Late results never become fresh.
-        if (revision.get() == version) snapshot = Snapshot(value, started, version)
+        // publish an already-expired snapshot. The revision fence still rejects results
+        // computed before an invalidation.
+        if (revision.get() == version) snapshot = Snapshot(value, clock(), version)
     }
     fun current(): T? {
         val value = snapshot ?: return null

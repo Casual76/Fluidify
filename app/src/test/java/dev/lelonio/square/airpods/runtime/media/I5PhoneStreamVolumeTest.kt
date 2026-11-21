@@ -89,12 +89,13 @@ class I5PhoneStreamVolumeTest {
         assertFalse(f.core.gesture(AirPodsMediaGesture.PLAY))
         assertTrue(f.env.effects.isEmpty()); assertEquals(0, f.env.gestures); assertFalse(f.env.externalEnabled)
     }
-    @Test fun hiddenAndStaleForegroundActionsAreRejectedEvenWithBackgroundConsent() {
+    @Test fun manualVolumeNeedsNoVisibilityButStaleForegroundActionsAreStillRejected() {
         val f = Rig(automatic); f.core.visible(false)
-        assertFalse(f.core.manualVolume(5)); f.core.visible(true)
+        assertTrue("tile/quick-settings volume is a background user action too", f.core.manualVolume(5))
+        f.core.visible(true)
         var current = true
         f.queue.post { assertFalse(f.core.manualVolume(5) { current }) }
-        current = false; f.queue.drain(); assertTrue(f.env.writes.isEmpty())
+        current = false; f.queue.drain(); assertEquals(listOf(5), f.env.writes)
     }
     @Test fun queuedActionRechecksSessionAndAdmissionChanges() {
         for (change in 0..3) {
@@ -145,12 +146,18 @@ class I5PhoneStreamVolumeTest {
         assertEquals(listOf(6), f.env.writes)
         assertEquals(listOf(MediaAction.SET_VOLUME), f.env.effects.map { it.action })
     }
-    @Test fun failedSetReturnsFalsePublishesActualAndStillRevokesQueuedDuck() {
+    @Test fun failedSetReturnsFalsePublishesActualAndDoesNotRebaseTheDuck() {
         val f = Rig(automatic); f.local(); f.core.conversation(true); f.step(false)
-        f.env.fail = true; assertFalse(f.core.manualVolume(5)); f.queue.drain()
-        f.core.conversation(false); f.step()
-        assertTrue(f.env.effects.isEmpty()); assertTrue(f.env.writes.isEmpty())
+        f.env.fail = true; assertFalse(f.core.manualVolume(5))
+        // The fresh platform read is published right away, including after a rejected set.
         assertEquals(MediaVolume(8, 10), f.observations.last())
+        f.queue.drain()
+        f.core.conversation(false); f.step()
+        // A failed manual set never reaches the platform and does not rebase: the duck lives on and
+        // its restore lands on the original level.
+        assertTrue(f.env.writes.isEmpty())
+        assertTrue(f.env.effects.all { it.action == MediaAction.SET_VOLUME })
+        assertEquals(8, f.env.effects.last().volume)
     }
     @Test fun observerWithZeroMediaSessionsPublishesActualAndStaleCallbacksCannotResurrectStop() {
         val f = Rig(); val stale = f.env.callbacks.last()

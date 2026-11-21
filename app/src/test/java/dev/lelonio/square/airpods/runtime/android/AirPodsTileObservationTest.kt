@@ -88,11 +88,12 @@ class AirPodsTileObservationTest {
         assertEquals(1, subscriptions)
     }
 
-    @Test fun listeningSurvivesSilenceWithoutRollback() = scenario {
+    @Test fun listeningSurvivesSilenceAsNotConfirmedWithoutLosingTheTile() = scenario {
         start(); click()
         timers.advanceTimeBy(5_000); drain()
-        assertNull(repository.state.value.outcomes[CommandProperty.MODE])
-        assertEquals(PropertyValue.Number(ListeningMode.OFF.wire), repository.state.value.propertyEffective(CommandProperty.MODE)?.value)
+        // Silence expires to NOT_CONFIRMED and the display falls back to the observed mode.
+        assertEquals(CommandOutcome.NOT_CONFIRMED, repository.state.value.outcomes[CommandProperty.MODE])
+        assertEquals(PropertyValue.Number(ListeningMode.ANC.wire), repository.state.value.propertyEffective(CommandProperty.MODE)?.value)
         assertEquals(listOf(true), updates)
         assertEquals(ListeningMode.ANC, repository.state.value.mode?.value)
     }

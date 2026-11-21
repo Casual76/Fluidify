@@ -24,7 +24,8 @@ class AirPodsHeaderPresentationTest {
             BatteryCase to Received(BatteryValue(40, 1), 1000, 7)))) }
         assertEquals(CaseBatteryReading(40, true, 1), s.caseBatteryReading())
         assertEquals(CaseBatteryReading(61, false, 2), s.copy(nowMs = 301000).caseBatteryReading())
-        assertEquals(CaseBatteryReading(61, false, 2), s.copy(profileConnected = false).caseBatteryReading())
+        // An A2DP profile drop alone no longer hides a current AACP sample.
+        assertEquals(CaseBatteryReading(40, true, 1), s.copy(profileConnected = false).caseBatteryReading())
         assertEquals(CaseBatteryReading(61, false, 2), s.copy(nowMs = 999).caseBatteryReading())
         assertEquals(CaseBatteryReading(61, false, 2), s.copy(domain = s.domain.copy(generation = 8)).caseBatteryReading())
     }
@@ -48,7 +49,8 @@ class AirPodsHeaderPresentationTest {
             Received(PropertyValue.Name("Device name"), 60000, 7)), desired = mapOf(
             CommandProperty.NAME to pending.desired.getValue(CommandProperty.NAME).copy(status = DesiredStatus.CONTRADICTED)))
         assertEquals("Device name", ui.copy(domain = late).headerName)
-        assertEquals("New", ui.copy(domain = pending.copy(desired = mapOf(CommandProperty.NAME to
+        // An UNCERTAIN intent is not a display fact any more: the observed name stands.
+        assertEquals("Old", ui.copy(domain = pending.copy(desired = mapOf(CommandProperty.NAME to
             pending.desired.getValue(CommandProperty.NAME).copy(status = DesiredStatus.UNCERTAIN)))).headerName)
     }
 
@@ -58,6 +60,9 @@ class AirPodsHeaderPresentationTest {
         val edited = initial.edit("My name")
         assertEquals("My name", edited.reconcile("Late old name").text)
         assertEquals("My name", edited.submitted().reconcile("My name").text)
-        assertEquals("Firmware name", edited.submitted().reconcile("Firmware name").text)
+        // A submitted draft survives a different late name until the device reports
+        // the submitted one back; only then does it follow later names again.
+        assertEquals("My name", edited.submitted().reconcile("Firmware name").text)
+        assertEquals("Firmware name", edited.submitted().reconcile("My name").reconcile("Firmware name").text)
     }
 }

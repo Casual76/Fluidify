@@ -80,7 +80,6 @@ class AirPodsPresentationTest {
         // Each of these is a profile that is up with something missing: none may read "Connected".
         val short = listOf(
             ready.copy(productGatePassed = false),
-            ready.copy(conformanceMatches = false),
             ready.copy(enabled = false),
             ready.copy(domain = ready.domain.copy(stage = AacpStage.CLOSED)),
         )

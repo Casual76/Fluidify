@@ -88,31 +88,32 @@ class AirPodsTransportOwnershipTest {
         assertTrue(lease.released)
     }
 
-    @Test fun failedCloseRetainsOwnershipWithoutAutomaticRetry() {
+    @Test fun failedCloseRetiresLeaseWithoutAutomaticRetry() {
         val owners = AirPodsTransportOwnership()
         val lease = owners.reserve(diagnostic)!!
         val socket = Transport().apply { failClose = true }
         val transport = lease.construct { socket }
         assertTrue(runCatching { transport.close() }.isFailure)
-        assertNull(owners.reserve(production))
-        assertFalse(lease.released)
+        // A throwing close still retires the lease: retaining it would wedge later sessions.
+        assertTrue(lease.released)
+        assertNotNull(owners.reserve(production))
         assertEquals(1, socket.closes.get())
         assertTrue(runCatching { transport.connect() }.isFailure)
+        assertEquals(1, socket.closes.get()) // no automatic retry
+        lease.close()
         assertEquals(1, socket.closes.get())
-        socket.failClose = false
-        lease.close() // explicit cleanup, no retry loop
-        assertTrue(lease.released)
     }
 
-    @Test fun abandonedFactoryCloseFailureRetainsOwnership() {
+    @Test fun abandonedFactoryCloseFailureRetiresLease() {
         val owners = AirPodsTransportOwnership()
         val lease = owners.reserve(diagnostic)!!
         val socket = Transport().apply { failClose = true }
         assertTrue(runCatching { lease.construct { lease.close(); socket } }.isFailure)
-        assertNull(owners.reserve(production))
-        assertFalse(lease.released)
-        socket.failClose = false; lease.close()
         assertTrue(lease.released)
+        assertNotNull(owners.reserve(production))
+        assertEquals(1, socket.closes.get())
+        lease.close()
+        assertEquals(1, socket.closes.get())
     }
 
     @Test fun constructorFailureReleasesWithoutOpeningAnotherTransport() {

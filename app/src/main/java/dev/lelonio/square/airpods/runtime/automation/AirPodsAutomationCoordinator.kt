@@ -26,7 +26,10 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
     private var conversation: Boolean? = null
     private val reasons = mutableSetOf<PauseReason>()
     // Origin belongs to the actual PAUSE request, never to the current set of blockers.
-    private data class PendingPause(val effect: MediaEffect, val deadline: Long, val origin: PauseReason)
+    private data class PendingPause(val effect: MediaEffect, val deadline: Long, val origin: PauseReason,
+        // LibrePods semantics: ownership is decided by "we dispatched the PAUSE and the
+        // target then paused", not by a correlated receipt id. Receipts stay telemetry.
+        val dispatched: Boolean = false)
     private data class OwnedPause(val target: MediaTarget, val origin: PauseReason)
     // dispatchedUntil: set only when the host actually handed this PLAY to its target. It bounds
     // the window in which a transitional state can be that target executing our resume.
@@ -36,7 +39,7 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
     private var pending: PendingPause? = null
     private var ownedPause: OwnedPause? = null
     private data class Duck(
-        val target: MediaTarget, val initial: Int, val maximum: Int,
+        val target: MediaTarget, var initial: Int, val maximum: Int,
         var lastWrite: Int, var goal: Int, var from: Int, var started: Long,
         var awaiting: MediaEffect? = null, var deadline: Long = 0,
         var restoring: Boolean = false,
@@ -50,8 +53,14 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
         // Speech may start/end while the previous write is still being observed. Keep its
         // original receipt deadline, then begin the new direction at the confirmed level.
         var restartAfterObservation: Boolean = false,
+        // Steps actually submitted, kept after their deadlines so a late receipt of
+        // any of them is recognized as ours instead of a foreign volume move.
+        val stepIds: ArrayDeque<Long> = ArrayDeque(),
     )
     private var duck: Duck? = null
+    // A manual transport intent while out-of-ear suppresses the repeated-NONE re-pause
+    // until the buds are worn again: pressing play by hand must stick.
+    private var earManualOverride = false
 
     /** Reconfigure revokes every effect. Only live ear history of the same session survives. */
     @Synchronized fun configure(value: AutomationConfig, generation: Long) {
@@ -76,12 +85,13 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
      * No cleanup PLAY/restore; duplicates cannot reacquire, but a new ear transition still can.
      * Keep inputEpoch: observations remain current, while the cancelled lease fences old effects.
      */
-    @Synchronized fun onManualIntent() { invalidateEffects() }
+    @Synchronized fun onManualIntent() { earManualOverride = true; invalidateEffects() }
 
     /** Manual play/pause/seek/skip consumes transport only. Keep the same duck lease and
      * pending receipt/deadline; a volume command still uses onManualIntent() above.
      */
     @Synchronized fun onManualTransportIntent() {
+        earManualOverride = true
         abandonTransportEffects()
         reasons.clear()
     }
@@ -96,6 +106,13 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
         expectedInputEpoch: Long = inputEpoch) {
         val c = config ?: return
         if (expectedInputEpoch != inputEpoch || effect.session != session || effect.lease != lease) return
+        // Dispatch truth (FIX-11/12): an accepted PAUSE becomes ownership-eligible the
+        // moment the target actually pauses; a rejected dispatch frees its slot at once
+        // instead of lingering until a deadline abandons unrelated effects.
+        pending?.takeIf { it.effect.id == effect.id }?.let { p ->
+            pending = if (accepted) p.copy(dispatched = true) else null
+        }
+        if (!accepted) duck?.takeIf { it.awaiting?.id == effect.id }?.let { it.awaiting = null }
         val r = pendingResume?.takeIf { it.effect.id == effect.id } ?: return
         pendingResume = if (accepted) r.copy(dispatchedUntil = clock.nowMillis() + c.observationTimeoutMillis)
             else null
@@ -111,6 +128,7 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
         media = null
         sequence = Long.MIN_VALUE
         ear = null
+        earManualOverride = false
         conversation = null
         reasons.clear()
         pending = null
@@ -119,8 +137,12 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
         duck = null
     }
 
+    // Route-to-pair is deliberately not a play/pause condition (upstream sends the
+    // global media key to the active session); it stays required only where a wrong
+    // route would be destructive (audio disconnect, handled by the runtime).
     private fun eligible(s: MediaSnapshot?): Boolean = s != null && s.target != null &&
-        s.permitted && s.unambiguous && s.routedToPair && !s.callActive &&
+        s.permitted && s.unambiguous && !s.callActive &&
+        (s.evidence != MediaEvidence.EXTERNAL_BEST_EFFORT || s.routedToPair || s.routeEvidence != RouteEvidence.UNAVAILABLE) &&
         (s.evidence != MediaEvidence.EXTERNAL_BEST_EFFORT || s.externalBestEffortConsented)
 
     private fun pauseEvidence(s: MediaSnapshot): Long? = when (s.evidence) {
@@ -137,6 +159,14 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
         sequence = snapshot.sequence
         val old = media
         media = snapshot
+        // A manual-play attestation must be latched even on a snapshot that is not
+        // (or no longer) eligible: the override is exactly what invalidated it. A pending
+        // PAUSE attests only once dispatched: a fenced queued effect never reached the player.
+        if (snapshot.transportOverride && snapshot.playback == Playback.PLAYING &&
+            (ownedPause != null || pending?.dispatched == true ||
+                (snapshot.evidence == MediaEvidence.EXTERNAL_BEST_EFFORT && old?.playback != Playback.PLAYING))) {
+            earManualOverride = true
+        }
         if (!eligible(snapshot) || !eligible(old) || old?.target != snapshot.target || old?.evidence != snapshot.evidence ||
             old?.callActive != snapshot.callActive) {
             invalidateEffects()
@@ -157,12 +187,14 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
             if (!resumeInFlight() && duck?.transportOverridden != true) abandonEffects()
         } else {
             pending?.let { p ->
-                if (clock.nowMillis() >= p.deadline) abandonEffects()
+                if (clock.nowMillis() >= p.deadline) dropPendingPause()
                 else if (snapshot.playback == Playback.PAUSED) {
                     val observed = pauseEvidence(snapshot)
-                    if (observed != null) {
-                        if (observed == p.effect.id && reasons.isNotEmpty()) ownedPause = OwnedPause(snapshot.target!!, p.origin)
-                        else host.cancelEffect(p.effect)
+                    if (observed == p.effect.id || (observed == null && p.dispatched)) {
+                        if (reasons.isNotEmpty()) ownedPause = OwnedPause(snapshot.target!!, p.origin)
+                        pending = null
+                    } else if (observed != null) {
+                        host.cancelEffect(p.effect)
                         pending = null
                     }
                     // Exo's application state may precede the sink/native receipt.
@@ -183,27 +215,55 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
             val a = d.awaiting
             val receipt = volumeEvidence(snapshot)
             val newReceipt = receipt != null && receipt != d.lastEvidence
-            if (snapshot.volumeOverride || snapshot.foreignDuckActive || v == null ||
-                v.maximum != d.maximum) abandonEffects()
+            // Duck and pause have separate fates from here on: nothing in this branch
+            // may abandon an owned pause, and a duck step never waits for a receipt
+            // to keep ramping (upstream ramps unconditionally and always restores).
+            if (v == null || v.maximum != d.maximum || snapshot.foreignDuckActive) dropDuck()
+            // A volume revision caused by our own step landing is not an override:
+            // rebasing on it would move the restore target to the ducked level.
+            else if (snapshot.volumeOverride && !(snapshot.evidence == MediaEvidence.EXTERNAL_BEST_EFFORT &&
+                v.current == a?.volume)) rebaseDuck(d, v.current)
             else if (a != null) {
-                if (clock.nowMillis() >= d.deadline) abandonEffects()
-                else if (newReceipt && receipt == a.id && v.current == a.volume) {
+                if (clock.nowMillis() >= d.deadline) { d.awaiting = null; d.lastWrite = v.current
+                    if (d.restoring && d.lastWrite == d.initial) duck = null }
+                else if (newReceipt && receipt == a.id) {
                     d.lastWrite = v.current
                     d.lastEvidence = receipt
                     d.observedWrite = true
+                    d.stepIds.remove(a.id)
                     d.awaiting = null
                     if (d.restartAfterObservation) {
-                        d.restartAfterObservation = false
+        d.restartAfterObservation = d.awaiting != null
                         d.from = d.lastWrite
                         d.started = clock.nowMillis()
                     }
                     if (d.restoring && d.lastWrite == d.initial) duck = null
+                } else if (newReceipt && receipt != null && receipt in d.stepIds) {
+                    // An earlier step of ours landing late while a newer one is in
+                    // flight: accept its level; never mistake it for a foreign move.
+                    d.stepIds.remove(receipt)
+                    d.lastWrite = v.current
+                    d.lastEvidence = receipt
+                    d.observedWrite = true
                 } else if ((v.current != d.lastWrite && v.current != a.volume) || newReceipt) {
-                    abandonEffects()
+                    rebaseDuck(d, v.current)
                 }
                 // A matching requested level with no new receipt is only a pending read.
                 // It grants no ownership and never extends the original receipt deadline.
-            } else if (v.current != d.lastWrite || newReceipt) abandonEffects()
+            } else if (newReceipt && receipt != null && receipt in d.stepIds) {
+                // Our expired step landing late: accept its level, never rebase the
+                // baseline onto it, or the conversation-end restore target is lost.
+                d.lastWrite = v.current
+                d.lastEvidence = receipt
+                d.observedWrite = true
+                d.stepIds.remove(receipt)
+                if (d.restartAfterObservation) {
+                    d.restartAfterObservation = false
+                    d.from = d.lastWrite
+                    d.started = clock.nowMillis()
+                }
+                if (d.restoring && d.lastWrite == d.initial) duck = null
+            } else if (v.current != d.lastWrite || newReceipt) rebaseDuck(d, v.current)
         }
     }
 
@@ -212,9 +272,45 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
         reasons.clear()
     }
 
+    /** A pause that never landed within its window: drop only the pause slot.
+     * The duck and its volume baseline are unrelated and keep their own fate. */
+    private fun dropPendingPause() {
+        pending?.let { host.cancelEffect(it.effect) }
+        pending = null
+    }
+
+    /** A manual/foreign volume move during a duck becomes the new baseline: restore at
+     * conversation end targets the level the user last chose, and the ramp continues
+     * toward its goal from there instead of abandoning (and orphaning the volume). */
+    /** Dropping a duck must also cancel its queued step: an un-cancelled SET_VOLUME
+     * already in the host queue would land after the duck is gone and overwrite
+     * whatever level superseded it (manual choice, new volume domain, foreign duck). */
+    private fun dropDuck() {
+        duck?.awaiting?.let { host.cancelEffect(it) }
+        duck = null
+    }
+
+    private fun rebaseDuck(d: Duck, level: Int) {
+        d.awaiting?.let { host.cancelEffect(it) }
+        d.initial = level
+        d.lastWrite = level
+        d.from = level
+        d.awaiting = null
+        d.restartAfterObservation = false
+        d.started = clock.nowMillis()
+        if (d.restoring) d.goal = level
+        if (d.restoring && d.lastWrite == d.goal) duck = null
+    }
+
+    /** The user just set this exact level by hand: it becomes the duck baseline, so a
+     * later conversation-end restore lands on the user's level, never the pre-duck one. */
+    @Synchronized fun onManualVolumeLevel(level: Int) {
+        duck?.let { rebaseDuck(it, level) }
+    }
+
     private fun abandonTransportEffects() {
-        // Individual cancellation fences queued transport without cancelling a volume write
-        // that may already have applied. Its original receipt is still required to restore.
+        // Individual cancellation fences queued transport without cancelling a volume
+        // write that may already have applied; its receipt is still required to restore.
         pending?.let { host.cancelEffect(it.effect) }
         pendingResume?.let { host.cancelEffect(it.effect) }
         pending = null
@@ -237,19 +333,32 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
         val c = config ?: return
         if (expectedInputEpoch != inputEpoch || eventSession != session) return
         val before = ear
+        // A live UNKNOWN sample is a glitch frame: it neither updates the baseline nor
+        // poisons the next valid transition (it used to eat both the resume and the
+        // following transition). Cache/non-live input still cleans up below.
+        if (live && value == EarState.UNKNOWN) return
         ear = if (live) value else null
         // Observation is not permission to act. Retain the first live baseline even while
         // disabled; enabling never replays it, but the next physical transition can act.
         if (!c.enabled || !c.earEnabled) return
-        if (!live || value == EarState.UNKNOWN || before == null || before == EarState.UNKNOWN) {
+        if (!live) {
             invalidateEarResume()
             return
         }
-        if (before == value) return
-        if (before == EarState.BOTH && value != EarState.BOTH ||
-            isMono(before) && value == EarState.NONE) acquire(PauseReason.EAR)
-        else if (before == EarState.NONE && value != EarState.NONE ||
-            isMono(before) && value == EarState.BOTH) release(PauseReason.EAR)
+        // Cold start counts as NONE, like upstream's default: a first worn sample is an
+        // insertion (release still requires an owned pause); a first NONE with music
+        // playing pauses like any repeated NONE.
+        val from = before ?: EarState.NONE
+        if (from == value) {
+            // A repeated NONE while music plays re-pauses (upstream checks every packet).
+            if (value == EarState.NONE && !earManualOverride) acquire(PauseReason.EAR)
+            return
+        }
+        if (value != EarState.NONE) earManualOverride = false
+        if (from == EarState.BOTH && value != EarState.BOTH ||
+            isMono(from) && value == EarState.NONE) acquire(PauseReason.EAR)
+        else if (from == EarState.NONE && value != EarState.NONE ||
+            isMono(from) && value == EarState.BOTH) release(PauseReason.EAR)
         // L <-> R: preserve the reason, no new action.
     }
 
@@ -374,13 +483,13 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
 
     private fun finishDuck() {
         val d = duck ?: return
-        // A direction change is not interference. Retain the one pending write and its
-        // deadline; no restoration can run until that write has a matching receipt.
+        // A direction change keeps the one pending write: it may already have landed,
+        // and only its receipt (or deadline) says at which level the new ramp starts.
         d.restoring = true
         d.from = d.lastWrite
         d.goal = d.initial
         d.started = clock.nowMillis()
-        d.restartAfterObservation = d.awaiting != null
+        d.restartAfterObservation = false
         if (d.awaiting == null && d.from == d.goal) duck = null else tick()
     }
 
@@ -389,17 +498,19 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
         if (expectedInputEpoch != inputEpoch) return
         val c = config ?: return
         val now = clock.nowMillis()
-        if (pending?.let { now >= it.deadline } == true) abandonEffects()
+        if (pending?.let { now >= it.deadline } == true) dropPendingPause()
         // A resume still unconfirmed at the bound: UNKNOWN now forfeits; otherwise close the window.
         if (pendingResume?.dispatchedUntil?.let { now >= it } == true) {
             if (media?.playback == Playback.UNKNOWN) abandonEffects() else pendingResume = null
         }
         val d = duck ?: return
-        if (!eligible(media) || media?.target != d.target) { duck = null; return }
-        if (d.awaiting != null) {
-            if (now >= d.deadline) abandonEffects()
+        if (!eligible(media) || media?.target != d.target) { dropDuck(); return }
+        if (d.awaiting != null && now < d.deadline) {
+            // An expired step is cleared just below; expiry never abandons the duck.
             return
         }
+        if (d.awaiting != null) { d.awaiting = null; media?.volume?.current?.let { d.lastWrite = it }
+            if (d.restoring && d.lastWrite == d.initial) { duck = null; return } }
         val fraction = if (c.rampMillis == 0L) 1.0 else
             ((now - d.started).toDouble() / c.rampMillis).coerceIn(0.0, 1.0)
         val next = (d.from + (d.goal - d.from) * fraction).roundToInt().coerceIn(0, d.maximum)
@@ -407,6 +518,7 @@ class AirPodsAutomationCoordinator(private val host: MediaHost, private val cloc
         val e = effect(MediaAction.SET_VOLUME, next) ?: run { duck = null; return }
         if (host.submit(e)) {
             d.awaiting = e
+            d.stepIds.addLast(e.id); while (d.stepIds.size > 8) d.stepIds.removeFirst()
             d.deadline = now + c.observationTimeoutMillis
         } else duck = null
     }

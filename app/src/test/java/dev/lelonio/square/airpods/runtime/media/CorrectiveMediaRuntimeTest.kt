@@ -139,44 +139,86 @@ class CorrectiveMediaRuntimeTest {
             assertEquals(listOf(20, 50), f.volumes())
         }
     }
-    @Test fun incompatibleChangesRevokeQueuedNextStepAndLateReceiptCannotRestore() {
+    private fun Rig.queueNextStepThenApply(change: (MediaCandidate) -> MediaCandidate) {
+        core.conversation(true); step(150)
+        step(150, dispatch = false)
+        val original = env.candidate
+        env.candidate = change(original); queue.drain()
+        env.candidate = original; observe()
+        core.conversation(false); step(300); core.stop(); queue.drain()
+    }
+    @Test fun identityPermissionForeignDuckAndDomainChangesRevokeQueuedNextStepAndLateReceiptCannotRestore() {
         val changes: List<(MediaCandidate) -> MediaCandidate> = listOf(
-            { it.copy(volume = MediaVolume(34, 100)) },
-            { it.copy(volumeRevision = 1) },
-            { it.copy(volume = MediaVolume(35, 101)) },
             { it.copy(target = it.target.copy(routeId = "different-domain")) },
             { it.copy(target = it.target.copy(sessionGeneration = 2)) },
             { it.copy(permitted = false) },
             { it.copy(foreignDuckActive = true) },
-            { it.copy(observedVolumeEffect = -99, correlatedVolumeEffect = -99) },
         )
-        for (external in listOf(false, true)) for (change in changes) {
+        for (external in listOf(false, true)) for (change in changes.indices) {
             val f = Rig(external, enabled.copy(conversationDuck = true))
-            f.core.conversation(true); f.step(150)
-            f.step(150, dispatch = false)
-            val original = f.env.candidate
-            f.env.candidate = change(original); f.queue.drain()
-            f.env.candidate = original; f.observe()
-            f.core.conversation(false); f.step(300); f.core.stop(); f.queue.drain()
-            assertEquals(listOf(35), f.volumes())
+            f.queueNextStepThenApply(changes[change])
+            assertEquals("external=$external change=$change", listOf(35), f.volumes())
         }
     }
-    @Test fun timeoutOrWrongReceiptCannotAcquireOrRestore() {
-        for (external in listOf(false, true)) for (failure in 0..1) {
+    @Test fun volumeRangeChangeRevokesQueuedNextStepAndLateReceiptCannotRestore() {
+        for (external in listOf(false, true)) {
+            val f = Rig(external, enabled.copy(conversationDuck = true))
+            f.queueNextStepThenApply { it.copy(volume = MediaVolume(35, 101)) }
+            assertEquals("external=$external", listOf(35), f.volumes())
+        }
+    }
+    @Test fun foreignOrManualLevelChangesRebaseTheDuckAndNeverRestoreThePreDuckLevel() {
+        val changes: List<(MediaCandidate) -> MediaCandidate> = listOf(
+            { it.copy(volume = MediaVolume(34, 100)) },
+            { it.copy(volumeRevision = 1) },
+            { it.copy(observedVolumeEffect = -99, correlatedVolumeEffect = -99) },
+        )
+        for (external in listOf(false, true)) for (change in changes.indices) {
+            val f = Rig(external, enabled.copy(conversationDuck = true))
+            f.queueNextStepThenApply(changes[change])
+            assertEquals("external=$external change=$change", 35, f.volumes().first())
+            assertTrue("external=$external change=$change: the pre-duck 50 is never written back over it",
+                f.volumes().none { it == 50 })
+        }
+    }
+    @Test fun foreignReceiptRebasesAndAnAlreadyExecutedStepStillRestores() {
+        for (external in listOf(false, true)) {
             val f = Rig(external, enabled.copy(conversationDuck = true))
             f.env.autoApply = false; f.env.receipt(-44)
             f.core.conversation(true); f.step(300)
             val write = f.env.sent.single()
-            when (failure) {
-                0 -> f.step(2_000) // old receipt at unchanged level waits, then times out
-                1 -> { f.env.receipt(-99); f.observe() }
-            }
+            f.env.receipt(-99); f.observe()
             f.env.apply(write.first, write.second, write.third); f.queue.drain()
             f.core.conversation(false); f.step(300)
-            assertEquals(listOf(20), f.volumes())
+            // The foreign receipt rebased at the then-current level; our already-executed
+            // step is recognized on landing and the pre-duck level is still restored.
+            assertEquals(listOf(20, 50), f.volumes())
         }
     }
-    @Test fun matchingLevelAloneCannotRestoreAndItsLaterExpiredReceiptCannotResurrectOwnership() {
+    @Test fun expiredStepIsAcceptedAndTheRampContinuesWithoutWaitingForAReceipt() {
+        for (external in listOf(false, true)) {
+            val f = Rig(external, enabled.copy(conversationDuck = true))
+            f.env.autoApply = false; f.env.receipt(-44)
+            f.core.conversation(true); f.step(300)
+            assertEquals(listOf(20), f.volumes())
+            f.step(2_000) // old receipt at unchanged level: the step times out, the next one is issued
+            assertEquals(listOf(20, 20), f.volumes())
+        }
+    }
+    @Test fun lateReceiptOfAnExpiredStepCannotLeaveTheVolumeDuckedAfterConversationEnd() {
+        for (external in listOf(false, true)) {
+            val f = Rig(external, enabled.copy(conversationDuck = true))
+            f.env.autoApply = false; f.env.receipt(-44)
+            f.core.conversation(true); f.step(300)
+            val write = f.env.sent.single()
+            f.step(2_000)
+            f.env.apply(write.first, write.second, write.third); f.queue.drain()
+            f.core.conversation(false); f.step(300); f.step(2_000)
+            // The restore at conversation end is unconditional: it must put the pre-duck level back.
+            assertEquals("external=$external", 50, f.volumes().last())
+        }
+    }
+    @Test fun matchingLevelAloneDoesNotAcknowledgeAStepButItsDeadlineStillRestoresAndALateReceiptAddsNothing() {
         for (external in listOf(false, true)) {
             val f = Rig(external, enabled.copy(conversationDuck = true))
             f.env.autoApply = false; f.env.receipt(-44)
@@ -184,10 +226,11 @@ class CorrectiveMediaRuntimeTest {
             val write = f.env.sent.single()
             f.env.candidate = f.env.candidate.copy(volume = MediaVolume(20, 100)); f.observe()
             f.core.conversation(false); f.step(1_500)
-            assertEquals("a matching level supplies no restore authority", listOf(20), f.volumes())
-            f.step(500) // Original request deadline, without extension by matching reads or CA end.
+            assertEquals("a matching level is not an acknowledgement: the step is still pending", listOf(20), f.volumes())
+            f.step(500) // Original step deadline, without extension by matching reads or CA end: restore proceeds.
+            assertEquals("external=$external", listOf(20, 50), f.volumes())
             f.env.apply(write.first, write.second, write.third); f.queue.drain(); f.step(300)
-            assertEquals("an expired matching receipt cannot restore", listOf(20), f.volumes())
+            assertEquals("a late receipt adds no further write", listOf(20, 50), f.volumes())
         }
     }
     @Test fun matchingLevelReadThenLegitimateOwnReceiptBeforeDeadlineCanRestore() {

@@ -183,6 +183,7 @@ internal fun deviceTitle(s: AirPodsUiState): String =
 // ---------------------------------------------------------------------------------------------
 
 @Composable internal fun ColumnScope.RenamePage(state: AirPodsUiState, dispatch: (AirPodsUiAction) -> Unit) {
+    SettingsPageFailure(state, AirPodsSettingsPage.Rename)
     Pane {
         RenameEditor(state, dispatch)
     }

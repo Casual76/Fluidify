@@ -29,9 +29,10 @@ class OrdinaryAssistantOperation(
             !a.permission -> PlatformFailure.PERMISSION
             !a.selectedBonded -> PlatformFailure.NOT_SELECTED_BONDED
             !a.controllerEntitled -> PlatformFailure.NOT_ENTITLED
-            !a.noCallOrRouteMix -> PlatformFailure.CALL_OR_ROUTE_MIX
+            // A physical stem long-press is itself the user's present-moment intent:
+            // visibility, background opt-in, companion association and call/route mix
+            // do not gate it (upstream gates only on the platform API level).
             !a.physicalLongPress -> PlatformFailure.BACKGROUND_NOT_AUTHORIZED
-            !a.visible && !(a.backgroundOptIn && a.ownAssociation) -> PlatformFailure.BACKGROUND_NOT_AUTHORIZED
             else -> null
         }
         if (reason != null) return PlatformResult.Denied(reason)

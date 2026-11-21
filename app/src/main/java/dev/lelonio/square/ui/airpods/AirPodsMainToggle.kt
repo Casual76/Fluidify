@@ -27,6 +27,8 @@ internal fun mainToggleSettings(pair: PairSettings, property: CommandProperty, e
         )
         CommandProperty.CONVERSATION -> host.copy(
             // Keep a configured pause-only/duck+pause policy; otherwise default to attenuation.
+            // Turning the device switch off preserves the local policy (declared in the
+            // row subtitle): it can only act on device conversation activity anyway.
             conversationDuck = host.conversationDuck || (enabled && !host.conversationPause),
             conversationPause = host.conversationPause,
         )

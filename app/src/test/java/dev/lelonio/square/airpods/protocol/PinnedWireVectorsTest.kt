@@ -67,6 +67,32 @@ class PinnedWireVectorsTest {
         assertArrayEquals("host.head_gestures/alternate_start", hex("04 00 04 00 17 00 00 00 10 00 0f 00 08 73 42 0b 08 10 10 02 1a 05 01 40 9c 00 00"), AacpCodec.headTracking(HeadPacketFormat.ALTERNATE, true))
         assertArrayEquals("host.head_gestures/alternate_stop", hex("04 00 04 00 17 00 00 00 10 00 0f 00 08 75 42 0b 08 10 10 02 1a 05 01 00 00 00 00"), AacpCodec.headTracking(HeadPacketFormat.ALTERNATE, false))
     }
+    /** Pinned HearingAidScreen.kt:115-124 (off: 0x2C [01,02] + 0x33 02), :209-218 (on: 0x2C [01,01] +
+     * 0x33 01), padded to four value bytes by AACPManager.createControlCommandPacket; pinned
+     * HearingAidAdjustmentsScreen.kt:172-177 (0x2F boolean 01/02). Upstream always writes enrolled
+     * 01; here byte 0 is the received enrolled byte, so these vectors use a received 01. */
+    @Test fun hearingPairAndGainSwipeVectors() {
+        assertArrayEquals("aacp.hearing_aid/enrolled_on", hex("04 00 04 00 09 00 2c 01 01 00 00"),
+            AacpCodec.property(CommandProperty.HEARING_AID, HearingAidWire.pack(1, true)))
+        assertArrayEquals("aacp.hearing_assist_config/on", hex("04 00 04 00 09 00 33 01 00 00 00"),
+            AacpCodec.property(CommandProperty.HEARING_ASSIST_CONFIG, 1))
+        assertArrayEquals("aacp.hearing_aid/enrolled_off", hex("04 00 04 00 09 00 2c 01 02 00 00"),
+            AacpCodec.property(CommandProperty.HEARING_AID, HearingAidWire.pack(1, false)))
+        assertArrayEquals("aacp.hearing_assist_config/off", hex("04 00 04 00 09 00 33 02 00 00 00"),
+            AacpCodec.property(CommandProperty.HEARING_ASSIST_CONFIG, 2))
+        assertArrayEquals("aacp.hps_gain_swipe/on", hex("04 00 04 00 09 00 2f 01 00 00 00"),
+            AacpCodec.property(CommandProperty.HPS_GAIN_SWIPE, 1))
+        assertArrayEquals("aacp.hps_gain_swipe/off", hex("04 00 04 00 09 00 2f 02 00 00 00"),
+            AacpCodec.property(CommandProperty.HPS_GAIN_SWIPE, 2))
+        // A received enrolled 00 is carried as it is, never rewritten to upstream's constant 01.
+        assertArrayEquals("aacp.hearing_aid/not_enrolled_on", hex("04 00 04 00 09 00 2c 00 01 00 00"),
+            AacpCodec.property(CommandProperty.HEARING_AID, HearingAidWire.pack(0, true)))
+        rejects { AacpCodec.property(CommandProperty.HEARING_AID, 0x0103) }
+        rejects { AacpCodec.property(CommandProperty.HEARING_AID, 0x0100) }
+        rejects { AacpCodec.property(CommandProperty.HEARING_AID, 0x10001) }
+        rejects { AacpCodec.property(CommandProperty.HEARING_ASSIST_CONFIG, 0) }
+        rejects { HearingAidWire.pack(256, true) }
+    }
     private fun rejects(block: () -> Unit) {
         try { block(); fail("Expected invalid wire input to be rejected") } catch (_: IllegalArgumentException) { }
     }

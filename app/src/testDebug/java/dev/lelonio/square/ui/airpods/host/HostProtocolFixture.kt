@@ -247,7 +247,8 @@ internal class HostProtocolFixture : AutoCloseable {
             HostProtocolWire.bytes(HostProtocolWire.HANDSHAKE).toList(),
             HostProtocolWire.bytes(HostProtocolWire.FEATURE_FLAGS).toList(),
             HostProtocolWire.bytes(HostProtocolWire.SUBSCRIBE).toList(),
-            HostProtocolWire.bytes(HostProtocolWire.BOOTSTRAP_EXTENSION).toList()), transport.writes.take(4))
+            // First burst has no 0x29: it belongs to the second (200ms cadence) burst.
+            ), transport.writes.take(3))
         refresh()
         assertFalse("Subscribed without current RX is not setup", host.state.value.controlsReady)
         write(CommandProperty.MIC_MODE, PropertyValue.Number(2))

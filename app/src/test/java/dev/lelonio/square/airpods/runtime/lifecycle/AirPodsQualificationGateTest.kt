@@ -50,7 +50,7 @@ class AirPodsQualificationGateTest {
         }
         assertEquals(0, owner.starts)
     }
-    @Test fun reliableKillMayUseNewAuthorityButUserRequestedAndUnknownMarkerCannot() {
+    @Test fun reliableKillAndUnknownExitMayUseNewAuthorityButOnlyUserRequestedCannot() {
         for (cause in ExitCause.entries) {
             val store = store(); val owner = Owner(); val initial = gate(store, owner)
             val consent = (initial.explicitConsent(StartIngress.EXPLICIT_ENABLE) as GateResult.Resumed).generation
@@ -58,9 +58,10 @@ class AirPodsQualificationGateTest {
             val history = ExitHistory.Available(listOf(OwnProcessExit(ExitKey(200, 123, "app", 10), cause)))
             val replacement = Owner(); val recreated = gate(store, replacement, "epoch-2", history)
             val result = recreated.attempt(StartIngress.COMPANION, admission(consent).copy(connectionId = "connection-2"))
-            assertEquals(cause == ExitCause.RELIABLE_OTHER, result is GateResult.Started)
-            assertEquals(if(cause == ExitCause.RELIABLE_OTHER) 1 else 0, replacement.starts)
-            if (cause != ExitCause.RELIABLE_OTHER) {
+            val mayStart = cause != ExitCause.USER_REQUESTED
+            assertEquals(mayStart, result is GateResult.Started)
+            assertEquals(if (mayStart) 1 else 0, replacement.starts)
+            if (!mayStart) {
                 repeat(3) { recreated.attempt(StartIngress.RECEIVER, admission(consent)) }
                 assertTrue(store.snapshot().getOrThrow().start.suppressUntilExplicitResume)
                 assertEquals(0, replacement.starts)

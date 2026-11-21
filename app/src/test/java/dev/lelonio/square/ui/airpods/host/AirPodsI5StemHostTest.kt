@@ -284,7 +284,7 @@ class AirPodsI5StemHostTest {
         } finally { cold.close() }
     }
 
-    @Test fun offlineProjectionKeepsSentRenameAndEqAcrossPairSwitchAndRepositoryRecreation() = runBlocking {
+    @Test fun offlineProjectionKeepsSentIntentWithoutPresentingItAsFactAcrossPairSwitchAndRecreation() = runBlocking {
         val first = Fixture()
         val pairB = PairAddress("00:11:22:33:44:66")
         val name = CommandProperty.NAME
@@ -292,8 +292,13 @@ class AirPodsI5StemHostTest {
         val chosenEq = PropertyValue.Eq(true, 61, 50, 49)
         fun Fixture.assertChoice() {
             val ui = host.state.value
-            assertEquals("A scelto", ui.headerName)
-            assertEquals(chosenEq, ui.domain.propertyEffective(eq)?.value)
+            // Restored intent is preserved as intent, never shown as the device's state:
+            // header and EQ fall back to the last values the device actually reported.
+            assertEquals("Sonda A", ui.headerName)
+            assertEquals(PropertyValue.Eq(false, 50, 50, 50), ui.domain.propertyEffective(eq)?.value)
+            assertEquals(PropertyValue.Name("A scelto"), ui.domain.desired[name]?.requested)
+            assertEquals(DesiredStatus.UNCERTAIN, ui.domain.desired[name]?.status)
+            assertEquals(chosenEq, ui.domain.desired[eq]?.requested)
             assertNull(ui.domain.propertyObserved(name))
             assertNull(ui.domain.propertyObserved(eq))
             assertFalse(ui.writeAllowed(name, PropertyValue.Name("No offline write")))

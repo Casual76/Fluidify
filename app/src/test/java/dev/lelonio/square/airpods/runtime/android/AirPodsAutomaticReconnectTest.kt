@@ -232,7 +232,7 @@ class AirPodsAutomaticReconnectTest {
         assertFalse(f.gate.cleanupUnconfirmed)
         assertEquals(2, f.context.starts)
         assertTrue(f.controller.hasAdmission())
-        assertFalse(f.data().start.suppressUntilExplicitResume)
+        assertFalse(f.data().start.suppressUntilExplicitResume) // unexpected destruction is an ordinary disconnect, not a user stop
     }
 
     @Test fun unexpectedServiceDestructionDoesNotWaitForASecondDestruction() = Fixture().use { f ->
@@ -245,7 +245,7 @@ class AirPodsAutomaticReconnectTest {
         service.destroy()
         assertFalse(f.controller.hasAdmission())
         assertFalse(f.gate.cleanupUnconfirmed)
-        assertTrue(f.data().start.suppressUntilExplicitResume)
+        assertFalse(f.data().start.suppressUntilExplicitResume) // unexpected destruction is an ordinary disconnect, not a user stop
         assertNull(AirPodsServiceOwnerRegistry.resolve())
     }
 }

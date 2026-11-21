@@ -107,6 +107,9 @@ internal object ScalarHostCases {
         ScalarHostCase(CommandProperty.DYNAMIC_END_OF_CHARGE, "aacp.dynamic_end_of_charge", ScalarEditorKind.OPTIONS, 1..2, false, listOf(
             input(2, "04 00 04 00 09 00 3b 02 00 00 00", "off"),
             input(1, "04 00 04 00 09 00 3b 01 00 00 00", "on"))),
+        ScalarHostCase(CommandProperty.HPS_GAIN_SWIPE, "aacp.hps_gain_swipe", ScalarEditorKind.OPTIONS, 1..2, true, listOf(
+            input(2, "04 00 04 00 09 00 2f 02 00 00 00", "off"),
+            input(1, "04 00 04 00 09 00 2f 01 00 00 00", "on"))),
     )
     fun get(property: CommandProperty) = all.single { it.property == property }
 

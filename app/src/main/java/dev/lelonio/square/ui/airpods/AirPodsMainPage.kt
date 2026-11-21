@@ -54,7 +54,9 @@ internal fun ColumnScope.MainPage(state: AirPodsUiState, dispatch: (AirPodsUiAct
     val identity = state.identity
     // The device's own settings are shown while a recognised device is answering, as upstream
     // shows them only while connected. Fluidify's side of the feature is always below.
-    val device = identity?.takeIf { state.controlsReady && it.recognized }
+    // Groups stay composed (disabled, with their reasons) whenever the surface is
+    // authorized: an unrecognized or not-yet-identified model hides nothing a priori.
+    val device = identity?.takeIf { state.controlsReady }
 
     DeviceHeader(state)
     AudioRequestOutcome(state, dispatch)
@@ -66,7 +68,7 @@ internal fun ColumnScope.MainPage(state: AirPodsUiState, dispatch: (AirPodsUiAct
         leading = { Icon(PhosphorIcons.Regular.Warning, contentDescription = null) },
         glass = true,
         modifier = Modifier.testTag("airpods-gate"),
-    ) else if (state.controlsReady && device == null) FluidInlineMessage(
+    ) else if (state.controlsReady && identity == null) FluidInlineMessage(
         message = stringResource(R.string.airpods_reason_information),
         tone = FluidTone.Info,
         leading = { Icon(PhosphorIcons.Regular.Info, contentDescription = null) },
@@ -77,7 +79,7 @@ internal fun ColumnScope.MainPage(state: AirPodsUiState, dispatch: (AirPodsUiAct
     if (!state.pair.host.automationsEnabled)
         Text(stringResource(R.string.airpods_reason_automations_off), style = MaterialTheme.typography.bodySmall)
     MainSettingsFailure(state)
-    if (device != null) DeviceGroups(state, device, dispatch, onOpen)
+    if (state.surfaceAuthorized) DeviceGroups(state, device, dispatch, onOpen)
 
     // Fluidify's half: what the phone does, and what the pair needs before anything above exists.
     Pane {
@@ -102,6 +104,9 @@ internal fun ColumnScope.MainPage(state: AirPodsUiState, dispatch: (AirPodsUiAct
     }
 
     var forget by remember { mutableStateOf(false) }
+    FluidButton(stringResource(R.string.airpods_disconnect),
+        { dispatch(AirPodsUiAction.Setup(SetupAction.DISCONNECT)) }, enabled = state.allowed("setup.DISCONNECT"),
+        style = FluidButtonStyle.Tinted, fillWidth = true, modifier = Modifier.padding(top = 8.dp))
     FluidButton(stringResource(R.string.airpods_feature_forget), { forget = true }, enabled = state.allowed("setup.FORGET"),
         style = FluidButtonStyle.Destructive, fillWidth = true, modifier = Modifier.padding(top = 8.dp))
     if (forget) FluidAlert(onDismissRequest = { forget = false }, title = stringResource(R.string.airpods_feature_forget),
@@ -112,10 +117,12 @@ internal fun ColumnScope.MainPage(state: AirPodsUiState, dispatch: (AirPodsUiAct
 
 /** Upstream's groups, top to bottom, for a device that is answering. */
 @Composable
-private fun ColumnScope.DeviceGroups(state: AirPodsUiState, identity: AirPodsIdentity,
+private fun ColumnScope.DeviceGroups(state: AirPodsUiState, identity: AirPodsIdentity?,
     dispatch: (AirPodsUiAction) -> Unit, onOpen: (AirPodsSettingsPage) -> Unit) {
     val main = remember { airPodsPageSpecs(AirPodsSettingsPage.Main) }
-    val shown = main.filter { it.candidate(identity) }
+    // The hearing-assist companion value is written only as part of the hearing-aid pair.
+    val shown = main.filter { (identity == null || it.candidate(identity)) &&
+        it.property != CommandProperty.HEARING_ASSIST_CONFIG }
     fun group(properties: List<CommandProperty>) = shown.filter { it.property in properties }
 
     Pane {
@@ -128,7 +135,7 @@ private fun ColumnScope.DeviceGroups(state: AirPodsUiState, identity: AirPodsIde
         ModeControl(state, dispatch, "airpods-mode")
     }
 
-    if (AirPodsProperties.spec(CommandProperty.STEM_CONFIG)?.candidate(identity) == true) {
+    if (identity?.let { AirPodsProperties.spec(CommandProperty.STEM_CONFIG)?.candidate(it) } != false) {
         GroupLabel(R.string.airpods_feature_accessibility_group)
         Pane {
             LongPressRow(state, GestureSide.LEFT, AirPodsSettingsPage.LongPressLeft, onOpen)
@@ -137,9 +144,16 @@ private fun ColumnScope.DeviceGroups(state: AirPodsUiState, identity: AirPodsIde
         }
     }
 
-    val calls = remember { airPodsPageSpecs(AirPodsSettingsPage.Calls) }.filter { it.candidate(identity) }
+    val calls = remember { airPodsPageSpecs(AirPodsSettingsPage.Calls) }.filter { identity == null || it.candidate(identity) }
     if (calls.isNotEmpty()) Pane {
-        OpenRow(R.string.airpods_feature_calls_group, AirPodsSettingsPage.Calls, onOpen)
+        OpenRow(R.string.airpods_feature_calls_group, AirPodsSettingsPage.Calls, onOpen,
+            value = effectiveNumber(state, CommandProperty.MIC_MODE)?.let {
+                stringResource(when (it) {
+                    1 -> R.string.airpods_c3_always_right
+                    2 -> R.string.airpods_c3_always_left
+                    else -> R.string.airpods_ui_automatic
+                })
+            })
     }
 
     val audio = group(airPodsMainGroups[0])
@@ -163,7 +177,7 @@ private fun ColumnScope.DeviceGroups(state: AirPodsUiState, identity: AirPodsIde
         SwitchPane(specs, state, dispatch)
     }
 
-    if (remember { airPodsPageSpecs(AirPodsSettingsPage.Controls) }.any { it.candidate(identity) }) Pane {
+    if (remember { airPodsPageSpecs(AirPodsSettingsPage.Controls) }.any { identity == null || it.candidate(identity) }) Pane {
         OpenRow(R.string.airpods_feature_controls_group, AirPodsSettingsPage.Controls, onOpen)
     }
 
@@ -241,31 +255,52 @@ private fun ColumnScope.DeviceGroups(state: AirPodsUiState, identity: AirPodsIde
 }
 
 /** No per-command receipt UI: only a real local/save/write failure gets a message. */
-@Composable internal fun MainSettingsFailure(state: AirPodsUiState) {
+@Composable internal fun MainSettingsFailure(state: AirPodsUiState) =
+    SettingsPageFailure(state, AirPodsSettingsPage.Main)
+
+@Composable internal fun SettingsPageFailure(state: AirPodsUiState, page: AirPodsSettingsPage) {
     val failedWrite = state.domain.desired.entries.firstOrNull { (property, desired) ->
-        airPodsSettingsPageOf(property) == AirPodsSettingsPage.Main &&
-            desired.generation == state.domain.generation && desired.status == DesiredStatus.FAILED
+        airPodsSettingsPageOf(property) == page &&
+            desired.generation == state.domain.generation &&
+            desired.status in setOf(DesiredStatus.FAILED, DesiredStatus.NOT_CONFIRMED, DesiredStatus.CONTRADICTED)
     }
-    val issue = state.mainToggleIssue
+    val issue = state.mainToggleIssue?.takeIf { page == AirPodsSettingsPage.Main }
     val message = when (issue?.failure) {
         AirPodsMainToggleFailure.UNAVAILABLE -> R.string.airpods_ui_unavailable
         AirPodsMainToggleFailure.LOCAL_SAVE_FAILED -> R.string.airpods_c4_save_failed
         AirPodsMainToggleFailure.DEVICE_NOT_SENT -> R.string.airpods_c4_partial_save
-        null -> if (failedWrite != null) R.string.airpods_c4_send_failed else return
+        null -> when (failedWrite?.value?.status) {
+            DesiredStatus.NOT_CONFIRMED -> R.string.airpods_state_not_confirmed
+            DesiredStatus.CONTRADICTED -> R.string.airpods_state_contradicted
+            DesiredStatus.FAILED -> R.string.airpods_c4_send_failed
+            else -> return
+        }
     }
     val property = issue?.property ?: failedWrite?.key
     val title = property?.let { AirPodsProperties.spec(it)?.catalogId }?.let(featureTitles::get)
     FluidInlineMessage(
         message = stringResource(message), title = title?.let { stringResource(it) },
-        tone = FluidTone.Warning, glass = true, modifier = Modifier.testTag("airpods-main-failure"),
+        tone = FluidTone.Warning, glass = true,
+        modifier = Modifier.testTag(if (page == AirPodsSettingsPage.Main) "airpods-main-failure" else "airpods-failure-$page"),
     )
 }
 
 @Composable internal fun MainSwitchRow(state: AirPodsUiState, spec: PropertySpec, dispatch: (AirPodsUiAction) -> Unit) {
     val checked = effectiveNumber(state, spec.property) == 1
+    val canToggle = state.mainToggleAllowed(spec.property, !checked)
+    val desired = state.domain.desired[spec.property]
+    // Awaiting beats description; a disabled reason beats both. The switch never
+    // sits grey or in-flight without the page saying why.
+    val subtitle = when {
+        desired?.status in setOf(DesiredStatus.QUEUED, DesiredStatus.WRITING, DesiredStatus.SENT) ->
+            stringResource(R.string.airpods_state_awaiting_confirmation)
+        !canToggle -> state.availability["property.${spec.property}"]?.reason ?: ""
+        else -> featureDescriptions[spec.catalogId]?.let { stringResource(it) } ?: ""
+    }
     FluidToggleRow(
         title = stringResource(featureTitles.getValue(spec.catalogId)), checked = checked,
-        enabled = state.mainToggleAllowed(spec.property, !checked),
+        subtitle = subtitle,
+        enabled = canToggle,
         modifier = Modifier.testTag("airpods-switch-${spec.property}"),
         onCheckedChange = { enabled ->
             if (state.mainToggleAllowed(spec.property, enabled)) dispatch(AirPodsUiAction.Write(

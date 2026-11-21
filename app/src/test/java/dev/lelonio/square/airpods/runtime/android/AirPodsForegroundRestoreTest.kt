@@ -232,15 +232,15 @@ class AirPodsForegroundRestoreTest {
         }
     }
 
-    @Test fun unexplainedOldProcessMarkerRequiresExplicitResume() = runBlocking {
+    @Test fun unexplainedOldProcessMarkerDoesNotSuppressRestore() = runBlocking {
         for (cause in listOf<ExitCause?>(null, ExitCause.UNKNOWN)) Fixture().use { f ->
             f.start { it.copy(marker = f.oldMarker()) }
             f.history = ExitHistory.Available(if (cause == null) emptyList() else
                 listOf(OwnProcessExit(ExitKey(200, 39, Application.getProcessName(), 0), cause)))
             f.controller.appOpened()
-            f.assertNoAcquisition()
-            assertEquals(SuppressReason.UNCLEAN_PROCESS, f.data().start.suppressReason)
-            assertTrue(f.data().start.suppressUntilExplicitResume)
+            assertEquals(1, f.context.starts.get())
+            assertNull(f.data().start.suppressReason)
+            assertFalse(f.data().start.suppressUntilExplicitResume)
             assertFalse(f.data().start.marker!!.clean)
         }
     }

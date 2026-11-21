@@ -134,6 +134,9 @@ internal fun airPodsSettingsPageOf(property: CommandProperty): AirPodsSettingsPa
     CommandProperty.STEM_CONFIG -> AirPodsSettingsPage.LongPressLeft
     CommandProperty.MIC_MODE,
     CommandProperty.CALL_MANAGEMENT_CONFIG -> AirPodsSettingsPage.Calls
+    CommandProperty.HEARING_AID,
+    CommandProperty.HEARING_ASSIST_CONFIG,
+    CommandProperty.HPS_GAIN_SWIPE,
     CommandProperty.AUTO_ANC_STRENGTH -> AirPodsSettingsPage.Main
     CommandProperty.EQ -> AirPodsSettingsPage.Equalizer
     CommandProperty.NAME -> AirPodsSettingsPage.Rename
@@ -167,6 +170,7 @@ internal val airPodsMainGroups: List<List<CommandProperty>> = listOf(
     listOf(CommandProperty.SLEEP_DETECTION_CONFIG),
     listOf(CommandProperty.DYNAMIC_END_OF_CHARGE, CommandProperty.PPE_TOGGLE_CONFIG),
     listOf(CommandProperty.ALLOW_OFF_OPTION),
+    listOf(CommandProperty.HEARING_AID, CommandProperty.HPS_GAIN_SWIPE),
 )
 
 /** Host toggles that belong beside the gesture controls; every other one is an automation. */

@@ -23,6 +23,7 @@ package dev.lelonio.square.ui.airpods
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.Orientation
 import androidx.compose.foundation.gestures.draggable
 import androidx.compose.foundation.gestures.rememberDraggableState
@@ -101,6 +102,8 @@ internal fun AirPodsNoiseControl(
     onRequest: (ListeningMode) -> (() -> Unit)?,
     tagPrefix: String,
     modifier: Modifier = Modifier,
+    // Asked for but not yet reported by the device: ringed, never drawn as selected.
+    awaiting: ListeningMode? = null,
 ) {
     val shown = remember(modes) { noiseControlOrder.filter { it in modes } }
     if (shown.isEmpty()) return
@@ -212,6 +215,7 @@ internal fun AirPodsNoiseControl(
                                 }
                                 // The effective mode stays legible while nothing can be asked for.
                                 .alpha(if (ask != null || isEffective) 1f else 0.5f)
+                                .then(if (mode == awaiting) Modifier.border(1.5.dp, ink.copy(alpha = 0.7f), FluidCapsuleShape) else Modifier)
                                 .fluidRowPressable(onClick = ask, shape = FluidCapsuleShape),
                             horizontalAlignment = Alignment.CenterHorizontally,
                             verticalArrangement = Arrangement.Center,
